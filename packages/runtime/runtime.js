@@ -1,0 +1,333 @@
+'use strict'
+// Runtime JS de angular-native.
+//
+// Es lo mínimo que el motor embebido necesita para no ser un intérprete pelado:
+// consola, temporizadores, y el escritor de comandos hacia el core en Rust.
+// Encima de esto se monta el `Renderer2` de Angular.
+//
+// Rust inyecta tres funciones antes de evaluar este fichero:
+//   __an.log(level, message)   salida a la consola del sistema
+//   __an.now()                 milisegundos monótonos desde el arranque
+//   __an.flush(bytes, length)  entrega el búfer de comandos al core
+;(function (global) {
+  const native = global.__an
+  if (!native) {
+    throw new Error('runtime.js necesita que Rust haya inyectado __an')
+  }
+
+  // ------------------------------------------------------------------ consola
+
+  function format(args) {
+    let out = ''
+    for (let i = 0; i < args.length; i++) {
+      if (i > 0) out += ' '
+      const value = args[i]
+      if (typeof value === 'string') {
+        out += value
+      } else if (value instanceof Error) {
+        out += value.stack || `${value.name}: ${value.message}`
+      } else {
+        try {
+          out += JSON.stringify(value)
+        } catch {
+          out += String(value)
+        }
+      }
+    }
+    return out
+  }
+
+  const LEVELS = { debug: 0, log: 1, info: 1, warn: 2, error: 3 }
+  global.console = {}
+  for (const name of Object.keys(LEVELS)) {
+    global.console[name] = function () {
+      native.log(LEVELS[name], format(arguments))
+    }
+  }
+
+  // ----------------------------------------------------------- temporizadores
+  //
+  // La cola vive en JS y la vacía el core una vez por frame. Así no hay hilos
+  // ni relojes compitiendo: el único tiempo que existe es el del vsync.
+
+  let nextTimerId = 1
+  const timers = new Map()
+  // Reloj de los temporizadores: el que trae cada frame, no el del sistema.
+  // Así el tiempo de la app avanza en pasos de vsync, es determinista, y un
+  // test puede simular diez segundos sin esperarlos.
+  let frameNow = native.now()
+
+  function schedule(fn, delay, args, repeat) {
+    const id = nextTimerId++
+    timers.set(id, {
+      at: frameNow + Math.max(0, delay || 0),
+      fn,
+      args,
+      interval: repeat ? Math.max(1, delay || 1) : null
+    })
+    return id
+  }
+
+  global.setTimeout = (fn, delay, ...args) => schedule(fn, delay, args, false)
+  global.setInterval = (fn, delay, ...args) => schedule(fn, delay, args, true)
+  global.clearTimeout = (id) => timers.delete(id)
+  global.clearInterval = (id) => timers.delete(id)
+  global.performance = { now: () => native.now() }
+
+  function runTimers(now) {
+    if (timers.size === 0) return
+    // Se resuelve sobre una copia: un callback puede añadir o quitar timers.
+    const due = []
+    for (const [id, timer] of timers) {
+      if (timer.at <= now) due.push([id, timer])
+    }
+    due.sort((a, b) => a[1].at - b[1].at)
+    for (const [id, timer] of due) {
+      if (!timers.has(id)) continue
+      if (timer.interval === null) {
+        timers.delete(id)
+      } else {
+        timer.at = now + timer.interval
+      }
+      try {
+        timer.fn.apply(null, timer.args)
+      } catch (error) {
+        console.error('timer sin capturar:', error)
+      }
+    }
+  }
+
+  // -------------------------------------------------------- búfer de comandos
+
+  const OP = {
+    CREATE_NODE: 0x01,
+    DESTROY_NODE: 0x02,
+    INSERT_CHILD: 0x03,
+    REMOVE_CHILD: 0x04,
+    SET_STYLE: 0x05,
+    SET_PROP_STR: 0x06,
+    SET_PROP_NUM: 0x07,
+    SET_PROP_BOOL: 0x08,
+    SET_PROP_NULL: 0x09,
+    SET_TEXT: 0x0a,
+    SET_LISTENER: 0x0b,
+    SET_ROOT: 0x0c
+  }
+
+  const KIND = { View: 0, Text: 1, RawText: 2, Image: 3, ScrollView: 4, TextInput: 5 }
+
+  class CommandWriter {
+    constructor(capacity) {
+      this.bytes = new Uint8Array(capacity)
+      this.view = new DataView(this.bytes.buffer)
+      this.offset = 0
+    }
+
+    reserve(extra) {
+      const needed = this.offset + extra
+      if (needed <= this.bytes.length) return
+      let size = this.bytes.length
+      while (size < needed) size *= 2
+      const grown = new Uint8Array(size)
+      grown.set(this.bytes)
+      this.bytes = grown
+      this.view = new DataView(grown.buffer)
+    }
+
+    u8(value) {
+      this.reserve(1)
+      this.bytes[this.offset++] = value
+    }
+
+    u32(value) {
+      this.reserve(4)
+      this.view.setUint32(this.offset, value >>> 0, true)
+      this.offset += 4
+    }
+
+    f64(value) {
+      this.reserve(8)
+      this.view.setFloat64(this.offset, value, true)
+      this.offset += 8
+    }
+
+    // El motor no trae TextEncoder, así que codificamos UTF-8 a mano.
+    str(value) {
+      const text = String(value)
+      this.reserve(4 + text.length * 3)
+      const lengthAt = this.offset
+      this.offset += 4
+      const start = this.offset
+      for (let i = 0; i < text.length; i++) {
+        let code = text.charCodeAt(i)
+        if (code >= 0xd800 && code <= 0xdbff && i + 1 < text.length) {
+          const low = text.charCodeAt(i + 1)
+          if (low >= 0xdc00 && low <= 0xdfff) {
+            code = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00)
+            i++
+          }
+        }
+        if (code < 0x80) {
+          this.reserve(1)
+          this.bytes[this.offset++] = code
+        } else if (code < 0x800) {
+          this.reserve(2)
+          this.bytes[this.offset++] = 0xc0 | (code >> 6)
+          this.bytes[this.offset++] = 0x80 | (code & 0x3f)
+        } else if (code < 0x10000) {
+          this.reserve(3)
+          this.bytes[this.offset++] = 0xe0 | (code >> 12)
+          this.bytes[this.offset++] = 0x80 | ((code >> 6) & 0x3f)
+          this.bytes[this.offset++] = 0x80 | (code & 0x3f)
+        } else {
+          this.reserve(4)
+          this.bytes[this.offset++] = 0xf0 | (code >> 18)
+          this.bytes[this.offset++] = 0x80 | ((code >> 12) & 0x3f)
+          this.bytes[this.offset++] = 0x80 | ((code >> 6) & 0x3f)
+          this.bytes[this.offset++] = 0x80 | (code & 0x3f)
+        }
+      }
+      this.view.setUint32(lengthAt, this.offset - start, true)
+    }
+
+    drain() {
+      if (this.offset === 0) return
+      native.flush(this.bytes, this.offset)
+      this.offset = 0
+    }
+  }
+
+  const writer = new CommandWriter(4096)
+
+  // ------------------------------------------------------------- API de nodos
+  //
+  // Los ids los asigna JS: crear un nodo no espera respuesta del core.
+
+  let nextNodeId = 1
+  const listeners = new Map()
+
+  const dom = {
+    /// `kind` es una clave de KIND: 'View', 'Text', 'RawText'...
+    createNode(kind) {
+      const id = nextNodeId++
+      const code = KIND[kind]
+      if (code === undefined) throw new Error(`primitiva desconocida: ${kind}`)
+      writer.u8(OP.CREATE_NODE)
+      writer.u32(id)
+      writer.u8(code)
+      return id
+    },
+
+    destroyNode(id) {
+      listeners.delete(id)
+      writer.u8(OP.DESTROY_NODE)
+      writer.u32(id)
+    },
+
+    insertChild(parent, child, index) {
+      writer.u8(OP.INSERT_CHILD)
+      writer.u32(parent)
+      writer.u32(child)
+      writer.u32(index)
+    },
+
+    removeChild(parent, child) {
+      writer.u8(OP.REMOVE_CHILD)
+      writer.u32(parent)
+      writer.u32(child)
+    },
+
+    setStyle(id, name, value) {
+      writer.u8(OP.SET_STYLE)
+      writer.u32(id)
+      writer.str(name)
+      writer.str(value === null || value === undefined ? '' : value)
+    },
+
+    setProp(id, key, value) {
+      if (value === null || value === undefined) {
+        writer.u8(OP.SET_PROP_NULL)
+        writer.u32(id)
+        writer.str(key)
+        return
+      }
+      switch (typeof value) {
+        case 'number':
+          writer.u8(OP.SET_PROP_NUM)
+          writer.u32(id)
+          writer.str(key)
+          writer.f64(value)
+          break
+        case 'boolean':
+          writer.u8(OP.SET_PROP_BOOL)
+          writer.u32(id)
+          writer.str(key)
+          writer.u8(value ? 1 : 0)
+          break
+        default:
+          writer.u8(OP.SET_PROP_STR)
+          writer.u32(id)
+          writer.str(key)
+          writer.str(value)
+      }
+    },
+
+    setText(id, text) {
+      writer.u8(OP.SET_TEXT)
+      writer.u32(id)
+      writer.str(text)
+    },
+
+    setRoot(id) {
+      writer.u8(OP.SET_ROOT)
+      writer.u32(id)
+    },
+
+    listen(id, event, handler) {
+      let byEvent = listeners.get(id)
+      if (!byEvent) {
+        byEvent = new Map()
+        listeners.set(id, byEvent)
+      }
+      byEvent.set(event, handler)
+      writer.u8(OP.SET_LISTENER)
+      writer.u32(id)
+      writer.str(event)
+      writer.u8(1)
+      return () => {
+        byEvent.delete(event)
+        writer.u8(OP.SET_LISTENER)
+        writer.u32(id)
+        writer.str(event)
+        writer.u8(0)
+      }
+    }
+  }
+
+  global.__an_dom = dom
+
+  // --------------------------------------------------------------- ciclo de frame
+
+  /// Eventos nativos, antes que los timers: lo que tocó el usuario en este
+  /// frame se ve reflejado en el mismo frame.
+  global.__an_dispatch = function (targetId, name, payload) {
+    const handler = listeners.get(targetId) && listeners.get(targetId).get(name)
+    if (!handler) return
+    try {
+      handler(payload || {})
+    } catch (error) {
+      console.error(`manejador de ${name} sin capturar:`, error)
+    }
+  }
+
+  global.__an_tick = function (now) {
+    frameNow = now
+    runTimers(now)
+  }
+
+  /// La llama Rust tras vaciar las microtareas: lo que hayan producido las
+  /// promesas entra en este mismo frame, no en el siguiente.
+  global.__an_drain = function () {
+    writer.drain()
+  }
+})(globalThis)

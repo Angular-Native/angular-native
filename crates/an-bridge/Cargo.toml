@@ -1,0 +1,16 @@
+[package]
+name = "an-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+an-core.workspace = true
+an-host.workspace = true
+rquickjs = { version = "0.12", default-features = false, features = ["macro"] }
+
+# iOS no trae bindings pregenerados en rquickjs-sys: hay que generarlos con
+# bindgen, que en Mac usa el libclang de Xcode.
+[target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))'.dependencies]
+rquickjs = { version = "0.12", default-features = false, features = ["macro", "bindgen"] }

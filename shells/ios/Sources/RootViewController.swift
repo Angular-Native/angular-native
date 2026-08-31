@@ -20,11 +20,11 @@ final class RootViewController: UIViewController {
             assertionFailure("an_runtime_new devolvió nil: ¿fuera del hilo principal?")
             return
         }
-        an_runtime_load_demo(runtime)
+        loadBundleScript()
 
         // El core solo trabaja cuando hay algo que aplicar; en un frame
         // quieto `an_runtime_frame` devuelve 0 sin tocar UIKit.
-        let link = CADisplayLink(target: self, selector: #selector(tick))
+        let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
         displayLink = link
     }
@@ -34,10 +34,28 @@ final class RootViewController: UIViewController {
         an_runtime_set_viewport(runtime, Float(view.bounds.width), Float(view.bounds.height))
     }
 
-    @objc private func tick() {
-        let applied = an_runtime_frame(runtime)
+    /// El bundle de la app trae el JS, igual que el `main.jsbundle` de React
+    /// Native. Si falta, se cae al árbol de demostración construido en Rust:
+    /// así se distingue un fallo del puente de uno del renderer.
+    private func loadBundleScript() {
+        guard let path = Bundle.main.path(forResource: "main", ofType: "js"),
+              let source = try? String(contentsOfFile: path, encoding: .utf8)
+        else {
+            NSLog("angular-native: no hay main.js en el bundle, cargando la demo de Rust")
+            an_runtime_load_demo(runtime)
+            return
+        }
+        if an_runtime_eval(runtime, "main.js", source) != 0 {
+            NSLog("angular-native: main.js lanzó al evaluarse")
+        }
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        // El reloj de la app es el del vsync: los temporizadores de JS avanzan
+        // con los frames, no con un hilo aparte.
+        let applied = an_runtime_frame(runtime, link.timestamp * 1000.0)
         if applied < 0 {
-            NSLog("angular-native: el commit falló")
+            NSLog("angular-native: el frame falló")
         }
     }
 

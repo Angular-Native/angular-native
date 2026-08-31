@@ -17,6 +17,9 @@ BUILD_DIR="$ROOT/build/ios"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
 
 echo "==> core Rust ($PROFILE)"
+# QuickJS se compila con `cc`, que sin esto usa el mínimo del SDK (26.x) y el
+# enlazado con Swift avisa de la discrepancia.
+export IPHONEOS_DEPLOYMENT_TARGET="$DEPLOYMENT"
 CARGO_FLAGS=(--target "$TARGET" -p an-ios)
 [ "$PROFILE" = "release" ] && CARGO_FLAGS+=(--release)
 (cd "$ROOT" && cargo build "${CARGO_FLAGS[@]}")
@@ -35,6 +38,10 @@ xcrun swiftc \
   -o "$APP_DIR/$APP_NAME" \
   "$ROOT"/shells/ios/Sources/*.swift
 cp "$ROOT/shells/ios/Resources/Info.plist" "$APP_DIR/Info.plist"
+
+# El script JS entra como recurso del bundle, no compilado dentro de Rust.
+SCRIPT="${SCRIPT:-$ROOT/examples/hello/main.js}"
+cp "$SCRIPT" "$APP_DIR/main.js"
 
 echo "==> simulador: $DEVICE"
 UDID="$(xcrun simctl list devices available -j \

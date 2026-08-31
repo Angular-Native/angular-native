@@ -12,6 +12,7 @@ crate-type = ["staticlib", "rlib"]
 [dependencies]
 an-core.workspace = true
 an-host.workspace = true
+an-bridge = { path = "../an-bridge" }
 an-layout.workspace = true
 
 # UIKit solo existe en plataformas Apple móviles. Fuera de ellas el crate

@@ -7,13 +7,13 @@ el layout y el montaje sobre **vistas nativas reales** (UIKit, Android View) los
 lleva Rust. Sin DOM, sin WebView, sin zone.js.
 
 ```text
-Angular (JS)  ──Renderer2──▶  cola de comandos  ──▶  ShadowTree (Rust)
-                                                          │ commit
-                                                    taffy (layout)
-                                                          │ diff
-                                                    Frame { MountOp[] }
-                                                          ▼
-                                             HostRenderer (UIKit / Android)
+Angular (JS)  ──Renderer2──▶  __an_dom  ──▶  búfer binario  ──▶  ShadowTree (Rust)
+                                                                      │ commit
+                                                                taffy (layout)
+                                                                      │ diff
+                                                                Frame { MountOp[] }
+                                                                      ▼
+                                                         HostRenderer (UIKit / Android)
 ```
 
 Tres hilos: JS (lógica), core Rust (árbol, layout, diff), UI (vistas nativas).
@@ -26,14 +26,14 @@ Tres hilos: JS (lógica), core Rust (árbol, layout, diff), UI (vistas nativas).
 | `an-core` | Shadow tree, mutaciones, commit, diff hacia `MountOp` |
 | `an-host` | Traits `HostRenderer` y `TextMeasurer`, y el `Renderer` que los une |
 | `an-ios` | Host UIKit, medidor de texto y superficie C para el shell |
-| `an-bridge` | Motor JS y protocolo de comandos (pendiente) |
+| `an-bridge` | Motor JS (QuickJS) y protocolo binario de comandos |
 | `an-cli` | Dev server, bundling y HMR (pendiente) |
 
 ## Estado
 
 - [x] **Fase 0** — Núcleo Rust: shadow tree, layout flexbox, diff incremental, tests
 - [x] **Fase 1** — Host iOS con UIKit, medición de texto real y app en el simulador
-- [ ] **Fase 2** — Motor JS embebido y puente de comandos
+- [x] **Fase 2** — Motor JS embebido, protocolo binario y `main.js` en el bundle
 - [ ] **Fase 3** — Plataforma Angular: `Renderer2`, scheduler por vsync, primitivas
 - [ ] **Fase 4** — CLI, dev server y HMR
 - [ ] **Fase 5** — ScrollView, TextInput, listas recicladas, router, Android
@@ -49,12 +49,22 @@ Tres hilos: JS (lógica), core Rust (árbol, layout, diff), UI (vistas nativas).
   dentro del motor JS, que es el 80% del dolor de NativeScript.
 - **Un commit por frame.** El layout solo corre en `commit()`, y el `Frame`
   resultante lleva únicamente lo que cambió.
+- **Búfer binario, no llamadas sueltas.** Un `*ngFor` de 200 filas son ~1.200
+  mutaciones. Con llamadas por mutación son 1.200 cruces de frontera; con búfer
+  es uno.
+- **JS no tiene hilo, tiene un turno por frame.** El `CADisplayLink` llama a
+  `tick()`, y ahí dentro corren temporizadores y microtareas hasta agotarlas.
+  El reloj de `setTimeout` es el del vsync, así que el tiempo de la app es
+  determinista y un test puede simular diez segundos sin esperarlos.
+- **El script viaja en el bundle**, no compilado dentro de Rust, igual que el
+  `main.jsbundle` de React Native.
 
 ## Desarrollo
 
 ```bash
 cargo test              # núcleo completo, sin simulador ni Xcode
 ./scripts/run-ios.sh    # compila, enlaza y lanza la app en el simulador
+SCRIPT=ruta/a/otro.js ./scripts/run-ios.sh   # con otro bundle JS
 ```
 
 `run-ios.sh` no usa `.xcodeproj`: compila el core con `cargo`, enlaza el shell
