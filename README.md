@@ -29,14 +29,48 @@ Tres hilos: JS (lógica), core Rust (árbol, layout, diff), UI (vistas nativas).
 | `an-bridge` | Motor JS (QuickJS) y protocolo binario de comandos |
 | `an-cli` | Dev server, bundling y HMR (pendiente) |
 
+| Paquete npm | Qué hace |
+|---|---|
+| `packages/runtime` | Prelude JS: consola, temporizadores, `requestAnimationFrame`, escritor de comandos |
+| `packages/platform-native` | `Renderer2`, `RendererFactory2` y `bootstrapNativeApplication` |
+| `packages/primitives` | `View`, `Text`, `Image`, `ScrollView`, `TextInput` como directivas tipadas |
+
 ## Estado
 
 - [x] **Fase 0** — Núcleo Rust: shadow tree, layout flexbox, diff incremental, tests
 - [x] **Fase 1** — Host iOS con UIKit, medición de texto real y app en el simulador
 - [x] **Fase 2** — Motor JS embebido, protocolo binario y `main.js` en el bundle
-- [ ] **Fase 3** — Plataforma Angular: `Renderer2`, scheduler por vsync, primitivas
+- [x] **Fase 3** — Plataforma Angular: `Renderer2`, primitivas tipadas, AOT y zoneless
+  - [ ] Eventos: gestos nativos de vuelta hacia `(press)`
 - [ ] **Fase 4** — CLI, dev server y HMR
 - [ ] **Fase 5** — ScrollView, TextInput, listas recicladas, router, Android
+
+## Una app
+
+```ts
+@Component({
+  selector: 'app-root',
+  imports: [NATIVE_PRIMITIVES],
+  template: `
+    <View [style.gap]="'16'" [backgroundColor]="'#0b1020'">
+      <Text [fontSize]="28" [color]="'#f4f7ff'">angular-native</Text>
+      @if (seconds() >= 3) {
+        <Text [fontSize]="14">han pasado {{ seconds() }} segundos</Text>
+      }
+    </View>
+  `
+})
+export class AppComponent {
+  readonly seconds = signal(0)
+}
+```
+
+```ts
+bootstrapNativeApplication(AppComponent)
+```
+
+Señales, `@if`, `@for` y bindings son los de Angular, sin cambios. Lo único
+distinto es que `<View>` y `<Text>` acaban siendo `UIView` y `UILabel`.
 
 ## Decisiones ya tomadas
 
@@ -58,14 +92,29 @@ Tres hilos: JS (lógica), core Rust (árbol, layout, diff), UI (vistas nativas).
   determinista y un test puede simular diez segundos sin esperarlos.
 - **El script viaja en el bundle**, no compilado dentro de Rust, igual que el
   `main.jsbundle` de React Native.
+- **AOT siempre, nunca JIT.** `ngc` compila las plantillas en el build; el
+  dispositivo no lleva `@angular/compiler`.
+- **Primitivas como directivas tipadas, no `CUSTOM_ELEMENTS_SCHEMA`.** El
+  esquema laxo exige un guion en el nombre y, peor, apaga la comprobación de
+  propiedades: `[bakcgroundColor]` con errata pasaría el compilador y fallaría
+  en silencio en el dispositivo. Con directivas cada prop es un `@Input`
+  declarado, comprobado y autocompletado.
+- **Nada de `@angular/platform-browser`.** Arrastra `DomAdapter`,
+  `DomRendererFactory2` y el sanitizador de HTML: todo asume que existe un DOM.
+  La plataforma propia son ~60 líneas.
 
 ## Desarrollo
 
 ```bash
-cargo test              # núcleo completo, sin simulador ni Xcode
-./scripts/run-ios.sh    # compila, enlaza y lanza la app en el simulador
-SCRIPT=ruta/a/otro.js ./scripts/run-ios.sh   # con otro bundle JS
+cargo test                    # núcleo Rust, sin simulador ni Xcode
+./scripts/check-angular.sh    # la cadena entera: ngc, esbuild, QuickJS, taffy
+./scripts/run-ios.sh          # todo lo anterior, y además lo lanza en el simulador
+./scripts/run-ios.sh examples/hello      # otra app, o un .js suelto
+cargo run -p an-bridge --example headless -- build/bundle/hello-angular/main.js 6
 ```
+
+El `headless` evalúa un bundle, avanza frames con un reloj falso e imprime el
+árbol resuelto. Es la forma rápida de depurar el lado JS sin simulador.
 
 `run-ios.sh` no usa `.xcodeproj`: compila el core con `cargo`, enlaza el shell
 Swift con `swiftc` contra el `staticlib`, arma el `.app` a mano y lo instala con

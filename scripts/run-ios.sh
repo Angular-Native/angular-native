@@ -12,6 +12,19 @@ PROFILE="${PROFILE:-debug}"
 DEVICE="${DEVICE:-iPhone 17 Pro}"
 DEPLOYMENT="17.0"
 
+# Argumento: un directorio de app Angular (con tsconfig.json), un .js suelto,
+# o nada para la app Angular de ejemplo.
+TARGET_APP="${1:-$ROOT/examples/hello-angular}"
+if [ -f "$TARGET_APP/tsconfig.json" ]; then
+  "$ROOT/scripts/build-js.sh" "$TARGET_APP"
+  SCRIPT="$ROOT/build/bundle/$(basename "$TARGET_APP")/main.js"
+elif [ -f "$TARGET_APP" ]; then
+  SCRIPT="$TARGET_APP"
+else
+  echo "no encuentro una app en $TARGET_APP" >&2
+  exit 2
+fi
+
 SDK_PATH="$(xcrun --sdk iphonesimulator --show-sdk-path)"
 BUILD_DIR="$ROOT/build/ios"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
@@ -40,7 +53,6 @@ xcrun swiftc \
 cp "$ROOT/shells/ios/Resources/Info.plist" "$APP_DIR/Info.plist"
 
 # El script JS entra como recurso del bundle, no compilado dentro de Rust.
-SCRIPT="${SCRIPT:-$ROOT/examples/hello/main.js}"
 cp "$SCRIPT" "$APP_DIR/main.js"
 
 echo "==> simulador: $DEVICE"

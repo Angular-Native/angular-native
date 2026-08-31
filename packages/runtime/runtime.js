@@ -25,7 +25,10 @@
       if (typeof value === 'string') {
         out += value
       } else if (value instanceof Error) {
-        out += value.stack || `${value.name}: ${value.message}`
+        // QuickJS pone en `stack` solo los marcos, sin la línea del mensaje:
+        // si se imprime `stack` a secas se pierde qué falló.
+        out += `${value.name}: ${value.message}`
+        if (value.stack) out += `\n${value.stack}`
       } else {
         try {
           out += JSON.stringify(value)
@@ -73,6 +76,34 @@
   global.clearTimeout = (id) => timers.delete(id)
   global.clearInterval = (id) => timers.delete(id)
   global.performance = { now: () => native.now() }
+
+  // requestAnimationFrame es literalmente el frame: el planificador zoneless de
+  // Angular lo usa para agrupar la detección de cambios, y aquí coincide con el
+  // vsync sin aproximaciones.
+  let nextFrameId = 1
+  let frameCallbacks = new Map()
+
+  global.requestAnimationFrame = function (fn) {
+    const id = nextFrameId++
+    frameCallbacks.set(id, fn)
+    return id
+  }
+  global.cancelAnimationFrame = (id) => frameCallbacks.delete(id)
+
+  function runFrameCallbacks(now) {
+    if (frameCallbacks.size === 0) return
+    // Se cambia el mapa antes de ejecutar: un callback que vuelve a pedir
+    // frame entra en el siguiente, no en este, o el bucle no termina.
+    const pending = frameCallbacks
+    frameCallbacks = new Map()
+    for (const fn of pending.values()) {
+      try {
+        fn(now)
+      } catch (error) {
+        console.error('requestAnimationFrame sin capturar:', error)
+      }
+    }
+  }
 
   function runTimers(now) {
     if (timers.size === 0) return
@@ -323,6 +354,7 @@
   global.__an_tick = function (now) {
     frameNow = now
     runTimers(now)
+    runFrameCallbacks(now)
   }
 
   /// La llama Rust tras vaciar las microtareas: lo que hayan producido las
