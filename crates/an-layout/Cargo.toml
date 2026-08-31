@@ -1,0 +1,9 @@
+[package]
+name = "an-layout"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+taffy = { version = "0.10", default-features = false, features = ["std", "flexbox", "taffy_tree", "content_size"] }
