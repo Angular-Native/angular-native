@@ -25,6 +25,34 @@ pub struct AndroidRuntime {
     events: EventQueue,
 }
 
+impl AndroidRuntime {
+    /// Monta lo que haya llegado del worker. No bloquea.
+    fn pump(&mut self) -> jint {
+        let mut applied = 0;
+        while let Some(reply) = self.worker.try_reply() {
+            if let Some(error) = reply.error {
+                eprintln!("angular-native: {error}");
+                applied = -1;
+            }
+            let count = self.mount.apply(&reply.frame);
+            if applied >= 0 {
+                applied += count as jint;
+            }
+        }
+        applied
+    }
+
+    /// Vacía lo que quede en vuelo antes de una operación de control.
+    fn settle(&mut self) {
+        while let Some(reply) = self.worker.wait_reply() {
+            if let Some(error) = reply.error {
+                eprintln!("angular-native: {error}");
+            }
+            self.mount.apply(&reply.frame);
+        }
+    }
+}
+
 /// # Safety
 /// El puntero tiene que venir de `nativeNew` y no haberse liberado.
 unsafe fn runtime<'a>(handle: jlong) -> Option<&'a mut AndroidRuntime> {
@@ -98,6 +126,7 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeEval(
 ) -> jint {
     let Some(runtime) = (unsafe { runtime(handle) }) else { return -1 };
     let Some((name, code)) = read_pair(&mut env, name, code) else { return -1 };
+    runtime.settle();
     report(runtime.worker.request(Request::Eval { name, code }).error)
 }
 
@@ -112,6 +141,7 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeReload(
 ) -> jint {
     let Some(runtime) = (unsafe { runtime(handle) }) else { return -1 };
     let Some((name, code)) = read_pair(&mut env, name, code) else { return -1 };
+    runtime.settle();
     // Las vistas se desmontan aquí, donde se puede tocar la jerarquía; el
     // árbol lo tira el worker.
     runtime.mount.clear();
@@ -128,6 +158,7 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeSetViewport(
     height: jfloat,
 ) {
     if let Some(runtime) = unsafe { runtime(handle) } {
+        runtime.settle();
         runtime.worker.request(Request::SetViewport(width, height));
     }
 }
@@ -142,18 +173,14 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeFrame(
 ) -> jint {
     let Some(runtime) = (unsafe { runtime(handle) }) else { return -1 };
 
-    let events = drain_events(&runtime.events);
-    let reply = runtime.worker.request(Request::Tick { now_ms, events });
-    let failed = reply.error.is_some();
-    if let Some(error) = reply.error {
-        eprintln!("angular-native: {error}");
+    // Primero se monta lo que el worker haya terminado; después se le manda el
+    // turno siguiente, y solo si no sigue ocupado.
+    let applied = runtime.pump();
+    if !runtime.worker.busy() {
+        let events = drain_events(&runtime.events);
+        runtime.worker.post(Request::Tick { now_ms, events });
     }
-    let applied = runtime.mount.apply(&reply.frame);
-    if failed {
-        -1
-    } else {
-        applied as jint
-    }
+    applied
 }
 
 /// Kotlin encola aquí lo que produce un `OnClickListener` o un scroll. El

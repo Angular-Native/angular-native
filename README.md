@@ -120,10 +120,15 @@ Es la forma rápida de depurar sin simulador, y es lo que usan los tres scripts.
   resultante lleva únicamente lo que cambió.
 - **Búfer binario, no llamadas sueltas.** Un `*ngFor` de 200 filas son ~1.200
   mutaciones. Con llamadas por mutación son 1.200 cruces de frontera; así es uno.
-- **El motor JS vive en su propio hilo.** No por paralelismo: por la pila.
+- **El motor JS vive en su propio hilo, y el de UI no lo espera.** Manda el
+  turno y monta lo que llegó del anterior; si Angular tarda, el scroll nativo
+  sigue yendo suave. Si el motor sigue ocupado no se le encola otro turno: la
+  cola crecería sin fin y cada frame montado sería más viejo que el anterior.
+  El hilo aparte no es por paralelismo, es por la pila.
   QuickJS necesita unos 4 MB para que el router de Angular complete una
   navegación, y el hilo principal de iOS tiene 1 MB que no se pueden cambiar.
-  En ese hilo van el motor, el árbol y el layout; en el de UI se queda lo único
+  Van al hilo del motor el árbol, el layout y la medición de texto —UIKit y
+  `StaticLayout` la admiten fuera del principal—; en el de UI se queda lo único
   que no puede salir de él, las vistas. Entre los dos solo viaja un `Frame`.
 - **JS no tiene hilo propio de reloj: tiene un turno por frame.** El `CADisplayLink` —o el
   `Choreographer`— llama a `tick()`, y ahí dentro corren temporizadores y
@@ -154,11 +159,9 @@ Es la forma rápida de depurar sin simulador, y es lo que usan los tres scripts.
 Cosas que se descubrieron construyendo esto y que hay que resolver antes de
 llamarlo listo para producción:
 
-- **El hilo de UI se bloquea esperando cada frame.** El motor ya está en su
-  hilo, pero el de UI pide y espera, así que no hay concurrencia real todavía:
-  solo se ganó la pila. El paso siguiente es que el hilo de sombra trabaje por
-  delante y el de UI monte el último frame listo, como hace Fabric. La frontera
-  ya está donde tiene que estar.
+- **Un frame de latencia.** El hilo de UI monta lo que el motor terminó en el
+  turno anterior. Es el precio de no bloquearse y lo mismo que hace Fabric,
+  pero se nota en la respuesta al toque.
 - **Ventana, no reciclado.** `VirtualList` monta las filas visibles y destruye
   las que salen; no reutiliza vistas como un `UITableView`. Reciclar exige
   reasignar el contexto de una vista de Angular ya creada.

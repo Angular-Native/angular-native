@@ -6,13 +6,17 @@
 //! iOS tiene 1 MB que no se pueden cambiar. Un hilo propio sí admite la pila
 //! que se le pida.
 //!
-//! El hilo de UI sigue mandando: pide un frame y espera la respuesta. No hay
-//! concurrencia real todavía, solo la pila. Convertirlo en asíncrono, con el
-//! hilo de sombra trabajando por delante del de UI, es el paso siguiente y la
-//! frontera ya está donde tiene que estar: entre las dos mitades solo viaja un
-//! `Frame`.
+//! Los `Tick` van sin esperar respuesta: el hilo de UI los manda y sigue, y
+//! monta el frame que llegue, que será el del turno anterior. Cuesta un frame
+//! de latencia y a cambio un turno de JS lento deja de congelar la interfaz —
+//! el scroll nativo sigue yendo suave mientras Angular piensa. Es lo mismo que
+//! hace Fabric.
+//!
+//! Las operaciones de control —evaluar, recargar, cambiar el viewport— sí
+//! esperan: son raras y el orden importa.
 
-use std::sync::mpsc::{Receiver, Sender};
+use std::cell::Cell;
+use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::thread::JoinHandle;
 
 use an_core::{Frame, TextMeasurer};
@@ -43,6 +47,10 @@ pub struct RuntimeWorker {
     requests: Sender<Request>,
     replies: Receiver<Reply>,
     handle: Option<JoinHandle<()>>,
+    /// Peticiones mandadas y todavía sin contestar. Sirve para no encolar un
+    /// `Tick` nuevo encima de uno que aún no terminó: si JS va lento, la cola
+    /// crecería sin fin y cada frame montado sería más viejo que el anterior.
+    in_flight: Cell<usize>,
 }
 
 impl RuntimeWorker {
@@ -149,22 +157,69 @@ impl RuntimeWorker {
                 requests: request_tx,
                 replies: reply_rx,
                 handle: Some(handle),
+                in_flight: Cell::new(0),
             }),
             Ok(Err(message)) => Err(JsError::Engine(message)),
             Err(_) => Err(JsError::Engine("el hilo del runtime murió al arrancar".to_owned())),
         }
     }
 
-    /// Manda y espera. El hilo de UI se bloquea, igual que cuando todo esto
-    /// corría en él.
-    pub fn request(&self, request: Request) -> Reply {
+    /// Manda sin esperar. Devuelve `false` si el worker ya está ocupado o no
+    /// responde; el llamante decide si le importa.
+    pub fn post(&self, request: Request) -> bool {
         if self.requests.send(request).is_err() {
+            return false;
+        }
+        self.in_flight.set(self.in_flight.get() + 1);
+        true
+    }
+
+    /// Respuesta lista, si la hay. No bloquea.
+    pub fn try_reply(&self) -> Option<Reply> {
+        match self.replies.try_recv() {
+            Ok(reply) => {
+                self.in_flight.set(self.in_flight.get().saturating_sub(1));
+                Some(reply)
+            }
+            Err(TryRecvError::Empty) => None,
+            Err(TryRecvError::Disconnected) => {
+                self.in_flight.set(0);
+                Some(Reply {
+                    error: Some("el hilo del runtime murió".to_owned()),
+                    ..Reply::default()
+                })
+            }
+        }
+    }
+
+    /// Espera a la siguiente respuesta pendiente.
+    pub fn wait_reply(&self) -> Option<Reply> {
+        if self.in_flight.get() == 0 {
+            return None;
+        }
+        let reply = self.replies.recv().unwrap_or_else(|_| Reply {
+            error: Some("el hilo del runtime murió".to_owned()),
+            ..Reply::default()
+        });
+        self.in_flight.set(self.in_flight.get().saturating_sub(1));
+        Some(reply)
+    }
+
+    pub fn busy(&self) -> bool {
+        self.in_flight.get() > 0
+    }
+
+    /// Manda y espera. Solo para operaciones de control: el llamante tiene que
+    /// haber vaciado antes lo que hubiera en vuelo, o recogerá la respuesta
+    /// equivocada.
+    pub fn request(&self, request: Request) -> Reply {
+        if !self.post(request) {
             return Reply {
                 error: Some("el hilo del runtime no responde".to_owned()),
                 ..Reply::default()
             };
         }
-        self.replies.recv().unwrap_or_else(|_| Reply {
+        self.wait_reply().unwrap_or_else(|| Reply {
             error: Some("el hilo del runtime murió".to_owned()),
             ..Reply::default()
         })

@@ -5,8 +5,9 @@
 //! grande, porque el principal de iOS tiene 1 MB y QuickJS necesita cuatro
 //! veces eso para que Angular navegue.
 //!
-//! Cada frame el hilo de UI pide y espera. Bloquearse no es peor que antes
-//! —todo esto corría aquí mismo— y a cambio deja de haber un techo de pila.
+//! El `Tick` de cada frame va sin esperar: se monta lo que haya llegado, que
+//! será del turno anterior. Cuesta un frame de latencia y a cambio un turno de
+//! JS lento ya no congela la interfaz.
 
 use std::ffi::{c_char, c_void, CStr};
 
@@ -27,6 +28,37 @@ pub struct AnRuntime {
     worker: RuntimeWorker,
     mount: MountSide<UikitHost>,
     events: EventQueue,
+    /// Operaciones montadas en el último frame que sí trajo trabajo.
+    last_applied: i32,
+}
+
+impl AnRuntime {
+    /// Monta lo que haya llegado del worker. No bloquea.
+    fn pump(&mut self) -> i32 {
+        let mut applied = 0;
+        while let Some(reply) = self.worker.try_reply() {
+            if let Some(error) = reply.error {
+                eprintln!("angular-native: {error}");
+                applied = -1;
+            }
+            let count = self.mount.apply(&reply.frame);
+            if applied >= 0 {
+                applied += count as i32;
+            }
+        }
+        applied
+    }
+
+    /// Vacía lo que quede en vuelo. Antes de una operación de control hay que
+    /// dejar el canal limpio, o la respuesta que se recoja será de otro.
+    fn settle(&mut self) {
+        while let Some(reply) = self.worker.wait_reply() {
+            if let Some(error) = reply.error {
+                eprintln!("angular-native: {error}");
+            }
+            self.mount.apply(&reply.frame);
+        }
+    }
 }
 
 /// # Safety
@@ -66,7 +98,12 @@ pub unsafe extern "C" fn an_runtime_new(
         }
     };
 
-    Box::into_raw(Box::new(AnRuntime { worker, mount: MountSide::new(host), events }))
+    Box::into_raw(Box::new(AnRuntime {
+        worker,
+        mount: MountSide::new(host),
+        events,
+        last_applied: 0,
+    }))
 }
 
 /// Evalúa un script. El bundle de la app es quien decide qué cargar, igual
@@ -86,6 +123,7 @@ pub unsafe extern "C" fn an_runtime_eval(
 ) -> i32 {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return -1 };
     let Some((name, code)) = (unsafe { read_pair(name, code) }) else { return -1 };
+    rt.settle();
     report(rt.worker.request(Request::Eval { name, code }).error)
 }
 
@@ -104,6 +142,7 @@ pub unsafe extern "C" fn an_runtime_reload(
 ) -> i32 {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return -1 };
     let Some((name, code)) = (unsafe { read_pair(name, code) }) else { return -1 };
+    rt.settle();
     // Las vistas se desmontan aquí, donde se puede tocar UIKit; el árbol lo
     // tira el worker.
     rt.mount.clear();
@@ -116,6 +155,7 @@ pub unsafe extern "C" fn an_runtime_reload(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_runtime_set_viewport(rt: *mut AnRuntime, width: f32, height: f32) {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return };
+    rt.settle();
     rt.worker.request(Request::SetViewport(width, height));
 }
 
@@ -131,18 +171,16 @@ pub unsafe extern "C" fn an_runtime_set_viewport(rt: *mut AnRuntime, width: f32,
 pub unsafe extern "C" fn an_runtime_frame(rt: *mut AnRuntime, now_ms: f64) -> i32 {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return -1 };
 
-    let events = drain_events(&rt.events);
-    let reply = rt.worker.request(Request::Tick { now_ms, events });
-    let failed = reply.error.is_some();
-    if let Some(error) = reply.error {
-        eprintln!("angular-native: {error}");
+    // Primero se monta lo que el worker haya terminado; después se le manda el
+    // turno siguiente. Si todavía está ocupado no se encola otro: la cola
+    // crecería sin fin y cada frame montado sería más viejo que el anterior.
+    let applied = rt.pump();
+    if !rt.worker.busy() {
+        let events = drain_events(&rt.events);
+        rt.worker.post(Request::Tick { now_ms, events });
     }
-    let applied = rt.mount.apply(&reply.frame);
-    if failed {
-        -1
-    } else {
-        applied as i32
-    }
+    rt.last_applied = applied;
+    applied
 }
 
 /// # Safety
