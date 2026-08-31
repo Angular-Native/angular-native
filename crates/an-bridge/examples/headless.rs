@@ -160,7 +160,7 @@ fn main() {
                 std::process::exit(1);
             }
         };
-        if let Err(error) = apply(&commands, &mut renderer.tree) {
+        if let Err(error) = apply(&commands, &mut renderer) {
             eprintln!("frame {frame}: búfer inválido: {error:?}");
             std::process::exit(1);
         }

@@ -22,6 +22,18 @@ impl AndroidLog {
     pub fn new(vm: JavaVM, host: GlobalRef) -> Rc<Self> {
         Rc::new(AndroidLog { vm, host })
     }
+
+    /// Otra referencia a la misma JavaVM. El puntero es estable durante toda la
+    /// vida del proceso; envolverlo otra vez es la forma soportada de
+    /// compartirla.
+    pub fn java_vm(&self) -> JavaVM {
+        unsafe { JavaVM::from_raw(self.vm.get_java_vm_pointer()) }
+            .expect("la JavaVM sigue viva mientras el proceso lo esté")
+    }
+
+    pub fn host_ref(&self) -> GlobalRef {
+        self.host.clone()
+    }
 }
 
 impl LogSink for AndroidLog {
@@ -65,7 +77,7 @@ pub fn redirect_stderr(sink: Rc<AndroidLog>) {
     // lector construye el suyo propio en vez de compartir el `Rc`.
     // La JavaVM es válida durante toda la vida del proceso; envolver el
     // puntero otra vez es la forma soportada de compartirla entre hilos.
-    let vm = unsafe { JavaVM::from_raw(sink.vm.get_java_vm_pointer()) }.ok();
+    let vm = Some(sink.java_vm());
     let host = sink.host.clone();
     std::thread::spawn(move || {
         let Some(vm) = vm else { return };

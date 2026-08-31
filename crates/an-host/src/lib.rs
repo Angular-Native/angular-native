@@ -3,10 +3,18 @@
 //! texto con la tipografía real del sistema).
 //!
 //! El resto del núcleo no sabe que existen UIKit ni Android.
+//!
+//! El trabajo está partido en dos mitades que pueden vivir en hilos distintos:
+//!
+//! - `ShadowSide` tiene el árbol, el layout y la medición. Produce `Frame`s.
+//! - `MountSide` tiene las vistas nativas. Consume `Frame`s.
+//!
+//! Entre las dos solo viaja `Frame`, que es `Send`. Es la misma separación que
+//! hace Fabric entre su hilo de sombra y el de UI, y es lo que permite meter el
+//! motor JS en un hilo con pila grande sin sacar UIKit del principal.
 
-use std::cell::RefCell;
 use std::collections::HashSet;
-use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use an_core::{Frame, MountOp, NodeId, NodeKind, PropValue, Rect, ShadowTree, TextMeasurer};
 
@@ -51,50 +59,40 @@ pub struct HostEvent {
 /// Cola de eventos nativos. La comparten el host, que empuja desde los
 /// callbacks de la plataforma, y el runtime, que la vacía al empezar el frame.
 ///
-/// Es `Rc` y no `Arc` a propósito: todo esto vive en el hilo de UI, y un
-/// `Mutex` aquí solo añadiría coste a un camino que nunca cruza hilos.
-pub type EventQueue = Rc<RefCell<Vec<HostEvent>>>;
+/// Es `Arc<Mutex<..>>` porque las dos puntas pueden estar en hilos distintos:
+/// los eventos nacen en el de UI y se consumen en el del motor.
+pub type EventQueue = Arc<Mutex<Vec<HostEvent>>>;
 
 pub fn new_event_queue() -> EventQueue {
-    Rc::new(RefCell::new(Vec::new()))
+    Arc::new(Mutex::new(Vec::new()))
 }
 
-/// Une shadow tree, medidor y host. Es lo que el shell de la plataforma
-/// instancia y conserva mientras la app vive.
-pub struct Renderer<H: HostRenderer, M: TextMeasurer> {
+pub fn push_event(queue: &EventQueue, event: HostEvent) {
+    queue.lock().expect("cola de eventos envenenada").push(event);
+}
+
+pub fn drain_events(queue: &EventQueue) -> Vec<HostEvent> {
+    std::mem::take(&mut *queue.lock().expect("cola de eventos envenenada"))
+}
+
+/// La mitad que piensa: árbol, layout y medición. No sabe nada de vistas.
+pub struct ShadowSide<M: TextMeasurer> {
     pub tree: ShadowTree,
-    host: H,
     measurer: M,
     viewport: (f32, f32),
-    events: EventQueue,
     /// Nodos suscritos a `layout`. Se lleva aquí y no en el host porque el
     /// marco lo calcula el core: así `onLayout` funciona igual en cualquier
     /// plataforma, sin que ninguna tenga que implementarlo.
     layout_listeners: HashSet<NodeId>,
 }
 
-impl<H: HostRenderer, M: TextMeasurer> Renderer<H, M> {
-    /// `events` tiene que ser la misma cola que se le dio al host, o los
-    /// eventos nativos nunca llegarán a JS.
-    pub fn new(host: H, measurer: M, viewport: (f32, f32), events: EventQueue) -> Self {
-        Renderer {
+impl<M: TextMeasurer> ShadowSide<M> {
+    pub fn new(measurer: M, viewport: (f32, f32)) -> Self {
+        ShadowSide {
             tree: ShadowTree::new(),
-            host,
             measurer,
             viewport,
-            events,
             layout_listeners: HashSet::new(),
-        }
-    }
-
-    /// Cambio de tamaño de pantalla o rotación: obliga a recalcular todo.
-    pub fn set_viewport(&mut self, viewport: (f32, f32)) {
-        if self.viewport != viewport {
-            self.viewport = viewport;
-            if let Some(root) = self.tree.root() {
-                let _ = self.tree.set_style(root, "width", &format!("{}", viewport.0));
-                let _ = self.tree.set_style(root, "height", &format!("{}", viewport.1));
-            }
         }
     }
 
@@ -102,22 +100,74 @@ impl<H: HostRenderer, M: TextMeasurer> Renderer<H, M> {
         self.viewport
     }
 
-    /// Un frame completo: layout, diff y montaje. Devuelve el número de ops
-    /// aplicadas, que es cero en la inmensa mayoría de frames.
-    pub fn render_frame(&mut self) -> Result<usize, an_core::tree::Error> {
-        let frame = self.tree.commit(self.viewport, &self.measurer)?;
-        let count = frame.ops.len();
-        if count > 0 {
-            self.apply(&frame);
-            self.host.flush();
+    /// Cambio de tamaño de pantalla o rotación: obliga a recalcular todo.
+    pub fn set_viewport(&mut self, viewport: (f32, f32)) {
+        if self.viewport == viewport {
+            return;
         }
-        Ok(count)
+        self.viewport = viewport;
+        if let Some(root) = self.tree.root() {
+            let _ = self.tree.set_style(root, "width", &format!("{}", viewport.0));
+            let _ = self.tree.set_style(root, "height", &format!("{}", viewport.1));
+        }
     }
 
-    fn apply(&mut self, frame: &Frame) {
-        // Los `onLayout` se acumulan y se encolan al final: dispararlos a mitad
-        // del montaje dejaría que JS viera un árbol a medio aplicar.
-        let mut pending_layout: Vec<(NodeId, Rect)> = Vec::new();
+    /// Tira el árbol. Tras esto la app tiene que volver a construirse desde
+    /// JS; es lo que hace la recarga en caliente.
+    pub fn reset(&mut self) {
+        self.tree = ShadowTree::new();
+        self.layout_listeners.clear();
+    }
+
+    /// Corre layout y diff. Devuelve las operaciones para el host y los
+    /// eventos `layout` que el propio core produce.
+    pub fn commit(&mut self) -> Result<(Frame, Vec<HostEvent>), an_core::tree::Error> {
+        let frame = self.tree.commit(self.viewport, &self.measurer)?;
+
+        let mut events = Vec::new();
+        for op in &frame.ops {
+            match op {
+                MountOp::SetListener { id, event, enabled } if event == "layout" => {
+                    if *enabled {
+                        self.layout_listeners.insert(*id);
+                    } else {
+                        self.layout_listeners.remove(id);
+                    }
+                }
+                MountOp::SetLayout { id, frame } if self.layout_listeners.contains(id) => {
+                    events.push(HostEvent {
+                        target: *id,
+                        name: "layout".to_owned(),
+                        payload: vec![
+                            ("x".to_owned(), PropValue::Number(frame.x as f64)),
+                            ("y".to_owned(), PropValue::Number(frame.y as f64)),
+                            ("width".to_owned(), PropValue::Number(frame.width as f64)),
+                            ("height".to_owned(), PropValue::Number(frame.height as f64)),
+                        ],
+                    });
+                }
+                _ => {}
+            }
+        }
+        Ok((frame, events))
+    }
+}
+
+/// La mitad que monta: vistas nativas y nada más. Vive en el hilo de UI.
+pub struct MountSide<H: HostRenderer> {
+    host: H,
+}
+
+impl<H: HostRenderer> MountSide<H> {
+    pub fn new(host: H) -> Self {
+        MountSide { host }
+    }
+
+    /// Aplica un frame. Devuelve cuántas operaciones tocó.
+    pub fn apply(&mut self, frame: &Frame) -> usize {
+        if frame.ops.is_empty() {
+            return 0;
+        }
         for op in &frame.ops {
             match op {
                 MountOp::Create { id, kind } => self.host.create(*id, *kind),
@@ -126,60 +176,24 @@ impl<H: HostRenderer, M: TextMeasurer> Renderer<H, M> {
                 MountOp::Remove { parent, child } => self.host.remove(*parent, *child),
                 MountOp::SetProp { id, key, value } => self.host.set_prop(*id, key, value),
                 MountOp::SetText { id, text } => self.host.set_text(*id, text),
+                // `layout` no es un evento de plataforma: lo emite el core.
+                MountOp::SetListener { event, .. } if event == "layout" => {}
                 MountOp::SetListener { id, event, enabled } => {
-                    if event == "layout" {
-                        if *enabled {
-                            self.layout_listeners.insert(*id);
-                        } else {
-                            self.layout_listeners.remove(id);
-                        }
-                        // No hay nada nativo que enganchar: lo emite el core.
-                        continue;
-                    }
                     self.host.set_listener(*id, event, *enabled)
                 }
-                MountOp::SetLayout { id, frame } => {
-                    self.host.set_layout(*id, *frame);
-                    if self.layout_listeners.contains(id) {
-                        pending_layout.push((*id, *frame));
-                    }
-                }
+                MountOp::SetLayout { id, frame } => self.host.set_layout(*id, *frame),
                 MountOp::SetContentSize { id, width, height } => {
                     self.host.set_content_size(*id, *width, *height)
                 }
                 MountOp::SetRoot { id } => self.host.set_root(*id),
             }
         }
-        for (id, frame) in pending_layout {
-            self.events.borrow_mut().push(HostEvent {
-                target: id,
-                name: "layout".to_owned(),
-                payload: vec![
-                    ("x".to_owned(), PropValue::Number(frame.x as f64)),
-                    ("y".to_owned(), PropValue::Number(frame.y as f64)),
-                    ("width".to_owned(), PropValue::Number(frame.width as f64)),
-                    ("height".to_owned(), PropValue::Number(frame.height as f64)),
-                ],
-            });
-        }
+        self.host.flush();
+        frame.ops.len()
     }
 
-    /// Tira el árbol y todas las vistas. Tras esto la app tiene que volver a
-    /// construirse desde JS; es lo que hace la recarga en caliente.
-    pub fn reset(&mut self) {
+    pub fn clear(&mut self) {
         self.host.clear();
-        self.layout_listeners.clear();
-        self.tree = ShadowTree::new();
-        self.events.borrow_mut().clear();
-    }
-
-    pub fn push_event(&mut self, event: HostEvent) {
-        self.events.borrow_mut().push(event);
-    }
-
-    /// La llama el runtime JS al empezar su tick.
-    pub fn drain_events(&mut self) -> Vec<HostEvent> {
-        std::mem::take(&mut *self.events.borrow_mut())
     }
 
     pub fn host(&self) -> &H {
@@ -188,6 +202,81 @@ impl<H: HostRenderer, M: TextMeasurer> Renderer<H, M> {
 
     pub fn host_mut(&mut self) -> &mut H {
         &mut self.host
+    }
+}
+
+/// Las dos mitades juntas en un hilo. Es lo que usan los tests y el renderer
+/// sin pantalla; las plataformas las separan.
+pub struct Renderer<H: HostRenderer, M: TextMeasurer> {
+    shadow: ShadowSide<M>,
+    mount: MountSide<H>,
+    events: EventQueue,
+}
+
+impl<H: HostRenderer, M: TextMeasurer> Renderer<H, M> {
+    /// `events` tiene que ser la misma cola que se le dio al host, o los
+    /// eventos nativos nunca llegarán a JS.
+    pub fn new(host: H, measurer: M, viewport: (f32, f32), events: EventQueue) -> Self {
+        Renderer {
+            shadow: ShadowSide::new(measurer, viewport),
+            mount: MountSide::new(host),
+            events,
+        }
+    }
+
+    pub fn set_viewport(&mut self, viewport: (f32, f32)) {
+        self.shadow.set_viewport(viewport);
+    }
+
+    pub fn viewport(&self) -> (f32, f32) {
+        self.shadow.viewport()
+    }
+
+    pub fn reset(&mut self) {
+        self.mount.clear();
+        self.shadow.reset();
+        self.events.lock().expect("cola envenenada").clear();
+    }
+
+    /// Un frame completo: layout, diff y montaje.
+    pub fn render_frame(&mut self) -> Result<usize, an_core::tree::Error> {
+        let (frame, layout_events) = self.shadow.commit()?;
+        let applied = self.mount.apply(&frame);
+        for event in layout_events {
+            push_event(&self.events, event);
+        }
+        Ok(applied)
+    }
+
+    pub fn push_event(&mut self, event: HostEvent) {
+        push_event(&self.events, event);
+    }
+
+    /// La llama el runtime JS al empezar su tick.
+    pub fn drain_events(&mut self) -> Vec<HostEvent> {
+        drain_events(&self.events)
+    }
+
+    pub fn host(&self) -> &H {
+        self.mount.host()
+    }
+
+    pub fn host_mut(&mut self) -> &mut H {
+        self.mount.host_mut()
+    }
+}
+
+impl<H: HostRenderer, M: TextMeasurer> std::ops::Deref for Renderer<H, M> {
+    type Target = ShadowTree;
+
+    fn deref(&self) -> &ShadowTree {
+        &self.shadow.tree
+    }
+}
+
+impl<H: HostRenderer, M: TextMeasurer> std::ops::DerefMut for Renderer<H, M> {
+    fn deref_mut(&mut self) -> &mut ShadowTree {
+        &mut self.shadow.tree
     }
 }
 

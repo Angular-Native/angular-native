@@ -9,7 +9,7 @@
 //! respuesta a un toque se ve en el mismo frame en que se procesa.
 
 use an_core::{NodeId, PropValue};
-use an_host::{EventQueue, HostEvent};
+use an_host::{push_event, EventQueue, HostEvent};
 use objc2::rc::Retained;
 use objc2::runtime::{ProtocolObject, Sel};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
@@ -20,7 +20,7 @@ use objc2_ui_kit::{
 };
 
 fn emit(queue: &EventQueue, target: NodeId, name: &str, payload: Vec<(String, PropValue)>) {
-    queue.borrow_mut().push(HostEvent { target, name: name.to_owned(), payload });
+    push_event(queue, HostEvent { target, name: name.to_owned(), payload });
 }
 
 pub struct TargetIvars {
@@ -44,14 +44,15 @@ define_class!(
         fn handle_gesture(&self, recognizer: &UIGestureRecognizer) {
             let ivars = self.ivars();
             let point = recognizer.locationInView(recognizer.view().as_deref());
-            ivars.queue.borrow_mut().push(HostEvent {
-                target: ivars.node,
-                name: ivars.name.to_owned(),
-                payload: vec![
+            emit(
+                &ivars.queue,
+                ivars.node,
+                ivars.name,
+                vec![
                     ("x".to_owned(), PropValue::Number(point.x)),
                     ("y".to_owned(), PropValue::Number(point.y)),
                 ],
-            });
+            );
         }
     }
 );

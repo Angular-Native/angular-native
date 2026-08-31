@@ -38,14 +38,12 @@ final class RootViewController: UIViewController {
     }
 
     /// El bundle de la app trae el JS, igual que el `main.jsbundle` de React
-    /// Native. Si falta, se cae al árbol de demostración construido en Rust:
-    /// así se distingue un fallo del puente de uno del renderer.
+    /// Native.
     private func loadBundleScript() {
         guard let path = Bundle.main.path(forResource: "main", ofType: "js"),
               let source = try? String(contentsOfFile: path, encoding: .utf8)
         else {
-            NSLog("angular-native: no hay main.js en el bundle, cargando la demo de Rust")
-            an_runtime_load_demo(runtime)
+            NSLog("angular-native: no hay main.js en el bundle")
             return
         }
         if an_runtime_eval(runtime, "main.js", source) != 0 {

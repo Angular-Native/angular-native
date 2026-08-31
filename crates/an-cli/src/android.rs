@@ -272,6 +272,9 @@ pub fn install_and_launch(workspace: &Workspace, apk: &Path) -> Result<()> {
     let sdk = Sdk::discover()?;
     let adb = sdk.adb();
     eprintln!("==> instalando");
+    // Mismo motivo que en iOS: instalar sobre una app en marcha no recarga el
+    // bundle nuevo.
+    let _ = Command::new(&adb).args(["shell", "am", "force-stop", PACKAGE]).output();
     run(
         workspace,
         &adb.to_string_lossy(),

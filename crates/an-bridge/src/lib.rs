@@ -9,8 +9,10 @@ pub mod modules;
 pub mod protocol;
 pub mod quickjs;
 pub mod runtime;
+pub mod worker;
 
 pub use modules::{ModuleRegistry, ModuleResult, NativeModule, Responder};
 pub use protocol::{apply, Encoder, ProtocolError};
 pub use quickjs::QuickJsRuntime;
+pub use worker::{Reply, Request, RuntimeWorker};
 pub use runtime::{JsError, JsRuntime, LogSink};

@@ -1,14 +1,17 @@
-//! Superficie C que consume el shell de Xcode. Cinco funciones: crear, cargar,
-//! redimensionar, pintar un frame y destruir.
+//! Superficie C que consume el shell de Xcode.
 //!
-//! Todas asumen hilo principal. `an_runtime_frame` es lo que llama el
-//! `CADisplayLink`: en la mayoría de los frames no hay nada que aplicar y
-//! devuelve 0 sin tocar UIKit.
+//! El hilo principal se queda con lo único que no puede salir de él: las
+//! vistas. El motor JS, el árbol y el layout viven en un hilo aparte con pila
+//! grande, porque el principal de iOS tiene 1 MB y QuickJS necesita cuatro
+//! veces eso para que Angular navegue.
+//!
+//! Cada frame el hilo de UI pide y espera. Bloquearse no es peor que antes
+//! —todo esto corría aquí mismo— y a cambio deja de haber un techo de pila.
 
 use std::ffi::{c_char, c_void, CStr};
 
-use an_bridge::{apply, JsRuntime, QuickJsRuntime};
-use an_host::{new_event_queue, Renderer};
+use an_bridge::{QuickJsRuntime, Request, RuntimeWorker};
+use an_host::{drain_events, new_event_queue, EventQueue, MountSide, ShadowSide};
 use objc2::rc::Retained;
 use objc2::MainThreadMarker;
 use objc2_ui_kit::UIView;
@@ -16,20 +19,14 @@ use objc2_ui_kit::UIView;
 use crate::host::UikitHost;
 use crate::measure::UikitMeasurer;
 
-/// Motor JS con los módulos nativos de esta plataforma ya dados de alta.
-fn new_js_runtime(mtm: MainThreadMarker) -> Result<QuickJsRuntime, an_bridge::JsError> {
-    let mut js = QuickJsRuntime::new()?;
-    js.register_module(Box::new(crate::modules::DeviceModule::new(mtm)));
-    Ok(js)
-}
-
-fn mtm_or_bail() -> MainThreadMarker {
-    MainThreadMarker::new().expect("el runtime solo se toca desde el hilo principal")
-}
+/// 8 MB. Medido: el router de Angular necesita algo más de 3 MB para completar
+/// una navegación, y con 2 MB la transición avanza siete eventos y se para.
+const RUNTIME_STACK: usize = 8 * 1024 * 1024;
 
 pub struct AnRuntime {
-    renderer: Renderer<UikitHost, UikitMeasurer>,
-    js: QuickJsRuntime,
+    worker: RuntimeWorker,
+    mount: MountSide<UikitHost>,
+    events: EventQueue,
 }
 
 /// # Safety
@@ -49,19 +46,27 @@ pub unsafe extern "C" fn an_runtime_new(
     let container: Retained<UIView> = unsafe {
         Retained::retain(container.cast::<UIView>()).expect("container no puede ser nil")
     };
-    // Host y renderer comparten la cola: el primero empuja desde los callbacks
-    // de UIKit, el segundo la vacía al empezar cada frame.
+
     let events = new_event_queue();
     let host = UikitHost::new(mtm, container, events.clone());
-    let renderer = Renderer::new(host, UikitMeasurer::new(), (width, height), events);
-    let js = match new_js_runtime(mtm) {
-        Ok(js) => js,
+    // Los datos del dispositivo se leen aquí, en el hilo principal, y viajan
+    // ya resueltos: UIDevice y UIScreen no se pueden tocar desde el worker.
+    let device = crate::modules::DeviceModule::capture(mtm);
+
+    let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
+        let mut js = QuickJsRuntime::new()?;
+        js.register_module(Box::new(device));
+        Ok((js, ShadowSide::new(UikitMeasurer::new(), (width, height))))
+    });
+    let worker = match worker {
+        Ok(worker) => worker,
         Err(error) => {
             eprintln!("angular-native: no arrancó el motor JS: {error}");
             return std::ptr::null_mut();
         }
     };
-    Box::into_raw(Box::new(AnRuntime { renderer, js }))
+
+    Box::into_raw(Box::new(AnRuntime { worker, mount: MountSide::new(host), events }))
 }
 
 /// Evalúa un script. El bundle de la app es quien decide qué cargar, igual
@@ -80,30 +85,14 @@ pub unsafe extern "C" fn an_runtime_eval(
     code: *const c_char,
 ) -> i32 {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return -1 };
-    if name.is_null() || code.is_null() {
-        return -1;
-    }
-    let (Ok(name), Ok(code)) = (
-        unsafe { CStr::from_ptr(name) }.to_str(),
-        unsafe { CStr::from_ptr(code) }.to_str(),
-    ) else {
-        eprintln!("angular-native: el script no es UTF-8 válido");
-        return -1;
-    };
-    match rt.js.eval(name, code) {
-        Ok(()) => 0,
-        Err(error) => {
-            eprintln!("angular-native: {error}");
-            -1
-        }
-    }
+    let Some((name, code)) = (unsafe { read_pair(name, code) }) else { return -1 };
+    report(rt.worker.request(Request::Eval { name, code }).error)
 }
 
 /// Tira la app y la levanta otra vez con código nuevo: vistas nativas fuera,
 /// motor JS nuevo, árbol vacío. Es lo que usa `an dev` al detectar un cambio.
 ///
-/// No conserva estado: un `signal` vuelve a su valor inicial. Preservarlo es
-/// otro problema, y bastante más grande.
+/// No conserva estado: un `signal` vuelve a su valor inicial.
 ///
 /// # Safety
 /// `rt` debe venir de `an_runtime_new`. `name` y `code`, cadenas C válidas.
@@ -113,28 +102,13 @@ pub unsafe extern "C" fn an_runtime_reload(
     name: *const c_char,
     code: *const c_char,
 ) -> i32 {
-    let Some(runtime) = (unsafe { rt.as_mut() }) else { return -1 };
-    runtime.renderer.reset();
-    match new_js_runtime(mtm_or_bail()) {
-        Ok(js) => runtime.js = js,
-        Err(error) => {
-            eprintln!("angular-native: no arrancó el motor JS: {error}");
-            return -1;
-        }
-    }
-    unsafe { an_runtime_eval(rt, name, code) }
-}
-
-/// Árbol de demostración construido desde Rust, sin pasar por JS. Sigue aquí
-/// porque permite aislar un fallo: si esto se ve y el script no, el problema
-/// está en el puente, no en el renderer.
-///
-/// # Safety
-/// `rt` debe venir de `an_runtime_new` y seguir vivo.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn an_runtime_load_demo(rt: *mut AnRuntime) {
-    let Some(rt) = (unsafe { rt.as_mut() }) else { return };
-    let _ = crate::build_demo(&mut rt.renderer.tree);
+    let Some(rt) = (unsafe { rt.as_mut() }) else { return -1 };
+    let Some((name, code)) = (unsafe { read_pair(name, code) }) else { return -1 };
+    // Las vistas se desmontan aquí, donde se puede tocar UIKit; el árbol lo
+    // tira el worker.
+    rt.mount.clear();
+    drain_events(&rt.events);
+    report(rt.worker.request(Request::Reload { name, code }).error)
 }
 
 /// # Safety
@@ -142,13 +116,12 @@ pub unsafe extern "C" fn an_runtime_load_demo(rt: *mut AnRuntime) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_runtime_set_viewport(rt: *mut AnRuntime, width: f32, height: f32) {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return };
-    rt.renderer.set_viewport((width, height));
+    rt.worker.request(Request::SetViewport(width, height));
 }
 
-/// Un frame completo, en este orden: eventos nativos hacia JS, turno de JS
-/// (temporizadores y microtareas), mutaciones aplicadas al árbol, layout y
-/// montaje. `now_ms` es la marca de tiempo del `CADisplayLink`, que es el
-/// único reloj que ve la app.
+/// Un frame completo: eventos nativos hacia JS, turno de JS, layout, y montaje
+/// aquí. `now_ms` es la marca de tiempo del `CADisplayLink`, que es el único
+/// reloj que ve la app.
 ///
 /// Devuelve el número de operaciones nativas aplicadas, o -1 si algo falló.
 ///
@@ -158,30 +131,17 @@ pub unsafe extern "C" fn an_runtime_set_viewport(rt: *mut AnRuntime, width: f32,
 pub unsafe extern "C" fn an_runtime_frame(rt: *mut AnRuntime, now_ms: f64) -> i32 {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return -1 };
 
-    let events = rt.renderer.drain_events();
-    if let Err(error) = rt.js.dispatch_events(&events) {
+    let events = drain_events(&rt.events);
+    let reply = rt.worker.request(Request::Tick { now_ms, events });
+    let failed = reply.error.is_some();
+    if let Some(error) = reply.error {
         eprintln!("angular-native: {error}");
-        return -1;
     }
-    match rt.js.tick(now_ms) {
-        Ok(commands) if commands.is_empty() => {}
-        Ok(commands) => {
-            if let Err(error) = apply(&commands, &mut rt.renderer.tree) {
-                eprintln!("angular-native: búfer de comandos inválido: {error:?}");
-                return -1;
-            }
-        }
-        Err(error) => {
-            eprintln!("angular-native: {error}");
-            return -1;
-        }
-    }
-    match rt.renderer.render_frame() {
-        Ok(count) => count as i32,
-        Err(error) => {
-            eprintln!("angular-native: el commit falló: {error:?}");
-            -1
-        }
+    let applied = rt.mount.apply(&reply.frame);
+    if failed {
+        -1
+    } else {
+        applied as i32
     }
 }
 
@@ -191,5 +151,26 @@ pub unsafe extern "C" fn an_runtime_frame(rt: *mut AnRuntime, now_ms: f64) -> i3
 pub unsafe extern "C" fn an_runtime_free(rt: *mut AnRuntime) {
     if !rt.is_null() {
         drop(unsafe { Box::from_raw(rt) });
+    }
+}
+
+/// # Safety
+/// Ambos punteros tienen que ser cadenas C válidas o nulos.
+unsafe fn read_pair(name: *const c_char, code: *const c_char) -> Option<(String, String)> {
+    if name.is_null() || code.is_null() {
+        return None;
+    }
+    let name = unsafe { CStr::from_ptr(name) }.to_str().ok()?;
+    let code = unsafe { CStr::from_ptr(code) }.to_str().ok()?;
+    Some((name.to_owned(), code.to_owned()))
+}
+
+fn report(error: Option<String>) -> i32 {
+    match error {
+        None => 0,
+        Some(message) => {
+            eprintln!("angular-native: {message}");
+            -1
+        }
     }
 }

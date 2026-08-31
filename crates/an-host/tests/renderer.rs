@@ -7,13 +7,13 @@ use an_host::{new_event_queue, HostEvent, RecordingHost, Renderer};
 fn monta_y_solo_repite_lo_que_cambia() {
     let mut renderer = Renderer::new(RecordingHost::default(), NaiveMeasurer, (320.0, 568.0), new_event_queue());
 
-    renderer.tree.create_node(1, NodeKind::View).unwrap();
-    renderer.tree.set_style(1, "width", "100%").unwrap();
-    renderer.tree.set_style(1, "height", "100%").unwrap();
-    renderer.tree.set_root(1).unwrap();
-    renderer.tree.create_node(2, NodeKind::View).unwrap();
-    renderer.tree.set_style(2, "height", "44").unwrap();
-    renderer.tree.insert_child(1, 2, 0).unwrap();
+    renderer.create_node(1, NodeKind::View).unwrap();
+    renderer.set_style(1, "width", "100%").unwrap();
+    renderer.set_style(1, "height", "100%").unwrap();
+    renderer.set_root(1).unwrap();
+    renderer.create_node(2, NodeKind::View).unwrap();
+    renderer.set_style(2, "height", "44").unwrap();
+    renderer.insert_child(1, 2, 0).unwrap();
 
     assert!(renderer.render_frame().unwrap() > 0);
     assert_eq!(renderer.render_frame().unwrap(), 0, "segundo frame debe ser vacío");

@@ -7,13 +7,17 @@ el layout y el montaje sobre **vistas nativas reales** los lleva Rust. Sin DOM,
 sin WebView, sin zone.js.
 
 ```text
-Angular (JS)  ──Renderer2──▶  __an_dom  ──▶  búfer binario  ──▶  ShadowTree (Rust)
-                                                                      │ commit
-                                                                taffy (layout)
-                                                                      │ diff
-                                                                Frame { MountOp[] }
-                                                                      ▼
-                                                    HostRenderer (UIKit / android.view)
+  hilo del motor                                        hilo de UI
+  ─────────────────────────────────────────────         ──────────────────────
+  Angular (JS)                                          CADisplayLink
+      │ Renderer2                                       Choreographer
+      ▼                                                       │ pide frame
+  __an_dom ──▶ búfer binario ──▶ ShadowTree                   ▼
+                                     │ commit           MountSide
+                               taffy (layout)                 │
+                                     │ diff                   ▼
+                               Frame { MountOp[] } ──────▶ HostRenderer
+                                                        (UIKit / android.view)
 ```
 
 Un componente Angular normal, sin nada especial salvo que los elementos son
@@ -116,7 +120,12 @@ Es la forma rápida de depurar sin simulador, y es lo que usan los tres scripts.
   resultante lleva únicamente lo que cambió.
 - **Búfer binario, no llamadas sueltas.** Un `*ngFor` de 200 filas son ~1.200
   mutaciones. Con llamadas por mutación son 1.200 cruces de frontera; así es uno.
-- **JS no tiene hilo, tiene un turno por frame.** El `CADisplayLink` —o el
+- **El motor JS vive en su propio hilo.** No por paralelismo: por la pila.
+  QuickJS necesita unos 4 MB para que el router de Angular complete una
+  navegación, y el hilo principal de iOS tiene 1 MB que no se pueden cambiar.
+  En ese hilo van el motor, el árbol y el layout; en el de UI se queda lo único
+  que no puede salir de él, las vistas. Entre los dos solo viaja un `Frame`.
+- **JS no tiene hilo propio de reloj: tiene un turno por frame.** El `CADisplayLink` —o el
   `Choreographer`— llama a `tick()`, y ahí dentro corren temporizadores y
   microtareas hasta agotarlas. El reloj de `setTimeout` es el del vsync, así que
   el tiempo de la app es determinista y un test puede simular diez segundos sin
@@ -145,13 +154,11 @@ Es la forma rápida de depurar sin simulador, y es lo que usan los tres scripts.
 Cosas que se descubrieron construyendo esto y que hay que resolver antes de
 llamarlo listo para producción:
 
-- **El motor JS necesita ~4 MB de pila.** El router de Angular encadena
-  diecisiete operadores de RxJS y la recursión de subscripción es profunda. El
-  hilo principal de iOS tiene 1 MB y no se puede cambiar: la solución real es
-  mover el motor y el árbol a un hilo propio —lo que hace React Native— y dejar
-  en el de UI solo el montaje. La costura ya existe: `Frame { MountOp[] }` es
-  serializable. Lo que hay que resolver con ella es la medición de texto, que
-  hoy pregunta a UIKit y tendría que pasar a CoreText, que sí es thread-safe.
+- **El hilo de UI se bloquea esperando cada frame.** El motor ya está en su
+  hilo, pero el de UI pide y espera, así que no hay concurrencia real todavía:
+  solo se ganó la pila. El paso siguiente es que el hilo de sombra trabaje por
+  delante y el de UI monte el último frame listo, como hace Fabric. La frontera
+  ya está donde tiene que estar.
 - **Ventana, no reciclado.** `VirtualList` monta las filas visibles y destruye
   las que salen; no reutiliza vistas como un `UITableView`. Reciclar exige
   reasignar el contexto de una vista de Angular ya creada.

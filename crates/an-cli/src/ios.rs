@@ -123,6 +123,13 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
         bail!("el simulador {device} no llegó a arrancar");
     }
 
+    // Cerrar antes de instalar. Instalar sobre una app en marcha deja la copia
+    // vieja corriendo y el bundle nuevo sin cargar: la app parece no haber
+    // cambiado. Falla con "no such process" si no estaba corriendo, que es lo
+    // normal, así que se descarta la salida.
+    let _ = Command::new("xcrun")
+        .args(["simctl", "terminate", &udid, BUNDLE_ID])
+        .output();
     let install = Command::new("xcrun")
         .args(["simctl", "install", &udid])
         .arg(&package.dir)
@@ -131,13 +138,6 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
     if !install.success() {
         bail!("la instalación en el simulador falló");
     }
-    // Terminar antes de lanzar: si la app ya corría, `launch` la deja como
-    // estaba y el bundle nuevo no se carga.
-    // Falla con "no such process" si no estaba corriendo, que es lo normal:
-    // se descarta la salida en vez de asustar con un error que no lo es.
-    let _ = Command::new("xcrun")
-        .args(["simctl", "terminate", &udid, BUNDLE_ID])
-        .output();
     let launch = Command::new("xcrun")
         .args(["simctl", "launch", &udid, BUNDLE_ID])
         .status()
