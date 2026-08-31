@@ -79,6 +79,23 @@ impl HostRenderer for TreeRecorder {
     }
 }
 
+/// Responde lo mismo que respondería iOS, con valores fijos.
+struct FakeDevice;
+
+an_bridge::native_module! {
+    FakeDevice as "device" {
+        fn info(&mut self, _args: ()) -> Result<serde_json::Value, String> {
+            Ok(serde_json::json!({
+                "platform": "headless",
+                "systemVersion": "0.0",
+                "model": "sin dispositivo",
+                "scale": 3.0,
+                "locale": "es-ES"
+            }))
+        }
+    }
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let path = args.next().unwrap_or_else(|| {
@@ -96,6 +113,9 @@ fn main() {
         .unwrap_or(QuickJsRuntime::DEFAULT_STACK_SIZE);
     let mut js = QuickJsRuntime::with_options(std::rc::Rc::new(an_bridge::runtime::StderrLog), stack)
         .expect("no arrancó el motor JS");
+    // Un `device` de mentira: permite probar el camino completo de un módulo
+    // nativo —promesa en JS, registro, respuesta, resolución— sin simulador.
+    js.register_module(Box::new(FakeDevice));
     if let Err(error) = js.eval(&path, &code) {
         eprintln!("{error}");
         std::process::exit(1);

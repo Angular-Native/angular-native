@@ -416,6 +416,47 @@
 
   global.__an_dom = dom
 
+  // ---------------------------------------------------------- módulos nativos
+  //
+  // Una llamada nativa nunca bloquea: se manda, se guarda el resolvedor, y la
+  // respuesta llega en este frame o en uno posterior. Es el mismo trato que el
+  // búfer de comandos, en la otra dirección.
+
+  const pendingCalls = new Map()
+
+  global.__an_native = {
+    call(module, method, args) {
+      return new Promise((resolve, reject) => {
+        let id
+        try {
+          id = native.invoke(module, method, JSON.stringify(args === undefined ? null : args))
+        } catch (error) {
+          reject(error)
+          return
+        }
+        pendingCalls.set(id, { resolve, reject })
+      })
+    }
+  }
+
+  global.__an_settle = function (id, ok, payload) {
+    const pending = pendingCalls.get(id)
+    if (!pending) return
+    pendingCalls.delete(id)
+    let value
+    try {
+      value = JSON.parse(payload)
+    } catch (error) {
+      pending.reject(new Error(`respuesta nativa ilegible: ${payload}`))
+      return
+    }
+    if (ok) {
+      pending.resolve(value)
+    } else {
+      pending.reject(new Error(String(value)))
+    }
+  }
+
   // --------------------------------------------------------------- ciclo de frame
 
   /// Eventos nativos, antes que los timers: lo que tocó el usuario en este

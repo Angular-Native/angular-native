@@ -5,10 +5,12 @@
 //! protocolo: JS acumula mutaciones en un búfer binario y lo entrega una vez
 //! por frame.
 
+pub mod modules;
 pub mod protocol;
 pub mod quickjs;
 pub mod runtime;
 
+pub use modules::{ModuleRegistry, ModuleResult, NativeModule, Responder};
 pub use protocol::{apply, Encoder, ProtocolError};
 pub use quickjs::QuickJsRuntime;
 pub use runtime::{JsError, JsRuntime, LogSink};

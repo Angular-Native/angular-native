@@ -20,10 +20,11 @@ check() {
 }
 
 echo "== kitchen"
-check 'TextInput#[0-9]+ \[16,42 361x40\]' 'el campo de texto se midió y se colocó'
-check 'ScrollView#[0-9]+ \[0,0 393x694\]' 'el ScrollView llena el hueco, no crece con su contenido'
+check 'TextInput#[0-9]+ \[16,70 361x40\]' 'el campo de texto se midió y se colocó'
+check '"headless 0.0 . es-ES"' 'el módulo nativo contestó y la promesa resolvió'
+check 'ScrollView#[0-9]+ \[0,0 393x666\]' 'el ScrollView llena el hueco, no crece con su contenido'
 check 'contenido 393x280000' 'el contentSize sale del layout: 5000 filas de 56'
-check '"fila número 20"' 'la ventana llega hasta la fila 20'
+check '"fila número 19"' 'la ventana llega hasta la última fila visible'
 if grep -qE -- '"fila número 40"' <<<"$OUTPUT"; then
   echo "  FALLO la ventana debería acabar mucho antes de la fila 40"
   fail=1

@@ -14,6 +14,7 @@ use an_host::HostEvent;
 use rquickjs::function::Func;
 use rquickjs::{CatchResultExt, Context, Ctx, Function, Object, Runtime, TypedArray};
 
+use crate::modules::{ModuleRegistry, NativeModule};
 use crate::runtime::{JsError, JsRuntime, LogSink, StderrLog};
 
 /// El prelude que convierte un intérprete pelado en algo utilizable.
@@ -27,6 +28,7 @@ pub struct QuickJsRuntime {
     log: Rc<dyn LogSink>,
     /// Rechazos vistos en este turno que todavía no tienen manejador.
     pending_rejections: Rc<RefCell<Vec<String>>>,
+    modules: Rc<RefCell<ModuleRegistry>>,
 }
 
 impl QuickJsRuntime {
@@ -58,6 +60,7 @@ impl QuickJsRuntime {
         runtime.set_max_stack_size(stack_size);
         let context = Context::full(&runtime).map_err(|e| JsError::Engine(e.to_string()))?;
         let commands: Rc<RefCell<Vec<u8>>> = Rc::new(RefCell::new(Vec::with_capacity(4096)));
+        let modules: Rc<RefCell<ModuleRegistry>> = Rc::new(RefCell::new(ModuleRegistry::new()));
         let start = Instant::now();
 
         context
@@ -94,6 +97,19 @@ impl QuickJsRuntime {
                             let bytes: &[u8] = data.as_ref();
                             let end = length.min(bytes.len());
                             sink.borrow_mut().extend_from_slice(&bytes[..end]);
+                        }),
+                    )
+                    .map_err(|e| JsError::Engine(e.to_string()))?;
+
+                let registry = modules.clone();
+                native
+                    .set(
+                        "invoke",
+                        // Devuelve el identificador de la llamada, no el
+                        // resultado: JS no bloquea nunca esperando a nativo.
+                        Func::from(move |module: String, method: String, args: String| {
+                            let parsed = serde_json::from_str(&args).unwrap_or(serde_json::Value::Null);
+                            registry.borrow_mut().invoke(&module, &method, parsed) as f64
                         }),
                     )
                     .map_err(|e| JsError::Engine(e.to_string()))?;
@@ -143,9 +159,39 @@ impl QuickJsRuntime {
             },
         )));
 
-        let mut this = QuickJsRuntime { context, runtime, commands, log, pending_rejections: pending };
+        let mut this =
+            QuickJsRuntime { context, runtime, commands, log, pending_rejections: pending, modules };
         this.eval("runtime.js", RUNTIME_JS)?;
         Ok(this)
+    }
+
+    /// Da de alta un módulo nativo. Tiene que hacerse antes de evaluar la app.
+    pub fn register_module(&mut self, module: Box<dyn NativeModule>) {
+        self.modules.borrow_mut().register(module);
+    }
+
+    /// Entrega a JS las respuestas de módulos que ya estén listas.
+    fn settle_module_calls(&mut self) -> Result<(), JsError> {
+        let answers = self.modules.borrow_mut().drain();
+        if answers.is_empty() {
+            return Ok(());
+        }
+        self.context.with(|ctx| -> Result<(), JsError> {
+            let settle: Function = ctx
+                .globals()
+                .get("__an_settle")
+                .map_err(|e| exception_message(&ctx, e))?;
+            for (id, result) in answers {
+                let (ok, payload) = match result {
+                    Ok(value) => (true, value.to_string()),
+                    Err(message) => (false, serde_json::Value::String(message).to_string()),
+                };
+                settle
+                    .call::<_, ()>((id as f64, ok, payload))
+                    .map_err(|e| exception_message(&ctx, e))?;
+            }
+            Ok(())
+        })
     }
 
     /// Vacía la cola de microtareas. Una promesa resuelta durante el frame
@@ -247,6 +293,9 @@ impl JsRuntime for QuickJsRuntime {
             tick.call::<_, ()>((now_ms,)).map_err(|e| exception_message(&ctx, e))
         })?;
 
+        // Las respuestas de módulos entran antes de vaciar microtareas, para
+        // que lo que dependa de ellas se resuelva en este mismo frame.
+        self.settle_module_calls()?;
         self.drain_microtasks()?;
 
         self.context.with(|ctx| -> Result<(), JsError> {

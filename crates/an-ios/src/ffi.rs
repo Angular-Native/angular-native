@@ -16,6 +16,17 @@ use objc2_ui_kit::UIView;
 use crate::host::UikitHost;
 use crate::measure::UikitMeasurer;
 
+/// Motor JS con los módulos nativos de esta plataforma ya dados de alta.
+fn new_js_runtime(mtm: MainThreadMarker) -> Result<QuickJsRuntime, an_bridge::JsError> {
+    let mut js = QuickJsRuntime::new()?;
+    js.register_module(Box::new(crate::modules::DeviceModule::new(mtm)));
+    Ok(js)
+}
+
+fn mtm_or_bail() -> MainThreadMarker {
+    MainThreadMarker::new().expect("el runtime solo se toca desde el hilo principal")
+}
+
 pub struct AnRuntime {
     renderer: Renderer<UikitHost, UikitMeasurer>,
     js: QuickJsRuntime,
@@ -43,7 +54,7 @@ pub unsafe extern "C" fn an_runtime_new(
     let events = new_event_queue();
     let host = UikitHost::new(mtm, container, events.clone());
     let renderer = Renderer::new(host, UikitMeasurer::new(), (width, height), events);
-    let js = match QuickJsRuntime::new() {
+    let js = match new_js_runtime(mtm) {
         Ok(js) => js,
         Err(error) => {
             eprintln!("angular-native: no arrancó el motor JS: {error}");
@@ -104,7 +115,7 @@ pub unsafe extern "C" fn an_runtime_reload(
 ) -> i32 {
     let Some(runtime) = (unsafe { rt.as_mut() }) else { return -1 };
     runtime.renderer.reset();
-    match QuickJsRuntime::new() {
+    match new_js_runtime(mtm_or_bail()) {
         Ok(js) => runtime.js = js,
         Err(error) => {
             eprintln!("angular-native: no arrancó el motor JS: {error}");

@@ -9,6 +9,7 @@ repository.workspace = true
 an-core.workspace = true
 an-host.workspace = true
 rquickjs = { version = "0.12", default-features = false, features = ["macro"] }
+serde_json = "1.0.151"
 
 # iOS no trae bindings pregenerados en rquickjs-sys: hay que generarlos con
 # bindgen, que en Mac usa el libclang de Xcode.

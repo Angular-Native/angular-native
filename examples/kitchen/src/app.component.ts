@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core'
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core'
+import { Device } from '@angular-native/platform'
 import { NATIVE_PRIMITIVES, VirtualList } from '@angular-native/primitives'
 
 interface Row {
@@ -26,6 +27,8 @@ interface Row {
         <Text [fontSize]="24" [fontWeight]="'bold'" [color]="'#f4f7ff'">
           {{ visible().length }} de {{ rows.length }}
         </Text>
+
+        <Text [fontSize]="13" [color]="'#6ee7b7'">{{ deviceLabel() }}</Text>
 
         <TextInput
           [style.height]="'40'"
@@ -59,6 +62,17 @@ export class AppComponent {
   }))
 
   readonly query = signal('')
+
+  /** Viene de un módulo nativo: la llamada no bloquea y llega en otro frame. */
+  private readonly device = signal<string | null>(null)
+  readonly deviceLabel = computed(() => this.device() ?? 'consultando el dispositivo…')
+
+  constructor() {
+    inject(Device)
+      .info()
+      .then((info) => this.device.set(`${info.platform} ${info.systemVersion} · ${info.locale}`))
+      .catch((error: unknown) => this.device.set(`sin datos del dispositivo: ${error}`))
+  }
 
   readonly visible = computed(() => {
     const needle = this.query().trim().toLowerCase()

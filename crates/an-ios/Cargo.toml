@@ -13,7 +13,9 @@ crate-type = ["staticlib", "rlib"]
 an-core.workspace = true
 an-host.workspace = true
 an-bridge = { path = "../an-bridge" }
+serde = { version = "1", features = ["derive"] }
 an-layout.workspace = true
+serde_json = "1.0.151"
 
 # UIKit solo existe en plataformas Apple móviles. Fuera de ellas el crate
 # compila vacío, para que `cargo test` del workspace siga funcionando en Mac.
@@ -30,7 +32,7 @@ objc2-ui-kit = { version = "0.3", default-features = false, features = [
   "UIFontDescriptor", "UIAccessibilityIdentification",
   "UIView", "UILabel", "UIImageView", "UIImage", "UIColor", "UIFont",
   "UIResponder", "UIScreen", "UIScrollView", "UITextField", "UIControl",
-  "UIGestureRecognizer", "UITapGestureRecognizer", "UITextInputTraits",
+  "UIGestureRecognizer", "UITapGestureRecognizer", "UITextInputTraits", "UIDevice",
   "NSStringDrawing", "NSParagraphStyle", "NSText", "NSAttributedString",
 ] }
 
