@@ -161,8 +161,13 @@ impl ShadowTree {
 
     /// Destruye el nodo y todo su subárbol. El host recibe un `Destroy` por
     /// nodo montable, hijos antes que padres.
+    /// Destruir es idempotente: un nodo que ya no está no es un error.
+    /// Angular puede mandar el borrado y la desvinculación en cualquier orden,
+    /// y un búfer que aborta a mitad deja la pantalla rota.
     pub fn destroy_node(&mut self, id: NodeId) -> Result<(), Error> {
-        self.node(id)?;
+        if self.nodes.get(id as usize).and_then(Option::as_ref).is_none() {
+            return Ok(());
+        }
         if let Some(parent) = self.node(id)?.parent {
             self.remove_child(parent, id)?;
         }
@@ -218,13 +223,13 @@ impl ShadowTree {
         Ok(())
     }
 
+    /// Igual que `destroy_node`: quitar algo que ya no cuelga de ahí no es un
+    /// error, es la misma situación final.
     pub fn remove_child(&mut self, parent: NodeId, child: NodeId) -> Result<(), Error> {
-        let position = self
-            .node(parent)?
-            .children
-            .iter()
-            .position(|c| *c == child)
-            .ok_or(Error::UnknownNode(child))?;
+        let Ok(node) = self.node(parent) else { return Ok(()) };
+        let Some(position) = node.children.iter().position(|c| *c == child) else {
+            return Ok(());
+        };
         self.node_mut(parent)?.children.remove(position);
         self.node_mut(child)?.parent = None;
 
@@ -296,8 +301,12 @@ impl ShadowTree {
         Ok(())
     }
 
+    /// Dar de baja un oyente de un nodo que ya no existe no es un error: es lo
+    /// que pasa siempre que se destruye una vista con suscripciones vivas, y
+    /// el orden en que llegan las dos cosas no está garantizado.
     pub fn set_listener(&mut self, id: NodeId, event: &str, enabled: bool) -> Result<(), Error> {
-        if !self.node(id)?.kind.is_mountable() {
+        let Ok(node) = self.node(id) else { return Ok(()) };
+        if !node.kind.is_mountable() {
             return Ok(());
         }
         self.pending.push(MountOp::SetListener { id, event: event.to_owned(), enabled });

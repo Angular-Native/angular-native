@@ -128,6 +128,85 @@
     }
   }
 
+  // ------------------------------------------------- APIs web que sí hacen falta
+  //
+  // El motor es un intérprete de ECMAScript pelado: no trae nada de la
+  // plataforma web. La mayoría de esas APIs no pintan nada aquí, pero unas
+  // pocas están en el camino de código de librerías que sí se usan. El router
+  // de Angular, sin ir más lejos, crea un `AbortController` por navegación, y
+  // como se suscribe tragándose los errores, su ausencia no da ningún fallo:
+  // simplemente no navega nunca.
+
+  global.queueMicrotask =
+    global.queueMicrotask ||
+    function (fn) {
+      Promise.resolve().then(fn)
+    }
+
+  class AbortSignal {
+    constructor() {
+      this.aborted = false
+      this.reason = undefined
+      this.onabort = null
+      this._listeners = []
+    }
+
+    addEventListener(type, listener) {
+      if (type === 'abort') this._listeners.push(listener)
+    }
+
+    removeEventListener(type, listener) {
+      if (type !== 'abort') return
+      const at = this._listeners.indexOf(listener)
+      if (at !== -1) this._listeners.splice(at, 1)
+    }
+
+    throwIfAborted() {
+      if (this.aborted) throw this.reason
+    }
+
+    _abort(reason) {
+      if (this.aborted) return
+      this.aborted = true
+      this.reason =
+        reason !== undefined ? reason : Object.assign(new Error('Aborted'), { name: 'AbortError' })
+      const event = { type: 'abort', target: this }
+      if (typeof this.onabort === 'function') this.onabort(event)
+      for (const listener of this._listeners.slice()) {
+        try {
+          typeof listener === 'function' ? listener(event) : listener.handleEvent(event)
+        } catch (error) {
+          console.error('listener de abort sin capturar:', error)
+        }
+      }
+    }
+
+    static abort(reason) {
+      const signal = new AbortSignal()
+      signal._abort(reason)
+      return signal
+    }
+
+    static timeout(ms) {
+      const signal = new AbortSignal()
+      setTimeout(() => signal._abort(Object.assign(new Error('Timeout'), { name: 'TimeoutError' })), ms)
+      return signal
+    }
+  }
+
+  class AbortController {
+    constructor() {
+      this.signal = new AbortSignal()
+    }
+
+    abort(reason) {
+      this.signal._abort(reason)
+    }
+  }
+
+  global.AbortSignal = AbortSignal
+  global.AbortController = AbortController
+
   // -------------------------------------------------------- búfer de comandos
 
   const OP = {

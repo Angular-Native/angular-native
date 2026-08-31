@@ -89,7 +89,13 @@ fn main() {
     let step: f64 = args.next().and_then(|v| v.parse().ok()).unwrap_or(1000.0);
 
     let code = std::fs::read_to_string(&path).expect("no se pudo leer el bundle");
-    let mut js = QuickJsRuntime::new().expect("no arrancó el motor JS");
+    // `AN_STACK` permite tantear el límite de pila que necesita una app.
+    let stack = std::env::var("AN_STACK")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(QuickJsRuntime::DEFAULT_STACK_SIZE);
+    let mut js = QuickJsRuntime::with_options(std::rc::Rc::new(an_bridge::runtime::StderrLog), stack)
+        .expect("no arrancó el motor JS");
     if let Err(error) = js.eval(&path, &code) {
         eprintln!("{error}");
         std::process::exit(1);

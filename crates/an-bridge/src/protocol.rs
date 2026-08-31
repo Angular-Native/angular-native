@@ -33,7 +33,9 @@ pub enum ProtocolError {
     UnknownKind { kind: u8, offset: usize },
     InvalidUtf8 { offset: usize },
     /// El core rechazó la mutación (nodo inexistente, id duplicado...).
-    Tree(an_core::tree::Error),
+    /// Lleva el opcode para que el fallo diga *qué* comando falló, no solo que
+    /// alguno lo hizo.
+    Tree { opcode: u8, offset: usize, error: an_core::tree::Error },
 }
 
 pub fn kind_from_byte(byte: u8) -> Option<NodeKind> {
@@ -179,7 +181,7 @@ pub fn apply(bytes: &[u8], tree: &mut ShadowTree) -> Result<usize, ProtocolError
             op::SET_ROOT => tree.set_root(reader.u32()?),
             other => return Err(ProtocolError::UnknownOpcode { opcode: other, offset: start }),
         };
-        result.map_err(ProtocolError::Tree)?;
+        result.map_err(|error| ProtocolError::Tree { opcode, offset: start, error })?;
         applied += 1;
     }
     Ok(applied)

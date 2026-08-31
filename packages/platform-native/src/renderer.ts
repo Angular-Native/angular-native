@@ -7,6 +7,7 @@ import {
   createTextNode,
   detach,
   dom,
+  markDestroyed,
   NativeNode
 } from './native-node'
 
@@ -43,6 +44,8 @@ export class NativeRenderer extends Renderer2 {
   }
 
   override destroyNode = (node: NativeNode): void => {
+    if (node.destroyed) return
+    markDestroyed(node)
     if (node.mounted) dom.destroyNode(node.id)
   }
 
@@ -80,11 +83,11 @@ export class NativeRenderer extends Renderer2 {
   }
 
   setAttribute(el: NativeNode, name: string, value: string): void {
-    if (el.mounted) dom.setProp(el.id, name, value)
+    if (el.mounted && !el.destroyed) dom.setProp(el.id, name, value)
   }
 
   removeAttribute(el: NativeNode, name: string): void {
-    if (el.mounted) dom.setProp(el.id, name, null)
+    if (el.mounted && !el.destroyed) dom.setProp(el.id, name, null)
   }
 
   /**
@@ -107,11 +110,11 @@ export class NativeRenderer extends Renderer2 {
   }
 
   private flushClasses(el: NativeNode, set: Set<string>): void {
-    if (el.mounted) dom.setProp(el.id, 'className', [...set].join(' '))
+    if (el.mounted && !el.destroyed) dom.setProp(el.id, 'className', [...set].join(' '))
   }
 
   setStyle(el: NativeNode, style: string, value: unknown, flags?: RendererStyleFlags2): void {
-    if (!el.mounted) return
+    if (!el.mounted || el.destroyed) return
     // `!important` no significa nada sin cascada: se ignora la bandera y se
     // aplica el valor, que es el único comportamiento posible aquí.
     void flags
@@ -119,16 +122,16 @@ export class NativeRenderer extends Renderer2 {
   }
 
   removeStyle(el: NativeNode, style: string): void {
-    if (el.mounted) dom.setStyle(el.id, style, '')
+    if (el.mounted && !el.destroyed) dom.setStyle(el.id, style, '')
   }
 
   setProperty(el: NativeNode, name: string, value: unknown): void {
-    if (el.mounted) dom.setProp(el.id, name, value as never)
+    if (el.mounted && !el.destroyed) dom.setProp(el.id, name, value as never)
   }
 
   /** `Renderer2.setValue` sobre un nodo de texto. */
   setValue(node: NativeNode, value: string): void {
-    if (node.kind === 'RawText') dom.setText(node.id, value)
+    if (node.kind === 'RawText' && !node.destroyed) dom.setText(node.id, value)
   }
 
   listen(
@@ -143,10 +146,15 @@ export class NativeRenderer extends Renderer2 {
       // (background, teclado) llegarán por un módulo nativo, no por aquí.
       return () => {}
     }
-    if (!target.mounted) return () => {}
-    return dom.listen(target.id, event, (payload) => {
+    if (!target.mounted || target.destroyed) return () => {}
+    const unlisten = dom.listen(target.id, event, (payload) => {
       callback(payload)
     })
+    // Angular suelta las suscripciones al destruir la vista, y para entonces
+    // el nodo ya no existe en el core.
+    return () => {
+      if (!target.destroyed) unlisten()
+    }
   }
 }
 

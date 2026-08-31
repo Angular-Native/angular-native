@@ -68,8 +68,11 @@ await esbuild.build({
   format: 'iife',
   platform: 'neutral',
   target: 'es2022',
-  mainFields: ['module', 'main'],
-  conditions: ['module'],
+  // `es2015` antes que `module`: rxjs publica en `module` una build ES5
+  // transpilada con helpers de tslib, y ahí es donde QuickJS se atraganta.
+  // Es la misma preferencia que aplica el CLI de Angular.
+  mainFields: ['es2015', 'module', 'main'],
+  conditions: ['es2015', 'module'],
   alias,
   minify: release,
   define: release ? { ngDevMode: 'false', ngJitMode: 'false' } : {},

@@ -24,6 +24,9 @@ pub struct QuickJsRuntime {
     context: Context,
     runtime: Runtime,
     commands: Rc<RefCell<Vec<u8>>>,
+    log: Rc<dyn LogSink>,
+    /// Rechazos vistos en este turno que todavía no tienen manejador.
+    pending_rejections: Rc<RefCell<Vec<String>>>,
 }
 
 impl QuickJsRuntime {
@@ -31,8 +34,28 @@ impl QuickJsRuntime {
         Self::with_log(Rc::new(StderrLog))
     }
 
+    /// Límite de pila del motor.
+    ///
+    /// El de fábrica de QuickJS se queda corto para Angular: una cadena de
+    /// doce operadores de RxJS ya lo agota, y el desbordamiento no lanza nada
+    /// visible — la suscripción simplemente no entrega valores. El router,
+    /// que encadena diecisiete, no llegaba a navegar nunca.
+    ///
+    /// El techo real no lo pone esto sino el hilo: el principal de iOS tiene
+    /// 1 MB y no se puede cambiar. Mover el motor a un hilo propio con pila
+    /// grande —lo que hace React Native— es la solución de verdad, y arrastra
+    /// mover con él el árbol y el layout.
+    /// Medido: el router de Angular necesita algo más de 3 MB para completar
+    /// una navegación. Con 2 MB la transición avanza siete eventos y se para.
+    pub const DEFAULT_STACK_SIZE: usize = 8 * 1024 * 1024;
+
     pub fn with_log(log: Rc<dyn LogSink>) -> Result<Self, JsError> {
+        Self::with_options(log, Self::DEFAULT_STACK_SIZE)
+    }
+
+    pub fn with_options(log: Rc<dyn LogSink>, stack_size: usize) -> Result<Self, JsError> {
         let runtime = Runtime::new().map_err(|e| JsError::Engine(e.to_string()))?;
+        runtime.set_max_stack_size(stack_size);
         let context = Context::full(&runtime).map_err(|e| JsError::Engine(e.to_string()))?;
         let commands: Rc<RefCell<Vec<u8>>> = Rc::new(RefCell::new(Vec::with_capacity(4096)));
         let start = Instant::now();
@@ -82,7 +105,45 @@ impl QuickJsRuntime {
             })
             .map_err(|e| e)?;
 
-        let mut this = QuickJsRuntime { context, runtime, commands };
+        // Una promesa rechazada sin `catch` desaparece sin dejar rastro en
+        // QuickJS. En un framework eso es inaceptable: media pila de Angular
+        // son promesas, y un fallo silencioso se manifiesta como una pantalla
+        // en blanco sin ninguna pista.
+        //
+        // El motor avisa en cuanto se rechaza, no al final del turno, y el
+        // `catch` puede engancharse después: Angular usa rechazos como control
+        // de flujo interno. Así que se apuntan y se reportan al cerrar el tick,
+        // descontando los que acabaron manejados.
+        let pending: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let tracked = pending.clone();
+        runtime.set_host_promise_rejection_tracker(Some(Box::new(
+            move |ctx, _promise, reason, is_handled| {
+                if is_handled {
+                    // Alguien le puso un `catch`: deja de ser un problema.
+                    tracked.borrow_mut().pop();
+                    return;
+                }
+                let text = match reason.as_exception() {
+                    Some(exception) => {
+                        let message =
+                            exception.message().unwrap_or_else(|| "sin mensaje".to_owned());
+                        match exception.stack() {
+                            Some(stack) => format!("{message}\n{stack}"),
+                            None => message,
+                        }
+                    }
+                    None => ctx
+                        .json_stringify(reason.clone())
+                        .ok()
+                        .flatten()
+                        .and_then(|s| s.to_string().ok())
+                        .unwrap_or_else(|| format!("{reason:?}")),
+                };
+                tracked.borrow_mut().push(text);
+            },
+        )));
+
+        let mut this = QuickJsRuntime { context, runtime, commands, log, pending_rejections: pending };
         this.eval("runtime.js", RUNTIME_JS)?;
         Ok(this)
     }
@@ -195,6 +256,10 @@ impl JsRuntime for QuickJsRuntime {
                 .map_err(|e| exception_message(&ctx, e))?;
             drain.call::<_, ()>(()).map_err(|e| exception_message(&ctx, e))
         })?;
+
+        for rejection in self.pending_rejections.borrow_mut().drain(..) {
+            self.log.log(3, &format!("promesa rechazada sin capturar: {rejection}"));
+        }
 
         Ok(std::mem::take(&mut *self.commands.borrow_mut()))
     }

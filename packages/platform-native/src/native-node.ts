@@ -36,6 +36,12 @@ const KINDS: Record<string, NativeKind> = {
 export class NativeNode {
   parent: NativeNode | null = null
   readonly children: NativeNode[] = []
+  /**
+   * Un nodo destruido no vuelve. Angular sigue soltando suscripciones después
+   * de destruir la vista —un `(press)` desengancha su gesto al morir— y esas
+   * operaciones llegarían al core apuntando a algo que ya no existe.
+   */
+  destroyed = false
 
   constructor(
     readonly id: number,
@@ -104,7 +110,22 @@ export function createCommentNode(): NativeNode {
   return new NativeNode(nextCommentId--, 'Comment')
 }
 
+/**
+ * Marca el nodo y todo lo que cuelga de él.
+ *
+ * El core destruye subárboles enteros de una vez, así que basta con que
+ * Angular pida borrar el padre para que los hijos dejen de existir allí. Si
+ * este lado no se entera, la baja de un `(press)` de un hijo llega después
+ * apuntando a un nodo que ya no está.
+ */
+export function markDestroyed(node: NativeNode): void {
+  if (node.destroyed) return
+  node.destroyed = true
+  for (const child of node.children) markDestroyed(child)
+}
+
 export function attach(parent: NativeNode, child: NativeNode, index: number): void {
+  if (child.destroyed || parent.destroyed) return
   if (child.parent) detach(child.parent, child)
   parent.children.splice(index, 0, child)
   child.parent = parent
@@ -118,7 +139,7 @@ export function detach(parent: NativeNode, child: NativeNode): void {
   if (at === -1) return
   parent.children.splice(at, 1)
   child.parent = null
-  if (child.mounted && parent.mounted) {
+  if (child.mounted && parent.mounted && !child.destroyed && !parent.destroyed) {
     __an_dom.removeChild(parent.id, child.id)
   }
 }
