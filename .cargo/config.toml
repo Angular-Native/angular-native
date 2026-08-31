@@ -1,0 +1,3 @@
+[alias]
+# `cargo an dev` en vez de `cargo run -q -p an-cli -- dev`.
+an = "run -q -p an-cli --"

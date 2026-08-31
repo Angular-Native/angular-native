@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core'
-import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
+import { NATIVE_PRIMITIVES, type NativePressEvent } from '@angular-native/primitives'
 
 /**
  * Un componente Angular normal. Lo único distinto es que los elementos son
@@ -19,9 +19,12 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
       <View [style.flexDirection]="'row'" [style.gap]="'12'">
         @for (card of cards; track card.color) {
           <View [style.flexGrow]="card.grow" [style.height]="'88'"
-                [backgroundColor]="card.color" [borderRadius]="12"></View>
+                [backgroundColor]="card.color" [borderRadius]="12"
+                (press)="onPress($event)"></View>
         }
       </View>
+
+      <Text [fontSize]="16" [color]="'#f4f7ff'">{{ tapLabel() }}</Text>
 
       <Text [fontSize]="16" [color]="'#9fb0d4'">
         Esto es una plantilla de Angular con señales, corriendo en QuickJS.
@@ -44,6 +47,19 @@ export class AppComponent {
 
   readonly seconds = signal(0)
   readonly label = computed(() => `segundos en marcha: ${this.seconds()}`)
+
+  readonly taps = signal(0)
+  readonly lastPoint = signal<NativePressEvent | null>(null)
+  readonly tapLabel = computed(() => {
+    const point = this.lastPoint()
+    if (!point) return 'toca una tarjeta'
+    return `toques: ${this.taps()} (último en ${Math.round(point.x)}, ${Math.round(point.y)})`
+  })
+
+  onPress(event: NativePressEvent): void {
+    this.taps.update((value) => value + 1)
+    this.lastPoint.set(event)
+  }
 
   constructor() {
     setInterval(() => this.seconds.update((value) => value + 1), 1000)

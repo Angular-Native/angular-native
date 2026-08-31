@@ -13,6 +13,9 @@ AnRuntime *an_runtime_new(void *container, float width, float height);
 /// Evalúa un script. 0 si fue bien, -1 si JS lanzó.
 int32_t an_runtime_eval(AnRuntime *rt, const char *name, const char *code);
 
+/// Recarga en caliente: descarta vistas, motor y árbol, y evalúa código nuevo.
+int32_t an_runtime_reload(AnRuntime *rt, const char *name, const char *code);
+
 /// Árbol de demostración construido desde Rust, para aislar fallos del puente.
 void an_runtime_load_demo(AnRuntime *rt);
 

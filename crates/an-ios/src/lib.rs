@@ -6,6 +6,8 @@
 
 mod color;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+mod events;
+#[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod ffi;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod host;

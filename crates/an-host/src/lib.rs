@@ -4,6 +4,9 @@
 //!
 //! El resto del núcleo no sabe que existen UIKit ni Android.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use an_core::{Frame, MountOp, NodeId, NodeKind, PropValue, Rect, ShadowTree, TextMeasurer};
 
 /// Lo implementa cada plataforma sobre sus vistas nativas.
@@ -22,6 +25,10 @@ pub trait HostRenderer {
     fn set_root(&mut self, id: NodeId);
     /// Se llama una vez por frame, después de aplicar todas las ops.
     fn flush(&mut self) {}
+
+    /// Desmonta todo. Solo la usa la recarga en caliente: el árbol de JS se va
+    /// a reconstruir de cero y las vistas actuales ya no le corresponden.
+    fn clear(&mut self) {}
 }
 
 /// Evento nativo de vuelta hacia JS. El host los encola; el runtime los drena
@@ -35,6 +42,17 @@ pub struct HostEvent {
     pub payload: Vec<(String, PropValue)>,
 }
 
+/// Cola de eventos nativos. La comparten el host, que empuja desde los
+/// callbacks de la plataforma, y el runtime, que la vacía al empezar el frame.
+///
+/// Es `Rc` y no `Arc` a propósito: todo esto vive en el hilo de UI, y un
+/// `Mutex` aquí solo añadiría coste a un camino que nunca cruza hilos.
+pub type EventQueue = Rc<RefCell<Vec<HostEvent>>>;
+
+pub fn new_event_queue() -> EventQueue {
+    Rc::new(RefCell::new(Vec::new()))
+}
+
 /// Une shadow tree, medidor y host. Es lo que el shell de la plataforma
 /// instancia y conserva mientras la app vive.
 pub struct Renderer<H: HostRenderer, M: TextMeasurer> {
@@ -42,12 +60,14 @@ pub struct Renderer<H: HostRenderer, M: TextMeasurer> {
     host: H,
     measurer: M,
     viewport: (f32, f32),
-    events: Vec<HostEvent>,
+    events: EventQueue,
 }
 
 impl<H: HostRenderer, M: TextMeasurer> Renderer<H, M> {
-    pub fn new(host: H, measurer: M, viewport: (f32, f32)) -> Self {
-        Renderer { tree: ShadowTree::new(), host, measurer, viewport, events: Vec::new() }
+    /// `events` tiene que ser la misma cola que se le dio al host, o los
+    /// eventos nativos nunca llegarán a JS.
+    pub fn new(host: H, measurer: M, viewport: (f32, f32), events: EventQueue) -> Self {
+        Renderer { tree: ShadowTree::new(), host, measurer, viewport, events }
     }
 
     /// Cambio de tamaño de pantalla o rotación: obliga a recalcular todo.
@@ -95,13 +115,21 @@ impl<H: HostRenderer, M: TextMeasurer> Renderer<H, M> {
         }
     }
 
+    /// Tira el árbol y todas las vistas. Tras esto la app tiene que volver a
+    /// construirse desde JS; es lo que hace la recarga en caliente.
+    pub fn reset(&mut self) {
+        self.host.clear();
+        self.tree = ShadowTree::new();
+        self.events.borrow_mut().clear();
+    }
+
     pub fn push_event(&mut self, event: HostEvent) {
-        self.events.push(event);
+        self.events.borrow_mut().push(event);
     }
 
     /// La llama el runtime JS al empezar su tick.
     pub fn drain_events(&mut self) -> Vec<HostEvent> {
-        std::mem::take(&mut self.events)
+        std::mem::take(&mut *self.events.borrow_mut())
     }
 
     pub fn host(&self) -> &H {

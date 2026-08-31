@@ -27,7 +27,7 @@ Tres hilos: JS (lógica), core Rust (árbol, layout, diff), UI (vistas nativas).
 | `an-host` | Traits `HostRenderer` y `TextMeasurer`, y el `Renderer` que los une |
 | `an-ios` | Host UIKit, medidor de texto y superficie C para el shell |
 | `an-bridge` | Motor JS (QuickJS) y protocolo binario de comandos |
-| `an-cli` | Dev server, bundling y HMR (pendiente) |
+| `an-cli` | La herramienta `an`: build, ios y servidor de desarrollo |
 
 | Paquete npm | Qué hace |
 |---|---|
@@ -40,9 +40,8 @@ Tres hilos: JS (lógica), core Rust (árbol, layout, diff), UI (vistas nativas).
 - [x] **Fase 0** — Núcleo Rust: shadow tree, layout flexbox, diff incremental, tests
 - [x] **Fase 1** — Host iOS con UIKit, medición de texto real y app en el simulador
 - [x] **Fase 2** — Motor JS embebido, protocolo binario y `main.js` en el bundle
-- [x] **Fase 3** — Plataforma Angular: `Renderer2`, primitivas tipadas, AOT y zoneless
-  - [ ] Eventos: gestos nativos de vuelta hacia `(press)`
-- [ ] **Fase 4** — CLI, dev server y HMR
+- [x] **Fase 3** — Plataforma Angular: `Renderer2`, primitivas tipadas, AOT, zoneless y eventos
+- [x] **Fase 4** — CLI `an`: build, ios y recarga en caliente
 - [ ] **Fase 5** — ScrollView, TextInput, listas recicladas, router, Android
 
 ## Una app
@@ -54,6 +53,7 @@ Tres hilos: JS (lógica), core Rust (árbol, layout, diff), UI (vistas nativas).
   template: `
     <View [style.gap]="'16'" [backgroundColor]="'#0b1020'">
       <Text [fontSize]="28" [color]="'#f4f7ff'">angular-native</Text>
+      <View [backgroundColor]="'#1e2a4a'" (press)="onPress($event)"></View>
       @if (seconds() >= 3) {
         <Text [fontSize]="14">han pasado {{ seconds() }} segundos</Text>
       }
@@ -99,6 +99,9 @@ distinto es que `<View>` y `<Text>` acaban siendo `UIView` y `UILabel`.
   propiedades: `[bakcgroundColor]` con errata pasaría el compilador y fallaría
   en silencio en el dispositivo. Con directivas cada prop es un `@Input`
   declarado, comprobado y autocompletado.
+- **Los eventos se registran solo si la plantilla los pide.** `(press)` es una
+  salida de la directiva sobre un observable frío: el `UIGestureRecognizer` se
+  engancha al suscribirse. Una vista que nadie escucha no paga nada.
 - **Nada de `@angular/platform-browser`.** Arrastra `DomAdapter`,
   `DomRendererFactory2` y el sanitizador de HTML: todo asume que existe un DOM.
   La plataforma propia son ~60 líneas.
@@ -106,15 +109,24 @@ distinto es que `<View>` y `<Text>` acaban siendo `UIView` y `UILabel`.
 ## Desarrollo
 
 ```bash
+cargo an dev                  # compila, lanza en el simulador y recarga al guardar
+cargo an ios                  # una sola vez, sin vigilar
+cargo an build --release      # solo el bundle: 276 KB frente a 933 KB en debug
+
 cargo test                    # núcleo Rust, sin simulador ni Xcode
 ./scripts/check-angular.sh    # la cadena entera: ngc, esbuild, QuickJS, taffy
-./scripts/run-ios.sh          # todo lo anterior, y además lo lanza en el simulador
-./scripts/run-ios.sh examples/hello      # otra app, o un .js suelto
 cargo run -p an-bridge --example headless -- build/bundle/hello-angular/main.js 6
 ```
 
-El `headless` evalúa un bundle, avanza frames con un reloj falso e imprime el
-árbol resuelto. Es la forma rápida de depurar el lado JS sin simulador.
+`an dev` vigila las fuentes, recompila el bundle y avisa a la app por
+WebSocket; la app se lo descarga y se reinicia sola, sin volver a pasar por
+Xcode. La recarga es completa: el estado se pierde. Preservarlo —el *fast
+refresh* de React Native— exige saber qué componentes cambiaron y reconciliar
+el árbol, y es un proyecto en sí mismo.
+
+El `headless` evalúa un bundle, avanza frames con un reloj falso, simula un
+toque e imprime el árbol resuelto. Es la forma rápida de depurar el lado JS
+sin simulador.
 
 `run-ios.sh` no usa `.xcodeproj`: compila el core con `cargo`, enlaza el shell
 Swift con `swiftc` contra el `staticlib`, arma el `.app` a mano y lo instala con

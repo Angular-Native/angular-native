@@ -22,6 +22,12 @@
     <true/>
     <key>MinimumOSVersion</key>
     <string>17.0</string>
+    <!-- El servidor de desarrollo habla HTTP plano contra localhost. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>UILaunchScreen</key>
     <dict/>
     <key>UISupportedInterfaceOrientations</key>

@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use an_core::{NodeId, NodeKind, PropValue, Rect};
-use an_host::HostRenderer;
+use an_host::{EventQueue, HostRenderer};
 use objc2::rc::Retained;
 use objc2::MainThreadMarker;
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
@@ -52,22 +52,25 @@ pub struct UikitHost {
     /// Fuente pendiente por nodo: `fontSize` y `fontWeight` llegan en props
     /// separadas y hay que reconstruir la `UIFont` con las dos.
     fonts: HashMap<NodeId, an_layout::FontSpec>,
-    /// Eventos suscritos. Todavía no se enganchan gestos: llega en la fase de
-    /// eventos, cuando exista el puente de vuelta hacia JS.
-    listeners: HashMap<NodeId, Vec<String>>,
+    /// Gestos vivos, indexados por nodo y evento. Se guardan porque hay que
+    /// poder quitarlos: un `@if` que desmonta su rama destruye la vista, pero
+    /// un `(press)` que deja de estar bindeado no.
+    gestures: HashMap<(NodeId, String), crate::events::AttachedGesture>,
+    events: EventQueue,
 }
 
 impl UikitHost {
     /// # Safety
     /// `container` tiene que ser un `UIView` vivo y hay que llamar desde el
     /// hilo principal.
-    pub fn new(mtm: MainThreadMarker, container: Retained<UIView>) -> Self {
+    pub fn new(mtm: MainThreadMarker, container: Retained<UIView>, events: EventQueue) -> Self {
         UikitHost {
             mtm,
             container,
             views: HashMap::new(),
             fonts: HashMap::new(),
-            listeners: HashMap::new(),
+            gestures: HashMap::new(),
+            events,
         }
     }
 
@@ -139,7 +142,7 @@ impl HostRenderer for UikitHost {
             view.as_view().removeFromSuperview();
         }
         self.fonts.remove(&id);
-        self.listeners.remove(&id);
+        self.gestures.retain(|(node, _), _| *node != id);
     }
 
     fn insert(&mut self, parent: NodeId, child: NodeId, index: u32) {
@@ -255,13 +258,24 @@ impl HostRenderer for UikitHost {
     }
 
     fn set_listener(&mut self, id: NodeId, event: &str, enabled: bool) {
-        let entry = self.listeners.entry(id).or_default();
-        match enabled {
-            true if !entry.iter().any(|e| e == event) => entry.push(event.to_owned()),
-            false => entry.retain(|e| e != event),
-            _ => {}
+        let key = (id, event.to_owned());
+        let Some(view) = self.views.get(&id) else { return };
+        let native = view.as_view();
+
+        if !enabled {
+            if let Some(gesture) = self.gestures.remove(&key) {
+                gesture.detach(native);
+            }
+            return;
         }
-        // TODO(fase 3): enganchar UIGestureRecognizer y encolar `HostEvent`.
+        if self.gestures.contains_key(&key) {
+            return;
+        }
+        if let Some(gesture) =
+            crate::events::attach(self.mtm, native, id, event, self.events.clone())
+        {
+            self.gestures.insert(key, gesture);
+        }
     }
 
     fn set_layout(&mut self, id: NodeId, frame: Rect) {
@@ -270,6 +284,15 @@ impl HostRenderer for UikitHost {
             origin: CGPoint { x: frame.x as f64, y: frame.y as f64 },
             size: CGSize { width: frame.width as f64, height: frame.height as f64 },
         });
+    }
+
+    fn clear(&mut self) {
+        for view in self.views.values() {
+            view.as_view().removeFromSuperview();
+        }
+        self.views.clear();
+        self.fonts.clear();
+        self.gestures.clear();
     }
 
     fn set_root(&mut self, id: NodeId) {

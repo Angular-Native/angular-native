@@ -1,4 +1,16 @@
 import { Directive, ElementRef, inject, Input, Renderer2 } from '@angular/core'
+import { outputFromObservable } from '@angular/core/rxjs-interop'
+import { Observable } from 'rxjs'
+
+/**
+ * Carga de un `(press)`. Las coordenadas van en puntos y son relativas a la
+ * vista que recibió el toque.
+ *
+ */
+export interface NativePressEvent {
+  x: number
+  y: number
+}
 
 /**
  * Primitivas nativas como directivas.
@@ -19,6 +31,28 @@ export abstract class NativeVisual {
   protected set(name: string, value: unknown): void {
     this.renderer.setProperty(this.node, name, value ?? null)
   }
+
+  /**
+   * Un gesto que solo existe si la plantilla lo pide.
+   *
+   * El observable es frío: el `UIGestureRecognizer` se engancha al
+   * suscribirse y se suelta al destruir la vista. Angular suscribe una salida
+   * únicamente cuando hay un `(press)` bindeado, así que una vista que nadie
+   * escucha no paga nada. Declararlo como evento de elemento habría dado el
+   * mismo coste, pero `$event` sería `Event` y habría que castear en cada
+   * plantilla.
+   */
+  protected nativeEvent<T>(name: string): Observable<T> {
+    return new Observable<T>((subscriber) => {
+      const unlisten = this.renderer.listen(this.node, name, (payload) => {
+        subscriber.next(payload as T)
+      })
+      return () => unlisten()
+    })
+  }
+
+  readonly press = outputFromObservable(this.nativeEvent<NativePressEvent>('press'))
+  readonly doublePress = outputFromObservable(this.nativeEvent<NativePressEvent>('doublePress'))
 
   @Input() set backgroundColor(value: string | null) {
     this.set('backgroundColor', value)

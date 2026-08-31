@@ -30,6 +30,7 @@ objc2-ui-kit = { version = "0.3", default-features = false, features = [
   "UIFontDescriptor", "UIAccessibilityIdentification",
   "UIView", "UILabel", "UIImageView", "UIImage", "UIColor", "UIFont",
   "UIResponder", "UIScreen", "UIScrollView", "UITextField", "UIControl",
+  "UIGestureRecognizer", "UITapGestureRecognizer",
   "NSStringDrawing", "NSParagraphStyle", "NSText", "NSAttributedString",
 ] }
 

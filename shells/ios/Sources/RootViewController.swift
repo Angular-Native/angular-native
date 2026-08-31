@@ -5,6 +5,7 @@ import UIKit
 final class RootViewController: UIViewController {
     private var runtime: OpaquePointer?
     private var displayLink: CADisplayLink?
+    private var devClient: DevClient?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -27,6 +28,8 @@ final class RootViewController: UIViewController {
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
         displayLink = link
+
+        connectDevServer()
     }
 
     override func viewDidLayoutSubviews() {
@@ -48,6 +51,18 @@ final class RootViewController: UIViewController {
         if an_runtime_eval(runtime, "main.js", source) != 0 {
             NSLog("angular-native: main.js lanzó al evaluarse")
         }
+    }
+
+    /// Solo existe si el `.app` lo armó `an dev`.
+    private func connectDevServer() {
+        devClient = DevClient(bundle: .main) { [weak self] source in
+            guard let self, let runtime = self.runtime else { return }
+            NSLog("angular-native: recargando")
+            if an_runtime_reload(runtime, "main.js", source) != 0 {
+                NSLog("angular-native: el bundle recargado lanzó al evaluarse")
+            }
+        }
+        devClient?.connect()
     }
 
     @objc private func tick(_ link: CADisplayLink) {

@@ -9,7 +9,8 @@
 use std::collections::HashMap;
 
 use an_bridge::{apply, JsRuntime, QuickJsRuntime};
-use an_core::{MountOp, NaiveMeasurer, Rect, ShadowTree};
+use an_core::{MountOp, NaiveMeasurer, PropValue, Rect, ShadowTree};
+use an_host::HostEvent;
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -34,9 +35,31 @@ fn main() {
     let mut parents: HashMap<u32, u32> = HashMap::new();
     let mut kinds: HashMap<u32, String> = HashMap::new();
     let mut root = None;
+    // Nodos que registraron un `press`, para poder simular un toque sin
+    // simulador y comprobar el viaje de vuelta hasta Angular.
+    let mut pressable: Vec<u32> = Vec::new();
+    let mut tapped = false;
 
     for frame in 0..frames {
         let now = frame as f64 * step;
+
+        // A mitad de la ejecución, un toque en el primer nodo que escuche.
+        if !tapped && frame >= frames / 2 {
+            if let Some(target) = pressable.first().copied() {
+                println!("-- toque simulado en #{target}");
+                let event = HostEvent {
+                    target,
+                    name: "press".to_owned(),
+                    payload: vec![
+                        ("x".to_owned(), PropValue::Number(40.0)),
+                        ("y".to_owned(), PropValue::Number(20.0)),
+                    ],
+                };
+                js.dispatch_events(&[event]).expect("despacho de eventos");
+                tapped = true;
+            }
+        }
+
         let commands = match js.tick(now) {
             Ok(commands) => commands,
             Err(error) => {
@@ -65,6 +88,13 @@ fn main() {
                     kinds.insert(*id, format!("{kind:?}"));
                 }
                 MountOp::SetRoot { id } => root = Some(*id),
+                MountOp::SetListener { id, event, enabled } if event == "press" => {
+                    if *enabled {
+                        pressable.push(*id);
+                    } else {
+                        pressable.retain(|node| node != id);
+                    }
+                }
                 _ => {}
             }
         }

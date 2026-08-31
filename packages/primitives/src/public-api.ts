@@ -1,3 +1,4 @@
+export type { NativePressEvent } from './primitives'
 export {
   Image,
   NATIVE_PRIMITIVES,

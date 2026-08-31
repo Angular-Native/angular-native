@@ -1,11 +1,11 @@
 //! El lazo completo: mutaciones, commit, y ops llegando al host.
 
 use an_core::{NaiveMeasurer, NodeKind};
-use an_host::{HostEvent, RecordingHost, Renderer};
+use an_host::{new_event_queue, HostEvent, RecordingHost, Renderer};
 
 #[test]
 fn monta_y_solo_repite_lo_que_cambia() {
-    let mut renderer = Renderer::new(RecordingHost::default(), NaiveMeasurer, (320.0, 568.0));
+    let mut renderer = Renderer::new(RecordingHost::default(), NaiveMeasurer, (320.0, 568.0), new_event_queue());
 
     renderer.tree.create_node(1, NodeKind::View).unwrap();
     renderer.tree.set_style(1, "width", "100%").unwrap();
@@ -28,7 +28,7 @@ fn monta_y_solo_repite_lo_que_cambia() {
 
 #[test]
 fn los_eventos_del_host_se_drenan_una_sola_vez() {
-    let mut renderer = Renderer::new(RecordingHost::default(), NaiveMeasurer, (320.0, 568.0));
+    let mut renderer = Renderer::new(RecordingHost::default(), NaiveMeasurer, (320.0, 568.0), new_event_queue());
     renderer.push_event(HostEvent { target: 7, name: "press".into(), payload: vec![] });
 
     assert_eq!(renderer.drain_events().len(), 1);

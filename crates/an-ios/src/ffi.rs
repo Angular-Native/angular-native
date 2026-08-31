@@ -8,7 +8,7 @@
 use std::ffi::{c_char, c_void, CStr};
 
 use an_bridge::{apply, JsRuntime, QuickJsRuntime};
-use an_host::Renderer;
+use an_host::{new_event_queue, Renderer};
 use objc2::rc::Retained;
 use objc2::MainThreadMarker;
 use objc2_ui_kit::UIView;
@@ -38,8 +38,11 @@ pub unsafe extern "C" fn an_runtime_new(
     let container: Retained<UIView> = unsafe {
         Retained::retain(container.cast::<UIView>()).expect("container no puede ser nil")
     };
-    let host = UikitHost::new(mtm, container);
-    let renderer = Renderer::new(host, UikitMeasurer::new(), (width, height));
+    // Host y renderer comparten la cola: el primero empuja desde los callbacks
+    // de UIKit, el segundo la vacía al empezar cada frame.
+    let events = new_event_queue();
+    let host = UikitHost::new(mtm, container, events.clone());
+    let renderer = Renderer::new(host, UikitMeasurer::new(), (width, height), events);
     let js = match QuickJsRuntime::new() {
         Ok(js) => js,
         Err(error) => {
@@ -83,6 +86,32 @@ pub unsafe extern "C" fn an_runtime_eval(
             -1
         }
     }
+}
+
+/// Tira la app y la levanta otra vez con código nuevo: vistas nativas fuera,
+/// motor JS nuevo, árbol vacío. Es lo que usa `an dev` al detectar un cambio.
+///
+/// No conserva estado: un `signal` vuelve a su valor inicial. Preservarlo es
+/// otro problema, y bastante más grande.
+///
+/// # Safety
+/// `rt` debe venir de `an_runtime_new`. `name` y `code`, cadenas C válidas.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn an_runtime_reload(
+    rt: *mut AnRuntime,
+    name: *const c_char,
+    code: *const c_char,
+) -> i32 {
+    let Some(runtime) = (unsafe { rt.as_mut() }) else { return -1 };
+    runtime.renderer.reset();
+    match QuickJsRuntime::new() {
+        Ok(js) => runtime.js = js,
+        Err(error) => {
+            eprintln!("angular-native: no arrancó el motor JS: {error}");
+            return -1;
+        }
+    }
+    unsafe { an_runtime_eval(rt, name, code) }
 }
 
 /// Árbol de demostración construido desde Rust, sin pasar por JS. Sigue aquí
