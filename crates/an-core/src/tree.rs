@@ -35,6 +35,8 @@ pub enum MountOp {
     SetListener { id: NodeId, event: String, enabled: bool },
     /// Marco relativo al padre, en puntos lógicos.
     SetLayout { id: NodeId, frame: Rect },
+    /// Tamaño del contenido de un nodo scrollable, cuando desborda su marco.
+    SetContentSize { id: NodeId, width: f32, height: f32 },
     SetRoot { id: NodeId },
 }
 
@@ -59,6 +61,8 @@ struct Node {
     /// Solo para `RawText`.
     text: String,
     frame: Rect,
+    /// Solo para nodos scrollables.
+    content: (f32, f32),
     /// `false` hasta el primer layout: fuerza un `SetLayout` inicial aunque
     /// el marco calculado sea (0,0,0,0).
     laid_out: bool,
@@ -74,6 +78,7 @@ impl Node {
             props: Vec::new(),
             text: String::new(),
             frame: Rect::default(),
+            content: (0.0, 0.0),
             laid_out: false,
         }
     }
@@ -130,7 +135,19 @@ impl ShadowTree {
         if self.nodes[idx].is_some() {
             return Err(Error::DuplicateNode(id));
         }
-        let node = Node::new(kind);
+        let mut node = Node::new(kind);
+        // Un ScrollView no se dimensiona por su contenido: para eso está el
+        // scroll. Sin estos defaults, una lista de cinco mil filas produce un
+        // ScrollView de 280.000 puntos de alto y el layout del padre revienta.
+        // Es lo mismo que hace React Native, donde los hijos de un ScrollView
+        // no cuentan para el tamaño del propio ScrollView.
+        if kind.is_scrollable() {
+            node.style.set(StyleKey::Overflow, StyleValue::Keyword(an_layout::Keyword::Scroll));
+            node.style.set(StyleKey::FlexBasis, StyleValue::Points(0.0));
+            node.style.set(StyleKey::FlexShrink, StyleValue::Number(1.0));
+            node.style.set(StyleKey::MinHeight, StyleValue::Points(0.0));
+            node.style.set(StyleKey::MinWidth, StyleValue::Points(0.0));
+        }
         if kind.is_mountable() {
             self.layout
                 .create(id, &node.style)
@@ -355,6 +372,18 @@ impl ShadowTree {
                     self.pending.push(MountOp::SetText { id, text: text.clone() });
                     Some(MeasureCtx::Text { text, font })
                 }
+                NodeKind::TextInput => {
+                    // Un campo vacío tiene que seguir midiendo el alto de una
+                    // línea, así que se mide el marcador si no hay valor.
+                    let text = node
+                        .prop("value")
+                        .and_then(|v| v.as_str().map(str::to_owned))
+                        .filter(|t| !t.is_empty())
+                        .or_else(|| node.prop("placeholder").and_then(|v| v.as_str().map(str::to_owned)))
+                        .unwrap_or_else(|| " ".to_owned());
+                    let font = font_from_props(|k| node.prop(k));
+                    Some(MeasureCtx::Text { text, font })
+                }
                 NodeKind::Image => {
                     let w = node.prop("intrinsicWidth").and_then(|v| v.as_f32()).unwrap_or(0.0);
                     let h = node.prop("intrinsicHeight").and_then(|v| v.as_f32()).unwrap_or(0.0);
@@ -385,11 +414,21 @@ impl ShadowTree {
             }
             let children = node.children.clone();
             let frame = self.layout.layout(id).map_err(|e| Error::Layout(format!("{e:?}")))?;
+            let scrollable = node.kind.is_scrollable();
+            let content = if scrollable {
+                self.layout.content_size(id).map_err(|e| Error::Layout(format!("{e:?}")))?
+            } else {
+                (0.0, 0.0)
+            };
             let node = self.nodes[id as usize].as_mut().expect("comprobado arriba");
             if !node.laid_out || node.frame != frame {
                 node.frame = frame;
                 node.laid_out = true;
                 ops.push(MountOp::SetLayout { id, frame });
+            }
+            if scrollable && node.content != content {
+                node.content = content;
+                ops.push(MountOp::SetContentSize { id, width: content.0, height: content.1 });
             }
             // En orden inverso para que el `pop` recorra en preorden:
             // el host recibe siempre padres antes que hijos.

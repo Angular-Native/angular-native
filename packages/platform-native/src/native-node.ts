@@ -70,13 +70,21 @@ export class NativeNode {
   }
 }
 
+/**
+ * Un elemento cuyo nombre no es una primitiva es el host de un componente
+ * Angular —`<VirtualList>`, `<app-header>`— y se monta como `View`.
+ *
+ * No hay error que dar aquí: un nombre inventado en una plantilla ya lo caza
+ * el compilador, que exige que alguna directiva lo reconozca. Lo que llega a
+ * este punto es siempre un componente de verdad.
+ *
+ * El coste es una vista nativa por componente. Fabric aplana esas vistas en
+ * una pasada posterior (*view flattening*); aquí todavía no, y por eso un
+ * árbol de componentes profundo monta más `UIView` de las estrictamente
+ * necesarias.
+ */
 export function createElementNode(name: string): NativeNode {
-  const kind = KINDS[name]
-  if (!kind) {
-    throw new Error(
-      `<${name}> no es una primitiva nativa. Disponibles: ${Object.keys(KINDS).join(', ')}`
-    )
-  }
+  const kind = KINDS[name] ?? 'View'
   return new NativeNode(__an_dom.createNode(kind), kind)
 }
 

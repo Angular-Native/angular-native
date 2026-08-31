@@ -1,6 +1,6 @@
 import { Directive, ElementRef, inject, Input, Renderer2 } from '@angular/core'
 import { outputFromObservable } from '@angular/core/rxjs-interop'
-import { Observable } from 'rxjs'
+import { map, Observable } from 'rxjs'
 
 /**
  * Carga de un `(press)`. Las coordenadas van en puntos y son relativas a la
@@ -8,6 +8,20 @@ import { Observable } from 'rxjs'
  *
  */
 export interface NativePressEvent {
+  x: number
+  y: number
+}
+
+/** Marco resuelto de una vista, relativo a su padre y en puntos. */
+export interface NativeLayoutEvent {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** Desplazamiento actual de un `ScrollView`, en puntos. */
+export interface NativeScrollEvent {
   x: number
   y: number
 }
@@ -54,6 +68,14 @@ export abstract class NativeVisual {
   readonly press = outputFromObservable(this.nativeEvent<NativePressEvent>('press'))
   readonly doublePress = outputFromObservable(this.nativeEvent<NativePressEvent>('doublePress'))
 
+  /**
+   * El marco que le asignó el layout, cada vez que cambia.
+   *
+   * No lo produce ninguna plataforma: lo emite el core al terminar el commit,
+   * porque es él quien calcula el marco. Sale gratis en iOS y en Android.
+   */
+  readonly layout = outputFromObservable(this.nativeEvent<NativeLayoutEvent>('layout'))
+
   @Input() set backgroundColor(value: string | null) {
     this.set('backgroundColor', value)
   }
@@ -84,7 +106,23 @@ export abstract class NativeVisual {
 export class View extends NativeVisual {}
 
 @Directive({ selector: 'ScrollView' })
-export class ScrollView extends NativeVisual {}
+export class ScrollView extends NativeVisual {
+  @Input() set showsScrollIndicator(value: boolean | null) {
+    this.set('showsScrollIndicator', value)
+  }
+
+  /** El rebote de iOS al llegar al final. */
+  @Input() set bounces(value: boolean | null) {
+    this.set('bounces', value)
+  }
+
+  /**
+   * Se emite en cada frame de desplazamiento. El `contentSize` lo calcula el
+   * layout solo: es el tamaño que ocupan los hijos, y el core lo manda al
+   * `UIScrollView` cuando cambia.
+   */
+  readonly scroll = outputFromObservable(this.nativeEvent<NativeScrollEvent>('scroll'))
+}
 
 @Directive({ selector: 'Image' })
 export class Image extends NativeVisual {
@@ -152,9 +190,41 @@ export class TextInput extends NativeVisual {
     this.set('placeholder', value)
   }
 
+  /**
+   * El host solo escribe en el campo si el texto difiere de verdad: asignarlo
+   * en cada tecla movería el cursor al final.
+   */
   @Input() set value(value: string | null) {
     this.set('value', value)
   }
+
+  @Input() set secureTextEntry(value: boolean | null) {
+    this.set('secureTextEntry', value)
+  }
+
+  @Input() set editable(value: boolean | null) {
+    this.set('editable', value)
+  }
+
+  @Input() set color(value: string | null) {
+    this.set('color', value)
+  }
+
+  @Input() set fontSize(value: number | null) {
+    this.set('fontSize', value)
+  }
+
+  /** Emparejado con `value`, habilita `[(value)]` en la plantilla. */
+  readonly valueChange = outputFromObservable(
+    this.nativeEvent<{ value: string }>('change').pipe(map((event) => event.value))
+  )
+
+  readonly focus = outputFromObservable(this.nativeEvent<{ value: string }>('focus'))
+  readonly blur = outputFromObservable(this.nativeEvent<{ value: string }>('blur'))
+  /** La tecla de retorno del teclado. */
+  readonly submit = outputFromObservable(
+    this.nativeEvent<{ value: string }>('submit').pipe(map((event) => event.value))
+  )
 }
 
 /** Para importar todas de golpe en un componente standalone. */

@@ -34,8 +34,16 @@ impl NodeKind {
     }
 
     /// Nodos hoja de cara al layout: su tamaño se mide, no se deriva de hijos.
+    ///
+    /// `TextInput` entra aquí para que un campo sin altura explícita ocupe lo
+    /// que ocupa su texto, en vez de colapsar a cero.
     pub fn is_measured_leaf(self) -> bool {
-        matches!(self, NodeKind::Text | NodeKind::Image)
+        matches!(self, NodeKind::Text | NodeKind::Image | NodeKind::TextInput)
+    }
+
+    /// Nodos cuyo contenido puede desbordar y necesita `contentSize`.
+    pub fn is_scrollable(self) -> bool {
+        self == NodeKind::ScrollView
     }
 }
 
@@ -118,5 +126,7 @@ pub fn affects_measure(key: &str) -> bool {
             | "numberOfLines"
             | "intrinsicWidth"
             | "intrinsicHeight"
+            | "value"
+            | "placeholder"
     )
 }

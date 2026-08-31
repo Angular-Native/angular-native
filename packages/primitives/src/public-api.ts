@@ -1,4 +1,10 @@
-export type { NativePressEvent } from './primitives'
+export type {
+  NativeLayoutEvent,
+  NativePressEvent,
+  NativeScrollEvent
+} from './primitives'
+export { VirtualList } from './virtual-list'
+export type { VirtualListContext } from './virtual-list'
 export {
   Image,
   NATIVE_PRIMITIVES,

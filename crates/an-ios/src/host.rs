@@ -12,7 +12,7 @@ use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_foundation::NSString;
 use objc2_ui_kit::{
     NSLineBreakMode, NSTextAlignment, UIAccessibilityIdentification, UIFont, UIImageView,
-    UILabel, UIScrollView, UITextField, UIView,
+    UILabel, UIScrollView, UITextField, UITextInputTraits, UIView,
 };
 
 /// Vista nativa de un nodo. Se guarda con su tipo concreto porque las props
@@ -36,6 +36,16 @@ impl HostView {
         }
     }
 
+    fn kind(&self) -> NodeKind {
+        match self {
+            HostView::View(_) => NodeKind::View,
+            HostView::Label(_) => NodeKind::Text,
+            HostView::Image(_) => NodeKind::Image,
+            HostView::Scroll(_) => NodeKind::ScrollView,
+            HostView::Field(_) => NodeKind::TextInput,
+        }
+    }
+
     fn as_label(&self) -> Option<&UILabel> {
         match self {
             HostView::Label(v) => Some(v),
@@ -52,10 +62,10 @@ pub struct UikitHost {
     /// Fuente pendiente por nodo: `fontSize` y `fontWeight` llegan en props
     /// separadas y hay que reconstruir la `UIFont` con las dos.
     fonts: HashMap<NodeId, an_layout::FontSpec>,
-    /// Gestos vivos, indexados por nodo y evento. Se guardan porque hay que
-    /// poder quitarlos: un `@if` que desmonta su rama destruye la vista, pero
-    /// un `(press)` que deja de estar bindeado no.
-    gestures: HashMap<(NodeId, String), crate::events::AttachedGesture>,
+    /// Suscripciones vivas, indexadas por nodo y evento. Se guardan porque hay
+    /// que poder quitarlas: un `@if` que desmonta su rama destruye la vista,
+    /// pero un `(press)` que deja de estar bindeado no.
+    listeners: HashMap<(NodeId, String), crate::events::AttachedListener>,
     events: EventQueue,
 }
 
@@ -69,7 +79,7 @@ impl UikitHost {
             container,
             views: HashMap::new(),
             fonts: HashMap::new(),
-            gestures: HashMap::new(),
+            listeners: HashMap::new(),
             events,
         }
     }
@@ -142,7 +152,7 @@ impl HostRenderer for UikitHost {
             view.as_view().removeFromSuperview();
         }
         self.fonts.remove(&id);
-        self.gestures.retain(|(node, _), _| *node != id);
+        self.listeners.retain(|(node, _), _| *node != id);
     }
 
     fn insert(&mut self, parent: NodeId, child: NodeId, index: u32) {
@@ -243,6 +253,48 @@ impl HostRenderer for UikitHost {
                 self.font_mut(id).family = text.clone();
                 self.apply_font(id);
             }
+            // --- campos de texto
+            "value" => {
+                if let HostView::Field(field) = view {
+                    // Escribir el texto mientras el usuario escribe le movería
+                    // el cursor al final en cada tecla: solo se aplica si
+                    // difiere de verdad.
+                    let current = field.text().map(|t| t.to_string()).unwrap_or_default();
+                    let next = text.clone().unwrap_or_default();
+                    if current != next {
+                        field.setText(Some(&NSString::from_str(&next)));
+                    }
+                }
+            }
+            "placeholder" => {
+                if let HostView::Field(field) = view {
+                    let placeholder = text.as_deref().map(NSString::from_str);
+                    field.setPlaceholder(placeholder.as_deref());
+                }
+            }
+            "secureTextEntry" => {
+                if let HostView::Field(field) = view {
+                    field.setSecureTextEntry(matches!(value, PropValue::Bool(true)));
+                }
+            }
+            "editable" => {
+                if let HostView::Field(field) = view {
+                    field.setEnabled(!matches!(value, PropValue::Bool(false)));
+                }
+            }
+            // --- scroll
+            "showsScrollIndicator" => {
+                if let HostView::Scroll(scroll) = view {
+                    let shown = !matches!(value, PropValue::Bool(false));
+                    scroll.setShowsVerticalScrollIndicator(shown);
+                    scroll.setShowsHorizontalScrollIndicator(shown);
+                }
+            }
+            "bounces" => {
+                if let HostView::Scroll(scroll) = view {
+                    scroll.setBounces(!matches!(value, PropValue::Bool(false)));
+                }
+            }
             "numberOfLines" => {
                 self.font_mut(id).max_lines = number.filter(|v| *v >= 1.0).map(|v| v as u32);
                 self.apply_font(id);
@@ -263,18 +315,19 @@ impl HostRenderer for UikitHost {
         let native = view.as_view();
 
         if !enabled {
-            if let Some(gesture) = self.gestures.remove(&key) {
-                gesture.detach(native);
+            if let Some(listener) = self.listeners.remove(&key) {
+                listener.detach(native);
             }
             return;
         }
-        if self.gestures.contains_key(&key) {
+        if self.listeners.contains_key(&key) {
             return;
         }
-        if let Some(gesture) =
-            crate::events::attach(self.mtm, native, id, event, self.events.clone())
+        let kind = view.kind();
+        if let Some(listener) =
+            crate::events::attach(self.mtm, native, kind, id, event, self.events.clone())
         {
-            self.gestures.insert(key, gesture);
+            self.listeners.insert(key, listener);
         }
     }
 
@@ -292,7 +345,13 @@ impl HostRenderer for UikitHost {
         }
         self.views.clear();
         self.fonts.clear();
-        self.gestures.clear();
+        self.listeners.clear();
+    }
+
+    fn set_content_size(&mut self, id: NodeId, width: f32, height: f32) {
+        if let Some(HostView::Scroll(scroll)) = self.views.get(&id) {
+            scroll.setContentSize(CGSize { width: width as f64, height: height as f64 });
+        }
     }
 
     fn set_root(&mut self, id: NodeId) {

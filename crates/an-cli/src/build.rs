@@ -28,39 +28,38 @@ pub fn bundle(workspace: &Workspace, app: &Path, release: bool) -> Result<PathBu
     std::fs::create_dir_all(out.parent().expect("la salida tiene padre"))?;
 
     let entry = js_dir.join(app).join("src/main.js");
-    let alias_platform = format!(
-        "--alias:@angular-native/platform=./{}/packages/platform-native/src/public-api.js",
-        js_dir.display()
-    );
-    let alias_primitives = format!(
-        "--alias:@angular-native/primitives=./{}/packages/primitives/src/public-api.js",
-        js_dir.display()
-    );
-    let outfile = format!("--outfile={}", out.display());
-
+    // El empaquetado va por un script de Node y no por el binario de esbuild:
+    // hace falta el Angular Linker, que es un plugin de Babel.
     let mut args: Vec<String> = vec![
-        "esbuild".into(),
+        "scripts/bundle.mjs".into(),
         entry.to_string_lossy().into_owned(),
-        "--bundle".into(),
-        alias_platform,
-        alias_primitives,
-        "--format=iife".into(),
-        "--platform=neutral".into(),
-        "--target=es2022".into(),
-        "--main-fields=module,main".into(),
-        "--conditions=module".into(),
-        outfile,
-        "--log-level=warning".into(),
+        out.to_string_lossy().into_owned(),
+        format!(
+            // Absolutas: el `alias` de esbuild resuelve contra el importador,
+            // no contra el directorio de trabajo.
+            "--alias=@angular-native/platform={}",
+            workspace
+                .root
+                .join(&js_dir)
+                .join("packages/platform-native/src/public-api.js")
+                .display()
+        ),
+        format!(
+            "--alias=@angular-native/primitives={}",
+            workspace
+                .root
+                .join(&js_dir)
+                .join("packages/primitives/src/public-api.js")
+                .display()
+        ),
     ];
     if release {
         // `ngDevMode` a false quita las comprobaciones de desarrollo de Angular,
         // que son casi la mitad del bundle.
-        args.push("--define:ngDevMode=false".into());
-        args.push("--define:ngJitMode=false".into());
-        args.push("--minify".into());
+        args.push("--release".into());
     }
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
-    run(workspace, "npx", &borrowed, "el empaquetado falló")?;
+    run(workspace, "node", &borrowed, "el empaquetado falló")?;
 
     let size = std::fs::metadata(&out)?.len();
     eprintln!("==> {} KB en {}", size / 1024, out.display());

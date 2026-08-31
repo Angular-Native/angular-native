@@ -5,6 +5,7 @@
 //! El resto del núcleo no sabe que existen UIKit ni Android.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
 
 use an_core::{Frame, MountOp, NodeId, NodeKind, PropValue, Rect, ShadowTree, TextMeasurer};
@@ -22,6 +23,11 @@ pub trait HostRenderer {
     fn set_text(&mut self, id: NodeId, text: &str);
     fn set_listener(&mut self, id: NodeId, event: &str, enabled: bool);
     fn set_layout(&mut self, id: NodeId, frame: Rect);
+    /// Solo llega para nodos scrollables, y solo cuando el contenido cambia
+    /// de tamaño.
+    fn set_content_size(&mut self, id: NodeId, width: f32, height: f32) {
+        let _ = (id, width, height);
+    }
     fn set_root(&mut self, id: NodeId);
     /// Se llama una vez por frame, después de aplicar todas las ops.
     fn flush(&mut self) {}
@@ -61,13 +67,24 @@ pub struct Renderer<H: HostRenderer, M: TextMeasurer> {
     measurer: M,
     viewport: (f32, f32),
     events: EventQueue,
+    /// Nodos suscritos a `layout`. Se lleva aquí y no en el host porque el
+    /// marco lo calcula el core: así `onLayout` funciona igual en cualquier
+    /// plataforma, sin que ninguna tenga que implementarlo.
+    layout_listeners: HashSet<NodeId>,
 }
 
 impl<H: HostRenderer, M: TextMeasurer> Renderer<H, M> {
     /// `events` tiene que ser la misma cola que se le dio al host, o los
     /// eventos nativos nunca llegarán a JS.
     pub fn new(host: H, measurer: M, viewport: (f32, f32), events: EventQueue) -> Self {
-        Renderer { tree: ShadowTree::new(), host, measurer, viewport, events }
+        Renderer {
+            tree: ShadowTree::new(),
+            host,
+            measurer,
+            viewport,
+            events,
+            layout_listeners: HashSet::new(),
+        }
     }
 
     /// Cambio de tamaño de pantalla o rotación: obliga a recalcular todo.
@@ -98,6 +115,9 @@ impl<H: HostRenderer, M: TextMeasurer> Renderer<H, M> {
     }
 
     fn apply(&mut self, frame: &Frame) {
+        // Los `onLayout` se acumulan y se encolan al final: dispararlos a mitad
+        // del montaje dejaría que JS viera un árbol a medio aplicar.
+        let mut pending_layout: Vec<(NodeId, Rect)> = Vec::new();
         for op in &frame.ops {
             match op {
                 MountOp::Create { id, kind } => self.host.create(*id, *kind),
@@ -107,11 +127,40 @@ impl<H: HostRenderer, M: TextMeasurer> Renderer<H, M> {
                 MountOp::SetProp { id, key, value } => self.host.set_prop(*id, key, value),
                 MountOp::SetText { id, text } => self.host.set_text(*id, text),
                 MountOp::SetListener { id, event, enabled } => {
+                    if event == "layout" {
+                        if *enabled {
+                            self.layout_listeners.insert(*id);
+                        } else {
+                            self.layout_listeners.remove(id);
+                        }
+                        // No hay nada nativo que enganchar: lo emite el core.
+                        continue;
+                    }
                     self.host.set_listener(*id, event, *enabled)
                 }
-                MountOp::SetLayout { id, frame } => self.host.set_layout(*id, *frame),
+                MountOp::SetLayout { id, frame } => {
+                    self.host.set_layout(*id, *frame);
+                    if self.layout_listeners.contains(id) {
+                        pending_layout.push((*id, *frame));
+                    }
+                }
+                MountOp::SetContentSize { id, width, height } => {
+                    self.host.set_content_size(*id, *width, *height)
+                }
                 MountOp::SetRoot { id } => self.host.set_root(*id),
             }
+        }
+        for (id, frame) in pending_layout {
+            self.events.borrow_mut().push(HostEvent {
+                target: id,
+                name: "layout".to_owned(),
+                payload: vec![
+                    ("x".to_owned(), PropValue::Number(frame.x as f64)),
+                    ("y".to_owned(), PropValue::Number(frame.y as f64)),
+                    ("width".to_owned(), PropValue::Number(frame.width as f64)),
+                    ("height".to_owned(), PropValue::Number(frame.height as f64)),
+                ],
+            });
         }
     }
 
@@ -119,6 +168,7 @@ impl<H: HostRenderer, M: TextMeasurer> Renderer<H, M> {
     /// construirse desde JS; es lo que hace la recarga en caliente.
     pub fn reset(&mut self) {
         self.host.clear();
+        self.layout_listeners.clear();
         self.tree = ShadowTree::new();
         self.events.borrow_mut().clear();
     }
@@ -174,6 +224,9 @@ impl HostRenderer for RecordingHost {
     fn set_layout(&mut self, id: NodeId, frame: Rect) {
         self.log.push(format!("layout {id} {frame:?}"));
         self.frames.push((id, frame));
+    }
+    fn set_content_size(&mut self, id: NodeId, width: f32, height: f32) {
+        self.log.push(format!("content {id} {width}x{height}"));
     }
     fn set_root(&mut self, id: NodeId) {
         self.log.push(format!("root {id}"));

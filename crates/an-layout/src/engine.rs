@@ -118,6 +118,14 @@ impl LayoutEngine {
         Ok(Rect { x: l.location.x, y: l.location.y, width: l.size.width, height: l.size.height })
     }
 
+    /// Tamaño que ocupan los hijos, que puede pasarse del nodo. Es lo que un
+    /// `UIScrollView` necesita como `contentSize`.
+    pub fn content_size(&self, id: u32) -> Result<(f32, f32), LayoutError> {
+        let node = self.node(id)?;
+        let l = self.tree.layout(node)?;
+        Ok((l.content_size.width, l.content_size.height))
+    }
+
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
