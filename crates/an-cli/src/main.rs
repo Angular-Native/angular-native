@@ -4,6 +4,7 @@
 //! bundle con AOT, armar el `.app` sin `.xcodeproj`, y levantar un servidor de
 //! desarrollo que recarga la app al guardar.
 
+mod android;
 mod build;
 mod dev;
 mod ios;
@@ -37,6 +38,15 @@ enum Command {
         #[arg(long)]
         release: bool,
     },
+    /// Compila, arma el APK y lo lanza en el emulador de Android.
+    Android {
+        app: Option<String>,
+        #[arg(long)]
+        release: bool,
+        /// Solo arma el APK, sin instalarlo.
+        #[arg(long)]
+        no_launch: bool,
+    },
     /// Servidor de desarrollo: vigila los ficheros y recarga la app al guardar.
     Dev {
         app: Option<String>,
@@ -66,6 +76,16 @@ fn main() -> anyhow::Result<()> {
             let bundle = build::bundle(&workspace, &app, release)?;
             let package = ios::assemble(&workspace, &bundle, release, None)?;
             ios::launch(&package, &device)
+        }
+        Command::Android { app, release, no_launch } => {
+            let app = workspace.app(app.as_deref())?;
+            let bundle = build::bundle(&workspace, &app, release)?;
+            let apk = android::assemble(&workspace, &bundle, release)?;
+            if no_launch {
+                println!("{}", apk.display());
+                return Ok(());
+            }
+            android::install_and_launch(&workspace, &apk)
         }
         Command::Dev { app, device, port, no_launch } => {
             let app = workspace.app(app.as_deref())?;

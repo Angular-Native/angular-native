@@ -4,3 +4,6 @@ dist/
 .DS_Store
 *.xcuserdatad/
 build/
+
+# Emulador y artefactos de Android
+*.apk

@@ -1,0 +1,22 @@
+[package]
+name = "an-android"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+# La JVM carga una biblioteca dinámica; rlib para poder testear desde Rust.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+an-bridge = { path = "../an-bridge" }
+an-core.workspace = true
+an-host.workspace = true
+an-layout.workspace = true
+serde_json = "1"
+
+# Fuera de Android el crate compila vacío, igual que an-ios fuera de iOS.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+libc = "0.2"

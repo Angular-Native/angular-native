@@ -1,0 +1,101 @@
+package dev.angularnative;
+
+import android.app.Activity;
+import android.graphics.Color;
+import android.os.Bundle;
+import android.util.DisplayMetrics;
+import android.util.Log;
+import android.view.Choreographer;
+import android.view.ViewGroup;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+
+/**
+ * Todo el shell de Android cabe aquí, igual que el de iOS: crear el runtime,
+ * darle una vista donde montar, avisarle del tamaño y llamarle una vez por
+ * frame.
+ */
+public final class MainActivity extends Activity {
+
+    private static final String TAG = "angular-native";
+
+    private AnRuntime runtime;
+    private AnHost host;
+    private Choreographer.FrameCallback frameCallback;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        AnViewGroup container = new AnViewGroup(this);
+        container.setBackgroundColor(Color.BLACK);
+        setContentView(
+                container,
+                new ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        DisplayMetrics metrics = getResources().getDisplayMetrics();
+        float widthDp = metrics.widthPixels / metrics.density;
+        float heightDp = metrics.heightPixels / metrics.density;
+
+        host = new AnHost(this, container);
+        runtime = new AnRuntime(host, widthDp, heightDp);
+        if (!runtime.isValid()) {
+            Log.e(TAG, "el runtime no arrancó");
+            return;
+        }
+        host.attachRuntime(runtime);
+
+        String source = readAsset("main.js");
+        if (source == null) {
+            Log.e(TAG, "no hay main.js en los assets");
+        } else if (runtime.eval("main.js", source) != 0) {
+            Log.e(TAG, "main.js lanzó al evaluarse");
+        }
+
+        // El reloj de la app es el del vsync, igual que el CADisplayLink de
+        // iOS: los temporizadores de JS avanzan con los frames.
+        frameCallback =
+                new Choreographer.FrameCallback() {
+                    @Override
+                    public void doFrame(long frameTimeNanos) {
+                        int applied = runtime.frame(frameTimeNanos / 1_000_000.0);
+                        if (applied < 0) {
+                            Log.e(TAG, "el frame falló");
+                        } else if (applied > 0) {
+                            host.flush();
+                        }
+                        Choreographer.getInstance().postFrameCallback(this);
+                    }
+                };
+        Choreographer.getInstance().postFrameCallback(frameCallback);
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (frameCallback != null) {
+            Choreographer.getInstance().removeFrameCallback(frameCallback);
+        }
+        if (runtime != null) {
+            runtime.close();
+        }
+        super.onDestroy();
+    }
+
+    private String readAsset(String name) {
+        try (InputStream input = getAssets().open(name)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] chunk = new byte[8192];
+            int read;
+            while ((read = input.read(chunk)) != -1) {
+                out.write(chunk, 0, read);
+            }
+            return out.toString(StandardCharsets.UTF_8.name());
+        } catch (IOException error) {
+            return null;
+        }
+    }
+}

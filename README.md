@@ -3,8 +3,8 @@
 React Native, pero para Angular, y con el núcleo en Rust.
 
 Angular zoneless con signals corriendo en un motor JS embebido; el árbol de UI,
-el layout y el montaje sobre **vistas nativas reales** (UIKit, Android View) los
-lleva Rust. Sin DOM, sin WebView, sin zone.js.
+el layout y el montaje sobre **vistas nativas reales** los lleva Rust. Sin DOM,
+sin WebView, sin zone.js.
 
 ```text
 Angular (JS)  ──Renderer2──▶  __an_dom  ──▶  búfer binario  ──▶  ShadowTree (Rust)
@@ -13,38 +13,11 @@ Angular (JS)  ──Renderer2──▶  __an_dom  ──▶  búfer binario  ─
                                                                       │ diff
                                                                 Frame { MountOp[] }
                                                                       ▼
-                                                         HostRenderer (UIKit / Android)
+                                                    HostRenderer (UIKit / android.view)
 ```
 
-Tres hilos: JS (lógica), core Rust (árbol, layout, diff), UI (vistas nativas).
-
-## Crates
-
-| Crate | Qué hace |
-|---|---|
-| `an-layout` | Props de estilo a `taffy::Style`, árbol de layout, medición de hojas |
-| `an-core` | Shadow tree, mutaciones, commit, diff hacia `MountOp` |
-| `an-host` | Traits `HostRenderer` y `TextMeasurer`, y el `Renderer` que los une |
-| `an-ios` | Host UIKit, medidor de texto y superficie C para el shell |
-| `an-bridge` | Motor JS (QuickJS) y protocolo binario de comandos |
-| `an-cli` | La herramienta `an`: build, ios y servidor de desarrollo |
-
-| Paquete npm | Qué hace |
-|---|---|
-| `packages/runtime` | Prelude JS: consola, temporizadores, `requestAnimationFrame`, escritor de comandos |
-| `packages/platform-native` | `Renderer2`, `RendererFactory2` y `bootstrapNativeApplication` |
-| `packages/primitives` | `View`, `Text`, `Image`, `ScrollView`, `TextInput` como directivas tipadas |
-
-## Estado
-
-- [x] **Fase 0** — Núcleo Rust: shadow tree, layout flexbox, diff incremental, tests
-- [x] **Fase 1** — Host iOS con UIKit, medición de texto real y app en el simulador
-- [x] **Fase 2** — Motor JS embebido, protocolo binario y `main.js` en el bundle
-- [x] **Fase 3** — Plataforma Angular: `Renderer2`, primitivas tipadas, AOT, zoneless y eventos
-- [x] **Fase 4** — CLI `an`: build, ios y recarga en caliente
-- [ ] **Fase 5** — ScrollView, TextInput, listas recicladas, router, Android
-
-## Una app
+Un componente Angular normal, sin nada especial salvo que los elementos son
+primitivas nativas:
 
 ```ts
 @Component({
@@ -62,6 +35,7 @@ Tres hilos: JS (lógica), core Rust (árbol, layout, diff), UI (vistas nativas).
 })
 export class AppComponent {
   readonly seconds = signal(0)
+  onPress(event: NativePressEvent) { /* ... */ }
 }
 ```
 
@@ -69,71 +43,136 @@ export class AppComponent {
 bootstrapNativeApplication(AppComponent)
 ```
 
-Señales, `@if`, `@for` y bindings son los de Angular, sin cambios. Lo único
-distinto es que `<View>` y `<Text>` acaban siendo `UIView` y `UILabel`.
+`<View>` acaba siendo una `UIView` en iOS y una `AnViewGroup` en Android.
 
-## Decisiones ya tomadas
+## Empezar
+
+```bash
+cargo an dev                  # compila, lanza en el simulador y recarga al guardar
+cargo an ios                  # una sola vez, sin vigilar
+cargo an android              # APK, emulador y lanzamiento
+cargo an build --release      # solo el bundle: 276 KB frente a 933 KB en debug
+```
+
+Todo va por el mismo binario, `an`. No hay `.xcodeproj` ni Gradle: las
+herramientas de cada SDK ya hacen el trabajo y el proceso cabe en un fichero
+que se puede leer entero.
+
+## Verificación sin dispositivo
+
+```bash
+cargo test                    # núcleo Rust
+./scripts/check-angular.sh    # la cadena entera: ngc, esbuild, QuickJS, taffy
+./scripts/check-list.sh       # ScrollView, TextInput, lista con ventana, módulo nativo
+./scripts/check-router.sh     # navegación y parámetros de ruta
+cargo run -p an-bridge --example headless -- build/bundle/hello-angular/main.js 6
+```
+
+`headless` monta el pipeline entero salvo la plataforma: evalúa un bundle,
+avanza frames con un reloj falso, simula un toque e imprime el árbol resuelto.
+Es la forma rápida de depurar sin simulador, y es lo que usan los tres scripts.
+
+## Crates
+
+| Crate | Qué hace |
+|---|---|
+| `an-layout` | Props de estilo a `taffy::Style`, árbol de layout, medición de hojas |
+| `an-core` | Shadow tree, mutaciones, commit, diff hacia `MountOp` |
+| `an-host` | Traits `HostRenderer` y `TextMeasurer`, y el `Renderer` que los une |
+| `an-bridge` | Motor JS (QuickJS), protocolo binario y módulos nativos |
+| `an-ios` | Host UIKit, medidor con CoreText y superficie C |
+| `an-android` | Host JNI, medidor con `StaticLayout` y puntos de entrada JNI |
+| `an-cli` | La herramienta `an`: build, ios, android y servidor de desarrollo |
+
+| Paquete npm | Qué hace |
+|---|---|
+| `packages/runtime` | Prelude JS: consola, temporizadores, `AbortController`, escritor de comandos |
+| `packages/platform-native` | `Renderer2`, plataforma, `PlatformLocation` y módulos nativos |
+| `packages/primitives` | `View`, `Text`, `Image`, `ScrollView`, `TextInput` y `VirtualList` |
+
+## Estado
+
+- [x] **Núcleo Rust** — shadow tree, layout flexbox, diff incremental
+- [x] **iOS** — UIKit, medición de texto real, gestos, app en el simulador
+- [x] **Motor JS** — QuickJS, protocolo binario, `main.js` en el bundle
+- [x] **Angular** — `Renderer2`, primitivas tipadas, AOT, zoneless, eventos
+- [x] **CLI** — build, ios, android y recarga en caliente
+- [x] **ScrollView, TextInput y listas con ventana**
+- [x] **Router** sobre una pila de navegación en memoria
+- [x] **Módulos nativos** con macro y servicio tipado
+- [x] **Android** — host JNI, APK sin Gradle, emulador
+
+## Decisiones
 
 - **Vistas nativas, no pintado propio.** Accesibilidad, IME, scroll y look del
   sistema salen gratis; el coste es una capa por plataforma para cada primitiva.
 - **Los ids de nodo los asigna JS.** Crear un nodo no necesita viaje de vuelta
   al core, igual que los tags de Fabric.
 - **Layout en `taffy`**, no Yoga: es Rust, y trae flexbox, grid y block.
-- **Zoneless obligatorio.** Sin zone.js no hay que parchear timers ni XHR
-  dentro del motor JS, que es el 80% del dolor de NativeScript.
+- **Zoneless obligatorio.** Sin zone.js no hay que parchear temporizadores ni
+  XHR dentro del motor JS, que es el 80% del dolor de NativeScript.
 - **Un commit por frame.** El layout solo corre en `commit()`, y el `Frame`
   resultante lleva únicamente lo que cambió.
 - **Búfer binario, no llamadas sueltas.** Un `*ngFor` de 200 filas son ~1.200
-  mutaciones. Con llamadas por mutación son 1.200 cruces de frontera; con búfer
-  es uno.
-- **JS no tiene hilo, tiene un turno por frame.** El `CADisplayLink` llama a
-  `tick()`, y ahí dentro corren temporizadores y microtareas hasta agotarlas.
-  El reloj de `setTimeout` es el del vsync, así que el tiempo de la app es
-  determinista y un test puede simular diez segundos sin esperarlos.
-- **El script viaja en el bundle**, no compilado dentro de Rust, igual que el
-  `main.jsbundle` de React Native.
-- **AOT siempre, nunca JIT.** `ngc` compila las plantillas en el build; el
+  mutaciones. Con llamadas por mutación son 1.200 cruces de frontera; así es uno.
+- **JS no tiene hilo, tiene un turno por frame.** El `CADisplayLink` —o el
+  `Choreographer`— llama a `tick()`, y ahí dentro corren temporizadores y
+  microtareas hasta agotarlas. El reloj de `setTimeout` es el del vsync, así que
+  el tiempo de la app es determinista y un test puede simular diez segundos sin
+  esperarlos.
+- **AOT siempre, nunca JIT.** `ngc` compila las plantillas en el build y el
+  Angular Linker resuelve los paquetes publicados en modo parcial; el
   dispositivo no lleva `@angular/compiler`.
 - **Primitivas como directivas tipadas, no `CUSTOM_ELEMENTS_SCHEMA`.** El
   esquema laxo exige un guion en el nombre y, peor, apaga la comprobación de
   propiedades: `[bakcgroundColor]` con errata pasaría el compilador y fallaría
-  en silencio en el dispositivo. Con directivas cada prop es un `@Input`
-  declarado, comprobado y autocompletado.
+  en silencio en el dispositivo.
 - **Los eventos se registran solo si la plantilla los pide.** `(press)` es una
-  salida de la directiva sobre un observable frío: el `UIGestureRecognizer` se
-  engancha al suscribirse. Una vista que nadie escucha no paga nada.
+  salida sobre un observable frío: el reconocedor de gestos se engancha al
+  suscribirse. Una vista que nadie escucha no paga nada.
+- **`onLayout` lo emite el core**, no la plataforma: es él quien calcula el
+  marco, así que funciona igual en iOS y en Android sin implementarlo dos veces.
+- **Un ScrollView no se dimensiona por su contenido.** Sin ese default, una
+  lista de cinco mil filas produce un ScrollView de 280.000 puntos de alto y se
+  lleva por delante el layout del padre.
 - **Nada de `@angular/platform-browser`.** Arrastra `DomAdapter`,
-  `DomRendererFactory2` y el sanitizador de HTML: todo asume que existe un DOM.
-  La plataforma propia son ~60 líneas.
+  `DomRendererFactory2` y el sanitizador de HTML, todo asumiendo que existe un
+  DOM. La plataforma propia son ~70 líneas.
+
+## Lo que no está hecho
+
+Cosas que se descubrieron construyendo esto y que hay que resolver antes de
+llamarlo listo para producción:
+
+- **El motor JS necesita ~4 MB de pila.** El router de Angular encadena
+  diecisiete operadores de RxJS y la recursión de subscripción es profunda. El
+  hilo principal de iOS tiene 1 MB y no se puede cambiar: la solución real es
+  mover el motor y el árbol a un hilo propio —lo que hace React Native— y dejar
+  en el de UI solo el montaje. La costura ya existe: `Frame { MountOp[] }` es
+  serializable. Lo que hay que resolver con ella es la medición de texto, que
+  hoy pregunta a UIKit y tendría que pasar a CoreText, que sí es thread-safe.
+- **Ventana, no reciclado.** `VirtualList` monta las filas visibles y destruye
+  las que salen; no reutiliza vistas como un `UITableView`. Reciclar exige
+  reasignar el contexto de una vista de Angular ya creada.
+- **Una vista nativa por componente.** El host de un componente Angular se
+  monta como `View`. Fabric aplana esas vistas en una pasada posterior
+  (*view flattening*); aquí todavía no.
+- **El router no tiene navegación nativa.** La ruta cambia y la vista se
+  sustituye, sin `UINavigationController`, sin animación y sin gesto de volver
+  atrás. `NativePlatformLocation.back()` es el punto por donde entrarían.
+- **La recarga en caliente pierde el estado.** El *fast refresh* de React
+  Native exige saber qué componentes cambiaron y reconciliar el árbol.
+- **Android va por detrás de iOS.** El host monta vistas, mide texto y entrega
+  toques, pero le faltan gestos más allá del `press`, eventos de scroll y de
+  campo de texto, y el cliente del servidor de desarrollo.
 
 ## Desarrollo
 
-```bash
-cargo an dev                  # compila, lanza en el simulador y recarga al guardar
-cargo an ios                  # una sola vez, sin vigilar
-cargo an build --release      # solo el bundle: 276 KB frente a 933 KB en debug
-
-cargo test                    # núcleo Rust, sin simulador ni Xcode
-./scripts/check-angular.sh    # la cadena entera: ngc, esbuild, QuickJS, taffy
-cargo run -p an-bridge --example headless -- build/bundle/hello-angular/main.js 6
-```
-
-`an dev` vigila las fuentes, recompila el bundle y avisa a la app por
-WebSocket; la app se lo descarga y se reinicia sola, sin volver a pasar por
-Xcode. La recarga es completa: el estado se pierde. Preservarlo —el *fast
-refresh* de React Native— exige saber qué componentes cambiaron y reconciliar
-el árbol, y es un proyecto en sí mismo.
-
-El `headless` evalúa un bundle, avanza frames con un reloj falso, simula un
-toque e imprime el árbol resuelto. Es la forma rápida de depurar el lado JS
-sin simulador.
-
-`run-ios.sh` no usa `.xcodeproj`: compila el core con `cargo`, enlaza el shell
-Swift con `swiftc` contra el `staticlib`, arma el `.app` a mano y lo instala con
-`simctl`. Es lo que `an-cli` acabará haciendo. Variables: `DEVICE`, `PROFILE`.
-
 `NaiveMeasurer` aproxima la medición de texto para que el núcleo sea testeable
-sin plataforma. En el simulador manda `UikitMeasurer`, que pregunta a UIKit con
-`boundingRectWithSize:` y cachea por (texto, fuente, ancho disponible): el
-layout mide cada nodo tres veces por frame y sin caché eso son cientos de
-cruces a Objective-C.
+sin plataforma. En el dispositivo mandan `UikitMeasurer` y `JniMeasurer`, que
+cachean por (texto, fuente, ancho disponible): el layout mide cada nodo varias
+veces por frame y sin caché eso son cientos de cruces de frontera.
+
+Las herramientas se descubren solas: el SDK de Android por `ANDROID_HOME` o la
+ruta estándar, y dentro de él la última versión de build-tools y de plataforma.
+El NDK y los flags de bindgen están fijados en `.cargo/config.toml`.

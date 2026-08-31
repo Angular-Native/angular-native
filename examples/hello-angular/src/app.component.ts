@@ -28,7 +28,7 @@ import { NATIVE_PRIMITIVES, type NativePressEvent } from '@angular-native/primit
 
       <Text [fontSize]="16" [color]="'#9fb0d4'">
         Esto es una plantilla de Angular con señales, corriendo en QuickJS.
-        Cada elemento es una UIView de verdad.
+        Cada elemento es una vista nativa: UIView en iOS, View en Android.
       </Text>
 
       <Text [fontSize]="16" [color]="'#6ee7b7'">{{ label() }}</Text>
