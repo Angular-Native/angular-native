@@ -49,9 +49,10 @@ bootstrapNativeApplication(AppComponent)
 
 ```bash
 cargo an dev                  # compila, lanza en el simulador y recarga al guardar
+cargo an dev --android        # lo mismo, en el emulador de Android
 cargo an ios                  # una sola vez, sin vigilar
 cargo an android              # APK, emulador y lanzamiento
-cargo an build --release      # solo el bundle: 276 KB frente a 933 KB en debug
+cargo an build --release      # solo el bundle: 276 KB frente a 1.1 MB en debug
 ```
 
 Todo va por el mismo binario, `an`. No hay `.xcodeproj` ni Gradle: las
@@ -162,9 +163,10 @@ llamarlo listo para producción:
   atrás. `NativePlatformLocation.back()` es el punto por donde entrarían.
 - **La recarga en caliente pierde el estado.** El *fast refresh* de React
   Native exige saber qué componentes cambiaron y reconciliar el árbol.
-- **Android va por detrás de iOS.** El host monta vistas, mide texto y entrega
-  toques, pero le faltan gestos más allá del `press`, eventos de scroll y de
-  campo de texto, y el cliente del servidor de desarrollo.
+- **Android va algo por detrás de iOS.** Tiene vistas, medición, toques con
+  posición, scroll, campo de texto, módulos nativos y recarga en caliente, pero
+  le faltan el doble toque, el radio de borde por esquina y la traducción de
+  más props visuales.
 
 ## Desarrollo
 

@@ -34,10 +34,16 @@ struct Server {
     reloads: broadcast::Sender<()>,
 }
 
+/// Dónde lanzar la app que se va a recargar.
+pub enum Target {
+    Ios { device: String },
+    Android,
+}
+
 pub fn run(
     workspace: Workspace,
     app: PathBuf,
-    device: String,
+    target: Target,
     port: u16,
     no_launch: bool,
 ) -> Result<()> {
@@ -52,7 +58,12 @@ pub fn run(
     let (reloads, _) = broadcast::channel(8);
     let server = Server { bundle: Arc::new(tokio::sync::RwLock::new(source)), reloads };
 
-    let url = format!("http://127.0.0.1:{port}");
+    // El emulador de Android no ve `localhost`: la máquina anfitriona es
+    // 10.0.2.2 desde dentro.
+    let url = match target {
+        Target::Ios { .. } => format!("http://127.0.0.1:{port}"),
+        Target::Android => format!("http://{}:{port}", crate::android::EMULATOR_HOST),
+    };
 
     // El puerto se abre antes de dar nada por bueno: si ya hay otro `an dev`
     // corriendo, más vale decirlo aquí que arrancar a medias.
@@ -64,6 +75,7 @@ pub fn run(
     runtime.spawn(async move {
         let router = Router::new()
             .route("/bundle.js", get(serve_bundle))
+            .route("/wait", get(wait_for_reload))
             .route("/ws", get(upgrade))
             .with_state(serving);
         if let Err(error) = axum::serve(listener, router).await {
@@ -73,8 +85,16 @@ pub fn run(
 
     eprintln!("==> servidor de desarrollo en {url}");
     if !no_launch {
-        let package = ios::assemble(&workspace, &bundle_path, false, Some(&url))?;
-        ios::launch(&package, &device)?;
+        match &target {
+            Target::Ios { device } => {
+                let package = ios::assemble(&workspace, &bundle_path, false, Some(&url))?;
+                ios::launch(&package, device)?;
+            }
+            Target::Android => {
+                let apk = crate::android::assemble(&workspace, &bundle_path, false, Some(&url))?;
+                crate::android::install_and_launch(&workspace, &apk)?;
+            }
+        }
     }
     eprintln!("==> vigilando {} y packages/", app.display());
 
@@ -84,6 +104,21 @@ pub fn run(
 async fn serve_bundle(State(server): State<Server>) -> impl IntoResponse {
     let source = server.bundle.read().await.clone();
     ([("content-type", "application/javascript; charset=utf-8")], source)
+}
+
+/// Espera larga: el cliente pregunta y el servidor no contesta hasta que hay
+/// una recarga. Es para Android, donde la plataforma no trae cliente de
+/// WebSocket y meter OkHttp solo para esto no compensa.
+///
+/// Devuelve 204 al cabo de un rato para que la conexión no se quede colgada
+/// indefinidamente en un proxy o en el emulador.
+async fn wait_for_reload(State(server): State<Server>) -> impl IntoResponse {
+    let mut reloads = server.reloads.subscribe();
+    let waited = tokio::time::timeout(Duration::from_secs(30), reloads.recv()).await;
+    match waited {
+        Ok(Ok(())) => axum::http::StatusCode::OK,
+        _ => axum::http::StatusCode::NO_CONTENT,
+    }
 }
 
 async fn upgrade(ws: WebSocketUpgrade, State(server): State<Server>) -> impl IntoResponse {

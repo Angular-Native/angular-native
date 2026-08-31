@@ -54,7 +54,10 @@ enum Command {
         device: String,
         #[arg(long, default_value_t = 8420)]
         port: u16,
-        /// No lanza el simulador; solo sirve el bundle.
+        /// Lanza en el emulador de Android en vez de en el simulador de iOS.
+        #[arg(long)]
+        android: bool,
+        /// No lanza nada; solo sirve el bundle.
         #[arg(long)]
         no_launch: bool,
     },
@@ -80,16 +83,17 @@ fn main() -> anyhow::Result<()> {
         Command::Android { app, release, no_launch } => {
             let app = workspace.app(app.as_deref())?;
             let bundle = build::bundle(&workspace, &app, release)?;
-            let apk = android::assemble(&workspace, &bundle, release)?;
+            let apk = android::assemble(&workspace, &bundle, release, None)?;
             if no_launch {
                 println!("{}", apk.display());
                 return Ok(());
             }
             android::install_and_launch(&workspace, &apk)
         }
-        Command::Dev { app, device, port, no_launch } => {
+        Command::Dev { app, device, port, android, no_launch } => {
             let app = workspace.app(app.as_deref())?;
-            dev::run(workspace, app, device, port, no_launch)
+            let target = if android { dev::Target::Android } else { dev::Target::Ios { device } };
+            dev::run(workspace, app, target, port, no_launch)
         }
     }
 }

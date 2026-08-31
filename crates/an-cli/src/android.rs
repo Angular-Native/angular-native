@@ -67,7 +67,15 @@ fn newest_dir(parent: &Path) -> Option<PathBuf> {
     entries.pop()
 }
 
-pub fn assemble(workspace: &Workspace, bundle: &Path, release: bool) -> Result<PathBuf> {
+/// Desde el emulador, la máquina anfitriona no es `localhost`.
+pub const EMULATOR_HOST: &str = "10.0.2.2";
+
+pub fn assemble(
+    workspace: &Workspace,
+    bundle: &Path,
+    release: bool,
+    dev_server: Option<&str>,
+) -> Result<PathBuf> {
     let sdk = Sdk::discover()?;
     let root = &workspace.root;
     let profile = if release { "release" } else { "debug" };
@@ -95,6 +103,9 @@ pub fn assemble(workspace: &Workspace, bundle: &Path, release: bool) -> Result<P
         staging.join(format!("lib/{ABI}/liban_android.so")),
     )?;
     std::fs::copy(bundle, staging.join("assets/main.js"))?;
+    if let Some(url) = dev_server {
+        std::fs::write(staging.join("assets/dev-server.txt"), url)?;
+    }
 
     eprintln!("==> shell Java");
     let classes = out.join("classes");
@@ -165,7 +176,14 @@ pub fn assemble(workspace: &Workspace, bundle: &Path, release: bool) -> Result<P
 
     // `aapt2` solo mete el manifiesto: el dex, la biblioteca nativa y los
     // assets se añaden al zip después, con las rutas que espera Android.
-    let entries = ["classes.dex".to_owned(), format!("lib/{ABI}/liban_android.so"), "assets/main.js".to_owned()];
+    let mut entries = vec![
+        "classes.dex".to_owned(),
+        format!("lib/{ABI}/liban_android.so"),
+        "assets/main.js".to_owned(),
+    ];
+    if dev_server.is_some() {
+        entries.push("assets/dev-server.txt".to_owned());
+    }
     let mut zip_args: Vec<String> = vec!["-q".into(), "-X".into(), unsigned.to_string_lossy().into_owned()];
     zip_args.extend(entries.iter().cloned());
     let status = Command::new("zip")

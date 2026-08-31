@@ -4,13 +4,16 @@
 
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
 
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Sin barra de acción: la pantalla la dibuja la app entera, igual que
          en iOS, y el layout ya reserva el hueco de la barra de estado. -->
     <application
         android:label="AngularNative"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:hardwareAccelerated="true"
-        android:extractNativeLibs="true">
+        android:extractNativeLibs="true"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -25,6 +25,7 @@ public final class MainActivity extends Activity {
     private AnRuntime runtime;
     private AnHost host;
     private Choreographer.FrameCallback frameCallback;
+    private DevClient devClient;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,6 +57,20 @@ public final class MainActivity extends Activity {
             Log.e(TAG, "main.js lanzó al evaluarse");
         }
 
+        // Solo existe si el APK lo armó `an dev`.
+        devClient =
+                DevClient.create(
+                        readAsset("dev-server.txt"),
+                        code -> {
+                            Log.i(TAG, "recargando");
+                            if (runtime.reload("main.js", code) != 0) {
+                                Log.e(TAG, "el bundle recargado lanzó al evaluarse");
+                            }
+                        });
+        if (devClient != null) {
+            devClient.start();
+        }
+
         // El reloj de la app es el del vsync, igual que el CADisplayLink de
         // iOS: los temporizadores de JS avanzan con los frames.
         frameCallback =
@@ -78,6 +93,9 @@ public final class MainActivity extends Activity {
     protected void onDestroy() {
         if (frameCallback != null) {
             Choreographer.getInstance().removeFrameCallback(frameCallback);
+        }
+        if (devClient != null) {
+            devClient.stop();
         }
         if (runtime != null) {
             runtime.close();
