@@ -1,0 +1,36 @@
+[package]
+name = "an-ios"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+# staticlib para enlazar desde Xcode; rlib para poder testear desde Rust.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+an-core.workspace = true
+an-host.workspace = true
+an-layout.workspace = true
+
+# UIKit solo existe en plataformas Apple móviles. Fuera de ellas el crate
+# compila vacío, para que `cargo test` del workspace siga funcionando en Mac.
+[target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))'.dependencies]
+objc2 = { version = "0.6", default-features = false, features = ["std"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std", "NSString", "NSAttributedString", "NSDictionary", "NSValue", "NSGeometry", "objc2-core-foundation",
+] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGColor"] }
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "objc2-core-foundation", "objc2-core-graphics"] }
+objc2-ui-kit = { version = "0.3", default-features = false, features = [
+  "std", "objc2-core-foundation", "objc2-quartz-core", "objc2-core-graphics",
+  "UIFontDescriptor", "UIAccessibilityIdentification",
+  "UIView", "UILabel", "UIImageView", "UIImage", "UIColor", "UIFont",
+  "UIResponder", "UIScreen", "UIScrollView", "UITextField", "UIControl",
+  "NSStringDrawing", "NSParagraphStyle", "NSText", "NSAttributedString",
+] }
+
+[dev-dependencies]
+an-core.workspace = true

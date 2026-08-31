@@ -25,14 +25,14 @@ Tres hilos: JS (lógica), core Rust (árbol, layout, diff), UI (vistas nativas).
 | `an-layout` | Props de estilo a `taffy::Style`, árbol de layout, medición de hojas |
 | `an-core` | Shadow tree, mutaciones, commit, diff hacia `MountOp` |
 | `an-host` | Traits `HostRenderer` y `TextMeasurer`, y el `Renderer` que los une |
-| `an-ios` | Implementación UIKit del host (pendiente) |
+| `an-ios` | Host UIKit, medidor de texto y superficie C para el shell |
 | `an-bridge` | Motor JS y protocolo de comandos (pendiente) |
 | `an-cli` | Dev server, bundling y HMR (pendiente) |
 
 ## Estado
 
 - [x] **Fase 0** — Núcleo Rust: shadow tree, layout flexbox, diff incremental, tests
-- [ ] **Fase 1** — Host iOS con UIKit y medición de texto real
+- [x] **Fase 1** — Host iOS con UIKit, medición de texto real y app en el simulador
 - [ ] **Fase 2** — Motor JS embebido y puente de comandos
 - [ ] **Fase 3** — Plataforma Angular: `Renderer2`, scheduler por vsync, primitivas
 - [ ] **Fase 4** — CLI, dev server y HMR
@@ -53,8 +53,16 @@ Tres hilos: JS (lógica), core Rust (árbol, layout, diff), UI (vistas nativas).
 ## Desarrollo
 
 ```bash
-cargo test          # núcleo completo, sin simulador ni Xcode
+cargo test              # núcleo completo, sin simulador ni Xcode
+./scripts/run-ios.sh    # compila, enlaza y lanza la app en el simulador
 ```
 
+`run-ios.sh` no usa `.xcodeproj`: compila el core con `cargo`, enlaza el shell
+Swift con `swiftc` contra el `staticlib`, arma el `.app` a mano y lo instala con
+`simctl`. Es lo que `an-cli` acabará haciendo. Variables: `DEVICE`, `PROFILE`.
+
 `NaiveMeasurer` aproxima la medición de texto para que el núcleo sea testeable
-sin plataforma. No usar en producción.
+sin plataforma. En el simulador manda `UikitMeasurer`, que pregunta a UIKit con
+`boundingRectWithSize:` y cachea por (texto, fuente, ancho disponible): el
+layout mide cada nodo tres veces por frame y sin caché eso son cientos de
+cruces a Objective-C.
