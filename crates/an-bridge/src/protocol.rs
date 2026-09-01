@@ -56,6 +56,11 @@ pub fn kind_from_byte(byte: u8) -> Option<NodeKind> {
         13 => NodeKind::Modal,
         14 => NodeKind::Alert,
         15 => NodeKind::Icon,
+        16 => NodeKind::SegmentedControl,
+        17 => NodeKind::Stepper,
+        18 => NodeKind::SearchBar,
+        19 => NodeKind::Select,
+        20 => NodeKind::DatePicker,
         _ => return None,
     })
 }
@@ -78,6 +83,11 @@ pub fn kind_to_byte(kind: NodeKind) -> u8 {
         NodeKind::Modal => 13,
         NodeKind::Alert => 14,
         NodeKind::Icon => 15,
+        NodeKind::SegmentedControl => 16,
+        NodeKind::Stepper => 17,
+        NodeKind::SearchBar => 18,
+        NodeKind::Select => 19,
+        NodeKind::DatePicker => 20,
     }
 }
 

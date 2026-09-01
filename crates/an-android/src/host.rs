@@ -52,6 +52,11 @@ impl JniHost {
             NodeKind::Modal => 13,
             NodeKind::Alert => 14,
             NodeKind::Icon => 15,
+            NodeKind::SegmentedControl => 16,
+            NodeKind::Stepper => 17,
+            NodeKind::SearchBar => 18,
+            NodeKind::Select => 19,
+            NodeKind::DatePicker => 20,
         }
     }
 }

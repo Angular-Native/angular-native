@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -31,18 +32,18 @@ public final class AnTabBar extends LinearLayout {
         void onSelected(int index);
     }
 
+    /** Crea la vista del icono de una pestaña, o `null` si ese nombre no existe. */
+    public interface IconFactory {
+        View create(String name);
+    }
+
     private final float density;
     private OnTabSelected listener;
+    private IconFactory iconFactory;
     private int selected;
     private int activeColor = Color.WHITE;
     private String[] titles = new String[0];
     private String[] icons = new String[0];
-    /** Resuelve el nombre de un icono a un drawable del sistema. */
-    public interface IconResolver {
-        android.graphics.drawable.Drawable resolve(String name);
-    }
-
-    private IconResolver iconResolver;
 
     public AnTabBar(Context context) {
         super(context);
@@ -55,14 +56,14 @@ public final class AnTabBar extends LinearLayout {
         this.listener = listener;
     }
 
+    public void setIconFactory(IconFactory factory) {
+        this.iconFactory = factory;
+        rebuild();
+    }
+
     public void setActiveColor(int color) {
         this.activeColor = color;
         refresh();
-    }
-
-    public void setIconResolver(IconResolver resolver) {
-        this.iconResolver = resolver;
-        rebuild();
     }
 
     public void setTitles(String[] titles) {
@@ -76,24 +77,36 @@ public final class AnTabBar extends LinearLayout {
         rebuild();
     }
 
+    public void setSelectedIndex(int index) {
+        selected = index;
+        refresh();
+    }
+
     private void rebuild() {
         removeAllViews();
         for (int index = 0; index < titles.length; index++) {
-            TextView tab = new TextView(getContext());
-            tab.setText(titles[index]);
+            LinearLayout tab = new LinearLayout(getContext());
+            tab.setOrientation(VERTICAL);
             tab.setGravity(Gravity.CENTER);
-            tab.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-            tab.setSingleLine(true);
-            // El icono va encima del texto, que es donde lo pone Android.
-            if (iconResolver != null && index < icons.length) {
-                android.graphics.drawable.Drawable icon = iconResolver.resolve(icons[index]);
+
+            if (iconFactory != null && index < icons.length) {
+                View icon = iconFactory.create(icons[index]);
                 if (icon != null) {
-                    int side = Math.round(24 * density);
-                    icon.setBounds(0, 0, side, side);
-                    tab.setCompoundDrawables(null, icon, null, null);
-                    tab.setCompoundDrawablePadding(Math.round(2 * density));
+                    tab.addView(
+                            icon,
+                            new LayoutParams(
+                                    LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
                 }
             }
+
+            TextView label = new TextView(getContext());
+            label.setText(titles[index]);
+            label.setGravity(Gravity.CENTER);
+            label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            label.setSingleLine(true);
+            tab.addView(
+                    label, new LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT));
+
             final int position = index;
             tab.setOnClickListener(
                     v -> {
@@ -108,24 +121,26 @@ public final class AnTabBar extends LinearLayout {
         refresh();
     }
 
-    public void setSelectedIndex(int index) {
-        selected = index;
-        refresh();
-    }
-
     private void refresh() {
         for (int index = 0; index < getChildCount(); index++) {
-            TextView tab = (TextView) getChildAt(index);
+            View child = getChildAt(index);
+            if (!(child instanceof LinearLayout)) {
+                continue;
+            }
+            LinearLayout tab = (LinearLayout) child;
             boolean active = index == selected;
             int color = active ? activeColor : Color.argb(140, 255, 255, 255);
-            tab.setTextColor(color);
-            tab.setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
-            // El icono se tiñe con el mismo color que su texto: si no, la
-            // pestaña activa tendría el rótulo encendido y el icono apagado.
-            for (android.graphics.drawable.Drawable drawable : tab.getCompoundDrawables()) {
-                if (drawable != null) {
-                    drawable.setTint(color);
+            // El icono y el rótulo llevan el mismo color: si no, la pestaña
+            // activa tendría el rótulo encendido y el icono apagado.
+            for (int part = 0; part < tab.getChildCount(); part++) {
+                View inner = tab.getChildAt(part);
+                if (inner instanceof TextView) {
+                    ((TextView) inner).setTextColor(color);
                 }
+            }
+            View last = tab.getChildAt(tab.getChildCount() - 1);
+            if (last instanceof TextView) {
+                ((TextView) last).setTypeface(null, active ? Typeface.BOLD : Typeface.NORMAL);
             }
         }
     }

@@ -153,9 +153,7 @@ public final class AnHost {
                 view = new ImageView(context);
                 break;
             case KIND_ICON: {
-                ImageView icon = new ImageView(context);
-                icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                view = icon;
+                view = newIconView();
                 break;
             }
             case KIND_SCROLL: {
@@ -182,7 +180,7 @@ public final class AnHost {
             }
             case KIND_TABBAR:
                 AnTabBar tabBar = new AnTabBar(context);
-                tabBar.setIconResolver(this::iconDrawable);
+                tabBar.setIconFactory(this::tabIcon);
                 view = tabBar;
                 break;
             case KIND_SWITCH:
@@ -739,15 +737,28 @@ public final class AnHost {
                 }
                 break;
             case "name":
-                if (view instanceof ImageView) {
-                    ((ImageView) view).setImageDrawable(iconDrawable(value));
+                if (view instanceof TextView && isIcon(view)) {
+                    ((TextView) view).setText(iconGlyph(value));
                 }
                 break;
             case "iconSize":
+                if (view instanceof TextView && isIcon(view)) {
+                    // El tamaño del glifo es el de la caja: un icono de 24
+                    // ocupa 24, sin el hueco de línea que deja un texto.
+                    ((TextView) view)
+                            .setTextSize(TypedValue.COMPLEX_UNIT_DIP, number(value, 24f));
+                }
+                break;
             case "iconWeight":
-                // En Android el tamaño de un icono es el de su vista: los
-                // drawables del sistema no tienen variantes por trazo como
-                // los SF Symbols, así que el layout ya lo resuelve.
+                if (view instanceof TextView && isIcon(view)) {
+                    // Material Symbols es una fuente variable: el grosor del
+                    // trazo es un eje, no otro fichero.
+                    ((TextView) view)
+                            .getPaint()
+                            .setFontVariationSettings(
+                                    "'wght' " + Math.round(number(value, 400f)));
+                    view.invalidate();
+                }
                 break;
             case "opacity":
                 visual(view, id).alpha(number(value, 1f));
@@ -897,11 +908,6 @@ public final class AnHost {
                 }
                 if (view instanceof AnTabBar) {
                     ((AnTabBar) view).setActiveColor(color);
-                } else if (view instanceof ImageView) {
-                    // Un icono se tiñe: los drawables del sistema vienen en
-                    // gris y sin esto `[color]` no haría nada.
-                    ((ImageView) view).setImageTintList(
-                            android.content.res.ColorStateList.valueOf(color));
                 } else if (view instanceof android.widget.Switch) {
                     // El pulgar y la vía llevan tintes distintos; el mismo
                     // color en los dos es lo más parecido al de iOS.
@@ -1340,96 +1346,130 @@ public final class AnHost {
     }
 
     /**
-     * El icono del sistema que corresponde a un nombre.
+     * Los iconos de Material, en la app.
      *
-     * No se empaqueta ningún juego de iconos: se busca por nombre entre los
-     * del sistema, que es lo que hace que el icono envejezca con la
-     * plataforma en vez de quedarse anclado al día en que se metió aquí.
+     * El juego que trae Android —`android.R.drawable`— lleva congelado desde
+     * 2011 por compatibilidad: es el de Gingerbread, no el de Material 3, y no
+     * se parece en nada a lo que la gente espera hoy. Los actuales viven en
+     * librerías que no están en la plataforma, así que la app se trae la
+     * fuente variable de Material Symbols y dibuja el glifo.
+     *
+     * Se buscan por codepoint y no por ligadura: una ligadura que no existe se
+     * dibuja como las letras del nombre, y un icono que se equivoca es mejor
+     * que no salga a que salga escrito.
      */
-    private android.graphics.drawable.Drawable iconDrawable(String name) {
+    private android.graphics.Typeface iconFont;
+
+    private java.util.HashMap<String, String> iconCodepoints;
+
+    private TextView newIconView() {
+        TextView icon = new TextView(context);
+        icon.setIncludeFontPadding(false);
+        icon.setPadding(0, 0, 0, 0);
+        icon.setGravity(Gravity.CENTER);
+        icon.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 24f);
+        icon.setTag(ICON_TAG);
+        android.graphics.Typeface font = iconTypeface();
+        if (font != null) {
+            icon.setTypeface(font);
+        }
+        return icon;
+    }
+
+    /** La vista del icono de una pestaña, o `null` si ese nombre no existe. */
+    private View tabIcon(String name) {
+        String glyph = iconGlyph(name);
+        if (glyph.isEmpty()) {
+            return null;
+        }
+        TextView icon = newIconView();
+        icon.setText(glyph);
+        return icon;
+    }
+
+    private static final String ICON_TAG = "an-icon";
+
+    private static boolean isIcon(View view) {
+        return ICON_TAG.equals(view.getTag());
+    }
+
+    private android.graphics.Typeface iconTypeface() {
+        if (iconFont == null) {
+            try {
+                iconFont = android.graphics.Typeface.createFromAsset(
+                        context.getAssets(), "material-symbols.ttf");
+            } catch (RuntimeException error) {
+                android.util.Log.e("angular-native", "no se pudo cargar la fuente de iconos", error);
+            }
+        }
+        return iconFont;
+    }
+
+    /** El carácter que dibuja este icono, o vacío si no existe. */
+    private String iconGlyph(String name) {
         if (name == null || name.isEmpty()) {
-            return null;
+            return "";
         }
-        String resolved = translateIcon(name);
-        int id = context.getResources().getIdentifier(resolved, "drawable", "android");
-        if (id == 0) {
-            return null;
+        if (iconCodepoints == null) {
+            iconCodepoints = loadCodepoints();
         }
-        return context.getDrawable(id);
+        String code = iconCodepoints.get(translateIcon(name));
+        if (code == null) {
+            return "";
+        }
+        return new String(Character.toChars(Integer.parseInt(code, 16)));
+    }
+
+    private java.util.HashMap<String, String> loadCodepoints() {
+        java.util.HashMap<String, String> map = new java.util.HashMap<>();
+        try (java.io.BufferedReader reader =
+                new java.io.BufferedReader(
+                        new java.io.InputStreamReader(
+                                context.getAssets().open("material-symbols.codepoints")))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                int space = line.indexOf(' ');
+                if (space > 0) {
+                    map.put(line.substring(0, space), line.substring(space + 1).trim());
+                }
+            }
+        } catch (java.io.IOException error) {
+            android.util.Log.e("angular-native", "no se pudo leer el mapa de iconos", error);
+        }
+        return map;
     }
 
     /**
-     * Nombres comunes, traducidos al drawable del sistema que les toca.
+     * Nombres comunes, traducidos al de Material Symbols.
      *
-     * Los nombres son los mismos que en iOS a propósito: quien escribe
-     * `[name]="'search'"` no debería tener que saber que en un sitio se llama
-     * `magnifyingglass` y en el otro `ic_menu_search`. Un nombre que no esté
-     * en la lista se busca tal cual, que es la salida para lo específico de
-     * cada plataforma.
+     * Los que ya coinciden no hacen falta: la lista es solo para los que se
+     * llaman distinto en cada plataforma, para que la misma plantilla valga
+     * para las dos. Cualquier nombre de Material Symbols pasa tal cual, y son
+     * más de cuatro mil.
      */
     private static String translateIcon(String name) {
         switch (name) {
-            case "home":
-                // Android no trae icono de inicio en el juego del sistema.
-                // `ic_menu_view` es lo más cercano; con un juego propio se
-                // pasa el nombre del drawable directamente.
-                return "ic_menu_view";
-            case "search":
-                return "ic_menu_search";
-            case "settings":
-                return "ic_menu_preferences";
             case "profile":
             case "account":
-                return "ic_menu_myplaces";
+                return "account_circle";
             case "back":
-                return "ic_media_previous";
+                return "arrow_back";
             case "forward":
-                return "ic_media_next";
-            case "close":
-                return "ic_menu_close_clear_cancel";
-            case "add":
-                return "ic_menu_add";
-            case "remove":
-                return "ic_menu_revert";
-            case "delete":
-                return "ic_menu_delete";
-            case "edit":
-                return "ic_menu_edit";
-            case "share":
-                return "ic_menu_share";
-            case "favorite":
-            case "star":
-                return "btn_star_big_on";
-            case "menu":
-                return "ic_menu_sort_by_size";
+                return "arrow_forward";
             case "more":
-                return "ic_menu_more";
-            case "info":
-                return "ic_menu_info_details";
-            case "warning":
-                return "ic_dialog_alert";
-            case "refresh":
-                return "ic_menu_rotate";
+                return "more_horiz";
             case "calendar":
-                return "ic_menu_my_calendar";
+                return "calendar_month";
             case "camera":
-                return "ic_menu_camera";
-            case "chat":
-                return "ic_dialog_email";
-            case "mail":
-                return "ic_dialog_email";
-            case "list":
-                return "ic_menu_agenda";
+                return "photo_camera";
+            case "bell":
+                return "notifications";
             case "play":
-                return "ic_media_play";
-            case "pause":
-                return "ic_media_pause";
-            case "upload":
-                return "ic_menu_upload";
+                return "play_arrow";
             case "location":
-                return "ic_menu_mylocation";
-            case "check":
-                return "checkbox_on_background";
+                return "location_on";
+            case "chat":
+                return "chat_bubble";
             default:
                 return name;
         }

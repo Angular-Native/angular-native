@@ -96,6 +96,11 @@ pub trait TextMeasurer {
             // `[size]`, que además de configurar el símbolo fija el ancho y el
             // alto: así un icono sin medidas no queda invisible.
             "Icon" => (24.0, 24.0),
+            "SegmentedControl" => (320.0, 32.0),
+            "Stepper" => (94.0, 32.0),
+            "SearchBar" => (320.0, 56.0),
+            "Select" => (140.0, 44.0),
+            "DatePicker" => (200.0, 44.0),
             _ => (0.0, 0.0),
         }
     }

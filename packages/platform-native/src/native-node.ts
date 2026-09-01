@@ -44,6 +44,11 @@ export type NativeKind =
   | 'Modal'
   | 'Alert'
   | 'Icon'
+  | 'SegmentedControl'
+  | 'Stepper'
+  | 'SearchBar'
+  | 'Select'
+  | 'DatePicker'
 
 /** Primitivas que el core sabe montar. El resto son hosts de componentes. */
 const KINDS: Record<string, NativeKind> = {
@@ -61,7 +66,12 @@ const KINDS: Record<string, NativeKind> = {
   Button: 'Button',
   Modal: 'Modal',
   Alert: 'Alert',
-  Icon: 'Icon'
+  Icon: 'Icon',
+  SegmentedControl: 'SegmentedControl',
+  Stepper: 'Stepper',
+  SearchBar: 'SearchBar',
+  Select: 'Select',
+  DatePicker: 'DatePicker'
 }
 
 export class NativeNode {

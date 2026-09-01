@@ -240,7 +240,12 @@
     Button: 12,
     Modal: 13,
     Alert: 14,
-    Icon: 15
+    Icon: 15,
+    SegmentedControl: 16,
+    Stepper: 17,
+    SearchBar: 18,
+    Select: 19,
+    DatePicker: 20
   }
 
   class CommandWriter {

@@ -103,6 +103,16 @@ pub fn assemble(
         staging.join(format!("lib/{ABI}/liban_android.so")),
     )?;
     std::fs::copy(bundle, staging.join("assets/main.js"))?;
+    // Los iconos de Material. Van en la app y no en la plataforma porque el
+    // juego que trae Android —`android.R.drawable`— está congelado desde 2011
+    // por compatibilidad: no es el de Material 3 ni se parece.
+    for asset in ["material-symbols.ttf", "material-symbols.codepoints"] {
+        std::fs::copy(
+            root.join("shells/android/assets").join(asset),
+            staging.join("assets").join(asset),
+        )
+        .with_context(|| format!("no se pudo copiar {asset}"))?;
+    }
     if let Some(url) = dev_server {
         std::fs::write(staging.join("assets/dev-server.txt"), url)?;
     }
@@ -180,6 +190,8 @@ pub fn assemble(
         "classes.dex".to_owned(),
         format!("lib/{ABI}/liban_android.so"),
         "assets/main.js".to_owned(),
+        "assets/material-symbols.ttf".to_owned(),
+        "assets/material-symbols.codepoints".to_owned(),
     ];
     if dev_server.is_some() {
         entries.push("assets/dev-server.txt".to_owned());

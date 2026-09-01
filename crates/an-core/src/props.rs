@@ -34,6 +34,19 @@ pub enum NodeKind {
     /// empaqueta ningún juego de iconos: se piden por nombre y los dibuja la
     /// plataforma, con el trazo que le toque a esa versión.
     Icon,
+    /// Elegir una de varias opciones a la vista. `UISegmentedControl` en iOS;
+    /// en Android no hay equivalente en la plataforma y se dibuja con vistas
+    /// del sistema, como la barra de pestañas.
+    SegmentedControl,
+    /// Subir y bajar de uno en uno. `UIStepper` en iOS; en Android tampoco hay
+    /// y se arma con dos botones.
+    Stepper,
+    /// Campo de búsqueda del sistema, con su lupa y su botón de borrar.
+    SearchBar,
+    /// Elegir una de varias opciones de una lista que se despliega.
+    Select,
+    /// Selector de fecha y hora del sistema.
+    DatePicker,
 }
 
 impl NodeKind {
@@ -54,6 +67,11 @@ impl NodeKind {
             "Modal" | "modal" => NodeKind::Modal,
             "Alert" | "alert" => NodeKind::Alert,
             "Icon" | "icon" => NodeKind::Icon,
+            "DatePicker" | "date-picker" => NodeKind::DatePicker,
+            "Select" | "select" => NodeKind::Select,
+            "SearchBar" | "search-bar" => NodeKind::SearchBar,
+            "Stepper" | "stepper" => NodeKind::Stepper,
+            "SegmentedControl" | "segmented-control" => NodeKind::SegmentedControl,
             _ => return None,
         })
     }
@@ -84,6 +102,11 @@ impl NodeKind {
                 | NodeKind::ProgressBar
                 | NodeKind::Button
                 | NodeKind::Icon
+                | NodeKind::SegmentedControl
+                | NodeKind::Stepper
+                | NodeKind::SearchBar
+                | NodeKind::Select
+                | NodeKind::DatePicker
         )
     }
 
@@ -97,6 +120,11 @@ impl NodeKind {
             NodeKind::ProgressBar => "ProgressBar",
             NodeKind::Button => "Button",
             NodeKind::Icon => "Icon",
+            NodeKind::SegmentedControl => "SegmentedControl",
+            NodeKind::Stepper => "Stepper",
+            NodeKind::SearchBar => "SearchBar",
+            NodeKind::Select => "Select",
+            NodeKind::DatePicker => "DatePicker",
             _ => "",
         }
     }
