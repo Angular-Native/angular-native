@@ -122,7 +122,7 @@ public final class AnHost {
                 view = new ImageView(context);
                 break;
             case KIND_SCROLL: {
-                ScrollView scroll = new ScrollView(context);
+                AnScrollView scroll = new AnScrollView(context);
                 AnViewGroup content = new AnViewGroup(context);
                 // El contenido lo mide el ScrollView, no nosotros, y un
                 // ScrollView es un FrameLayout por dentro: exige sus propios
@@ -862,6 +862,18 @@ public final class AnHost {
     public void setListener(int id, String event, boolean enabled) {
         View view = views.get(id);
         if (view == null) {
+            return;
+        }
+        if ("refresh".equals(event) && view instanceof AnScrollView) {
+            ((AnScrollView) view)
+                    .setOnRefresh(
+                            enabled
+                                    ? () -> {
+                                        if (runtime != null) {
+                                            runtime.dispatchEvent(id, "refresh", 0f, 0f);
+                                        }
+                                    }
+                                    : null);
             return;
         }
         if ("scroll".equals(event) && view instanceof ScrollView) {

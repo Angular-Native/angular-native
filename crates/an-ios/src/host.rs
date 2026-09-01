@@ -771,6 +771,21 @@ impl HostRenderer for UikitHost {
                 }
             }
             // --- scroll
+            "refreshing" => {
+                // El control lo trajo la suscripción a `refresh`: si nadie
+                // escucha, no hay nada que parar.
+                if let Some(control) = self
+                    .listeners
+                    .get(&(id, "refresh".to_owned()))
+                    .and_then(crate::events::AttachedListener::refresh_control)
+                {
+                    if matches!(value, PropValue::Bool(true)) {
+                        control.beginRefreshing();
+                    } else {
+                        control.endRefreshing();
+                    }
+                }
+            }
             "showsScrollIndicator" => {
                 if let HostView::Scroll(scroll) = view {
                     let shown = !matches!(value, PropValue::Bool(false));

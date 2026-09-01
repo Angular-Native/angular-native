@@ -41,7 +41,12 @@ interface Row {
           (valueChange)="query.set($event)" />
       </View>
 
-      <VirtualList [items]="visible()" [itemHeight]="56" [style.flexGrow]="'1'">
+      <VirtualList
+        [items]="visible()"
+        [itemHeight]="56"
+        [style.flexGrow]="'1'"
+        [refreshing]="reloading()"
+        (refresh)="reload()">
         <ng-template let-row let-index="index">
           <View
             [style.height]="'56'"
@@ -62,6 +67,7 @@ export class AppComponent {
   }))
 
   readonly query = signal('')
+  readonly reloading = signal(false)
 
   /** Viene de un módulo nativo: la llamada no bloquea y llega en otro frame. */
   private readonly device = signal<string | null>(null)
@@ -72,6 +78,12 @@ export class AppComponent {
       .info()
       .then((info) => this.device.set(`${info.platform} ${info.systemVersion} · ${info.locale}`))
       .catch((error: unknown) => this.device.set(`sin datos del dispositivo: ${error}`))
+  }
+
+  /** Tirar para recargar: se finge un ida y vuelta al servidor. */
+  reload(): void {
+    this.reloading.set(true)
+    setTimeout(() => this.reloading.set(false), 1200)
   }
 
   readonly visible = computed(() => {

@@ -16,8 +16,9 @@ use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_foundation::NSObjectProtocol;
 use objc2_ui_kit::{
     UIControl, UIControlEvents, UIGestureRecognizer, UIGestureRecognizerState, UIRectEdge,
-    UIScreenEdgePanGestureRecognizer, UIScrollView, UIScrollViewDelegate, UISlider, UISwitch,
-    UITabBar, UITabBarDelegate, UITabBarItem, UITapGestureRecognizer, UITextField, UIView,
+    UIRefreshControl, UIScreenEdgePanGestureRecognizer, UIScrollView, UIScrollViewDelegate,
+    UISlider, UISwitch, UITabBar, UITabBarDelegate, UITabBarItem, UITapGestureRecognizer,
+    UITextField, UIView,
 };
 
 fn emit(queue: &EventQueue, target: NodeId, name: &str, payload: Vec<(String, PropValue)>) {
@@ -147,6 +148,12 @@ define_class!(
             let ivars = self.ivars();
             emit(&ivars.queue, ivars.node, "press", Vec::new());
         }
+
+        #[unsafe(method(handleRefresh:))]
+        fn handle_refresh(&self, _sender: &UIControl) {
+            let ivars = self.ivars();
+            emit(&ivars.queue, ivars.node, "refresh", Vec::new());
+        }
     }
 );
 
@@ -243,6 +250,16 @@ impl ScrollDelegate {
     }
 }
 
+impl AttachedListener {
+    /// El control de recarga del sistema, si esta suscripción lo trajo.
+    pub fn refresh_control(&self) -> Option<&UIRefreshControl> {
+        match self {
+            AttachedListener::Refresh { control, .. } => Some(control),
+            _ => None,
+        }
+    }
+}
+
 /// Una suscripción viva. Guarda lo que UIKit referencia débilmente, que es
 /// justo lo que se libera solo si no lo retiene nadie.
 pub enum AttachedListener {
@@ -260,6 +277,10 @@ pub enum AttachedListener {
     },
     Tabs {
         _delegate: Retained<TabDelegate>,
+    },
+    Refresh {
+        _target: Retained<ControlTarget>,
+        control: Retained<UIRefreshControl>,
     },
 }
 
@@ -284,6 +305,10 @@ impl AttachedListener {
                 let scroll: *const UIView = view;
                 let scroll = scroll.cast::<UIScrollView>();
                 unsafe { (*scroll).setDelegate(None) };
+            }
+            AttachedListener::Refresh { .. } => {
+                let scroll: *const UIView = view;
+                unsafe { (*scroll.cast::<UIScrollView>()).setRefreshControl(None) };
             }
             AttachedListener::Tabs { .. } => {
                 let bar: *const UIView = view;
@@ -323,6 +348,23 @@ pub fn attach(
         let control = control.cast::<UIControl>();
         unsafe { (*control).addTarget_action_forControlEvents(Some(&*target), action, events) };
         return Some(AttachedListener::Control { events, action, target });
+    }
+
+    // Tirar para recargar. En iOS lo dibuja el sistema: se le engancha un
+    // `UIRefreshControl` al scroll y él pone la ruedecilla y la animación.
+    if kind == NodeKind::ScrollView && event == "refresh" {
+        let target = ControlTarget::new(mtm, node, queue);
+        let control = UIRefreshControl::new(mtm);
+        unsafe {
+            control.addTarget_action_forControlEvents(
+                Some(&*target),
+                sel!(handleRefresh:),
+                UIControlEvents::ValueChanged,
+            );
+        }
+        let scroll: *const UIView = view;
+        unsafe { (*scroll.cast::<UIScrollView>()).setRefreshControl(Some(&control)) };
+        return Some(AttachedListener::Refresh { _target: target, control });
     }
 
     if kind == NodeKind::TabBar && event == "select" {

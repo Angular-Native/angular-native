@@ -10,6 +10,7 @@ import {
 } from '@angular/core'
 
 import { ScrollView, View, type NativeLayoutEvent, type NativeScrollEvent } from './primitives'
+import { output } from '@angular/core'
 
 /** Lo que recibe la plantilla de cada fila. */
 export interface VirtualListContext<T> {
@@ -66,6 +67,8 @@ interface Slot<T> {
     <ScrollView
       [style.flexGrow]="'1'"
       [style.overflow]="'scroll'"
+      [refreshing]="refreshing()"
+      (refresh)="refresh.emit()"
       (layout)="onLayout($event)"
       (scroll)="onScroll($event)">
       <View [style.height]="totalHeight()" [style.position]="'relative'">
@@ -93,6 +96,12 @@ export class VirtualList<T> {
   readonly itemHeight = input.required<number>()
   /** Ranuras de más a cada lado, para que un scroll rápido no deje huecos. */
   readonly overscan = input(4)
+
+  /** Si está recargando. El gesto la abre; ponerla a `false` la cierra. */
+  readonly refreshing = input(false)
+
+  /** Tirar para recargar. Sin nadie escuchando, el gesto no existe. */
+  readonly refresh = output<void>()
 
   protected readonly template = contentChild(TemplateRef<VirtualListContext<T>>)
 

@@ -171,6 +171,23 @@ export class ScrollView extends NativeVisual {
   }
 
   /**
+   * Si está recargando. Ponerlo a `false` cierra la ruedecilla; la abre el
+   * propio gesto, no esta prop.
+   */
+  @Input() set refreshing(value: boolean | null) {
+    this.set('refreshing', value ?? false)
+  }
+
+  /**
+   * Tirar para recargar.
+   *
+   * En iOS lo dibuja el sistema con un `UIRefreshControl`. Android no trae uno
+   * en la plataforma —`SwipeRefreshLayout` vive en AndroidX— así que se dibuja
+   * el mismo arco que hace el sistema.
+   */
+  readonly refresh = outputFromObservable(this.nativeEvent<void>('refresh'))
+
+  /**
    * Se emite en cada frame de desplazamiento. El `contentSize` lo calcula el
    * layout solo: es el tamaño que ocupan los hijos, y el core lo manda al
    * `UIScrollView` cuando cambia.
