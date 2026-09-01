@@ -105,12 +105,14 @@ JavaScript en cada frame.
 `focus`, `blur`, `submit`, `select`, `load`, `back`, `dismiss`.
 
 **Angular** — plantillas AOT, señales, `@if`, `@for`, router con parámetros,
-módulos nativos tipados, y recarga en caliente que conserva el estado.
+módulos nativos tipados, y refresco en caliente: al guardar cambia el código de
+los componentes sin tirar la app, así que sigues en la misma pantalla y con lo
+que llevaras escrito.
 
 ## Verificación sin dispositivo
 
 ```bash
-./scripts/check-all.sh        # todo: tests, las siete apps y las dos compilaciones cruzadas
+./scripts/check-all.sh        # todo: tests, las ocho apps y las dos compilaciones cruzadas
 
 cargo test                    # solo el núcleo Rust
 ./scripts/check-angular.sh    # la cadena entera: ngc, esbuild, QuickJS, taffy
@@ -195,22 +197,13 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
 
 ## Lo que no está hecho
 
-- **No hay *fast refresh*.** La recarga conserva el estado —la ruta, el scroll,
-  lo que se declare con `hotState`— pero recrea los componentes. El de React
-  Native conserva los propios componentes, y para eso hace falta cargar los
-  módulos por separado y sustituir con `ɵɵreplaceMetadata` los que cambiaron.
-- **En iPad se ven dos barras de pestañas.** Desde iOS 26, una `UITabBar` suelta
-  —fuera de un `UITabBarController`— adopta sola la presentación flotante del
-  iPad y se dibuja arriba además de en el marco que le da el layout. Fijarle una
-  apariencia no la convence. En iPhone sale una sola y en su sitio.
-- **Tres controles de Android no son del sistema.** La barra de pestañas, el
-  control segmentado y el de pasos no están en la plataforma —viven en la
-  librería de Material, que este build no usa— y se dibujan con vistas del
-  sistema. Los botones de Material 3 tampoco están: la píldora se dibuja sobre
-  un `Button` de verdad.
-- **`VirtualList` exige altura de fila fija.** Sin ella no se puede saber qué
-  hay en un desplazamiento sin haber medido todo lo anterior.
-- **Faltan mapa y vídeo.** Y un selector de fecha que no sea el compacto.
+- **El control segmentado y el de pasos de Android no son de Material.** Se
+  dibujan con vistas del sistema. El resto de controles ya son Material 3 de
+  verdad, de la librería, no una imitación con el tema puesto.
+- **El refresco en caliente no llega al framework.** Cambiar un componente de la
+  app conserva el estado; cambiar `packages/` o una dependencia obliga a
+  reiniciar, porque en el intérprete solo cabe una copia de Angular. Se avisa y
+  se reinicia, no se enseña código viejo.
 
 ## Desarrollo
 
