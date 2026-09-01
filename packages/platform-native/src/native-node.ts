@@ -7,7 +7,12 @@
  * por mutación — justo lo que el búfer de comandos evita. Así que este lado
  * mantiene la topología, y solo manda mutaciones.
  *
- * Es la misma decisión que toma Fabric con su shadow tree en JS.
+ * Es también donde se decide qué nodos existen de verdad. El host de un
+ * componente Angular —`<app-root>`, `<VirtualList>`, `<page-home>`— no es una
+ * vista: es un envoltorio. Si nadie le pone estilo, prop ni oyente, no se crea
+ * en el core y sus hijos cuelgan del abuelo. Fabric hace lo mismo en una pasada
+ * posterior y lo llama *view flattening*; aquí sale gratis porque este lado ve
+ * la secuencia entera antes de mandarla.
  */
 
 declare const __an_dom: {
@@ -39,7 +44,7 @@ export type NativeKind =
   | 'Modal'
   | 'Alert'
 
-/** Primitivas que el core sabe montar. El resto son error de plantilla. */
+/** Primitivas que el core sabe montar. El resto son hosts de componentes. */
 const KINDS: Record<string, NativeKind> = {
   View: 'View',
   Text: 'Text',
@@ -67,71 +72,160 @@ export class NativeNode {
    */
   destroyed = false
 
+  /**
+   * `0` mientras el nodo no exista en el core. Los envoltorios y los
+   * comentarios ancla de `@if` y `@for` viven solo en este lado.
+   */
+  id = 0
+
   constructor(
-    readonly id: number,
-    readonly kind: NativeKind | 'Comment'
+    readonly kind: NativeKind | 'Comment',
+    /** `false` para envoltorios y comentarios: no hay vista nativa detrás. */
+    public materialized: boolean
   ) {}
 
-  /** Índice del hijo dentro de este nodo, o -1. */
+  /** Tiene vista nativa propia ahora mismo. */
+  get mounted(): boolean {
+    return this.materialized && !this.destroyed
+  }
+
   indexOf(child: NativeNode): number {
     return this.children.indexOf(child)
   }
+}
 
-  /**
-   * Los comentarios son anclas de `@if` y `@for`: existen en el árbol de JS
-   * para poder calcular posiciones, pero nunca llegan al core.
-   */
-  get mounted(): boolean {
-    return this.kind !== 'Comment'
-  }
+/** Cuántas vistas nativas cuelgan de aquí, contándose a sí mismo. */
+function mountedCount(node: NativeNode): number {
+  if (node.mounted) return 1
+  let total = 0
+  for (const child of node.children) total += mountedCount(child)
+  return total
+}
 
-  /**
-   * Índice que entiende el core: cuenta solo hermanos montables anteriores.
-   * Sin esto, un `@if` que renderiza un comentario desplazaría a todos sus
-   * hermanos una posición.
-   */
-  mountIndexOf(child: NativeNode): number {
-    let index = 0
-    for (const current of this.children) {
-      if (current === child) return index
-      if (current.mounted) index++
-    }
-    return index
+/** Las vistas nativas más altas que cuelgan de aquí, en orden. */
+function mountedRoots(node: NativeNode, out: NativeNode[] = []): NativeNode[] {
+  if (node.mounted) {
+    out.push(node)
+    return out
   }
+  for (const child of node.children) mountedRoots(child, out)
+  return out
+}
+
+/** El ancestro que sí tiene vista nativa, saltándose los envoltorios. */
+function mountParent(node: NativeNode): NativeNode | null {
+  let parent = node.parent
+  while (parent && !parent.mounted) parent = parent.parent
+  return parent
 }
 
 /**
- * Un elemento cuyo nombre no es una primitiva es el host de un componente
- * Angular —`<VirtualList>`, `<app-header>`— y se monta como `View`.
+ * Posición que le toca a este nodo dentro de su padre montado.
  *
- * No hay error que dar aquí: un nombre inventado en una plantilla ya lo caza
- * el compilador, que exige que alguna directiva lo reconozca. Lo que llega a
- * este punto es siempre un componente de verdad.
- *
- * El coste es una vista nativa por componente. Fabric aplana esas vistas en
- * una pasada posterior (*view flattening*); aquí todavía no, y por eso un
- * árbol de componentes profundo monta más `UIView` de las estrictamente
- * necesarias.
+ * Hay que contar hacia arriba: entre él y su padre real puede haber varios
+ * envoltorios, y cada uno aporta las vistas de sus hermanos anteriores.
  */
+function mountIndex(node: NativeNode): number {
+  let index = 0
+  let current: NativeNode = node
+  while (current.parent) {
+    const parent: NativeNode = current.parent
+    for (const sibling of parent.children) {
+      if (sibling === current) break
+      index += mountedCount(sibling)
+    }
+    if (parent.mounted) break
+    current = parent
+  }
+  return index
+}
+
 export function createElementNode(name: string): NativeNode {
-  const kind = KINDS[name] ?? 'View'
-  return new NativeNode(__an_dom.createNode(kind), kind)
+  const kind = KINDS[name]
+  if (kind) {
+    const node = new NativeNode(kind, true)
+    node.id = __an_dom.createNode(kind)
+    return node
+  }
+  // Host de un componente: por ahora no existe. Si alguien le pone algo
+  // encima, se creará entonces.
+  return new NativeNode('View', false)
 }
 
 export function createTextNode(value: string): NativeNode {
-  const node = new NativeNode(__an_dom.createNode('RawText'), 'RawText')
+  const node = new NativeNode('RawText', true)
+  node.id = __an_dom.createNode('RawText')
   if (value !== '') __an_dom.setText(node.id, value)
   return node
 }
 
 /**
  * Un comentario no tiene contrapartida nativa: es solo un marcador de posición
- * en el árbol de JS. Se le da un id negativo para que un uso accidental contra
- * el core falle ruidosamente en vez de corromper un nodo real.
+ * de `@if` y `@for` en el árbol de JS.
  */
-let nextCommentId = -1
 export function createCommentNode(): NativeNode {
-  return new NativeNode(nextCommentId--, 'Comment')
+  return new NativeNode('Comment', false)
+}
+
+/**
+ * Crea de verdad un envoltorio que hasta ahora no existía.
+ *
+ * Ocurre cuando algo le pone un estilo, una prop o un oyente: deja de ser un
+ * envoltorio y pasa a ser una vista. Sus hijos, que colgaban del abuelo, se
+ * mudan dentro.
+ */
+export function materialize(node: NativeNode): void {
+  if (node.materialized || node.destroyed || node.kind === 'Comment') return
+
+  // Se apuntan antes de cambiar nada: después de materializar, `mountedRoots`
+  // devolvería el propio nodo.
+  const descendants = mountedRoots(node)
+  const parent = mountParent(node)
+  const index = mountIndex(node)
+
+  node.id = __an_dom.createNode(node.kind as NativeKind)
+  node.materialized = true
+
+  // Los hijos se sacan del abuelo y se meten dentro, en el mismo orden.
+  for (const child of descendants) {
+    const previous = mountParent(child)
+    if (previous && previous !== node) __an_dom.removeChild(previous.id, child.id)
+  }
+  if (parent) __an_dom.insertChild(parent.id, node.id, index)
+  descendants.forEach((child, position) => {
+    __an_dom.insertChild(node.id, child.id, position)
+  })
+}
+
+export function attach(parent: NativeNode, child: NativeNode, index: number): void {
+  if (child.destroyed || parent.destroyed) return
+  if (child.parent) detach(child.parent, child)
+  parent.children.splice(index, 0, child)
+  child.parent = parent
+
+  const target = mountParent(child)
+  if (!target) return
+  // Si el que entra es un envoltorio, lo que se monta son las vistas que
+  // cuelgan de él.
+  let position = mountIndex(child)
+  for (const view of mountedRoots(child)) {
+    __an_dom.insertChild(target.id, view.id, position++)
+  }
+}
+
+export function detach(parent: NativeNode, child: NativeNode): void {
+  const at = parent.children.indexOf(child)
+  if (at === -1) return
+
+  const target = mountParent(child)
+  const views = mountedRoots(child)
+  parent.children.splice(at, 1)
+  child.parent = null
+
+  if (!target || target.destroyed) return
+  for (const view of views) {
+    if (!view.destroyed) __an_dom.removeChild(target.id, view.id)
+  }
 }
 
 /**
@@ -146,26 +240,6 @@ export function markDestroyed(node: NativeNode): void {
   if (node.destroyed) return
   node.destroyed = true
   for (const child of node.children) markDestroyed(child)
-}
-
-export function attach(parent: NativeNode, child: NativeNode, index: number): void {
-  if (child.destroyed || parent.destroyed) return
-  if (child.parent) detach(child.parent, child)
-  parent.children.splice(index, 0, child)
-  child.parent = parent
-  if (child.mounted && parent.mounted) {
-    __an_dom.insertChild(parent.id, child.id, parent.mountIndexOf(child))
-  }
-}
-
-export function detach(parent: NativeNode, child: NativeNode): void {
-  const at = parent.children.indexOf(child)
-  if (at === -1) return
-  parent.children.splice(at, 1)
-  child.parent = null
-  if (child.mounted && parent.mounted && !child.destroyed && !parent.destroyed) {
-    __an_dom.removeChild(parent.id, child.id)
-  }
 }
 
 export const dom = __an_dom

@@ -25,7 +25,8 @@ import { NativeRendererFactory } from './renderer'
  * cuelga todo y el que el core monta sobre la vista que da la plataforma.
  */
 function createRootNode(): NativeNode {
-  const root = new NativeNode(dom.createNode('View'), 'View')
+  const root = new NativeNode('View', true)
+  root.id = dom.createNode('View')
   dom.setStyle(root.id, 'width', '100%')
   dom.setStyle(root.id, 'height', '100%')
   dom.setRoot(root.id)

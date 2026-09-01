@@ -137,6 +137,7 @@ fn main() {
     let mut tapped = false;
     let mut scrolled = false;
     let mut went_back = false;
+    let mut before_back = (0usize, 0usize);
     // Recuento en el momento justo antes de desplazar, para poder decir
     // cuántas vistas costó el desplazamiento.
     let mut before_scroll = (0usize, 0usize);
@@ -191,6 +192,7 @@ fn main() {
         // recupera la pantalla anterior en vez de rehacerla.
         if !went_back && frames > 3 && frame == frames - 2 {
             if let Some(target) = renderer.host().backable.first().copied() {
+                before_back = (renderer.host().created, renderer.host().destroyed);
                 println!("-- atrás simulado en #{target}");
                 js.dispatch_events(&[HostEvent {
                     target,
@@ -229,6 +231,13 @@ fn main() {
             "desplazarse costó {} vistas creadas y {} destruidas",
             host.created - before_scroll.0,
             host.destroyed - before_scroll.1
+        );
+    }
+    if went_back {
+        println!(
+            "volver atrás costó {} vistas creadas y {} destruidas",
+            host.created - before_back.0,
+            host.destroyed - before_back.1
         );
     }
 }

@@ -8,6 +8,7 @@ import {
   detach,
   dom,
   markDestroyed,
+  materialize,
   NativeNode
 } from './native-node'
 
@@ -83,11 +84,25 @@ export class NativeRenderer extends Renderer2 {
   }
 
   setAttribute(el: NativeNode, name: string, value: string): void {
-    if (el.mounted && !el.destroyed) dom.setProp(el.id, name, value)
+    if (!this.writable(el)) return
+    dom.setProp(el.id, name, value)
   }
 
   removeAttribute(el: NativeNode, name: string): void {
-    if (el.mounted && !el.destroyed) dom.setProp(el.id, name, null)
+    if (!this.writable(el)) return
+    dom.setProp(el.id, name, null)
+  }
+
+  /**
+   * Deja el nodo listo para recibir algo.
+   *
+   * Un envoltorio de componente no existe en el core hasta que alguien le
+   * pone estilo, prop u oyente: en ese momento deja de ser un envoltorio.
+   */
+  private writable(node: NativeNode): boolean {
+    if (node.destroyed || node.kind === 'Comment') return false
+    if (!node.materialized) materialize(node)
+    return node.materialized
   }
 
   /**
@@ -110,11 +125,12 @@ export class NativeRenderer extends Renderer2 {
   }
 
   private flushClasses(el: NativeNode, set: Set<string>): void {
-    if (el.mounted && !el.destroyed) dom.setProp(el.id, 'className', [...set].join(' '))
+    if (!this.writable(el)) return
+    dom.setProp(el.id, 'className', [...set].join(' '))
   }
 
   setStyle(el: NativeNode, style: string, value: unknown, flags?: RendererStyleFlags2): void {
-    if (!el.mounted || el.destroyed) return
+    if (!this.writable(el)) return
     // `!important` no significa nada sin cascada: se ignora la bandera y se
     // aplica el valor, que es el único comportamiento posible aquí.
     void flags
@@ -122,11 +138,13 @@ export class NativeRenderer extends Renderer2 {
   }
 
   removeStyle(el: NativeNode, style: string): void {
-    if (el.mounted && !el.destroyed) dom.setStyle(el.id, style, '')
+    if (!this.writable(el)) return
+    dom.setStyle(el.id, style, '')
   }
 
   setProperty(el: NativeNode, name: string, value: unknown): void {
-    if (el.mounted && !el.destroyed) dom.setProp(el.id, name, value as never)
+    if (!this.writable(el)) return
+    dom.setProp(el.id, name, value as never)
   }
 
   /** `Renderer2.setValue` sobre un nodo de texto. */
@@ -146,7 +164,7 @@ export class NativeRenderer extends Renderer2 {
       // (background, teclado) llegarán por un módulo nativo, no por aquí.
       return () => {}
     }
-    if (!target.mounted || target.destroyed) return () => {}
+    if (!this.writable(target)) return () => {}
     const unlisten = dom.listen(target.id, event, (payload) => {
       callback(payload)
     })

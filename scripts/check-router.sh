@@ -24,9 +24,8 @@ echo "== router"
 check 'StackView#[0-9]+' 'la pila nativa se montó'
 check '\-\- atrás simulado' 'el gesto de volver atrás tiene quien lo escuche'
 check '"Barcos"' 'tras volver atrás se ve otra vez la lista'
-# Los ids son los del primer montaje: si la pantalla se hubiera rehecho, el
-# core habría repartido ids nuevos y más altos.
-check 'Text#8 .*"Barcos"' 'la pantalla anterior se reatachó, no se rehizo'
+# Si la pantalla se hubiera rehecho, el core habría creado sus vistas otra vez.
+check 'volver atrás costó 0 vistas creadas' 'la pantalla anterior se reatachó, no se rehizo'
 if grep -qE -- 'búfer inválido|promesa rechazada|el arranque falló' <<<"$OUTPUT"; then
   echo "  FALLO hubo errores durante la navegación"
   fail=1
