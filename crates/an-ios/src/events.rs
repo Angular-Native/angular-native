@@ -15,6 +15,7 @@ use objc2::runtime::{ProtocolObject, Sel};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_foundation::NSObjectProtocol;
 use objc2_ui_kit::{
+    UITabBarController, UITabBarControllerDelegate, UIViewController,
     UIControl, UIControlEvents, UIGestureRecognizer, UIGestureRecognizerState,
     UILongPressGestureRecognizer, UIPanGestureRecognizer, UIPinchGestureRecognizer, UIRectEdge,
     UIRefreshControl, UIRotationGestureRecognizer, UIScreenEdgePanGestureRecognizer, UIScrollView,
@@ -329,23 +330,28 @@ define_class!(
 
     unsafe impl NSObjectProtocol for TabDelegate {}
 
-    unsafe impl UITabBarDelegate for TabDelegate {
-        #[unsafe(method(tabBar:didSelectItem:))]
-        fn tab_bar_did_select(&self, _bar: &UITabBar, item: &UITabBarItem) {
+    unsafe impl UITabBarControllerDelegate for TabDelegate {
+        #[unsafe(method(tabBarController:didSelectViewController:))]
+        fn did_select(
+            &self,
+            _controller: &UITabBarController,
+            selected: &UIViewController,
+        ) {
             let ivars = self.ivars();
+            let index = unsafe { selected.tabBarItem() }.map(|i| i.tag()).unwrap_or(0);
             emit(
                 &ivars.queue,
                 ivars.node,
                 "select",
-                // El `tag` es el índice: se le puso al construir el ítem.
-                vec![("index".to_owned(), PropValue::Number(item.tag() as f64))],
+                // El `tag` es el índice: se le puso al construir la pestaña.
+                vec![("index".to_owned(), PropValue::Number(index as f64))],
             );
         }
     }
 );
 
 impl TabDelegate {
-    fn new(mtm: objc2::MainThreadMarker, node: NodeId, queue: EventQueue) -> Retained<Self> {
+    pub fn new(mtm: objc2::MainThreadMarker, node: NodeId, queue: EventQueue) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(TabIvars { node, queue });
         unsafe { msg_send![super(this), init] }
     }
@@ -650,12 +656,10 @@ pub fn attach(
         return Some(AttachedListener::Refresh { _target: target, control });
     }
 
-    if kind == NodeKind::TabBar && event == "select" {
-        let delegate = TabDelegate::new(mtm, node, queue);
-        let bar: *const UIView = view;
-        let bar = bar.cast::<UITabBar>();
-        unsafe { (*bar).setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
-        return Some(AttachedListener::Tabs { _delegate: delegate });
+    // La selección de pestaña la avisa el controlador, no la vista: el host
+    // engancha el delegado al crearla, porque aquí solo llega la vista.
+    if kind == NodeKind::TabBar {
+        return None;
     }
 
     if kind == NodeKind::TextInput {

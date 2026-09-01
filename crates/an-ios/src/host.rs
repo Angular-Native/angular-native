@@ -115,7 +115,8 @@ enum HostView {
     Image(Retained<UIImageView>),
     Scroll(Retained<UIScrollView>),
     Field(Retained<UITextField>),
-    Tabs(Retained<UITabBar>),
+    /// La vista de un `UITabBarController`, que es quien dibuja la barra.
+    TabsHost(Retained<UIView>),
     Toggle(Retained<UISwitch>),
     Slide(Retained<UISlider>),
     Spinner(Retained<UIActivityIndicatorView>),
@@ -150,7 +151,7 @@ impl HostView {
             HostView::Image(v) => v,
             HostView::Scroll(v) => v,
             HostView::Field(v) => v,
-            HostView::Tabs(v) => v,
+            HostView::TabsHost(v) => v,
             HostView::Toggle(v) => v,
             HostView::Slide(v) => v,
             HostView::Spinner(v) => v,
@@ -179,7 +180,7 @@ impl HostView {
             HostView::Image(_) => NodeKind::Image,
             HostView::Scroll(_) => NodeKind::ScrollView,
             HostView::Field(_) => NodeKind::TextInput,
-            HostView::Tabs(_) => NodeKind::TabBar,
+            HostView::TabsHost(_) => NodeKind::TabBar,
             HostView::Toggle(_) => NodeKind::Switch,
             HostView::Slide(_) => NodeKind::Slider,
             HostView::Spinner(_) => NodeKind::ActivityIndicator,
@@ -317,6 +318,11 @@ pub struct UikitHost {
     icons: HashMap<NodeId, (String, f32, u16)>,
     /// Títulos e iconos de cada barra de pestañas, que llegan por separado.
     tabs: HashMap<NodeId, (Vec<String>, Vec<String>)>,
+    /// El controlador de pestañas de cada barra.
+    tab_controllers: HashMap<NodeId, Retained<objc2_ui_kit::UITabBarController>>,
+    /// El delegado de cada barra. Un delegado no se retiene, así que si no se
+    /// guarda aquí muere y las pestañas dejan de avisar.
+    tab_delegates: HashMap<NodeId, Retained<crate::events::TabDelegate>>,
     /// Opciones de cada desplegable, para poder poner el título del elegido.
     menus: HashMap<NodeId, Vec<String>>,
     /// Título y color de cada botón. Cambiar la variante rehace la
@@ -390,6 +396,8 @@ impl UikitHost {
             animations: HashMap::new(),
             icons: HashMap::new(),
             tabs: HashMap::new(),
+            tab_controllers: HashMap::new(),
+            tab_delegates: HashMap::new(),
             menus: HashMap::new(),
             button_titles: HashMap::new(),
             button_colors: HashMap::new(),
@@ -715,19 +723,38 @@ impl HostRenderer for UikitHost {
             }
             NodeKind::ScrollView => HostView::Scroll(UIScrollView::new(mtm)),
             NodeKind::TabBar => {
-                let bar = UITabBar::new(mtm);
-                // Desde iOS 26 una barra de pestañas suelta —fuera de un
-                // `UITabBarController`— adopta sola la presentación flotante
-                // del iPad y se dibuja donde le parece, además de en el marco
-                // que le da el layout: salían dos. Fijarle una apariencia la
-                // deja quieta en su sitio.
+                // Un `UITabBarController` de verdad, no una `UITabBar` suelta.
+                //
+                // Desde iOS 26 una barra suelta no se porta: su proveedor
+                // visual la dibuja por su cuenta y en iPad la sube arriba
+                // *además* de en el marco que le da el layout, así que salen
+                // dos. Es lo que pasa cuando se usa un control que espera un
+                // controlador y no se le da.
+                //
+                // Con el controlador, UIKit tiene lo que necesita y coloca la
+                // barra donde toca en cada dispositivo: abajo en iPhone,
+                // arriba en iPad. Una sola, la del sistema, en las dos.
+                let controller = objc2_ui_kit::UITabBarController::new(mtm);
                 unsafe {
-                    let appearance = objc2_ui_kit::UITabBarAppearance::new(mtm);
-                    appearance.configureWithDefaultBackground();
-                    bar.setStandardAppearance(&appearance);
-                    bar.setScrollEdgeAppearance(Some(&appearance));
+                    // `TabBar` y no `Automatic`: en iPad el automático puede
+                    // convertirla en barra lateral, y eso cambia la pantalla
+                    // entera por debajo del layout.
+                    controller.setMode(objc2_ui_kit::UITabBarControllerMode::TabBar);
                 }
-                HostView::Tabs(bar)
+                let delegate = crate::events::TabDelegate::new(mtm, id, self.events.clone());
+                unsafe {
+                    controller.setDelegate(Some(objc2::runtime::ProtocolObject::from_ref(
+                        &*delegate,
+                    )))
+                };
+                self.tab_delegates.insert(id, delegate);
+                let view = controller.view().expect("el controlador trae vista");
+                // La vista del controlador es solo el hueco donde va la barra:
+                // el contenido lo pone el árbol. Sin esto se ve su fondo
+                // blanco por debajo.
+                view.setBackgroundColor(None);
+                self.tab_controllers.insert(id, controller);
+                HostView::TabsHost(view)
             }
             NodeKind::Switch => HostView::Toggle(UISwitch::new(mtm)),
             NodeKind::Slider => HostView::Slide(UISlider::new(mtm)),
@@ -846,6 +873,8 @@ impl HostRenderer for UikitHost {
         self.animations.remove(&id);
         self.icons.remove(&id);
         self.tabs.remove(&id);
+        self.tab_controllers.remove(&id);
+        self.tab_delegates.remove(&id);
         self.menus.remove(&id);
         self.button_titles.remove(&id);
         self.button_colors.remove(&id);
@@ -972,6 +1001,10 @@ impl HostRenderer for UikitHost {
                     {
                         unsafe { root.addChildViewController(&controller) };
                         let view = controller.view().expect("el controlador trae vista");
+                // La vista del controlador es solo el hueco donde va la barra:
+                // el contenido lo pone el árbol. Sin esto se ve su fondo
+                // blanco por debajo.
+                view.setBackgroundColor(None);
                         view.setFrame(container.bounds());
                         container.addSubview(&view);
                         unsafe { controller.didMoveToParentViewController(Some(&root)) };
@@ -1351,7 +1384,11 @@ impl HostRenderer for UikitHost {
                         }
                         self.refresh_button(id);
                     }
-                    HostView::Tabs(bar) => unsafe { bar.setTintColor(Some(&color)) },
+                    HostView::TabsHost(_) => {
+                        if let Some(controller) = self.tab_controllers.get(&id) {
+                            unsafe { controller.tabBar().setTintColor(Some(&color)) };
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1465,11 +1502,11 @@ impl HostRenderer for UikitHost {
                     self.refresh_button(id);
                 }
             }
-            "items" | "icons" if matches!(view, HostView::Tabs(_)) => {
+            "items" | "icons" if matches!(view, HostView::TabsHost(_)) => {
                 // Los títulos y los iconos llegan como JSON: el protocolo no
                 // lleva listas, y una barra de pestañas no justifica
                 // añadirlas. Llegan en props sueltas, así que se guardan y se
-                // rehacen los items con las dos cada vez.
+                // rehacen las pestañas con las dos cada vez.
                 let entry = self.tabs.entry(id).or_default();
                 let list = parse_string_list(text.as_deref().unwrap_or("[]"));
                 if key == "items" {
@@ -1478,18 +1515,40 @@ impl HostRenderer for UikitHost {
                     entry.1 = list;
                 }
                 let (titles, icons) = entry.clone();
-                if let HostView::Tabs(bar) = view {
-                    let items = crate::controls::tab_bar_items(self.mtm, &titles, &icons);
-                    bar.setItems(Some(&items));
-                }
+                let Some(controller) = self.tab_controllers.get(&id) else { return };
+                // Una pestaña de `UITabBarController` es un controlador con su
+                // `tabBarItem`. Los de aquí van vacíos: el contenido lo pone
+                // el árbol, no ellos; lo que se quiere del controlador es que
+                // dibuje y coloque la barra como manda el sistema.
+                let controllers: Vec<Retained<objc2_ui_kit::UIViewController>> = titles
+                    .iter()
+                    .enumerate()
+                    .map(|(index, title)| {
+                        let vc = objc2_ui_kit::UIViewController::new(self.mtm);
+                        let image =
+                            icons.get(index).and_then(|name| crate::icons::symbol(name, 0.0, 400));
+                        let item = unsafe {
+                            objc2_ui_kit::UITabBarItem::initWithTitle_image_tag(
+                                self.mtm.alloc::<objc2_ui_kit::UITabBarItem>(),
+                                Some(&NSString::from_str(title)),
+                                image.as_deref(),
+                                index as isize,
+                            )
+                        };
+                        unsafe { vc.setTabBarItem(Some(&item)) };
+                        vc
+                    })
+                    .collect();
+                unsafe {
+                    controller.setViewControllers(Some(
+                        &objc2_foundation::NSArray::from_retained_slice(&controllers),
+                    ))
+                };
             }
             "selectedIndex" => {
-                if let (HostView::Tabs(bar), Some(index)) = (view, number) {
-                    if let Some(items) = bar.items() {
-                        let items = items.to_vec();
-                        if let Some(item) = items.get(index.max(0.0) as usize) {
-                            bar.setSelectedItem(Some(item));
-                        }
+                if let (HostView::TabsHost(_), Some(index)) = (view, number) {
+                    if let Some(controller) = self.tab_controllers.get(&id) {
+                        unsafe { controller.setSelectedIndex(index.max(0.0) as usize) };
                     }
                 }
             }
