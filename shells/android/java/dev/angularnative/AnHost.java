@@ -45,6 +45,7 @@ public final class AnHost {
     private static final int KIND_PROGRESS = 11;
     private static final int KIND_BUTTON = 12;
     private static final int KIND_MODAL = 13;
+    private static final int KIND_ALERT = 14;
     /** Lo que dura una transición de pila. Igual que en iOS. */
     private static final long TRANSITION_MS = 300;
     /** Resolución del deslizador y de la barra de progreso, que van en enteros. */
@@ -71,6 +72,20 @@ public final class AnHost {
     private final java.util.Set<Integer> animatingOut = new java.util.HashSet<>();
     /** Nodos de pila suscritos a `back`, para el botón físico. */
     private final java.util.List<Integer> backListeners = new java.util.ArrayList<>();
+    /** Nodos suscritos al área segura, con los márgenes que ya se les contó. */
+    private final SparseArray<float[]> safeArea = new SparseArray<>();
+    /** Diálogos declarados, con lo que llevan puesto. */
+    private final SparseArray<AlertState> alerts = new SparseArray<>();
+    private final java.util.List<Integer> dirtyAlerts = new java.util.ArrayList<>();
+
+    /** Lo que un `Alert` lleva puesto mientras no se presenta. */
+    private static final class AlertState {
+        String title = "";
+        String message = "";
+        String[] buttons = new String[0];
+        boolean visible;
+        android.app.AlertDialog presented;
+    }
 
     private AnRuntime runtime;
     /** Última posición tocada, en puntos y relativa a la vista tocada. */
@@ -165,6 +180,15 @@ public final class AnHost {
                 view = overlay;
                 break;
             }
+            case KIND_ALERT: {
+                // Un diálogo no tiene vista propia: lo presenta el sistema. Se
+                // monta una vacía para que el árbol tenga dónde colgarlo.
+                View placeholder = new View(context);
+                placeholder.setVisibility(View.GONE);
+                alerts.put(id, new AlertState());
+                view = placeholder;
+                break;
+            }
             case KIND_STACK: {
                 AnViewGroup stack = new AnViewGroup(context);
                 // Las pantallas que entran y salen se salen del marco.
@@ -199,6 +223,12 @@ public final class AnHost {
         borderColors.remove(id);
         sliderRanges.remove(id);
         sliderValues.remove(id);
+        safeArea.remove(id);
+        AlertState alert = alerts.get(id);
+        if (alert != null && alert.presented != null) {
+            alert.presented.dismiss();
+        }
+        alerts.remove(id);
     }
 
     public void insertView(int parentId, int childId, int index) {
@@ -274,6 +304,9 @@ public final class AnHost {
         frame.height = px(height);
         view.setLayoutParams(frame);
         view.requestLayout();
+        if (safeArea.indexOfKey(id) >= 0) {
+            reportSafeArea(id);
+        }
     }
 
     public void setContentSize(int id, float width, float height) {
@@ -291,6 +324,77 @@ public final class AnHost {
     public void flush() {
         container.requestLayout();
         runStackAnimations();
+        syncAlerts();
+    }
+
+    private void markAlertDirty(int id) {
+        if (!dirtyAlerts.contains(id)) {
+            dirtyAlerts.add(id);
+        }
+    }
+
+    /**
+     * Presenta o retira los diálogos que cambiaron.
+     *
+     * Se hace al cerrar el frame, cuando todas sus props ya llegaron:
+     * presentarlo en cuanto cambia `visible` mostraría un diálogo sin título.
+     */
+    private void syncAlerts() {
+        if (dirtyAlerts.isEmpty()) {
+            return;
+        }
+        for (int id : dirtyAlerts) {
+            AlertState state = alerts.get(id);
+            if (state == null) {
+                continue;
+            }
+            if (!state.visible) {
+                if (state.presented != null) {
+                    state.presented.dismiss();
+                    state.presented = null;
+                }
+                continue;
+            }
+            if (state.presented != null) {
+                continue;
+            }
+            String[] buttons = state.buttons.length > 0 ? state.buttons : new String[] {"OK"};
+            android.app.AlertDialog.Builder builder =
+                    new android.app.AlertDialog.Builder(context)
+                            .setTitle(state.title)
+                            .setMessage(state.message)
+                            .setCancelable(false);
+            // Android coloca los botones por papel, no por orden: con más de
+            // tres no cabrían, así que a partir de ahí se usa una lista.
+            if (buttons.length <= 3) {
+                for (int index = 0; index < buttons.length; index++) {
+                    final int position = index;
+                    android.content.DialogInterface.OnClickListener listener =
+                            (dialog, which) -> emitAlertSelection(id, position);
+                    if (index == 0) {
+                        builder.setPositiveButton(buttons[index], listener);
+                    } else if (index == 1) {
+                        builder.setNegativeButton(buttons[index], listener);
+                    } else {
+                        builder.setNeutralButton(buttons[index], listener);
+                    }
+                }
+            } else {
+                builder.setItems(buttons, (dialog, which) -> emitAlertSelection(id, which));
+            }
+            state.presented = builder.show();
+        }
+        dirtyAlerts.clear();
+    }
+
+    private void emitAlertSelection(int id, int index) {
+        AlertState state = alerts.get(id);
+        if (state != null) {
+            state.presented = null;
+        }
+        if (runtime != null) {
+            runtime.dispatchIndexEvent(id, "select", index);
+        }
     }
 
     private boolean isStack(int id) {
@@ -412,6 +516,37 @@ public final class AnHost {
         return index > 0 ? parent.getChildAt(index - 1) : null;
     }
 
+    /** Cuenta los márgenes del sistema si cambiaron desde la última vez. */
+    private void reportSafeArea(int id) {
+        float[] previous = safeArea.get(id);
+        if (previous == null || runtime == null) {
+            return;
+        }
+        android.view.WindowInsets insets = container.getRootWindowInsets();
+        float top = 0, right = 0, bottom = 0, left = 0;
+        if (insets != null) {
+            android.graphics.Insets bars =
+                    insets.getInsets(
+                            android.view.WindowInsets.Type.systemBars()
+                                    | android.view.WindowInsets.Type.displayCutout());
+            top = bars.top / density;
+            right = bars.right / density;
+            bottom = bars.bottom / density;
+            left = bars.left / density;
+        }
+        if (previous[0] == top && previous[1] == right && previous[2] == bottom && previous[3] == left) {
+            return;
+        }
+        safeArea.put(id, new float[] {top, right, bottom, left});
+        // Cuatro cifras no caben en un evento de posición: van como JSON, que
+        // es el mismo camino que usan las pestañas.
+        runtime.dispatchValueEvent(
+                id,
+                "safeArea",
+                "{\"top\":" + top + ",\"right\":" + right
+                        + ",\"bottom\":" + bottom + ",\"left\":" + left + "}");
+    }
+
     /** La llama la Activity cuando el usuario pulsa atrás. */
     public boolean dispatchBack() {
         if (backListeners.isEmpty() || runtime == null) {
@@ -499,6 +634,11 @@ public final class AnHost {
                 break;
             }
             case "title":
+                if (alerts.get(id) != null) {
+                    alerts.get(id).title = value == null ? "" : value;
+                    markAlertDirty(id);
+                    break;
+                }
                 if (view instanceof android.widget.Button) {
                     ((android.widget.Button) view).setText(value);
                 }
@@ -516,11 +656,39 @@ public final class AnHost {
                 break;
             }
             case "visible":
+                if (alerts.get(id) != null) {
+                    alerts.get(id).visible = "true".equals(value);
+                    markAlertDirty(id);
+                    break;
+                }
                 view.setVisibility("false".equals(value) ? View.GONE : View.VISIBLE);
+                break;
+            // --- diálogos del sistema
+            case "message":
+            case "buttons":
+                if (alerts.get(id) != null) {
+                    AlertState state = alerts.get(id);
+                    if ("message".equals(key)) {
+                        state.message = value == null ? "" : value;
+                    } else {
+                        state.buttons = parseStringList(value);
+                    }
+                    markAlertDirty(id);
+                }
                 break;
             case "transition":
                 transitions.put(id, value);
                 stackIds.add(id);
+                break;
+            case "source":
+                if (view instanceof ImageView) {
+                    loadImage(id, (ImageView) view, value);
+                }
+                break;
+            case "resizeMode":
+                if (view instanceof ImageView) {
+                    ((ImageView) view).setScaleType(scaleTypeOf(value));
+                }
                 break;
             case "testID":
                 view.setContentDescription(value);
@@ -821,6 +989,22 @@ public final class AnHost {
                                     : null);
             return;
         }
+        // El área segura no la produce ningún gesto: la sabe el sistema, y
+        // cambia al rotar o al aparecer la barra de navegación.
+        if ("safeArea".equals(event)) {
+            if (enabled) {
+                safeArea.put(id, new float[] {Float.NaN, Float.NaN, Float.NaN, Float.NaN});
+                reportSafeArea(id);
+            } else {
+                safeArea.remove(id);
+        AlertState alert = alerts.get(id);
+        if (alert != null && alert.presented != null) {
+            alert.presented.dismiss();
+        }
+        alerts.remove(id);
+            }
+            return;
+        }
         if ("back".equals(event)) {
             // El botón físico de atrás: el equivalente del gesto de borde de
             // iOS. Aquí solo se avisa; deshacer la navegación es del router.
@@ -895,6 +1079,70 @@ public final class AnHost {
             default:
                 android.util.Log.i("angular-native", message);
                 break;
+        }
+    }
+
+    // ------------------------------------------------------------- imágenes
+
+    private static ImageView.ScaleType scaleTypeOf(String mode) {
+        if ("cover".equals(mode)) return ImageView.ScaleType.CENTER_CROP;
+        if ("stretch".equals(mode)) return ImageView.ScaleType.FIT_XY;
+        if ("center".equals(mode)) return ImageView.ScaleType.CENTER;
+        return ImageView.ScaleType.FIT_CENTER;
+    }
+
+    /**
+     * Una ruta sin esquema es un fichero de los assets; con `http` o `https`
+     * se baja por red en un hilo aparte. En los dos casos se avisa del tamaño
+     * real con un evento `load`: el layout no puede colocar algo cuyo tamaño
+     * no conoce.
+     */
+    private void loadImage(int id, ImageView view, String source) {
+        if (source == null || source.isEmpty()) {
+            view.setImageDrawable(null);
+            return;
+        }
+        if (!source.startsWith("http://") && !source.startsWith("https://")) {
+            try (java.io.InputStream input = context.getAssets().open(source)) {
+                android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeStream(input);
+                applyImage(id, view, bitmap);
+            } catch (java.io.IOException error) {
+                android.util.Log.w("angular-native", "no se pudo abrir " + source);
+            }
+            return;
+        }
+        new Thread(
+                        () -> {
+                            android.graphics.Bitmap bitmap = null;
+                            try {
+                                java.net.HttpURLConnection connection =
+                                        (java.net.HttpURLConnection)
+                                                new java.net.URL(source).openConnection();
+                                connection.setConnectTimeout(10000);
+                                try (java.io.InputStream input = connection.getInputStream()) {
+                                    bitmap = android.graphics.BitmapFactory.decodeStream(input);
+                                } finally {
+                                    connection.disconnect();
+                                }
+                            } catch (Exception error) {
+                                android.util.Log.w("angular-native", "no se pudo bajar " + source);
+                            }
+                            // Colgar el bitmap de la vista sí es del hilo de UI.
+                            final android.graphics.Bitmap loaded = bitmap;
+                            view.post(() -> applyImage(id, view, loaded));
+                        },
+                        "an-image")
+                .start();
+    }
+
+    private void applyImage(int id, ImageView view, android.graphics.Bitmap bitmap) {
+        if (bitmap == null) {
+            return;
+        }
+        view.setImageBitmap(bitmap);
+        if (runtime != null) {
+            runtime.dispatchEvent(
+                    id, "load", bitmap.getWidth() / density, bitmap.getHeight() / density);
         }
     }
 

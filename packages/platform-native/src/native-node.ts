@@ -37,6 +37,7 @@ export type NativeKind =
   | 'ProgressBar'
   | 'Button'
   | 'Modal'
+  | 'Alert'
 
 /** Primitivas que el core sabe montar. El resto son error de plantilla. */
 const KINDS: Record<string, NativeKind> = {
@@ -52,7 +53,8 @@ const KINDS: Record<string, NativeKind> = {
   ActivityIndicator: 'ActivityIndicator',
   ProgressBar: 'ProgressBar',
   Button: 'Button',
-  Modal: 'Modal'
+  Modal: 'Modal',
+  Alert: 'Alert'
 }
 
 export class NativeNode {

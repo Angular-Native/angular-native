@@ -54,6 +54,7 @@ pub fn kind_from_byte(byte: u8) -> Option<NodeKind> {
         11 => NodeKind::ProgressBar,
         12 => NodeKind::Button,
         13 => NodeKind::Modal,
+        14 => NodeKind::Alert,
         _ => return None,
     })
 }
@@ -74,6 +75,7 @@ pub fn kind_to_byte(kind: NodeKind) -> u8 {
         NodeKind::ProgressBar => 11,
         NodeKind::Button => 12,
         NodeKind::Modal => 13,
+        NodeKind::Alert => 14,
     }
 }
 

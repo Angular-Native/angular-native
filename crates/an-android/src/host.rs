@@ -50,6 +50,7 @@ impl JniHost {
             NodeKind::ProgressBar => 11,
             NodeKind::Button => 12,
             NodeKind::Modal => 13,
+            NodeKind::Alert => 14,
         }
     }
 }

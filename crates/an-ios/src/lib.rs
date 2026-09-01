@@ -4,6 +4,9 @@
 //! Todo aquí corre en el hilo principal. UIKit no admite otra cosa y el
 //! `MainThreadMarker` de objc2 lo hace explícito en el tipo.
 
+#[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+mod alert;
+#[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod color;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod controls;
@@ -13,6 +16,8 @@ mod events;
 mod ffi;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod host;
+#[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+mod images;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod measure;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]

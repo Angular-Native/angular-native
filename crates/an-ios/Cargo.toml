@@ -24,7 +24,9 @@ objc2 = { version = "0.6", default-features = false, features = ["std"] }
 block2 = "0.6"
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
-  "std", "NSString", "NSAttributedString", "NSDictionary", "NSValue", "NSGeometry", "objc2-core-foundation",
+  "std", "NSString", "NSAttributedString", "NSDictionary", "NSValue", "NSGeometry",
+  "NSURL", "NSURLSession", "NSData", "NSOperation", "NSError", "NSURLResponse",
+  "NSArray", "block2", "objc2-core-foundation",
 ] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGColor"] }
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "CAShapeLayer", "objc2-core-foundation", "objc2-core-graphics"] }
@@ -35,6 +37,7 @@ objc2-ui-kit = { version = "0.3", default-features = false, features = [
   "UIResponder", "UIScreen", "UIScrollView", "UITextField", "UIControl",
   "UISwitch", "UISlider", "UIActivityIndicatorView", "UIProgressView", "UIButton",
   "UITabBar", "UITabBarItem", "UIBarItem", "UIImage",
+  "UIAlertController", "UIAlert", "UIViewController", "UIWindow",
   "UIGestureRecognizer", "UITapGestureRecognizer", "UITextInputTraits", "UIDevice",
   "UIBezierPath", "UIScreenEdgePanGestureRecognizer", "UIPanGestureRecognizer",
   "UIGeometry", "block2",

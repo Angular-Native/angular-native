@@ -124,6 +124,9 @@ enum HostView {
     /// controlador, pero aquí no hay uno por pantalla: es una vista que se
     /// monta sobre la raíz y se anima al aparecer.
     Overlay(Retained<UIView>),
+    /// Un diálogo no tiene vista propia: lo presenta el sistema. Se monta una
+    /// vista vacía para que el árbol tenga algo donde colgar el nodo.
+    Dialog(Retained<UIView>),
 }
 
 impl HostView {
@@ -142,6 +145,7 @@ impl HostView {
             HostView::Progress(v) => v,
             HostView::Button(v) => v,
             HostView::Overlay(v) => v,
+            HostView::Dialog(v) => v,
         }
     }
 
@@ -160,6 +164,7 @@ impl HostView {
             HostView::Progress(_) => NodeKind::ProgressBar,
             HostView::Button(_) => NodeKind::Button,
             HostView::Overlay(_) => NodeKind::Modal,
+            HostView::Dialog(_) => NodeKind::Alert,
         }
     }
 
@@ -195,6 +200,15 @@ pub struct UikitHost {
     leaving: Vec<(NodeId, Retained<UIView>)>,
     /// Nodos cuya vista está animándose fuera: `destroy` no debe tocarlos.
     animating_out: std::collections::HashSet<NodeId>,
+    /// Nodos suscritos al área segura, con los últimos márgenes que se les
+    /// contó. Solo se avisa cuando cambian de verdad.
+    safe_area: HashMap<NodeId, [f32; 4]>,
+    /// Diálogos declarados. Se presentan al cerrar el frame, cuando todas sus
+    /// props ya llegaron: presentar en cuanto cambia `visible` mostraría un
+    /// diálogo sin título.
+    alerts: HashMap<NodeId, crate::alert::AlertState>,
+    /// Diálogos cuyo estado cambió en este frame.
+    dirty_alerts: Vec<NodeId>,
     /// Suscripciones vivas, indexadas por nodo y evento. Se guardan porque hay
     /// que poder quitarlas: un `@if` que desmonta su rama destruye la vista,
     /// pero un `(press)` que deja de estar bindeado no.
@@ -217,6 +231,9 @@ impl UikitHost {
             entering: Vec::new(),
             leaving: Vec::new(),
             animating_out: std::collections::HashSet::new(),
+            safe_area: HashMap::new(),
+            alerts: HashMap::new(),
+            dirty_alerts: Vec::new(),
             listeners: HashMap::new(),
             events,
         }
@@ -350,6 +367,39 @@ impl UikitHost {
         self.animating_out.clear();
     }
 
+    /// Cuenta los márgenes del sistema si cambiaron desde la última vez.
+    fn report_safe_area(&mut self, id: NodeId) {
+        let Some(previous) = self.safe_area.get(&id).copied() else { return };
+        let insets = self.container.safeAreaInsets();
+        let current = [
+            insets.top as f32,
+            insets.right as f32,
+            insets.bottom as f32,
+            insets.left as f32,
+        ];
+        if current
+            .iter()
+            .zip(previous.iter())
+            .all(|(a, b)| (a - b).abs() < f32::EPSILON)
+        {
+            return;
+        }
+        self.safe_area.insert(id, current);
+        an_host::push_event(
+            &self.events,
+            an_host::HostEvent {
+                target: id,
+                name: "safeArea".to_owned(),
+                payload: vec![
+                    ("top".to_owned(), PropValue::Number(current[0] as f64)),
+                    ("right".to_owned(), PropValue::Number(current[1] as f64)),
+                    ("bottom".to_owned(), PropValue::Number(current[2] as f64)),
+                    ("left".to_owned(), PropValue::Number(current[3] as f64)),
+                ],
+            },
+        );
+    }
+
     fn set_corner(&mut self, id: NodeId, corner: usize, radius: Option<f32>) {
         let radii = self.corners.entry(id).or_insert([0.0; 4]);
         radii[corner] = radius.unwrap_or(0.0) as f64;
@@ -415,6 +465,12 @@ impl HostRenderer for UikitHost {
             }
             NodeKind::ProgressBar => HostView::Progress(UIProgressView::new(mtm)),
             NodeKind::Button => HostView::Button(UIButton::new(mtm)),
+            NodeKind::Alert => {
+                let placeholder = UIView::new(mtm);
+                placeholder.setHidden(true);
+                self.alerts.insert(id, crate::alert::AlertState::default());
+                HostView::Dialog(placeholder)
+            }
             NodeKind::Modal => {
                 let overlay = UIView::new(mtm);
                 overlay.setHidden(true);
@@ -446,6 +502,8 @@ impl HostRenderer for UikitHost {
         }
         self.fonts.remove(&id);
         self.corners.remove(&id);
+        self.safe_area.remove(&id);
+        self.alerts.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
     }
 
@@ -521,9 +579,42 @@ impl HostRenderer for UikitHost {
                     native.layer().setBorderWidth(v as f64);
                 }
             }
+            // --- diálogos del sistema
+            "title" | "message" | "buttons" | "visible" if self.alerts.contains_key(&id) => {
+                let Some(state) = self.alerts.get_mut(&id) else { return };
+                match key {
+                    "title" => state.title = text.clone().unwrap_or_default(),
+                    "message" => state.message = text.clone().unwrap_or_default(),
+                    "buttons" => {
+                        state.buttons = parse_string_list(text.as_deref().unwrap_or("[]"))
+                    }
+                    _ => state.visible = matches!(value, PropValue::Bool(true)),
+                }
+                if !self.dirty_alerts.contains(&id) {
+                    self.dirty_alerts.push(id);
+                }
+            }
             "transition" => {
                 if let Some(direction) = &text {
                     self.transitions.insert(id, direction.clone());
+                }
+            }
+            "source" => {
+                if let HostView::Image(image) = view {
+                    crate::images::load(
+                        self.mtm,
+                        image,
+                        id,
+                        text.as_deref().unwrap_or_default(),
+                        self.events.clone(),
+                    );
+                }
+            }
+            "resizeMode" => {
+                if let HostView::Image(image) = view {
+                    image.setContentMode(crate::images::content_mode(
+                        text.as_deref().unwrap_or("contain"),
+                    ));
                 }
             }
             "testID" | "accessibilityIdentifier" => {
@@ -711,6 +802,20 @@ impl HostRenderer for UikitHost {
         let Some(view) = self.views.get(&id) else { return };
         let native = view.as_view();
 
+        // El área segura no la produce ningún gesto: la sabe el sistema, y
+        // cambia al rotar o al aparecer el teclado. Se cuenta al suscribirse y
+        // después en cada layout, que es cuando puede haber cambiado.
+        if event == "safeArea" {
+            if enabled {
+                self.safe_area.insert(id, [f32::NAN; 4]);
+                self.report_safe_area(id);
+            } else {
+                self.safe_area.remove(&id);
+        self.alerts.remove(&id);
+            }
+            return;
+        }
+
         if !enabled {
             if let Some(listener) = self.listeners.remove(&key) {
                 listener.detach(native);
@@ -734,6 +839,9 @@ impl HostRenderer for UikitHost {
             origin: CGPoint { x: frame.x as f64, y: frame.y as f64 },
             size: CGSize { width: frame.width as f64, height: frame.height as f64 },
         });
+        if self.safe_area.contains_key(&id) {
+            self.report_safe_area(id);
+        }
         // Una máscara de esquinas desiguales no se estira con la vista: hay
         // que redibujarla con el tamaño nuevo.
         if self
@@ -763,6 +871,11 @@ impl HostRenderer for UikitHost {
 
     fn flush(&mut self) {
         self.run_stack_animations();
+        for id in std::mem::take(&mut self.dirty_alerts) {
+            let Some(mut state) = self.alerts.remove(&id) else { continue };
+            state.sync(self.mtm, &self.container, id, &self.events);
+            self.alerts.insert(id, state);
+        }
     }
 
     fn set_root(&mut self, id: NodeId) {

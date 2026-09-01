@@ -150,6 +150,13 @@ impl ShadowTree {
             node.style.set(StyleKey::FlexBasis, StyleValue::Points(0.0));
             node.style.set(StyleKey::MinHeight, StyleValue::Points(0.0));
         }
+        // Un diálogo lo presenta el sistema encima de todo: no participa en
+        // el layout, así que se le quita del flujo y se le deja sin tamaño.
+        if kind.is_dialog() {
+            node.style.set(StyleKey::Position, StyleValue::Keyword(an_layout::Keyword::Absolute));
+            node.style.set(StyleKey::Width, StyleValue::Points(0.0));
+            node.style.set(StyleKey::Height, StyleValue::Points(0.0));
+        }
         if kind.is_scrollable() {
             node.style.set(StyleKey::Overflow, StyleValue::Keyword(an_layout::Keyword::Scroll));
             node.style.set(StyleKey::FlexBasis, StyleValue::Points(0.0));

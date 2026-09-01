@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core'
-import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
+import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
 
 /**
  * Todos los controles del sistema en una pantalla.
@@ -11,14 +11,15 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NATIVE_PRIMITIVES],
+  imports: [NATIVE_PRIMITIVES, SafeArea],
   template: `
     <View
       [style.width]="'100%'"
       [style.height]="'100%'"
       [backgroundColor]="'#0b1020'">
 
-      <View [style.flexGrow]="'1'" [style.padding]="'16'" [style.paddingTop]="'64'" [style.gap]="'18'">
+      <SafeArea [edges]="['top']">
+      <View [style.flexGrow]="'1'" [style.padding]="'16'" [style.gap]="'18'">
         <Text [fontSize]="24" [fontWeight]="'bold'" [color]="'#f4f7ff'">
           {{ tabTitles[tab()] }}
         </Text>
@@ -51,12 +52,22 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
           </Text>
         </View>
 
-        <Button
-          [style.width]="'100%'"
-          [title]="'Abrir la capa'"
-          [color]="'#6ee7b7'"
-          (press)="modal.set(true)"></Button>
+        <View [style.flexDirection]="'row'" [style.gap]="'12'">
+          <Button
+            [style.flexGrow]="'1'"
+            [title]="'Capa'"
+            [color]="'#6ee7b7'"
+            (press)="modal.set(true)"></Button>
+          <Button
+            [style.flexGrow]="'1'"
+            [title]="'Diálogo'"
+            [color]="'#6ee7b7'"
+            (press)="alert.set(true)"></Button>
+        </View>
+
+        <Text [fontSize]="13" [color]="'#6b7a99'">{{ answer() }}</Text>
       </View>
+      </SafeArea>
 
       <TabBar
         [style.width]="'100%'"
@@ -64,6 +75,13 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
         [selectedIndex]="tab()"
         [color]="'#6ee7b7'"
         (select)="tab.set($event)" />
+
+      <Alert
+        [visible]="alert()"
+        [title]="'Confirmar'"
+        [message]="'Esto lo presenta el sistema, no el framework.'"
+        [buttons]="['Aceptar', 'Cancelar']"
+        (select)="onAnswer($event)" />
 
       <Modal
         [visible]="modal()"
@@ -98,6 +116,13 @@ export class AppComponent {
   readonly notify = signal(true)
   readonly volume = signal(35)
   readonly modal = signal(false)
+  readonly alert = signal(false)
+  readonly answer = signal('sin respuesta todavía')
 
   readonly volumeLabel = computed(() => `${Math.round(this.volume())}%`)
+
+  onAnswer(index: number): void {
+    this.alert.set(false)
+    this.answer.set(index === 0 ? 'aceptaste' : 'cancelaste')
+  }
 }

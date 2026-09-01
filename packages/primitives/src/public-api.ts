@@ -1,13 +1,17 @@
 export type {
+  NativeImageLoadEvent,
   NativeLayoutEvent,
+  NativeSafeAreaInsets,
   NativePressEvent,
   NativeScrollEvent,
   NativeTabSelectEvent
 } from './primitives'
+export { SafeArea } from './safe-area'
 export { VirtualList } from './virtual-list'
 export type { VirtualListContext } from './virtual-list'
 export {
   ActivityIndicator,
+  Alert,
   Button,
   Image,
   Modal,

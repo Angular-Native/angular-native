@@ -28,6 +28,8 @@ pub enum NodeKind {
     Button,
     /// Capa que se presenta encima de todo.
     Modal,
+    /// Diálogo del sistema. No ocupa sitio: se presenta encima de la app.
+    Alert,
 }
 
 impl NodeKind {
@@ -46,6 +48,7 @@ impl NodeKind {
             "ProgressBar" | "progress-bar" => NodeKind::ProgressBar,
             "Button" | "button" => NodeKind::Button,
             "Modal" | "modal" => NodeKind::Modal,
+            "Alert" | "alert" => NodeKind::Alert,
             _ => return None,
         })
     }
@@ -93,7 +96,12 @@ impl NodeKind {
 
     /// Se presenta encima de todo, fuera del flujo de su padre.
     pub fn is_overlay(self) -> bool {
-        self == NodeKind::Modal
+        matches!(self, NodeKind::Modal | NodeKind::Alert)
+    }
+
+    /// No ocupa sitio en el layout: lo presenta el sistema por su cuenta.
+    pub fn is_dialog(self) -> bool {
+        self == NodeKind::Alert
     }
 
     /// Nodos cuyo contenido puede desbordar y necesita `contentSize`.
@@ -190,5 +198,6 @@ pub fn affects_measure(key: &str) -> bool {
             | "placeholder"
             | "title"
             | "items"
+            | "buttons"
     )
 }

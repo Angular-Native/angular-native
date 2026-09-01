@@ -1,4 +1,4 @@
-import { Directive, ElementRef, inject, Input, Renderer2 } from '@angular/core'
+import { DestroyRef, Directive, ElementRef, inject, Input, Renderer2 } from '@angular/core'
 import { outputFromObservable } from '@angular/core/rxjs-interop'
 import { map, Observable } from 'rxjs'
 
@@ -18,6 +18,14 @@ export interface NativeLayoutEvent {
   y: number
   width: number
   height: number
+}
+
+/** Márgenes que el sistema se reserva: notch, barra de estado, home. */
+export interface NativeSafeAreaInsets {
+  top: number
+  right: number
+  bottom: number
+  left: number
 }
 
 /** Desplazamiento actual de un `ScrollView`, en puntos. */
@@ -75,6 +83,12 @@ export abstract class NativeVisual {
    * porque es él quien calcula el marco. Sale gratis en iOS y en Android.
    */
   readonly layout = outputFromObservable(this.nativeEvent<NativeLayoutEvent>('layout'))
+
+  /**
+   * Márgenes que el sistema se reserva, y cada vez que cambian: al rotar, al
+   * aparecer el teclado, al entrar en pantalla dividida.
+   */
+  readonly safeArea = outputFromObservable(this.nativeEvent<NativeSafeAreaInsets>('safeArea'))
 
   @Input() set backgroundColor(value: string | null) {
     this.set('backgroundColor', value)
@@ -164,15 +178,43 @@ export class ScrollView extends NativeVisual {
   readonly scroll = outputFromObservable(this.nativeEvent<NativeScrollEvent>('scroll'))
 }
 
+/** Tamaño real de una imagen ya cargada, en puntos. */
+export interface NativeImageLoadEvent {
+  width: number
+  height: number
+}
+
 @Directive({ selector: 'Image' })
 export class Image extends NativeVisual {
+  constructor() {
+    super()
+    // Este oyente no es opcional: el layout no puede colocar algo cuyo tamaño
+    // no conoce, y solo la imagen sabe cuánto mide. Se registra siempre, aunque
+    // la plantilla no escuche `load`.
+    const unlisten = this.renderer.listen(this.node, 'load', (payload) => {
+      const size = payload as NativeImageLoadEvent
+      this.set('intrinsicWidth', size.width)
+      this.set('intrinsicHeight', size.height)
+    })
+    inject(DestroyRef).onDestroy(unlisten)
+  }
+
+  /**
+   * Ruta de la imagen. Sin esquema es un recurso del bundle de la app; con
+   * `http` o `https` se baja por red y aparece cuando llegue.
+   */
   @Input() set source(value: string | null) {
     this.set('source', value)
   }
 
+  /** `contain` por defecto; también `cover`, `stretch` y `center`. */
+  @Input() set resizeMode(value: 'contain' | 'cover' | 'stretch' | 'center' | null) {
+    this.set('resizeMode', value)
+  }
+
   /**
-   * Tamaño intrínseco. Hasta que exista carga de imágenes, es lo que el layout
-   * usa para medir; una imagen sin esto ocupa cero.
+   * Tamaño intrínseco. Se rellena solo al cargar la imagen; fijarlo a mano
+   * sirve para reservar el hueco antes de que llegue y evitar el salto.
    */
   @Input() set intrinsicWidth(value: number | null) {
     this.set('intrinsicWidth', value)
@@ -181,6 +223,8 @@ export class Image extends NativeVisual {
   @Input() set intrinsicHeight(value: number | null) {
     this.set('intrinsicHeight', value)
   }
+
+  readonly load = outputFromObservable(this.nativeEvent<NativeImageLoadEvent>('load'))
 }
 
 @Directive({ selector: 'Text' })
@@ -394,6 +438,38 @@ export class Modal extends NativeVisual {
   }
 }
 
+/**
+ * Diálogo del sistema.
+ *
+ * No es una capa dibujada por el framework: es un `UIAlertController` y un
+ * `AlertDialog` de verdad, con su aspecto, su animación y su comportamiento
+ * con VoiceOver y TalkBack. No ocupa sitio en el layout.
+ */
+@Directive({ selector: 'Alert' })
+export class Alert extends NativeVisual {
+  @Input() set visible(value: boolean | null) {
+    this.set('visible', value ?? false)
+  }
+
+  @Input() set title(value: string | null) {
+    this.set('title', value ?? '')
+  }
+
+  @Input() set message(value: string | null) {
+    this.set('message', value ?? '')
+  }
+
+  /** Títulos de los botones, en orden. Sin ninguno, sale un «OK». */
+  @Input() set buttons(value: readonly string[] | null) {
+    this.set('buttons', JSON.stringify(value ?? []))
+  }
+
+  /** Índice del botón pulsado. */
+  readonly select = outputFromObservable(
+    this.nativeEvent<NativeTabSelectEvent>('select').pipe(map((event) => event.index))
+  )
+}
+
 /** Para importar todas de golpe en un componente standalone. */
 export const NATIVE_PRIMITIVES = [
   View,
@@ -408,5 +484,6 @@ export const NATIVE_PRIMITIVES = [
   ActivityIndicator,
   ProgressBar,
   Button,
-  Modal
+  Modal,
+  Alert
 ] as const

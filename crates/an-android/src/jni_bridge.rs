@@ -215,14 +215,17 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchEvent(
     let Some(runtime) = (unsafe { runtime(handle) }) else { return };
     let Ok(name) = env.get_string(&name) else { return };
     let name: String = name.into();
+    // `load` lleva un tamaño, no una posición: mismas dos cifras, otros
+    // nombres, y tienen que ser los mismos que manda iOS.
+    let (first, second) = if name == "load" { ("width", "height") } else { ("x", "y") };
     an_host::push_event(
         &runtime.events,
         HostEvent {
             target: target as u32,
             name,
             payload: vec![
-                ("x".to_owned(), PropValue::Number(x as f64)),
-                ("y".to_owned(), PropValue::Number(y as f64)),
+                (first.to_owned(), PropValue::Number(x as f64)),
+                (second.to_owned(), PropValue::Number(y as f64)),
             ],
         },
     );
@@ -264,13 +267,16 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchValueEvent
 ) {
     let Some(runtime) = (unsafe { runtime(handle) }) else { return };
     let Some((name, value)) = read_pair(&mut env, name, value) else { return };
+    // El área segura son cuatro cifras y viaja como JSON: se desempaqueta aquí
+    // para que el evento llegue igual que el de iOS.
+    let payload = if name == "safeArea" {
+        parse_insets(&value)
+    } else {
+        vec![("value".to_owned(), PropValue::Str(value))]
+    };
     an_host::push_event(
         &runtime.events,
-        HostEvent {
-            target: target as u32,
-            name,
-            payload: vec![("value".to_owned(), PropValue::Str(value))],
-        },
+        HostEvent { target: target as u32, name, payload },
     );
 }
 
@@ -283,6 +289,26 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeFree(
     if handle != 0 {
         drop(unsafe { Box::from_raw(handle as *mut AndroidRuntime) });
     }
+}
+
+/// `{"top":1,"right":2,...}` a pares. Sin analizador de JSON: son cuatro
+/// números con nombres conocidos.
+fn parse_insets(raw: &str) -> Vec<(String, PropValue)> {
+    ["top", "right", "bottom", "left"]
+        .into_iter()
+        .map(|key| {
+            let needle = format!("\"{key}\":");
+            let value = raw
+                .find(&needle)
+                .map(|at| &raw[at + needle.len()..])
+                .and_then(|rest| {
+                    let end = rest.find(['}', ',']).unwrap_or(rest.len());
+                    rest[..end].trim().parse::<f64>().ok()
+                })
+                .unwrap_or(0.0);
+            (key.to_owned(), PropValue::Number(value))
+        })
+        .collect()
 }
 
 fn read_pair(env: &mut JNIEnv, first: JString, second: JString) -> Option<(String, String)> {
