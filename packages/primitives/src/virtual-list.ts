@@ -12,6 +12,14 @@ import {
 import { ScrollView, View, type NativeLayoutEvent, type NativeScrollEvent } from './primitives'
 import { output } from '@angular/core'
 
+/**
+ * El alto de las filas: uno para todas, o uno por fila.
+ *
+ * La función se llama una vez por fila cada vez que cambia la lista, no en
+ * cada desplazamiento.
+ */
+export type ItemHeight<T> = number | ((item: T, index: number) => number)
+
 /** Lo que recibe la plantilla de cada fila. */
 export interface VirtualListContext<T> {
   $implicit: T
@@ -23,8 +31,75 @@ interface Slot<T> {
   key: number
   index: number
   top: string
+  height: string
   row: T | undefined
   context: VirtualListContext<T> | null
+}
+
+/**
+ * Dónde empieza cada fila y cuánto mide.
+ *
+ * Con un alto único no hace falta guardar nada: la posición de la fila `i` es
+ * `i * alto` y la fila que hay en un desplazamiento sale de una división. Con
+ * altos distintos hay que sumar, así que se acumulan una vez por lista y luego
+ * se busca por bisección, que en cinco mil filas son trece comparaciones.
+ */
+type Metrics =
+  | { readonly kind: 'fixed'; readonly height: number; readonly min: number; readonly total: number }
+  | { readonly kind: 'variable'; readonly starts: number[]; readonly min: number; readonly total: number }
+
+function metricsFor<T>(items: readonly T[], height: ItemHeight<T>): Metrics {
+  if (typeof height === 'number') {
+    return { kind: 'fixed', height, min: height, total: items.length * height }
+  }
+  // `starts` tiene una entrada más que filas: la última es el alto total, y
+  // así el hueco de la fila `i` es siempre `starts[i + 1] - starts[i]`.
+  const starts = new Array<number>(items.length + 1)
+  starts[0] = 0
+  let min = Infinity
+  for (let i = 0; i < items.length; i++) {
+    const one = height(items[i], i)
+    starts[i + 1] = starts[i] + one
+    if (one < min) {
+      min = one
+    }
+  }
+  return {
+    kind: 'variable',
+    starts,
+    min: Number.isFinite(min) && min > 0 ? min : 1,
+    total: starts[items.length]
+  }
+}
+
+function topOf(metrics: Metrics, index: number): number {
+  return metrics.kind === 'fixed' ? index * metrics.height : metrics.starts[index] ?? metrics.total
+}
+
+function heightOf(metrics: Metrics, index: number): number {
+  if (metrics.kind === 'fixed') {
+    return metrics.height
+  }
+  return (metrics.starts[index + 1] ?? metrics.total) - (metrics.starts[index] ?? metrics.total)
+}
+
+/** La fila que ocupa ese desplazamiento. */
+function indexAt(metrics: Metrics, offset: number): number {
+  if (metrics.kind === 'fixed') {
+    return Math.floor(offset / metrics.height)
+  }
+  const starts = metrics.starts
+  let low = 0
+  let high = starts.length - 1
+  while (low < high) {
+    const mid = (low + high + 1) >> 1
+    if (starts[mid] <= offset) {
+      low = mid
+    } else {
+      high = mid - 1
+    }
+  }
+  return low
 }
 
 /**
@@ -40,11 +115,13 @@ interface Slot<T> {
  * incrustada y solo actualiza sus bindings. `NgTemplateOutlet` hace lo mismo
  * mientras las claves del contexto no cambien, que es el caso.
  *
- * Requiere altura de fila fija: sin ella no se puede saber qué hay en el
- * desplazamiento Y sin haber medido todo lo anterior.
+ * El alto de fila hay que darlo: sin él no se sabe qué hay en un
+ * desplazamiento sin haber medido todo lo anterior. Puede ser uno para todas
+ * o una función por fila.
  *
  * ```html
  * <VirtualList [items]="rows()" [itemHeight]="64" [style.flexGrow]="'1'">
+ * <VirtualList [items]="rows()" [itemHeight]="alto" [style.flexGrow]="'1'">
  *   <ng-template let-row let-i="index">
  *     <Text>{{ i }}: {{ row.name }}</Text>
  *   </ng-template>
@@ -78,7 +155,7 @@ interface Slot<T> {
             [style.top]="slot.top"
             [style.left]="'0'"
             [style.width]="'100%'"
-            [style.height]="itemHeight()"
+            [style.height]="slot.height"
             [style.display]="slot.context ? 'flex' : 'none'">
             @if (slot.context) {
               <ng-container
@@ -93,7 +170,7 @@ interface Slot<T> {
 })
 export class VirtualList<T> {
   readonly items = input.required<readonly T[]>()
-  readonly itemHeight = input.required<number>()
+  readonly itemHeight = input.required<ItemHeight<T>>()
   /** Ranuras de más a cada lado, para que un scroll rápido no deje huecos. */
   readonly overscan = input(4)
 
@@ -108,27 +185,31 @@ export class VirtualList<T> {
   private readonly offset = signal(0)
   private readonly viewport = signal(0)
 
-  protected readonly totalHeight = computed(() => this.items().length * this.itemHeight())
+  private readonly metrics = computed(() => metricsFor(this.items(), this.itemHeight()))
+
+  protected readonly totalHeight = computed(() => this.metrics().total)
 
   /**
    * Cuántas ranuras hay. Solo cambia si cambia el alto del viewport o el de
    * las filas; desplazarse no la mueve, que es justo lo que permite reciclar.
    */
   private readonly slotCount = computed(() => {
-    const visible = Math.ceil(this.viewport() / this.itemHeight())
+    // Con altos distintos manda el más bajo: es el que decide cuántas filas
+    // caben en el peor caso, y quedarse corto dejaría huecos al desplazarse.
+    const visible = Math.ceil(this.viewport() / this.metrics().min)
     // Sin alto de viewport todavía no se sabe cuántas caben; se montan unas
     // pocas para que el primer frame no salga vacío.
     return (visible > 0 ? visible : 1) + this.overscan() * 2
   })
 
   protected readonly slots = computed<Slot<T>[]>(() => {
-    const height = this.itemHeight()
+    const metrics = this.metrics()
     const items = this.items()
     const count = slotCountFor(this.slotCount(), items.length)
     const first = Math.max(
       0,
       Math.min(
-        Math.floor(this.offset() / height) - this.overscan(),
+        indexAt(metrics, this.offset()) - this.overscan(),
         Math.max(0, items.length - count)
       )
     )
@@ -140,7 +221,8 @@ export class VirtualList<T> {
       slots.push({
         key,
         index,
-        top: String(index * height),
+        top: String(topOf(metrics, index)),
+        height: String(heightOf(metrics, index)),
         row,
         // Las claves del contexto no cambian nunca, y por eso
         // `NgTemplateOutlet` actualiza la vista en vez de rehacerla.

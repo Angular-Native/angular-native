@@ -43,13 +43,13 @@ interface Row {
 
       <VirtualList
         [items]="visible()"
-        [itemHeight]="56"
+        [itemHeight]="rowHeight"
         [style.flexGrow]="'1'"
         [refreshing]="reloading()"
         (refresh)="reload()">
         <ng-template let-row let-index="index">
           <View
-            [style.height]="'56'"
+            [style.height]="rowHeight(row)"
             [style.paddingHorizontal]="'16'"
             [style.justifyContent]="'center'"
             [backgroundColor]="index % 2 === 0 ? '#141c33' : '#0b1020'">
@@ -65,6 +65,12 @@ export class AppComponent {
     id,
     name: `fila número ${id}`
   }))
+
+  /**
+   * Una de cada cinco filas es más alta. La lista no necesita que midan todas
+   * lo mismo: le basta con saber cuánto mide cada una.
+   */
+  readonly rowHeight = (row: Row): number => (row.id % 5 === 0 ? 88 : 56)
 
   readonly query = signal('')
   readonly reloading = signal(false)

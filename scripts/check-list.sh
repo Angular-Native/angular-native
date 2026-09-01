@@ -23,8 +23,10 @@ echo "== kitchen"
 check 'TextInput#[0-9]+ \[16,70 361x40\]' 'el campo de texto se midió y se colocó'
 check '"headless 0.0 . es-ES"' 'el módulo nativo contestó y la promesa resolvió'
 check 'ScrollView#[0-9]+ \[0,0 393x666\]' 'el ScrollView llena el hueco, no crece con su contenido'
-check 'contenido 393x280000' 'el contentSize sale del layout: 5000 filas de 56'
-check '"fila número 7[0-9]"' 'tras desplazarse se ven las filas de esa altura'
+check 'contenido 393x312000' 'el contentSize suma fila a fila: 4000 de 56 y 1000 de 88'
+check '"fila número 6[0-9]"' 'tras desplazarse se ven las filas de esa altura'
+check 'View#[0-9]+ \[0,3744 393x88\]' 'la fila alta mide 88'
+check 'View#[0-9]+ \[0,3832 393x56\]' 'la siguiente empieza justo debajo de la alta'
 check 'desplazarse costó 0 vistas creadas y 0 destruidas' 'desplazarse recicla: ni una vista nueva'
 if grep -qE -- '"fila número (1|2|300)"' <<<"$OUTPUT"; then
   echo "  FALLO tras desplazarse no debería quedar nada del principio ni del final"
