@@ -231,7 +231,14 @@
     Image: 3,
     ScrollView: 4,
     TextInput: 5,
-    StackView: 6
+    StackView: 6,
+    TabBar: 7,
+    Switch: 8,
+    Slider: 9,
+    ActivityIndicator: 10,
+    ProgressBar: 11,
+    Button: 12,
+    Modal: 13
   }
 
   class CommandWriter {

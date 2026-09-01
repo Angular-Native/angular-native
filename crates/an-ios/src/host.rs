@@ -13,9 +13,38 @@ use objc2_foundation::NSString;
 use block2::RcBlock;
 use objc2_quartz_core::CAShapeLayer;
 use objc2_ui_kit::{
-    NSLineBreakMode, NSTextAlignment, UIAccessibilityIdentification, UIBezierPath, UIFont,
-    UIImageView, UILabel, UIScrollView, UITextField, UITextInputTraits, UIView,
+    NSLineBreakMode, NSTextAlignment, UIAccessibilityIdentification, UIActivityIndicatorView,
+    UIBezierPath, UIButton, UIControlState, UIFont, UIImageView, UILabel, UIProgressView,
+    UIScrollView, UISlider, UISwitch, UITabBar, UITextField, UITextInputTraits, UIView,
 };
+
+/// Lista de cadenas en JSON, sin traerse un analizador entero para esto.
+///
+/// Solo tiene que entender lo que genera el lado JS: `["uno","dos"]`, con
+/// comillas escapadas si hiciera falta.
+fn parse_string_list(raw: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut chars = raw.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '"' {
+            continue;
+        }
+        let mut item = String::new();
+        while let Some(inner) = chars.next() {
+            match inner {
+                '"' => break,
+                '\\' => {
+                    if let Some(escaped) = chars.next() {
+                        item.push(escaped);
+                    }
+                }
+                other => item.push(other),
+            }
+        }
+        out.push(item);
+    }
+    out
+}
 
 /// La vista que hay justo debajo de otra dentro de un contenedor.
 fn previous_sibling(parent: &UIView, view: &UIView) -> Option<Retained<UIView>> {
@@ -85,6 +114,16 @@ enum HostView {
     Image(Retained<UIImageView>),
     Scroll(Retained<UIScrollView>),
     Field(Retained<UITextField>),
+    Tabs(Retained<UITabBar>),
+    Toggle(Retained<UISwitch>),
+    Slide(Retained<UISlider>),
+    Spinner(Retained<UIActivityIndicatorView>),
+    Progress(Retained<UIProgressView>),
+    Button(Retained<UIButton>),
+    /// Una capa por encima de todo. En iOS lo suyo sería presentar un
+    /// controlador, pero aquí no hay uno por pantalla: es una vista que se
+    /// monta sobre la raíz y se anima al aparecer.
+    Overlay(Retained<UIView>),
 }
 
 impl HostView {
@@ -96,6 +135,13 @@ impl HostView {
             HostView::Image(v) => v,
             HostView::Scroll(v) => v,
             HostView::Field(v) => v,
+            HostView::Tabs(v) => v,
+            HostView::Toggle(v) => v,
+            HostView::Slide(v) => v,
+            HostView::Spinner(v) => v,
+            HostView::Progress(v) => v,
+            HostView::Button(v) => v,
+            HostView::Overlay(v) => v,
         }
     }
 
@@ -107,6 +153,13 @@ impl HostView {
             HostView::Image(_) => NodeKind::Image,
             HostView::Scroll(_) => NodeKind::ScrollView,
             HostView::Field(_) => NodeKind::TextInput,
+            HostView::Tabs(_) => NodeKind::TabBar,
+            HostView::Toggle(_) => NodeKind::Switch,
+            HostView::Slide(_) => NodeKind::Slider,
+            HostView::Spinner(_) => NodeKind::ActivityIndicator,
+            HostView::Progress(_) => NodeKind::ProgressBar,
+            HostView::Button(_) => NodeKind::Button,
+            HostView::Overlay(_) => NodeKind::Modal,
         }
     }
 
@@ -352,6 +405,21 @@ impl HostRenderer for UikitHost {
             }
             NodeKind::Image => HostView::Image(UIImageView::new(mtm)),
             NodeKind::ScrollView => HostView::Scroll(UIScrollView::new(mtm)),
+            NodeKind::TabBar => HostView::Tabs(UITabBar::new(mtm)),
+            NodeKind::Switch => HostView::Toggle(UISwitch::new(mtm)),
+            NodeKind::Slider => HostView::Slide(UISlider::new(mtm)),
+            NodeKind::ActivityIndicator => {
+                let spinner = UIActivityIndicatorView::new(mtm);
+                spinner.setHidesWhenStopped(true);
+                HostView::Spinner(spinner)
+            }
+            NodeKind::ProgressBar => HostView::Progress(UIProgressView::new(mtm)),
+            NodeKind::Button => HostView::Button(UIButton::new(mtm)),
+            NodeKind::Modal => {
+                let overlay = UIView::new(mtm);
+                overlay.setHidden(true);
+                HostView::Overlay(overlay)
+            }
             NodeKind::StackView => {
                 let stack = UIView::new(mtm);
                 // Las pantallas que entran y salen se salen del marco: sin
@@ -464,10 +532,21 @@ impl HostRenderer for UikitHost {
                 }
             }
             "color" => {
-                if let (Some(label), Some(color)) =
-                    (view.as_label(), text.as_deref().and_then(crate::color::to_uicolor))
-                {
-                    unsafe { label.setTextColor(Some(&color)) };
+                let Some(color) = text.as_deref().and_then(crate::color::to_uicolor) else {
+                    return;
+                };
+                match view {
+                    HostView::Label(label) => unsafe { label.setTextColor(Some(&color)) },
+                    HostView::Field(field) => unsafe { field.setTextColor(Some(&color)) },
+                    HostView::Toggle(toggle) => toggle.setOnTintColor(Some(&color)),
+                    HostView::Slide(slider) => slider.setMinimumTrackTintColor(Some(&color)),
+                    HostView::Spinner(spinner) => unsafe { spinner.setColor(Some(&color)) },
+                    HostView::Progress(bar) => bar.setProgressTintColor(Some(&color)),
+                    HostView::Button(button) => unsafe {
+                        button.setTitleColor_forState(Some(&color), UIControlState::Normal)
+                    },
+                    HostView::Tabs(bar) => unsafe { bar.setTintColor(Some(&color)) },
+                    _ => {}
                 }
             }
             "textAlign" | "text-align" => {
@@ -506,6 +585,13 @@ impl HostRenderer for UikitHost {
             }
             // --- campos de texto
             "value" => {
+                if let (HostView::Slide(slider), Some(v)) = (view, number) {
+                    // Solo si difiere: escribirlo mientras se arrastra pelearía
+                    // con el dedo del usuario.
+                    if (slider.value() - v).abs() > f32::EPSILON {
+                        slider.setValue(v);
+                    }
+                }
                 if let HostView::Field(field) = view {
                     // Escribir el texto mientras el usuario escribe le movería
                     // el cursor al final en cada tecla: solo se aplica si
@@ -531,6 +617,66 @@ impl HostRenderer for UikitHost {
             "editable" => {
                 if let HostView::Field(field) = view {
                     field.setEnabled(!matches!(value, PropValue::Bool(false)));
+                }
+            }
+            // --- controles del sistema
+            "on" => {
+                if let HostView::Toggle(toggle) = view {
+                    toggle.setOn(matches!(value, PropValue::Bool(true)));
+                }
+            }
+            "minimumValue" => {
+                if let (HostView::Slide(slider), Some(v)) = (view, number) {
+                    slider.setMinimumValue(v);
+                }
+            }
+            "maximumValue" => {
+                if let (HostView::Slide(slider), Some(v)) = (view, number) {
+                    slider.setMaximumValue(v);
+                }
+            }
+            "animating" => {
+                if let HostView::Spinner(spinner) = view {
+                    if matches!(value, PropValue::Bool(false)) {
+                        spinner.stopAnimating();
+                    } else {
+                        spinner.startAnimating();
+                    }
+                }
+            }
+            "progress" => {
+                if let (HostView::Progress(bar), Some(v)) = (view, number) {
+                    bar.setProgress(v.clamp(0.0, 1.0));
+                }
+            }
+            "title" => {
+                if let HostView::Button(button) = view {
+                    let title = text.as_deref().map(NSString::from_str);
+                    unsafe { button.setTitle_forState(title.as_deref(), UIControlState::Normal) };
+                }
+            }
+            "items" => {
+                if let HostView::Tabs(bar) = view {
+                    // Los títulos llegan como JSON: el protocolo no lleva
+                    // listas, y una lista de pestañas no justifica añadirlas.
+                    let titles = parse_string_list(text.as_deref().unwrap_or("[]"));
+                    let items = crate::controls::tab_bar_items(self.mtm, &titles);
+                    bar.setItems(Some(&items));
+                }
+            }
+            "selectedIndex" => {
+                if let (HostView::Tabs(bar), Some(index)) = (view, number) {
+                    if let Some(items) = bar.items() {
+                        let items = items.to_vec();
+                        if let Some(item) = items.get(index.max(0.0) as usize) {
+                            bar.setSelectedItem(Some(item));
+                        }
+                    }
+                }
+            }
+            "visible" => {
+                if let HostView::Overlay(overlay) = view {
+                    overlay.setHidden(matches!(value, PropValue::Bool(false)));
                 }
             }
             // --- scroll

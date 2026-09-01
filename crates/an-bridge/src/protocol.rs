@@ -47,6 +47,13 @@ pub fn kind_from_byte(byte: u8) -> Option<NodeKind> {
         4 => NodeKind::ScrollView,
         5 => NodeKind::TextInput,
         6 => NodeKind::StackView,
+        7 => NodeKind::TabBar,
+        8 => NodeKind::Switch,
+        9 => NodeKind::Slider,
+        10 => NodeKind::ActivityIndicator,
+        11 => NodeKind::ProgressBar,
+        12 => NodeKind::Button,
+        13 => NodeKind::Modal,
         _ => return None,
     })
 }
@@ -60,6 +67,13 @@ pub fn kind_to_byte(kind: NodeKind) -> u8 {
         NodeKind::ScrollView => 4,
         NodeKind::TextInput => 5,
         NodeKind::StackView => 6,
+        NodeKind::TabBar => 7,
+        NodeKind::Switch => 8,
+        NodeKind::Slider => 9,
+        NodeKind::ActivityIndicator => 10,
+        NodeKind::ProgressBar => 11,
+        NodeKind::Button => 12,
+        NodeKind::Modal => 13,
     }
 }
 

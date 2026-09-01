@@ -38,8 +38,17 @@ public final class AnHost {
     private static final int KIND_SCROLL = 4;
     private static final int KIND_INPUT = 5;
     private static final int KIND_STACK = 6;
+    private static final int KIND_TABBAR = 7;
+    private static final int KIND_SWITCH = 8;
+    private static final int KIND_SLIDER = 9;
+    private static final int KIND_SPINNER = 10;
+    private static final int KIND_PROGRESS = 11;
+    private static final int KIND_BUTTON = 12;
+    private static final int KIND_MODAL = 13;
     /** Lo que dura una transición de pila. Igual que en iOS. */
     private static final long TRANSITION_MS = 300;
+    /** Resolución del deslizador y de la barra de progreso, que van en enteros. */
+    private static final int SLIDER_STEPS = 1000;
 
     private final Context context;
     private final AnViewGroup container;
@@ -119,6 +128,43 @@ public final class AnHost {
                 view = input;
                 break;
             }
+            case KIND_TABBAR:
+                view = new AnTabBar(context);
+                break;
+            case KIND_SWITCH:
+                view = new android.widget.Switch(context);
+                break;
+            case KIND_SLIDER: {
+                android.widget.SeekBar seek = new android.widget.SeekBar(context);
+                // El deslizador de Android trabaja con enteros; se usa una
+                // escala fija y se convierte al leer y al escribir.
+                seek.setMax(SLIDER_STEPS);
+                view = seek;
+                break;
+            }
+            case KIND_SPINNER: {
+                android.widget.ProgressBar spinner = new android.widget.ProgressBar(context);
+                spinner.setIndeterminate(true);
+                view = spinner;
+                break;
+            }
+            case KIND_PROGRESS: {
+                android.widget.ProgressBar bar =
+                        new android.widget.ProgressBar(
+                                context, null, android.R.attr.progressBarStyleHorizontal);
+                bar.setMax(SLIDER_STEPS);
+                view = bar;
+                break;
+            }
+            case KIND_BUTTON:
+                view = new android.widget.Button(context);
+                break;
+            case KIND_MODAL: {
+                AnViewGroup overlay = new AnViewGroup(context);
+                overlay.setVisibility(View.GONE);
+                view = overlay;
+                break;
+            }
             case KIND_STACK: {
                 AnViewGroup stack = new AnViewGroup(context);
                 // Las pantallas que entran y salen se salen del marco.
@@ -151,6 +197,8 @@ public final class AnHost {
         fontState.remove(id);
         borderWidths.remove(id);
         borderColors.remove(id);
+        sliderRanges.remove(id);
+        sliderValues.remove(id);
     }
 
     public void insertView(int parentId, int childId, int index) {
@@ -307,6 +355,58 @@ public final class AnHost {
         animatingOut.clear();
     }
 
+    // --- deslizador: Android trabaja en enteros y el framework en flotantes
+    private final SparseArray<float[]> sliderRanges = new SparseArray<>();
+    private final SparseArray<Float> sliderValues = new SparseArray<>();
+
+    private float[] sliderRange(int id) {
+        float[] range = sliderRanges.get(id);
+        if (range == null) {
+            range = new float[] {0f, 1f};
+            sliderRanges.put(id, range);
+        }
+        return range;
+    }
+
+    private void applySliderValue(int id, android.widget.SeekBar seek) {
+        float[] range = sliderRange(id);
+        Float value = sliderValues.get(id);
+        if (value == null) {
+            return;
+        }
+        float span = range[1] - range[0];
+        float ratio = span <= 0 ? 0 : (value - range[0]) / span;
+        seek.setProgress(Math.round(Math.max(0f, Math.min(1f, ratio)) * SLIDER_STEPS));
+    }
+
+    private float sliderValueOf(int id, int progress) {
+        float[] range = sliderRange(id);
+        return range[0] + (range[1] - range[0]) * progress / (float) SLIDER_STEPS;
+    }
+
+    /** Lista de cadenas en JSON: es como viajan los títulos de las pestañas. */
+    private static String[] parseStringList(String raw) {
+        if (raw == null || raw.length() < 2) {
+            return new String[0];
+        }
+        java.util.List<String> out = new java.util.ArrayList<>();
+        boolean inside = false;
+        StringBuilder current = new StringBuilder();
+        for (int i = 0; i < raw.length(); i++) {
+            char ch = raw.charAt(i);
+            if (ch == '"' && (i == 0 || raw.charAt(i - 1) != '\\')) {
+                if (inside) {
+                    out.add(current.toString());
+                    current.setLength(0);
+                }
+                inside = !inside;
+            } else if (inside) {
+                current.append(ch);
+            }
+        }
+        return out.toArray(new String[0]);
+    }
+
     private static View previousSibling(ViewGroup parent, View view) {
         int index = parent.indexOfChild(view);
         return index > 0 ? parent.getChildAt(index - 1) : null;
@@ -369,6 +469,55 @@ public final class AnHost {
             case "opacity":
                 view.setAlpha(parseFloat(value) == null ? 1f : parseFloat(value));
                 break;
+            // --- controles del sistema
+            case "on":
+                if (view instanceof android.widget.Switch) {
+                    ((android.widget.Switch) view).setChecked("true".equals(value));
+                }
+                break;
+            case "minimumValue":
+            case "maximumValue": {
+                Float bound = parseFloat(value);
+                if (view instanceof android.widget.SeekBar && bound != null) {
+                    float[] range = sliderRange(id);
+                    range["minimumValue".equals(key) ? 0 : 1] = bound;
+                    applySliderValue(id, (android.widget.SeekBar) view);
+                }
+                break;
+            }
+            case "animating":
+                if (view instanceof android.widget.ProgressBar) {
+                    view.setVisibility("false".equals(value) ? View.INVISIBLE : View.VISIBLE);
+                }
+                break;
+            case "progress": {
+                Float progress = parseFloat(value);
+                if (view instanceof android.widget.ProgressBar && progress != null) {
+                    ((android.widget.ProgressBar) view)
+                            .setProgress(Math.round(Math.max(0f, Math.min(1f, progress)) * SLIDER_STEPS));
+                }
+                break;
+            }
+            case "title":
+                if (view instanceof android.widget.Button) {
+                    ((android.widget.Button) view).setText(value);
+                }
+                break;
+            case "items":
+                if (view instanceof AnTabBar) {
+                    ((AnTabBar) view).setTitles(parseStringList(value));
+                }
+                break;
+            case "selectedIndex": {
+                Float index = parseFloat(value);
+                if (view instanceof AnTabBar && index != null) {
+                    ((AnTabBar) view).setSelectedIndex(Math.round(index));
+                }
+                break;
+            }
+            case "visible":
+                view.setVisibility("false".equals(value) ? View.GONE : View.VISIBLE);
+                break;
             case "transition":
                 transitions.put(id, value);
                 stackIds.add(id);
@@ -376,14 +525,34 @@ public final class AnHost {
             case "testID":
                 view.setContentDescription(value);
                 break;
-            case "color":
-                if (view instanceof TextView) {
-                    Integer color = parseColor(value);
-                    if (color != null) {
-                        ((TextView) view).setTextColor(color);
-                    }
+            case "color": {
+                Integer color = parseColor(value);
+                if (color == null) {
+                    break;
+                }
+                if (view instanceof AnTabBar) {
+                    ((AnTabBar) view).setActiveColor(color);
+                } else if (view instanceof android.widget.Switch) {
+                    // El pulgar y la vía llevan tintes distintos; el mismo
+                    // color en los dos es lo más parecido al de iOS.
+                    ((android.widget.Switch) view)
+                            .setThumbTintList(android.content.res.ColorStateList.valueOf(color));
+                    ((android.widget.Switch) view)
+                            .setTrackTintList(android.content.res.ColorStateList.valueOf(color));
+                } else if (view instanceof android.widget.ProgressBar) {
+                    ((android.widget.ProgressBar) view)
+                            .setProgressTintList(android.content.res.ColorStateList.valueOf(color));
+                    ((android.widget.ProgressBar) view)
+                            .setIndeterminateTintList(
+                                    android.content.res.ColorStateList.valueOf(color));
+                } else if (view instanceof android.widget.SeekBar) {
+                    ((android.widget.SeekBar) view)
+                            .setProgressTintList(android.content.res.ColorStateList.valueOf(color));
+                } else if (view instanceof TextView) {
+                    ((TextView) view).setTextColor(color);
                 }
                 break;
+            }
             case "fontSize":
                 if (view instanceof TextView) {
                     Float size = parseFloat(value);
@@ -421,7 +590,13 @@ public final class AnHost {
                     ((EditText) view).setHint(value);
                 }
                 break;
-            case "value":
+            case "value": {
+                Float sliderValue = parseFloat(value);
+                if (view instanceof android.widget.SeekBar && sliderValue != null) {
+                    sliderValues.put(id, sliderValue);
+                    applySliderValue(id, (android.widget.SeekBar) view);
+                    break;
+                }
                 if (view instanceof EditText) {
                     EditText input = (EditText) view;
                     // Escribir en cada tecla le movería el cursor al final.
@@ -430,6 +605,7 @@ public final class AnHost {
                     }
                 }
                 break;
+            }
             case "editable":
                 if (view instanceof EditText) {
                     ((EditText) view).setEnabled(!"false".equals(value));
@@ -593,6 +769,58 @@ public final class AnHost {
                 return;
             }
         }
+        if (view instanceof android.widget.Switch && "change".equals(event)) {
+            ((android.widget.Switch) view)
+                    .setOnCheckedChangeListener(
+                            enabled
+                                    ? (button, checked) -> {
+                                        if (runtime != null) {
+                                            runtime.dispatchValueEvent(
+                                                    id, "change", checked ? "true" : "false");
+                                        }
+                                    }
+                                    : null);
+            return;
+        }
+        if (view instanceof android.widget.SeekBar && "change".equals(event)) {
+            ((android.widget.SeekBar) view)
+                    .setOnSeekBarChangeListener(
+                            enabled
+                                    ? new android.widget.SeekBar.OnSeekBarChangeListener() {
+                                        @Override
+                                        public void onProgressChanged(
+                                                android.widget.SeekBar bar,
+                                                int progress,
+                                                boolean fromUser) {
+                                            if (fromUser && runtime != null) {
+                                                runtime.dispatchValueEvent(
+                                                        id,
+                                                        "change",
+                                                        String.valueOf(sliderValueOf(id, progress)));
+                                            }
+                                        }
+
+                                        @Override
+                                        public void onStartTrackingTouch(android.widget.SeekBar bar) {}
+
+                                        @Override
+                                        public void onStopTrackingTouch(android.widget.SeekBar bar) {}
+                                    }
+                                    : null);
+            return;
+        }
+        if (view instanceof AnTabBar && "select".equals(event)) {
+            ((AnTabBar) view)
+                    .setListener(
+                            enabled
+                                    ? index -> {
+                                        if (runtime != null) {
+                                            runtime.dispatchIndexEvent(id, "select", index);
+                                        }
+                                    }
+                                    : null);
+            return;
+        }
         if ("back".equals(event)) {
             // El botón físico de atrás: el equivalente del gesto de borde de
             // iOS. Aquí solo se avisa; deshacer la navegación es del router.
@@ -682,6 +910,59 @@ public final class AnHost {
                 + ",\"model\":\"" + android.os.Build.MODEL + "\""
                 + ",\"scale\":" + density
                 + ",\"locale\":\"" + java.util.Locale.getDefault().toLanguageTag() + "\"}";
+    }
+
+    /**
+     * Tamaño natural de un control del sistema, en puntos.
+     *
+     * Se crea uno de mentira y se le pregunta: es lo mismo que hace iOS con
+     * `sizeThatFits`, y por el mismo motivo —el alto de un interruptor cambia
+     * entre versiones de Android y con los ajustes de accesibilidad.
+     */
+    public long measureControl(String name, float availableWidthDp) {
+        View probe;
+        switch (name) {
+            case "Switch":
+                probe = new android.widget.Switch(context);
+                break;
+            case "Slider":
+                probe = new android.widget.SeekBar(context);
+                break;
+            case "ActivityIndicator":
+                probe = new android.widget.ProgressBar(context);
+                break;
+            case "ProgressBar":
+                probe =
+                        new android.widget.ProgressBar(
+                                context, null, android.R.attr.progressBarStyleHorizontal);
+                break;
+            case "Button":
+                probe = new android.widget.Button(context);
+                break;
+            case "TabBar":
+                return pack(
+                        availableWidthDp > 0 ? availableWidthDp : 320f, AnTabBar.HEIGHT_DP);
+            default:
+                return 0;
+        }
+        int unspecified = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+        probe.measure(unspecified, unspecified);
+        float width = probe.getMeasuredWidth() / density;
+        float height = probe.getMeasuredHeight() / density;
+
+        // Deslizadores y barras ocupan todo el ancho que se les dé; su medida
+        // natural solo manda en el alto.
+        boolean stretches = "Slider".equals(name) || "ProgressBar".equals(name);
+        if (stretches && availableWidthDp > 0) {
+            width = availableWidthDp;
+        }
+        return pack(width, height);
+    }
+
+    /** Ancho y alto en centésimas de punto, empaquetados en un long. */
+    private static long pack(float width, float height) {
+        return (((long) Math.round(width * 100)) << 32)
+                | (Math.round(height * 100) & 0xffffffffL);
     }
 
     // ---------------------------------------------------------------- medición

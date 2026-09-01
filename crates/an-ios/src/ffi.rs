@@ -99,11 +99,14 @@ pub unsafe extern "C" fn an_runtime_new(
     // Los datos del dispositivo se leen aquí, en el hilo principal, y viajan
     // ya resueltos: UIDevice y UIScreen no se pueden tocar desde el worker.
     let device = crate::modules::DeviceModule::capture(mtm);
+    // Los controles del sistema se miden aquí, en el hilo principal: crear un
+    // UISwitch fuera de él no está permitido.
+    let control_sizes = crate::controls::measure_controls(mtm);
 
     let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
         let mut js = QuickJsRuntime::new()?;
         js.register_module(Box::new(device));
-        Ok((js, ShadowSide::new(UikitMeasurer::new(), (width, height))))
+        Ok((js, ShadowSide::new(UikitMeasurer::new(control_sizes), (width, height))))
     });
     let worker = match worker {
         Ok(worker) => worker,

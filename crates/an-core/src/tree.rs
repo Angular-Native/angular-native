@@ -164,6 +164,12 @@ impl ShadowTree {
             self.pending.push(MountOp::Create { id, kind });
         }
         self.nodes[idx] = Some(node);
+        // Un control tiene tamaño propio desde que nace: sus props no dicen
+        // nada del tamaño, así que si no se marca aquí no se mide nunca y sale
+        // de cero.
+        if kind.is_control() {
+            self.mark_measure_dirty(id);
+        }
         self.needs_layout = true;
         Ok(())
     }
@@ -422,6 +428,9 @@ impl ShadowTree {
                         .unwrap_or_else(|| " ".to_owned());
                     let font = font_from_props(|k| node.prop(k));
                     Some(MeasureCtx::Text { text, font })
+                }
+                kind if kind.is_control() => {
+                    Some(MeasureCtx::Control { name: kind.control_name().to_owned() })
                 }
                 NodeKind::Image => {
                     let w = node.prop("intrinsicWidth").and_then(|v| v.as_f32()).unwrap_or(0.0);

@@ -43,6 +43,13 @@ impl JniHost {
             NodeKind::ScrollView => 4,
             NodeKind::TextInput => 5,
             NodeKind::StackView => 6,
+            NodeKind::TabBar => 7,
+            NodeKind::Switch => 8,
+            NodeKind::Slider => 9,
+            NodeKind::ActivityIndicator => 10,
+            NodeKind::ProgressBar => 11,
+            NodeKind::Button => 12,
+            NodeKind::Modal => 13,
         }
     }
 }

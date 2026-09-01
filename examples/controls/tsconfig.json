@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    // `dom` entra solo por los tipos: los .d.ts de Angular referencian Document,
+    // Element y Event. En tiempo de ejecución no existe ninguno de los tres.
+    "lib": ["es2022", "dom"],
+    "strict": true,
+    "skipLibCheck": true,
+    "useDefineForClassFields": false,
+    "experimentalDecorators": false,
+    "moduleDetection": "force",
+    "outDir": "../../build/js/controls",
+    "rootDir": "../..",
+    "paths": {
+      "@angular-native/platform": ["../../packages/platform-native/src/public-api.ts"],
+      "@angular-native/primitives": ["../../packages/primitives/src/public-api.ts"]
+    },
+    "types": []
+  },
+  "files": ["src/main.ts"],
+  "angularCompilerOptions": {
+    "strictTemplates": true,
+    "compilationMode": "full"
+  }
+}

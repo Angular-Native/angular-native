@@ -30,6 +30,13 @@ export type NativeKind =
   | 'ScrollView'
   | 'TextInput'
   | 'StackView'
+  | 'TabBar'
+  | 'Switch'
+  | 'Slider'
+  | 'ActivityIndicator'
+  | 'ProgressBar'
+  | 'Button'
+  | 'Modal'
 
 /** Primitivas que el core sabe montar. El resto son error de plantilla. */
 const KINDS: Record<string, NativeKind> = {
@@ -38,7 +45,14 @@ const KINDS: Record<string, NativeKind> = {
   Image: 'Image',
   ScrollView: 'ScrollView',
   TextInput: 'TextInput',
-  StackView: 'StackView'
+  StackView: 'StackView',
+  TabBar: 'TabBar',
+  Switch: 'Switch',
+  Slider: 'Slider',
+  ActivityIndicator: 'ActivityIndicator',
+  ProgressBar: 'ProgressBar',
+  Button: 'Button',
+  Modal: 'Modal'
 }
 
 export class NativeNode {

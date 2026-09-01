@@ -47,6 +47,11 @@ public final class AnRuntime {
         nativeDispatchValueEvent(handle, target, name, value);
     }
 
+    /** Eventos que llevan un índice: la pestaña elegida, por ejemplo. */
+    public void dispatchIndexEvent(int target, String name, int index) {
+        nativeDispatchIndexEvent(handle, target, name, index);
+    }
+
     public void close() {
         if (handle != 0) {
             nativeFree(handle);
@@ -69,6 +74,9 @@ public final class AnRuntime {
 
     private static native void nativeDispatchValueEvent(
             long handle, int target, String name, String value);
+
+    private static native void nativeDispatchIndexEvent(
+            long handle, int target, String name, int index);
 
     private static native void nativeFree(long handle);
 }

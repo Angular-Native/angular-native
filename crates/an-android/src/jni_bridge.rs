@@ -228,6 +228,29 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchEvent(
     );
 }
 
+/// Eventos que llevan un índice: la pestaña elegida, por ejemplo.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchIndexEvent(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    target: jint,
+    name: JString,
+    index: jint,
+) {
+    let Some(runtime) = (unsafe { runtime(handle) }) else { return };
+    let Ok(name) = env.get_string(&name) else { return };
+    let name: String = name.into();
+    an_host::push_event(
+        &runtime.events,
+        HostEvent {
+            target: target as u32,
+            name,
+            payload: vec![("index".to_owned(), PropValue::Number(index as f64))],
+        },
+    );
+}
+
 /// Eventos que llevan texto en vez de coordenadas: escribir en un campo,
 /// entrar y salir de él.
 #[unsafe(no_mangle)]

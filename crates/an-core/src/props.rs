@@ -18,6 +18,16 @@ pub enum NodeKind {
     /// se apilan y ocupan todo— pero el host lo trata distinto: anima la
     /// entrada y la salida, y engancha el gesto de volver atrás.
     StackView,
+    /// Barra de pestañas del sistema.
+    TabBar,
+    Switch,
+    Slider,
+    ActivityIndicator,
+    ProgressBar,
+    /// Botón del sistema, con su tipografía y su respuesta al toque.
+    Button,
+    /// Capa que se presenta encima de todo.
+    Modal,
 }
 
 impl NodeKind {
@@ -29,6 +39,13 @@ impl NodeKind {
             "ScrollView" | "scroll-view" => NodeKind::ScrollView,
             "TextInput" | "text-input" => NodeKind::TextInput,
             "StackView" | "stack-view" => NodeKind::StackView,
+            "TabBar" | "tab-bar" => NodeKind::TabBar,
+            "Switch" | "switch" => NodeKind::Switch,
+            "Slider" | "slider" => NodeKind::Slider,
+            "ActivityIndicator" | "activity-indicator" => NodeKind::ActivityIndicator,
+            "ProgressBar" | "progress-bar" => NodeKind::ProgressBar,
+            "Button" | "button" => NodeKind::Button,
+            "Modal" | "modal" => NodeKind::Modal,
             _ => return None,
         })
     }
@@ -44,6 +61,39 @@ impl NodeKind {
     /// que ocupa su texto, en vez de colapsar a cero.
     pub fn is_measured_leaf(self) -> bool {
         matches!(self, NodeKind::Text | NodeKind::Image | NodeKind::TextInput)
+            || self.is_control()
+    }
+
+    /// Controles del sistema: los dibuja la plataforma y su tamaño natural lo
+    /// decide ella, no el framework.
+    pub fn is_control(self) -> bool {
+        matches!(
+            self,
+            NodeKind::TabBar
+                | NodeKind::Switch
+                | NodeKind::Slider
+                | NodeKind::ActivityIndicator
+                | NodeKind::ProgressBar
+                | NodeKind::Button
+        )
+    }
+
+    /// Nombre con el que el host reconoce el control al medirlo.
+    pub fn control_name(self) -> &'static str {
+        match self {
+            NodeKind::TabBar => "TabBar",
+            NodeKind::Switch => "Switch",
+            NodeKind::Slider => "Slider",
+            NodeKind::ActivityIndicator => "ActivityIndicator",
+            NodeKind::ProgressBar => "ProgressBar",
+            NodeKind::Button => "Button",
+            _ => "",
+        }
+    }
+
+    /// Se presenta encima de todo, fuera del flujo de su padre.
+    pub fn is_overlay(self) -> bool {
+        self == NodeKind::Modal
     }
 
     /// Nodos cuyo contenido puede desbordar y necesita `contentSize`.
@@ -138,5 +188,7 @@ pub fn affects_measure(key: &str) -> bool {
             | "intrinsicHeight"
             | "value"
             | "placeholder"
+            | "title"
+            | "items"
     )
 }

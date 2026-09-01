@@ -39,6 +39,10 @@ pub enum MeasureCtx {
     Text { text: String, font: FontSpec },
     /// Imagen con tamaño intrínseco conocido (ancho, alto).
     Image { intrinsic: (f32, f32) },
+    /// Un control del sistema —un interruptor, un deslizador, una barra de
+    /// pestañas—. Cuánto mide no lo decide el framework: lo decide la
+    /// plataforma, y cambia entre versiones del sistema.
+    Control { name: String },
 }
 
 /// Lo implementa cada plataforma. Debe ser puro: mismas entradas, misma salida,
@@ -47,6 +51,24 @@ pub trait TextMeasurer {
     /// `max_width` = `None` cuando el ancho disponible es infinito.
     /// Devuelve (ancho, alto) en puntos lógicos.
     fn measure_text(&self, text: &str, font: &FontSpec, max_width: Option<f32>) -> (f32, f32);
+
+    /// Tamaño natural de un control del sistema.
+    ///
+    /// La implementación por defecto devuelve medidas razonables para que el
+    /// núcleo sea usable sin plataforma; cada host la sustituye preguntando al
+    /// control de verdad, que es quien sabe cuánto ocupa en esta versión del
+    /// sistema y con los ajustes de accesibilidad del usuario.
+    fn measure_control(&self, name: &str, _available_width: Option<f32>) -> (f32, f32) {
+        match name {
+            "Switch" => (51.0, 31.0),
+            "Slider" => (200.0, 32.0),
+            "ActivityIndicator" => (20.0, 20.0),
+            "ProgressBar" => (200.0, 4.0),
+            "Button" => (80.0, 44.0),
+            "TabBar" => (320.0, 49.0),
+            _ => (0.0, 0.0),
+        }
+    }
 }
 
 /// Aproximación monoespaciada. Sirve para tests y para no bloquear el núcleo

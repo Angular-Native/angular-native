@@ -16,8 +16,8 @@ use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_foundation::NSObjectProtocol;
 use objc2_ui_kit::{
     UIControl, UIControlEvents, UIGestureRecognizer, UIGestureRecognizerState, UIRectEdge,
-    UIScreenEdgePanGestureRecognizer, UIScrollView, UIScrollViewDelegate, UITapGestureRecognizer,
-    UITextField, UIView,
+    UIScreenEdgePanGestureRecognizer, UIScrollView, UIScrollViewDelegate, UISlider, UISwitch,
+    UITabBar, UITabBarDelegate, UITabBarItem, UITapGestureRecognizer, UITextField, UIView,
 };
 
 fn emit(queue: &EventQueue, target: NodeId, name: &str, payload: Vec<(String, PropValue)>) {
@@ -119,8 +119,74 @@ define_class!(
         fn handle_submit(&self, sender: &UITextField) {
             self.emit_with_value("submit", sender);
         }
+
+        #[unsafe(method(handleSwitch:))]
+        fn handle_switch(&self, sender: &UISwitch) {
+            let ivars = self.ivars();
+            emit(
+                &ivars.queue,
+                ivars.node,
+                "change",
+                vec![("value".to_owned(), PropValue::Bool(sender.isOn()))],
+            );
+        }
+
+        #[unsafe(method(handleSlider:))]
+        fn handle_slider(&self, sender: &UISlider) {
+            let ivars = self.ivars();
+            emit(
+                &ivars.queue,
+                ivars.node,
+                "change",
+                vec![("value".to_owned(), PropValue::Number(sender.value() as f64))],
+            );
+        }
+
+        #[unsafe(method(handleButton:))]
+        fn handle_button(&self, _sender: &UIControl) {
+            let ivars = self.ivars();
+            emit(&ivars.queue, ivars.node, "press", Vec::new());
+        }
     }
 );
+
+/// Delegado de la barra de pestañas. UIKit lo guarda con referencia débil.
+pub struct TabIvars {
+    node: NodeId,
+    queue: EventQueue,
+}
+
+define_class!(
+    // SAFETY: igual que GestureTarget.
+    #[unsafe(super(objc2_foundation::NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "AnTabBarDelegate"]
+    #[ivars = TabIvars]
+    pub struct TabDelegate;
+
+    unsafe impl NSObjectProtocol for TabDelegate {}
+
+    unsafe impl UITabBarDelegate for TabDelegate {
+        #[unsafe(method(tabBar:didSelectItem:))]
+        fn tab_bar_did_select(&self, _bar: &UITabBar, item: &UITabBarItem) {
+            let ivars = self.ivars();
+            emit(
+                &ivars.queue,
+                ivars.node,
+                "select",
+                // El `tag` es el índice: se le puso al construir el ítem.
+                vec![("index".to_owned(), PropValue::Number(item.tag() as f64))],
+            );
+        }
+    }
+);
+
+impl TabDelegate {
+    fn new(mtm: objc2::MainThreadMarker, node: NodeId, queue: EventQueue) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(TabIvars { node, queue });
+        unsafe { msg_send![super(this), init] }
+    }
+}
 
 impl ControlTarget {
     fn emit_with_value(&self, name: &str, field: &UITextField) {
@@ -192,6 +258,9 @@ pub enum AttachedListener {
     Scroll {
         _delegate: Retained<ScrollDelegate>,
     },
+    Tabs {
+        _delegate: Retained<TabDelegate>,
+    },
 }
 
 impl AttachedListener {
@@ -216,6 +285,11 @@ impl AttachedListener {
                 let scroll = scroll.cast::<UIScrollView>();
                 unsafe { (*scroll).setDelegate(None) };
             }
+            AttachedListener::Tabs { .. } => {
+                let bar: *const UIView = view;
+                let bar = bar.cast::<UITabBar>();
+                unsafe { (*bar).setDelegate(None) };
+            }
         }
     }
 }
@@ -235,6 +309,29 @@ pub fn attach(
     queue: EventQueue,
 ) -> Option<AttachedListener> {
     use an_core::NodeKind;
+
+    // Controles que avisan por target-action: el valor cambió, o se pulsó.
+    let control_action = match (kind, event) {
+        (NodeKind::Switch, "change") => Some((UIControlEvents::ValueChanged, sel!(handleSwitch:))),
+        (NodeKind::Slider, "change") => Some((UIControlEvents::ValueChanged, sel!(handleSlider:))),
+        (NodeKind::Button, "press") => Some((UIControlEvents::TouchUpInside, sel!(handleButton:))),
+        _ => None,
+    };
+    if let Some((events, action)) = control_action {
+        let target = ControlTarget::new(mtm, node, queue);
+        let control: *const UIView = view;
+        let control = control.cast::<UIControl>();
+        unsafe { (*control).addTarget_action_forControlEvents(Some(&*target), action, events) };
+        return Some(AttachedListener::Control { events, action, target });
+    }
+
+    if kind == NodeKind::TabBar && event == "select" {
+        let delegate = TabDelegate::new(mtm, node, queue);
+        let bar: *const UIView = view;
+        let bar = bar.cast::<UITabBar>();
+        unsafe { (*bar).setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
+        return Some(AttachedListener::Tabs { _delegate: delegate });
+    }
 
     if kind == NodeKind::TextInput {
         let (events, action) = match event {

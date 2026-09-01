@@ -38,6 +38,32 @@ impl JniMeasurer {
 }
 
 impl TextMeasurer for JniMeasurer {
+    fn measure_control(&self, name: &str, available_width: Option<f32>) -> (f32, f32) {
+        let Ok(mut env) = self.vm.attach_current_thread() else {
+            return (0.0, 0.0);
+        };
+        let Ok(name_ref) = env.new_string(name) else { return (0.0, 0.0) };
+        let available = available_width.filter(|w| w.is_finite()).unwrap_or(-1.0);
+        let result = env
+            .call_method(
+                self.host.as_obj(),
+                "measureControl",
+                "(Ljava/lang/String;F)J",
+                &[JValue::Object(&name_ref), JValue::Float(available)],
+            )
+            .and_then(|value| value.j());
+        match result {
+            Ok(packed) => (
+                ((packed >> 32) as i32) as f32 / 100.0,
+                ((packed & 0xffff_ffff) as i32) as f32 / 100.0,
+            ),
+            Err(_) => {
+                let _ = env.exception_clear();
+                (0.0, 0.0)
+            }
+        }
+    }
+
     fn measure_text(&self, text: &str, font: &FontSpec, max_width: Option<f32>) -> (f32, f32) {
         let key = Key {
             text: text.to_owned(),

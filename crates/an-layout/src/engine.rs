@@ -163,6 +163,14 @@ fn measure_leaf(
             let (w, h) = measurer.measure_text(text, font, max_width);
             taffy::Size { width: known.width.unwrap_or(w), height: known.height.unwrap_or(h) }
         }
+        MeasureCtx::Control { name } => {
+            let available = known.width.or(match available.width {
+                AvailableSpace::Definite(w) => Some(w),
+                _ => None,
+            });
+            let (w, h) = measurer.measure_control(name, available);
+            taffy::Size { width: known.width.unwrap_or(w), height: known.height.unwrap_or(h) }
+        }
         MeasureCtx::Image { intrinsic } => {
             let (iw, ih) = *intrinsic;
             let ratio = if ih > 0.0 { iw / ih } else { 1.0 };

@@ -267,5 +267,146 @@ export class TextInput extends NativeVisual {
   )
 }
 
+/** Pestaña seleccionada. */
+export interface NativeTabSelectEvent {
+  index: number
+}
+
+/**
+ * Barra de pestañas del sistema.
+ *
+ * Es la barra de verdad —`UITabBar` en iOS— no una fila de vistas imitándola:
+ * hereda su tipografía, su fondo translúcido y su comportamiento con el texto
+ * grande de accesibilidad.
+ */
+@Directive({ selector: 'TabBar' })
+export class TabBar extends NativeVisual {
+  /** Títulos, en orden. */
+  @Input() set items(value: readonly string[] | null) {
+    // El protocolo no lleva listas y una barra de pestañas no justifica
+    // añadirlas: viajan como JSON.
+    this.set('items', JSON.stringify(value ?? []))
+  }
+
+  @Input() set selectedIndex(value: number | null) {
+    this.set('selectedIndex', value ?? 0)
+  }
+
+  /** Color de la pestaña activa. */
+  @Input() set color(value: string | null) {
+    this.set('color', value)
+  }
+
+  readonly select = outputFromObservable(
+    this.nativeEvent<NativeTabSelectEvent>('select').pipe(map((event) => event.index))
+  )
+}
+
+/** Interruptor del sistema. */
+@Directive({ selector: 'Switch' })
+export class Switch extends NativeVisual {
+  @Input() set on(value: boolean | null) {
+    this.set('on', value ?? false)
+  }
+
+  /** Color cuando está encendido. */
+  @Input() set color(value: string | null) {
+    this.set('color', value)
+  }
+
+  /** Emparejado con `on`, habilita `[(on)]` en la plantilla. */
+  readonly onChange = outputFromObservable(
+    this.nativeEvent<{ value: boolean }>('change').pipe(map((event) => event.value))
+  )
+}
+
+/** Deslizador del sistema. */
+@Directive({ selector: 'Slider' })
+export class Slider extends NativeVisual {
+  @Input() set value(value: number | null) {
+    this.set('value', value ?? 0)
+  }
+
+  @Input() set minimumValue(value: number | null) {
+    this.set('minimumValue', value ?? 0)
+  }
+
+  @Input() set maximumValue(value: number | null) {
+    this.set('maximumValue', value ?? 1)
+  }
+
+  @Input() set color(value: string | null) {
+    this.set('color', value)
+  }
+
+  readonly valueChange = outputFromObservable(
+    this.nativeEvent<{ value: number }>('change').pipe(map((event) => event.value))
+  )
+}
+
+/** Ruedecilla de carga. Se esconde sola cuando se para. */
+@Directive({ selector: 'ActivityIndicator' })
+export class ActivityIndicator extends NativeVisual {
+  @Input() set animating(value: boolean | null) {
+    this.set('animating', value ?? true)
+  }
+
+  @Input() set color(value: string | null) {
+    this.set('color', value)
+  }
+}
+
+/** Barra de progreso determinada. `progress` va de 0 a 1. */
+@Directive({ selector: 'ProgressBar' })
+export class ProgressBar extends NativeVisual {
+  @Input() set progress(value: number | null) {
+    this.set('progress', value ?? 0)
+  }
+
+  @Input() set color(value: string | null) {
+    this.set('color', value)
+  }
+}
+
+/** Botón del sistema, con su tipografía y su respuesta al toque. */
+@Directive({ selector: 'Button' })
+export class Button extends NativeVisual {
+  @Input() set title(value: string | null) {
+    this.set('title', value ?? '')
+  }
+
+  @Input() set color(value: string | null) {
+    this.set('color', value)
+  }
+}
+
+/**
+ * Capa que se presenta encima de todo.
+ *
+ * No presenta un controlador: es una vista que se monta sobre la raíz. En iOS
+ * lo canónico sería `presentViewController:`, pero aquí no hay un controlador
+ * por pantalla, y una capa da el mismo resultado visual con menos maquinaria.
+ */
+@Directive({ selector: 'Modal' })
+export class Modal extends NativeVisual {
+  @Input() set visible(value: boolean | null) {
+    this.set('visible', value ?? false)
+  }
+}
+
 /** Para importar todas de golpe en un componente standalone. */
-export const NATIVE_PRIMITIVES = [View, Text, Image, ScrollView, TextInput, StackView] as const
+export const NATIVE_PRIMITIVES = [
+  View,
+  Text,
+  Image,
+  ScrollView,
+  TextInput,
+  StackView,
+  TabBar,
+  Switch,
+  Slider,
+  ActivityIndicator,
+  ProgressBar,
+  Button,
+  Modal
+] as const

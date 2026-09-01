@@ -33,11 +33,15 @@ struct Key {
 #[derive(Default)]
 pub struct UikitMeasurer {
     cache: RefCell<HashMap<Key, (f32, f32)>>,
+    /// Tamaños naturales de los controles, preguntados en el arranque. No se
+    /// pueden consultar aquí: crear un `UISwitch` exige el hilo principal, y
+    /// el medidor vive en el del motor.
+    controls: crate::controls::ControlSizes,
 }
 
 impl UikitMeasurer {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(controls: crate::controls::ControlSizes) -> Self {
+        UikitMeasurer { cache: RefCell::new(HashMap::new()), controls }
     }
 
     /// Se llama cuando cambia la escala de la pantalla o la fuente dinámica.
@@ -77,6 +81,19 @@ impl UikitMeasurer {
 }
 
 impl TextMeasurer for UikitMeasurer {
+    fn measure_control(&self, name: &str, available_width: Option<f32>) -> (f32, f32) {
+        let Some((width, height)) = self.controls.get(name).copied() else {
+            return (0.0, 0.0);
+        };
+        // Deslizadores, barras de progreso y de pestañas ocupan todo el ancho
+        // que se les dé; su medida natural solo manda en el alto.
+        let stretches = matches!(name, "Slider" | "ProgressBar" | "TabBar");
+        match available_width {
+            Some(available) if stretches && available.is_finite() => (available, height),
+            _ => (width, height),
+        }
+    }
+
     fn measure_text(&self, text: &str, font: &FontSpec, max_width: Option<f32>) -> (f32, f32) {
         let key = Key {
             text: text.to_owned(),
