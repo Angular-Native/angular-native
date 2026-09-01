@@ -8,6 +8,7 @@ mod android;
 mod build;
 mod dev;
 mod ios;
+mod watchos;
 mod workspace;
 
 use clap::{Parser, Subcommand};
@@ -34,6 +35,18 @@ enum Command {
         app: Option<String>,
         /// Nombre del simulador.
         #[arg(long, default_value = "iPhone 17 Pro")]
+        device: String,
+        #[arg(long)]
+        release: bool,
+    },
+    /// Compila, arma el .app del reloj y lo lanza en el simulador de watchOS.
+    ///
+    /// Necesita nightly con `rust-src`: `aarch64-apple-watchos-sim` es un
+    /// target de nivel 3 y su `std` se construye en el momento.
+    Watchos {
+        app: Option<String>,
+        /// Nombre del simulador de reloj.
+        #[arg(long, default_value = "Apple Watch Series 11 (46mm)")]
         device: String,
         #[arg(long)]
         release: bool,
@@ -79,6 +92,15 @@ fn main() -> anyhow::Result<()> {
             let bundle = build::bundle(&workspace, &app, release)?;
             let package = ios::assemble(&workspace, &bundle, release, None)?;
             ios::launch(&package, &device)
+        }
+        Command::Watchos { app, device, release } => {
+            // El ejemplo por defecto del reloj no es el de todos los demás:
+            // `hello-angular` está pensado para un teléfono y en 205 puntos de
+            // ancho no se lee.
+            let app = workspace.app(Some(app.as_deref().unwrap_or("examples/hello-watch")))?;
+            let bundle = build::bundle(&workspace, &app, release)?;
+            let package = watchos::assemble(&workspace, &bundle, release)?;
+            watchos::launch(&package, &device)
         }
         Command::Android { app, release, no_launch } => {
             let app = workspace.app(app.as_deref())?;

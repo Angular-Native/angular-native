@@ -12,6 +12,7 @@ rquickjs = { version = "0.12", default-features = false, features = ["macro"] }
 serde_json = "1.0.151"
 
 # iOS no trae bindings pregenerados en rquickjs-sys: hay que generarlos con
-# bindgen, que en Mac usa el libclang de Xcode.
-[target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos", target_os = "android"))'.dependencies]
+# bindgen, que en Mac usa el libclang de Xcode. watchOS tampoco los trae —es
+# target de nivel 3, así que menos todavía—, y entra en la misma lista.
+[target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos", target_os = "watchos", target_os = "android"))'.dependencies]
 rquickjs = { version = "0.12", default-features = false, features = ["macro", "bindgen"] }

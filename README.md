@@ -64,8 +64,12 @@ cargo an dev                  # compila, lanza en el simulador y recarga al guar
 cargo an dev --android        # lo mismo, en el emulador de Android
 cargo an ios                  # una sola vez, sin vigilar
 cargo an android              # APK, emulador y lanzamiento
+cargo an watchos              # reloj: .app de watchOS y simulador
 cargo an build --release      # solo el bundle: 276 KB frente a 1,3 MB en debug
 ```
+
+El reloj pide nightly: `aarch64-apple-watchos-sim` es un target de nivel 3 y su
+`std` se construye en el momento. Ver [docs/watchos.md](docs/watchos.md).
 
 Todo va por el mismo binario, `an`. No hay `.xcodeproj` ni Gradle: las
 herramientas de cada SDK ya hacen el trabajo y el proceso cabe en un fichero
@@ -121,6 +125,7 @@ cargo test                    # solo el núcleo Rust
 ./scripts/check-pickers.sh    # segmentos, desplegable, pasos, búsqueda y fecha
 ./scripts/check-web.sh        # cabecera, texto multilínea, navegador, hoja
 ./scripts/check-styles.sh     # que las dos listas de nombres de estilo no se separen
+./scripts/check-watchos.sh    # el modelo del reloj y su compilación cruzada
 cargo run -p an-bridge --example headless -- build/bundle/hello-angular/main.js 6
 ```
 
@@ -139,7 +144,8 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
 | `an-bridge` | Motor JS (QuickJS), protocolo binario, módulos nativos, hilo del motor |
 | `an-ios` | Host UIKit, medición, controles, animaciones y superficie C |
 | `an-android` | Host JNI, medición con `StaticLayout` y puntos de entrada JNI |
-| `an-cli` | La herramienta `an`: build, ios, android y servidor de desarrollo |
+| `an-watch` | Host watchOS: el árbol reflejado en un modelo que pinta SwiftUI |
+| `an-cli` | La herramienta `an`: build, ios, android, watchos y servidor de desarrollo |
 
 | Paquete npm | Qué hace |
 |---|---|
@@ -211,6 +217,12 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
 - **`VirtualList` exige altura de fila fija.** Sin ella no se puede saber qué
   hay en un desplazamiento sin haber medido todo lo anterior.
 - **Faltan mapa y vídeo.** Y un selector de fecha que no sea el compacto.
+- **El reloj va por la mitad.** watchOS pinta `View`, `Text`, `Button` y
+  `ScrollView`, que es lo que da para una pantalla de verdad, pero le faltan el
+  resto de primitivas, los gestos más allá del toque, la animación y la recarga
+  en caliente. No es un port del host de iOS: watchOS no tiene jerarquía de
+  `UIView`, así que el árbol se refleja en un modelo que redibuja SwiftUI. El
+  porqué y lo que falta, en [docs/watchos.md](docs/watchos.md).
 
 ## Desarrollo
 
