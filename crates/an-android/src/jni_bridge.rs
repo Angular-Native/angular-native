@@ -152,7 +152,8 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeEval(
     .resolve::<LogErrorAndDefault>()
 }
 
-/// Igual que en iOS: vistas fuera, motor nuevo, árbol vacío.
+/// Igual que en iOS: en caliente solo cambian las definiciones; si no encaja,
+/// vistas fuera, motor nuevo y árbol vacío.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeReload(
     mut env: EnvUnowned,
@@ -165,11 +166,14 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeReload(
         let Some(runtime) = (unsafe { runtime(handle) }) else { return Ok(-1) };
         let Some((name, code)) = read_pair(env, name, code) else { return Ok(-1) };
         runtime.settle();
-        // Las vistas se desmontan aquí, donde se puede tocar la jerarquía; el
-        // árbol lo tira el worker.
-        runtime.mount.clear();
         drain_events(&runtime.events);
-        Ok(report(runtime.worker.request(Request::Reload { name, code }).error))
+        let reply = runtime.worker.request(Request::Reload { name, code });
+        // Solo se desmonta si hubo reinicio: en caliente el árbol sigue en pie
+        // y tirar las vistas dejaría la pantalla vacía.
+        if !reply.hot {
+            runtime.mount.clear();
+        }
+        Ok(report(reply.error))
     })
     .resolve::<LogErrorAndDefault>()
 }

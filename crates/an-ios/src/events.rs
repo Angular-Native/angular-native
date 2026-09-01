@@ -20,8 +20,8 @@ use objc2_ui_kit::{
     UILongPressGestureRecognizer, UIPanGestureRecognizer, UIPinchGestureRecognizer, UIRectEdge,
     UIRefreshControl, UIRotationGestureRecognizer, UIScreenEdgePanGestureRecognizer, UIScrollView,
     UIScrollViewDelegate, UISlider, UISwipeGestureRecognizer,
-    UISwipeGestureRecognizerDirection, UISwitch, UITabBar, UITabBarDelegate, UITabBarItem,
-    UITapGestureRecognizer, UITextField, UIView,
+    UISwipeGestureRecognizerDirection, UISwitch, UITabBar, UITapGestureRecognizer, UITextField,
+    UIView,
 };
 
 fn emit(queue: &EventQueue, target: NodeId, name: &str, payload: Vec<(String, PropValue)>) {

@@ -45,6 +45,9 @@ pub enum Request {
 pub struct Reply {
     pub frame: Frame,
     pub error: Option<String>,
+    /// Solo lo mira `Reload`: dice si la app se cosió en caliente. Cuando es
+    /// `true` las vistas nativas siguen valiendo y no hay que desmontarlas.
+    pub hot: bool,
 }
 
 pub struct RuntimeWorker {
@@ -104,7 +107,7 @@ impl RuntimeWorker {
                             // no se toca: lo que Angular rehaga sale por el
                             // búfer de comandos como cualquier otro cambio.
                             if matches!(js.eval_hot(&name, &code), Ok(true)) {
-                                Reply::default()
+                                Reply { hot: true, ..Reply::default() }
                             } else {
                                 // El estado que la app quiera conservar se pide
                                 // antes de tirar el motor y se le devuelve al
@@ -156,7 +159,7 @@ impl RuntimeWorker {
                             match shadow.commit() {
                                 Ok((frame, layout_events)) => {
                                     pending_layout = layout_events;
-                                    Reply { frame, error }
+                                    Reply { frame, error, hot: false }
                                 }
                                 Err(commit) => Reply {
                                     error: Some(

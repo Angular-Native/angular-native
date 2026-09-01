@@ -145,10 +145,13 @@ pub unsafe extern "C" fn an_runtime_eval(
     report(rt.worker.request(Request::Eval { name, code }).error)
 }
 
-/// Tira la app y la levanta otra vez con código nuevo: vistas nativas fuera,
-/// motor JS nuevo, árbol vacío. Es lo que usa `an dev` al detectar un cambio.
+/// Mete código nuevo en la app que está corriendo. Es lo que usa `an dev` al
+/// detectar un cambio.
 ///
-/// No conserva estado: un `signal` vuelve a su valor inicial.
+/// Si el bundle nuevo encaja con lo que hay montado, solo cambian las
+/// definiciones de los componentes y el estado se conserva. Si no, se levanta
+/// todo otra vez: vistas nativas fuera, motor JS nuevo, árbol vacío, y un
+/// `signal` vuelve a su valor inicial.
 ///
 /// # Safety
 /// `rt` debe venir de `an_runtime_new`. `name` y `code`, cadenas C válidas.
@@ -161,11 +164,17 @@ pub unsafe extern "C" fn an_runtime_reload(
     let Some(rt) = (unsafe { rt.as_mut() }) else { return -1 };
     let Some((name, code)) = (unsafe { read_pair(name, code) }) else { return -1 };
     rt.settle();
-    // Las vistas se desmontan aquí, donde se puede tocar UIKit; el árbol lo
-    // tira el worker.
-    rt.mount.clear();
     drain_events(&rt.events);
-    report(rt.worker.request(Request::Reload { name, code }).error)
+    let reply = rt.worker.request(Request::Reload { name, code });
+    // Desmontar va después de saber en qué acabó: en caliente el árbol sigue
+    // en pie, y tirar las vistas dejaría la pantalla en negro esperando unas
+    // altas que el core no tiene por qué volver a mandar. El worker solo tira
+    // el árbol cuando reinicia, y es entonces cuando toca vaciar esto —aquí,
+    // que es donde se puede tocar UIKit.
+    if !reply.hot {
+        rt.mount.clear();
+    }
+    report(reply.error)
 }
 
 /// # Safety
