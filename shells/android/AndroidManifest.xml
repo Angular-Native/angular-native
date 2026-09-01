@@ -6,11 +6,19 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Sin barra de acción: la pantalla la dibuja la app entera, igual que
-         en iOS, y el layout ya reserva el hueco de la barra de estado. -->
+    <!--
+      Sin barra de acción: la pantalla la dibuja la app entera, igual que en
+      iOS, y el layout ya reserva el hueco de la barra de estado.
+
+      `DeviceDefault` y no `Material`: `Theme.Material` es Material 1, el de
+      2014, y con él los controles del sistema salen con el aspecto de
+      entonces —interruptor cuadrado, botón gris elevado—. `DeviceDefault` es
+      el tema que el fabricante mantiene al día, así que los mismos widgets
+      salen con el aspecto actual del dispositivo.
+    -->
     <application
         android:label="AngularNative"
-        android:theme="@android:style/Theme.Material.NoActionBar"
+        android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
         android:hardwareAccelerated="true"
         android:extractNativeLibs="true"
         android:usesCleartextTraffic="true">

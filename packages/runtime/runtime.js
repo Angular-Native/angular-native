@@ -244,7 +244,7 @@
     SegmentedControl: 16,
     Stepper: 17,
     SearchBar: 18,
-    Select: 19,
+    Picker: 19,
     DatePicker: 20
   }
 

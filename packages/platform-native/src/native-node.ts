@@ -47,7 +47,7 @@ export type NativeKind =
   | 'SegmentedControl'
   | 'Stepper'
   | 'SearchBar'
-  | 'Select'
+  | 'Picker'
   | 'DatePicker'
 
 /** Primitivas que el core sabe montar. El resto son hosts de componentes. */
@@ -70,7 +70,7 @@ const KINDS: Record<string, NativeKind> = {
   SegmentedControl: 'SegmentedControl',
   Stepper: 'Stepper',
   SearchBar: 'SearchBar',
-  Select: 'Select',
+  Picker: 'Picker',
   DatePicker: 'DatePicker'
 }
 

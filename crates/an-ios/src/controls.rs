@@ -36,6 +36,12 @@ pub fn measure_controls(mtm: MainThreadMarker) -> ControlSizes {
     record("ProgressBar", &UIProgressView::new(mtm));
     record("Button", &UIButton::new(mtm));
     record("TabBar", &UITabBar::new(mtm));
+    record("SegmentedControl", &objc2_ui_kit::UISegmentedControl::new(mtm));
+    record("Stepper", &objc2_ui_kit::UIStepper::new(mtm));
+    record("SearchBar", &objc2_ui_kit::UISearchBar::new(mtm));
+    // El desplegable es un botón con menú: mide lo que mide un botón.
+    record("Picker", &UIButton::new(mtm));
+    record("DatePicker", &objc2_ui_kit::UIDatePicker::new(mtm));
 
     // `sizeThatFits` de algunos devuelve cero porque no tienen contenido
     // todavía; para esos manda el tamaño natural conocido.
@@ -43,6 +49,14 @@ pub fn measure_controls(mtm: MainThreadMarker) -> ControlSizes {
         ("Slider", (200.0, 32.0)),
         ("ProgressBar", (200.0, 4.0)),
         ("Button", (80.0, 44.0)),
+        // Un control segmentado sin segmentos y una barra de búsqueda sin
+        // texto no miden nada útil: hasta que tengan contenido manda su
+        // tamaño conocido.
+        ("SegmentedControl", (320.0, 32.0)),
+        ("SearchBar", (320.0, 56.0)),
+        ("Stepper", (94.0, 32.0)),
+        ("Picker", (140.0, 44.0)),
+        ("DatePicker", (200.0, 44.0)),
     ] {
         let entry = sizes.entry(name.to_owned()).or_insert(fallback);
         if entry.0 <= 0.0 {

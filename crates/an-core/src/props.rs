@@ -44,7 +44,7 @@ pub enum NodeKind {
     /// Campo de búsqueda del sistema, con su lupa y su botón de borrar.
     SearchBar,
     /// Elegir una de varias opciones de una lista que se despliega.
-    Select,
+    Picker,
     /// Selector de fecha y hora del sistema.
     DatePicker,
 }
@@ -68,7 +68,7 @@ impl NodeKind {
             "Alert" | "alert" => NodeKind::Alert,
             "Icon" | "icon" => NodeKind::Icon,
             "DatePicker" | "date-picker" => NodeKind::DatePicker,
-            "Select" | "select" => NodeKind::Select,
+            "Picker" | "picker" => NodeKind::Picker,
             "SearchBar" | "search-bar" => NodeKind::SearchBar,
             "Stepper" | "stepper" => NodeKind::Stepper,
             "SegmentedControl" | "segmented-control" => NodeKind::SegmentedControl,
@@ -105,7 +105,7 @@ impl NodeKind {
                 | NodeKind::SegmentedControl
                 | NodeKind::Stepper
                 | NodeKind::SearchBar
-                | NodeKind::Select
+                | NodeKind::Picker
                 | NodeKind::DatePicker
         )
     }
@@ -123,7 +123,7 @@ impl NodeKind {
             NodeKind::SegmentedControl => "SegmentedControl",
             NodeKind::Stepper => "Stepper",
             NodeKind::SearchBar => "SearchBar",
-            NodeKind::Select => "Select",
+            NodeKind::Picker => "Picker",
             NodeKind::DatePicker => "DatePicker",
             _ => "",
         }

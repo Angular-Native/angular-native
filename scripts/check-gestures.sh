@@ -27,17 +27,17 @@ check "translateY=25.00" "y en los dos ejes"
 check "soltado a 120 pt/s" "la velocidad llega a la plantilla al soltar"
 # El marco es el que le dio el layout, sin sumarle la transformación: si
 # `translateX` entrara en el layout, este número sería otro.
-check "View#8 \[107,90 140x140\]" "transformar no mueve el marco ni relanza el layout"
+check "View#[0-9]+ \[107,90 140x140\]" "transformar no mueve el marco ni relanza el layout"
 check "scale=1.00" "la escala arranca en 1, no en 0"
 # `[style.fontSize]` es el camino que Angular deja escribir siempre y que
 # antes se perdía por el camino: llegaba con guion, nadie lo reconocía, y el
 # texto se medía con la letra por defecto. 23 de alto es 18 puntos; 17 sería
 # la de por defecto.
-check "Text#12 \[.* 149x23\]" "un [style.fontSize] llega a la medición"
+check "Text#[0-9]+ \[.* 149x23\]" "un [style.fontSize] llega a la medición"
 # El panel arranca a 72 de alto y el toque lo lleva a 160. Que la transición
 # se vea suave es del host y solo se comprueba en el dispositivo; aquí se
 # comprueba que el valor nuevo llega.
-check "View#11 \[.* 353x160\]" "el panel animado cambia de alto al tocarlo"
+check "View#[0-9]+ \[.* 353x160\]" "el panel animado cambia de alto al tocarlo"
 
 if [[ $fail -ne 0 ]]; then
   echo "$OUTPUT"

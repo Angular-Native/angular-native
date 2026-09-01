@@ -28,7 +28,7 @@ import type {
       [backgroundColor]="'#0b1020'">
       <SafeArea
         [style.flex]="1"
-        [style.padding]="20"
+        [padding]="20"
         [style.gap]="14">
         <Text [fontSize]="26" [fontWeight]="700" [color]="'#f8fafc'">
           gestos

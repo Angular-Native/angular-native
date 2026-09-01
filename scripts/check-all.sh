@@ -13,6 +13,7 @@ cargo test --quiet 2>&1 | tail -1
 "$ROOT/scripts/check-router.sh"
 "$ROOT/scripts/check-controls.sh"
 "$ROOT/scripts/check-gestures.sh"
+"$ROOT/scripts/check-pickers.sh"
 
 echo
 echo "== compilación cruzada"

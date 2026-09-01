@@ -47,6 +47,11 @@ public final class AnHost {
     private static final int KIND_MODAL = 13;
     private static final int KIND_ALERT = 14;
     private static final int KIND_ICON = 15;
+    private static final int KIND_SEGMENTED = 16;
+    private static final int KIND_STEPPER = 17;
+    private static final int KIND_SEARCH = 18;
+    private static final int KIND_SELECT = 19;
+    private static final int KIND_DATE = 20;
     /** Lo que dura una transición de pila. Igual que en iOS. */
     private static final long TRANSITION_MS = 300;
     /** Resolución del deslizador y de la barra de progreso, que van en enteros. */
@@ -102,6 +107,11 @@ public final class AnHost {
      */
     private static final int ANDROID_DIALOG_THEME = android.R.style.Theme_Translucent_NoTitleBar;
 
+    /** Variante y color de cada botón, que llegan en props sueltas. */
+    private final SparseArray<String> buttonVariants = new SparseArray<>();
+
+    private final SparseArray<Integer> buttonColors = new SparseArray<>();
+
     /** Estado de presentación de cada `<Modal>`. */
     private final SparseArray<ModalState> modals = new SparseArray<>();
 
@@ -156,6 +166,66 @@ public final class AnHost {
                 view = newIconView();
                 break;
             }
+            case KIND_SEGMENTED: {
+                AnSegmentedControl segments = new AnSegmentedControl(context);
+                segments.setListener(index -> dispatchIndex(id, index));
+                view = segments;
+                break;
+            }
+            case KIND_STEPPER: {
+                AnStepper stepper = new AnStepper(context);
+                stepper.setListener(value -> dispatchValue(id, value));
+                view = stepper;
+                break;
+            }
+            case KIND_SEARCH: {
+                // `SearchView` es el campo de búsqueda de la plataforma: trae
+                // su lupa, su botón de borrar y el teclado con la tecla de
+                // buscar. Un `EditText` con un icono al lado no es lo mismo.
+                android.widget.SearchView search = new android.widget.SearchView(context);
+                search.setIconifiedByDefault(false);
+                search.setOnQueryTextListener(
+                        new android.widget.SearchView.OnQueryTextListener() {
+                            @Override
+                            public boolean onQueryTextSubmit(String query) {
+                                dispatchText(id, "submit", query);
+                                return true;
+                            }
+
+                            @Override
+                            public boolean onQueryTextChange(String text) {
+                                dispatchText(id, "input", text);
+                                return true;
+                            }
+                        });
+                view = search;
+                break;
+            }
+            case KIND_SELECT: {
+                android.widget.Spinner spinner = new android.widget.Spinner(context);
+                spinner.setOnItemSelectedListener(
+                        new android.widget.AdapterView.OnItemSelectedListener() {
+                            @Override
+                            public void onItemSelected(
+                                    android.widget.AdapterView<?> parent,
+                                    View selected,
+                                    int position,
+                                    long rowId) {
+                                dispatchIndex(id, position);
+                            }
+
+                            @Override
+                            public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+                        });
+                view = spinner;
+                break;
+            }
+            case KIND_DATE: {
+                AnDateField date = new AnDateField(context);
+                date.setListener(millis -> dispatchValue(id, millis));
+                view = date;
+                break;
+            }
             case KIND_SCROLL: {
                 AnScrollView scroll = new AnScrollView(context);
                 AnViewGroup content = new AnViewGroup(context);
@@ -208,9 +278,19 @@ public final class AnHost {
                 view = bar;
                 break;
             }
-            case KIND_BUTTON:
-                view = new android.widget.Button(context);
+            case KIND_BUTTON: {
+                // Sin fondo por defecto, que es lo que hace un `UIButton` en
+                // iOS: así `<Button>` significa lo mismo en las dos
+                // plataformas. Con `[variant]` se pide el relleno.
+                android.widget.Button button =
+                        new android.widget.Button(
+                                new android.view.ContextThemeWrapper(
+                                        context,
+                                        android.R.style.Widget_DeviceDefault_Button_Borderless));
+                button.setAllCaps(false);
+                view = button;
                 break;
+            }
             case KIND_MODAL: {
                 AnViewGroup overlay = new AnViewGroup(context);
                 overlay.setVisibility(View.GONE);
@@ -252,6 +332,8 @@ public final class AnHost {
         }
         views.remove(id);
         animations.remove(id);
+        buttonVariants.remove(id);
+        buttonColors.remove(id);
         modals.remove(id);
         gestures.remove(Integer.valueOf(id));
         scrollContent.remove(id);
@@ -736,6 +818,38 @@ public final class AnHost {
                     ((AnTabBar) view).setIcons(parseStringList(value));
                 }
                 break;
+            // --- control segmentado, desplegable y fecha
+            case "items":
+                if (view instanceof AnSegmentedControl) {
+                    ((AnSegmentedControl) view).setItems(parseStringList(value));
+                } else if (view instanceof android.widget.Spinner) {
+                    android.widget.ArrayAdapter<String> adapter =
+                            new android.widget.ArrayAdapter<>(
+                                    context,
+                                    android.R.layout.simple_spinner_item,
+                                    parseStringList(value));
+                    adapter.setDropDownViewResource(
+                            android.R.layout.simple_spinner_dropdown_item);
+                    ((android.widget.Spinner) view).setAdapter(adapter);
+                } else if (view instanceof AnTabBar) {
+                    ((AnTabBar) view).setTitles(parseStringList(value));
+                }
+                break;
+            case "stepValue":
+                if (view instanceof AnStepper) {
+                    ((AnStepper) view).setStep(number(value, 1f));
+                }
+                break;
+            case "mode":
+                if (view instanceof AnDateField) {
+                    ((AnDateField) view).setMode(value == null ? "date" : value);
+                }
+                break;
+            case "variant":
+                if (view instanceof android.widget.Button) {
+                    applyButtonVariant((android.widget.Button) view, id, value);
+                }
+                break;
             case "name":
                 if (view instanceof TextView && isIcon(view)) {
                     ((TextView) view).setText(iconGlyph(value));
@@ -806,6 +920,14 @@ public final class AnHost {
             case "minimumValue":
             case "maximumValue": {
                 Float bound = parseFloat(value);
+                if (view instanceof AnStepper && bound != null) {
+                    if ("minimumValue".equals(key)) {
+                        ((AnStepper) view).setMinimum(bound);
+                    } else {
+                        ((AnStepper) view).setMaximum(bound);
+                    }
+                    break;
+                }
                 if (view instanceof android.widget.SeekBar && bound != null) {
                     float[] range = sliderRange(id);
                     range["minimumValue".equals(key) ? 0 : 1] = bound;
@@ -836,15 +958,17 @@ public final class AnHost {
                     ((android.widget.Button) view).setText(value);
                 }
                 break;
-            case "items":
-                if (view instanceof AnTabBar) {
-                    ((AnTabBar) view).setTitles(parseStringList(value));
-                }
-                break;
             case "selectedIndex": {
                 Float index = parseFloat(value);
-                if (view instanceof AnTabBar && index != null) {
+                if (index == null) {
+                    break;
+                }
+                if (view instanceof AnTabBar) {
                     ((AnTabBar) view).setSelectedIndex(Math.round(index));
+                } else if (view instanceof AnSegmentedControl) {
+                    ((AnSegmentedControl) view).setSelectedIndex(Math.round(index));
+                } else if (view instanceof android.widget.Spinner) {
+                    ((android.widget.Spinner) view).setSelection(Math.round(index));
                 }
                 break;
             }
@@ -924,6 +1048,11 @@ public final class AnHost {
                 } else if (view instanceof android.widget.SeekBar) {
                     ((android.widget.SeekBar) view)
                             .setProgressTintList(android.content.res.ColorStateList.valueOf(color));
+                } else if (view instanceof android.widget.Button) {
+                    // El color y la variante llegan sueltos y en cualquier
+                    // orden: se guardan los dos y se rehace el botón entero.
+                    buttonColors.put(id, color);
+                    refreshButton((android.widget.Button) view, id);
                 } else if (view instanceof TextView) {
                     ((TextView) view).setTextColor(color);
                 }
@@ -962,12 +1091,28 @@ public final class AnHost {
                 }
                 break;
             case "placeholder":
+                if (view instanceof android.widget.SearchView) {
+                    ((android.widget.SearchView) view).setQueryHint(value);
+                    break;
+                }
                 if (view instanceof EditText) {
                     ((EditText) view).setHint(value);
                 }
                 break;
             case "value": {
                 Float sliderValue = parseFloat(value);
+                if (view instanceof AnStepper && sliderValue != null) {
+                    ((AnStepper) view).setValue(sliderValue);
+                    break;
+                }
+                if (view instanceof AnDateField && sliderValue != null) {
+                    ((AnDateField) view).setMillis((long) (double) sliderValue);
+                    break;
+                }
+                if (view instanceof android.widget.SearchView) {
+                    ((android.widget.SearchView) view).setQuery(value == null ? "" : value, false);
+                    break;
+                }
                 if (view instanceof android.widget.SeekBar && sliderValue != null) {
                     sliderValues.put(id, sliderValue);
                     applySliderValue(id, (android.widget.SeekBar) view);
@@ -1374,6 +1519,76 @@ public final class AnHost {
             icon.setTypeface(font);
         }
         return icon;
+    }
+
+    /**
+     * El fondo de un botón según su variante.
+     *
+     * Android no trae los botones de Material 3 en la plataforma —viven en la
+     * librería de Material, que es una dependencia aparte y este build no usa
+     * Gradle—, así que la píldora se dibuja aquí con un `GradientDrawable`. El
+     * botón sigue siendo un `android.widget.Button` de verdad: lo único
+     * nuestro es el fondo.
+     */
+    private void applyButtonVariant(android.widget.Button button, int id, String variant) {
+        buttonVariants.put(id, variant == null ? "text" : variant);
+        refreshButton(button, id);
+    }
+
+    private void refreshButton(android.widget.Button button, int id) {
+        String variant = buttonVariants.get(id);
+        Integer color = buttonColors.get(id);
+        if (variant == null || "text".equals(variant)) {
+            button.setBackground(null);
+            if (color != null) {
+                button.setTextColor(color);
+            }
+            return;
+        }
+        int tint = color == null ? Color.WHITE : color;
+        android.graphics.drawable.GradientDrawable pill =
+                new android.graphics.drawable.GradientDrawable();
+        // Radio enorme a propósito: `GradientDrawable` lo recorta a la mitad
+        // del alto, que es justo la píldora de Material 3.
+        pill.setCornerRadius(1000f);
+        if ("filled".equals(variant)) {
+            pill.setColor(tint);
+            // Sobre un relleno fuerte el rótulo va del color del fondo de la
+            // app, no del color del botón, o no se lee.
+            button.setTextColor(contrastOn(tint));
+        } else {
+            // Tonal: el mismo color muy rebajado, con el rótulo en el color.
+            pill.setColor(Color.argb(48, Color.red(tint), Color.green(tint), Color.blue(tint)));
+            button.setTextColor(tint);
+        }
+        button.setBackground(pill);
+    }
+
+    /** Blanco o negro, el que se lea sobre ese color. */
+    private static int contrastOn(int color) {
+        double luz =
+                (0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color))
+                        / 255.0;
+        return luz > 0.6 ? Color.BLACK : Color.WHITE;
+    }
+
+    private void dispatchIndex(int id, int index) {
+        if (runtime != null) {
+            runtime.dispatchIndexEvent(id, "change", index);
+        }
+    }
+
+    private void dispatchValue(int id, double value) {
+        if (runtime != null) {
+            runtime.dispatchGesture(
+                    id, "change", "", "value", new float[] {(float) value});
+        }
+    }
+
+    private void dispatchText(int id, String event, String text) {
+        if (runtime != null) {
+            runtime.dispatchValueEvent(id, event, text == null ? "" : text);
+        }
     }
 
     /** La vista del icono de una pestaña, o `null` si ese nombre no existe. */

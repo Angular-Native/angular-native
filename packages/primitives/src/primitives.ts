@@ -53,6 +53,21 @@ export interface NativeRotateEvent {
   state: NativeGestureState
 }
 
+/** Un evento que solo lleva la posición elegida. */
+export interface NativeIndexEvent {
+  index: number
+}
+
+/** Un evento que solo lleva un número. */
+export interface NativeValueEvent {
+  value: number
+}
+
+/** Un evento que solo lleva texto. */
+export interface NativeTextEvent {
+  value: string
+}
+
 /** Marco resuelto de una vista, relativo a su padre y en puntos. */
 export interface NativeLayoutEvent {
   x: number
@@ -577,6 +592,132 @@ export class Button extends NativeVisual {
   @Input() set color(value: string | null) {
     this.set('color', value)
   }
+
+  /**
+   * Cómo se ve: solo el rótulo, relleno, o con un fondo tenue del mismo color.
+   *
+   * `text` por defecto, que es lo que hace un botón sin más en iOS. Las otras
+   * dos las dibuja la plataforma —`UIButtonConfiguration` en iOS—, salvo en
+   * Android, donde los botones de Material 3 no están en la plataforma y la
+   * píldora se dibuja a mano sobre un `Button` de verdad.
+   */
+  @Input() set variant(value: 'text' | 'filled' | 'tonal' | null) {
+    this.set('variant', value ?? 'text')
+  }
+}
+
+/**
+ * Elegir una de varias opciones que están todas a la vista.
+ *
+ * `UISegmentedControl` en iOS. Android no trae equivalente en la plataforma
+ * —el de Material vive en una librería aparte—, así que se dibuja con vistas
+ * del sistema, como la barra de pestañas.
+ */
+@Directive({ selector: 'SegmentedControl' })
+export class SegmentedControl extends NativeVisual {
+  @Input() set items(value: readonly string[] | null) {
+    this.set('items', JSON.stringify(value ?? []))
+  }
+
+  @Input() set selectedIndex(value: number | null) {
+    this.set('selectedIndex', value ?? 0)
+  }
+
+  @Input() set color(value: string | null) {
+    this.set('color', value)
+  }
+
+  readonly change = outputFromObservable(this.nativeEvent<NativeIndexEvent>('change'))
+}
+
+/**
+ * Subir y bajar de uno en uno.
+ *
+ * `UIStepper` en iOS. En Android no hay equivalente en la plataforma y se arma
+ * con dos botones del sistema.
+ */
+@Directive({ selector: 'Stepper' })
+export class Stepper extends NativeVisual {
+  @Input() set value(v: number | null) {
+    this.set('value', v ?? 0)
+  }
+
+  @Input() set minimumValue(v: number | null) {
+    this.set('minimumValue', v ?? 0)
+  }
+
+  @Input() set maximumValue(v: number | null) {
+    this.set('maximumValue', v ?? 100)
+  }
+
+  /** Cuánto sube o baja cada toque. Uno por defecto. */
+  @Input() set step(v: number | null) {
+    this.set('stepValue', v ?? 1)
+  }
+
+  readonly change = outputFromObservable(this.nativeEvent<NativeValueEvent>('change'))
+}
+
+/**
+ * Campo de búsqueda del sistema, con su lupa y su botón de borrar.
+ *
+ * Es un control aparte y no un `<TextInput>` con un icono al lado: el sistema
+ * le da el teclado con la tecla de buscar, el comportamiento de cancelar y el
+ * aspecto que la gente reconoce como "aquí se busca".
+ */
+@Directive({ selector: 'SearchBar' })
+export class SearchBar extends NativeVisual {
+  @Input() set value(v: string | null) {
+    this.set('value', v ?? '')
+  }
+
+  @Input() set placeholder(v: string | null) {
+    this.set('placeholder', v)
+  }
+
+  readonly input = outputFromObservable(this.nativeEvent<NativeTextEvent>('input'))
+  readonly submit = outputFromObservable(this.nativeEvent<NativeTextEvent>('submit'))
+}
+
+/**
+ * Elegir una de varias opciones de una lista que se despliega.
+ *
+ * En iOS es un botón que abre un `UIMenu`: no hay un control de desplegable, y
+ * `UIPickerView` es la rueda a pantalla completa, que es otra cosa y ya no es
+ * lo que usa el sistema para una lista corta. En Android es un `Spinner`.
+ */
+@Directive({ selector: 'Picker' })
+export class Picker extends NativeVisual {
+  @Input() set items(value: readonly string[] | null) {
+    this.set('items', JSON.stringify(value ?? []))
+  }
+
+  @Input() set selectedIndex(value: number | null) {
+    this.set('selectedIndex', value ?? 0)
+  }
+
+  readonly change = outputFromObservable(this.nativeEvent<NativeIndexEvent>('change'))
+}
+
+/**
+ * Selector de fecha y hora del sistema.
+ *
+ * El valor va y viene en milisegundos desde 1970 —lo que da y toma `Date`—,
+ * porque una fecha formateada depende del idioma y de la zona horaria del
+ * dispositivo, y eso lo resuelve cada plataforma.
+ */
+@Directive({ selector: 'DatePicker' })
+export class DatePicker extends NativeVisual {
+  @Input() set value(v: number | Date | null) {
+    const millis = v instanceof Date ? v.getTime() : (v ?? Date.now())
+    this.set('value', millis)
+  }
+
+  @Input() set mode(v: 'date' | 'time' | 'dateAndTime' | null) {
+    this.set('mode', v ?? 'date')
+  }
+
+  readonly change = outputFromObservable(this.nativeEvent<NativeValueEvent>('change'))
 }
 
 /**
@@ -712,7 +853,12 @@ export const NATIVE_PRIMITIVES = [
   ActivityIndicator,
   ProgressBar,
   Button,
+  DatePicker,
   Icon,
   Modal,
+  SearchBar,
+  SegmentedControl,
+  Picker,
+  Stepper,
   Alert
 ] as const

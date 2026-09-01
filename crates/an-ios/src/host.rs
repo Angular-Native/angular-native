@@ -128,6 +128,12 @@ enum HostView {
     /// Un diálogo no tiene vista propia: lo presenta el sistema. Se monta una
     /// vista vacía para que el árbol tenga algo donde colgar el nodo.
     Dialog(Retained<UIView>),
+    Segments(Retained<objc2_ui_kit::UISegmentedControl>),
+    Step(Retained<objc2_ui_kit::UIStepper>),
+    Search(Retained<objc2_ui_kit::UISearchBar>),
+    /// Un desplegable: un botón que abre un menú del sistema.
+    Menu(Retained<UIButton>),
+    Date(Retained<objc2_ui_kit::UIDatePicker>),
 }
 
 impl HostView {
@@ -147,6 +153,11 @@ impl HostView {
             HostView::Button(v) => v,
             HostView::Overlay(v) => v,
             HostView::Dialog(v) => v,
+            HostView::Segments(v) => v,
+            HostView::Step(v) => v,
+            HostView::Search(v) => v,
+            HostView::Menu(v) => v,
+            HostView::Date(v) => v,
         }
     }
 
@@ -166,6 +177,11 @@ impl HostView {
             HostView::Button(_) => NodeKind::Button,
             HostView::Overlay(_) => NodeKind::Modal,
             HostView::Dialog(_) => NodeKind::Alert,
+            HostView::Segments(_) => NodeKind::SegmentedControl,
+            HostView::Step(_) => NodeKind::Stepper,
+            HostView::Search(_) => NodeKind::SearchBar,
+            HostView::Menu(_) => NodeKind::Picker,
+            HostView::Date(_) => NodeKind::DatePicker,
         }
     }
 
@@ -286,6 +302,16 @@ pub struct UikitHost {
     icons: HashMap<NodeId, (String, f32, u16)>,
     /// Títulos e iconos de cada barra de pestañas, que llegan por separado.
     tabs: HashMap<NodeId, (Vec<String>, Vec<String>)>,
+    /// Opciones de cada desplegable, para poder poner el título del elegido.
+    menus: HashMap<NodeId, Vec<String>>,
+    /// Título y color de cada botón. Cambiar la variante rehace la
+    /// configuración de UIKit, que se lleva por delante los dos.
+    button_titles: HashMap<NodeId, String>,
+    button_colors: HashMap<NodeId, String>,
+    button_variants: HashMap<NodeId, String>,
+    /// Valor pedido a cada `Stepper`, por lo mismo que en el deslizador: el
+    /// rango y el valor llegan sueltos y en cualquier orden.
+    stepper_values: HashMap<NodeId, f64>,
     /// Sentido de la próxima transición de cada pila: `push`, `pop` o nada.
     /// Lo decide Angular, que es quien sabe si se avanza o se retrocede.
     transitions: HashMap<NodeId, String>,
@@ -333,6 +359,11 @@ impl UikitHost {
             animations: HashMap::new(),
             icons: HashMap::new(),
             tabs: HashMap::new(),
+            menus: HashMap::new(),
+            button_titles: HashMap::new(),
+            button_colors: HashMap::new(),
+            button_variants: HashMap::new(),
+            stepper_values: HashMap::new(),
             transitions: HashMap::new(),
             entering: Vec::new(),
             leaving: Vec::new(),
@@ -404,6 +435,49 @@ impl UikitHost {
                 None,
                 self.mtm,
             );
+        }
+    }
+
+    /// Rehace el aspecto de un botón con su variante y su color.
+    ///
+    /// Las dos props llegan sueltas y en cualquier orden, y cambiar la
+    /// variante rehace la configuración de UIKit, que se lleva por delante el
+    /// título y el color: hay que ponerlo todo de nuevo cada vez.
+    fn refresh_button(&self, id: NodeId) {
+        let Some(HostView::Button(button)) = self.views.get(&id) else { return };
+        let variant = self.button_variants.get(&id).map(String::as_str).unwrap_or("text");
+        // `UIButtonConfiguration` es lo que da los botones actuales de iOS:
+        // relleno, tintado o pelado, con sus fondos y sus esquinas.
+        unsafe {
+            let config = match variant {
+                "filled" => {
+                    Some(objc2_ui_kit::UIButtonConfiguration::filledButtonConfiguration(self.mtm))
+                }
+                "tonal" => {
+                    Some(objc2_ui_kit::UIButtonConfiguration::tintedButtonConfiguration(self.mtm))
+                }
+                _ => None,
+            };
+            button.setConfiguration(config.as_deref());
+        }
+        if let Some(title) = self.button_titles.get(&id) {
+            unsafe {
+                button.setTitle_forState(
+                    Some(&NSString::from_str(title)),
+                    UIControlState::Normal,
+                )
+            };
+        }
+        let color = self.button_colors.get(&id).and_then(|c| crate::color::to_uicolor(c));
+        if let Some(color) = color {
+            // El tinte manda sobre el fondo del relleno y sobre el tono.
+            unsafe { button.setTintColor(Some(&color)) };
+            // El color del rótulo solo se fuerza sin configuración: con ella
+            // lo elige UIKit para que contraste, y forzarlo dejaba el rótulo
+            // del mismo color que su fondo, o sea invisible.
+            if variant == "text" {
+                unsafe { button.setTitleColor_forState(Some(&color), UIControlState::Normal) };
+            }
         }
     }
 
@@ -647,11 +721,45 @@ impl HostRenderer for UikitHost {
                 HostView::Stack(stack)
             }
             NodeKind::TextInput => HostView::Field(UITextField::new(mtm)),
+            NodeKind::SegmentedControl => {
+                HostView::Segments(objc2_ui_kit::UISegmentedControl::new(mtm))
+            }
+            NodeKind::Stepper => HostView::Step(objc2_ui_kit::UIStepper::new(mtm)),
+            NodeKind::SearchBar => HostView::Search(objc2_ui_kit::UISearchBar::new(mtm)),
+            NodeKind::Picker => {
+                // Un desplegable en iOS es un botón que abre un menú: no hay
+                // un control aparte, y `UIPickerView` es la rueda de pantalla
+                // completa, que es otra cosa.
+                let button = objc2_ui_kit::UIButton::new(mtm);
+                unsafe { button.setShowsMenuAsPrimaryAction(true) };
+                HostView::Menu(button)
+            }
+            NodeKind::DatePicker => {
+                let picker = objc2_ui_kit::UIDatePicker::new(mtm);
+                unsafe {
+                    picker.setPreferredDatePickerStyle(objc2_ui_kit::UIDatePickerStyle::Compact);
+                    // Por defecto UIKit pide fecha *y* hora. El de aquí pide
+                    // fecha salvo que se diga otra cosa, igual que en Android.
+                    picker.setDatePickerMode(objc2_ui_kit::UIDatePickerMode::Date);
+                };
+                HostView::Date(picker)
+            }
             _ => HostView::View(UIView::new(mtm)),
         };
-        // Sin esto UIKit intenta resolver el layout por su cuenta y pisa
-        // los `frame` que escribe el core.
-        view.as_view().setTranslatesAutoresizingMaskIntoConstraints(false);
+        // Quién manda sobre el marco.
+        //
+        // `false` significa "mi marco lo deciden mis restricciones", y es lo
+        // que había aquí. Mientras no hubo ningún control con restricciones
+        // propias daba igual: el motor de Auto Layout no llegaba a activarse y
+        // los marcos se quedaban como los escribía el core. En cuanto entró
+        // uno compuesto —una `UISearchBar`, un `UIDatePicker`— el motor se
+        // activó para toda la ventana y puso a cero el marco de cada vista que
+        // decía esperar restricciones que no existían. Se veía como la
+        // pantalla entera amontonada en la esquina.
+        //
+        // `true` es lo que hay que decir cuando el marco lo escribe uno: UIKit
+        // lo traduce a restricciones y respeta lo que se le da.
+        view.as_view().setTranslatesAutoresizingMaskIntoConstraints(true);
         self.views.insert(id, view);
     }
 
@@ -672,6 +780,11 @@ impl HostRenderer for UikitHost {
         self.animations.remove(&id);
         self.icons.remove(&id);
         self.tabs.remove(&id);
+        self.menus.remove(&id);
+        self.button_titles.remove(&id);
+        self.button_colors.remove(&id);
+        self.button_variants.remove(&id);
+        self.stepper_values.remove(&id);
         self.modals.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
     }
@@ -724,6 +837,121 @@ impl HostRenderer for UikitHost {
                 if let Some(v) = number {
                     let view = native.retain();
                     self.animated(id, move || view.setAlpha(v as f64));
+                }
+            }
+            "variant" if matches!(view, HostView::Button(_)) => {
+                self.button_variants.insert(id, text.clone().unwrap_or_else(|| "text".to_owned()));
+                self.refresh_button(id);
+            }
+            // --- control segmentado, desplegable y selector de fecha
+            "items" if matches!(view, HostView::Segments(_) | HostView::Menu(_)) => {
+                let titles = parse_string_list(text.as_deref().unwrap_or("[]"));
+                match view {
+                    HostView::Segments(segments) => {
+                        segments.removeAllSegments();
+                        for (index, title) in titles.iter().enumerate() {
+                            unsafe {
+                                segments.insertSegmentWithTitle_atIndex_animated(
+                                    Some(&NSString::from_str(title)),
+                                    index,
+                                    false,
+                                );
+                            }
+                        }
+                    }
+                    HostView::Menu(button) => {
+                        self.menus.insert(id, titles.clone());
+                        let menu = crate::menu::build(self.mtm, id, &titles, &self.events);
+                        unsafe { button.setMenu(Some(&menu)) };
+                        // Sin título el botón no se ve: se pone el primero
+                        // hasta que alguien elija.
+                        let current = titles.first().cloned().unwrap_or_default();
+                        unsafe {
+                            button.setTitle_forState(
+                                Some(&NSString::from_str(&current)),
+                                UIControlState::Normal,
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            "selectedIndex" if matches!(view, HostView::Segments(_) | HostView::Menu(_)) => {
+                let index = number.unwrap_or(0.0).max(0.0) as usize;
+                match view {
+                    HostView::Segments(segments) => {
+                        segments.setSelectedSegmentIndex(index as isize)
+                    }
+                    HostView::Menu(button) => {
+                        let title = self
+                            .menus
+                            .get(&id)
+                            .and_then(|titles| titles.get(index))
+                            .cloned()
+                            .unwrap_or_default();
+                        unsafe {
+                            button.setTitle_forState(
+                                Some(&NSString::from_str(&title)),
+                                UIControlState::Normal,
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            "value" | "minimumValue" | "maximumValue" | "stepValue"
+                if matches!(view, HostView::Step(_)) =>
+            {
+                let HostView::Step(stepper) = view else { return };
+                let v = number.unwrap_or(0.0) as f64;
+                unsafe {
+                    match key {
+                        // Igual que el deslizador: el rango antes que el
+                        // valor, o el valor se recorta contra el rango viejo.
+                        "minimumValue" => stepper.setMinimumValue(v),
+                        "maximumValue" => stepper.setMaximumValue(v),
+                        "stepValue" => stepper.setStepValue(if v > 0.0 { v } else { 1.0 }),
+                        _ => {
+                            self.stepper_values.insert(id, v);
+                            stepper.setValue(v);
+                        }
+                    }
+                    if key != "value" {
+                        if let Some(wanted) = self.stepper_values.get(&id).copied() {
+                            stepper.setValue(wanted);
+                        }
+                    }
+                }
+            }
+            "value" if matches!(view, HostView::Date(_)) => {
+                let HostView::Date(picker) = view else { return };
+                // Llega en milisegundos desde 1970, que es lo que da `Date` en
+                // JS. `NSDate` trabaja en segundos.
+                let seconds = number.unwrap_or(0.0) as f64 / 1000.0;
+                let date = unsafe {
+                    objc2_foundation::NSDate::dateWithTimeIntervalSince1970(seconds)
+                };
+                unsafe { picker.setDate(&date) };
+            }
+            "mode" if matches!(view, HostView::Date(_)) => {
+                let HostView::Date(picker) = view else { return };
+                unsafe {
+                    picker.setDatePickerMode(match text.as_deref() {
+                        Some("time") => objc2_ui_kit::UIDatePickerMode::Time,
+                        Some("dateAndTime") => objc2_ui_kit::UIDatePickerMode::DateAndTime,
+                        _ => objc2_ui_kit::UIDatePickerMode::Date,
+                    })
+                };
+            }
+            "value" | "placeholder" if matches!(view, HostView::Search(_)) => {
+                let HostView::Search(bar) = view else { return };
+                let value = text.as_deref().map(NSString::from_str);
+                unsafe {
+                    if key == "value" {
+                        bar.setText(value.as_deref());
+                    } else {
+                        bar.setPlaceholder(value.as_deref());
+                    }
                 }
             }
             // Iconos. El nombre y el tamaño van juntos: el tamaño de un
@@ -873,9 +1101,12 @@ impl HostRenderer for UikitHost {
                     // plantilla y el tinte manda.
                     HostView::Image(image) => unsafe { image.setTintColor(Some(&color)) },
                     HostView::Progress(bar) => bar.setProgressTintColor(Some(&color)),
-                    HostView::Button(button) => unsafe {
-                        button.setTitleColor_forState(Some(&color), UIControlState::Normal)
-                    },
+                    HostView::Button(_) => {
+                        if let Some(raw) = text.as_deref() {
+                            self.button_colors.insert(id, raw.to_owned());
+                        }
+                        self.refresh_button(id);
+                    }
                     HostView::Tabs(bar) => unsafe { bar.setTintColor(Some(&color)) },
                     _ => {}
                 }
@@ -985,9 +1216,9 @@ impl HostRenderer for UikitHost {
                 }
             }
             "title" => {
-                if let HostView::Button(button) = view {
-                    let title = text.as_deref().map(NSString::from_str);
-                    unsafe { button.setTitle_forState(title.as_deref(), UIControlState::Normal) };
+                if matches!(view, HostView::Button(_)) {
+                    self.button_titles.insert(id, text.clone().unwrap_or_default());
+                    self.refresh_button(id);
                 }
             }
             "items" | "icons" if matches!(view, HostView::Tabs(_)) => {

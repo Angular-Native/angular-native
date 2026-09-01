@@ -249,6 +249,45 @@ define_class!(
             );
         }
 
+        #[unsafe(method(handleSegments:))]
+        fn handle_segments(&self, sender: &objc2_ui_kit::UISegmentedControl) {
+            let ivars = self.ivars();
+            emit(
+                &ivars.queue,
+                ivars.node,
+                "change",
+                vec![(
+                    "index".to_owned(),
+                    PropValue::Number(sender.selectedSegmentIndex() as f64),
+                )],
+            );
+        }
+
+        #[unsafe(method(handleStepper:))]
+        fn handle_stepper(&self, sender: &objc2_ui_kit::UIStepper) {
+            let ivars = self.ivars();
+            emit(
+                &ivars.queue,
+                ivars.node,
+                "change",
+                vec![("value".to_owned(), PropValue::Number(unsafe { sender.value() }))],
+            );
+        }
+
+        #[unsafe(method(handleDate:))]
+        fn handle_date(&self, sender: &objc2_ui_kit::UIDatePicker) {
+            let ivars = self.ivars();
+            // Milisegundos desde 1970, que es lo que entiende `Date` en JS sin
+            // que nadie tenga que convertir nada.
+            let seconds = unsafe { sender.date().timeIntervalSince1970() };
+            emit(
+                &ivars.queue,
+                ivars.node,
+                "change",
+                vec![("value".to_owned(), PropValue::Number(seconds * 1000.0))],
+            );
+        }
+
         #[unsafe(method(handleButton:))]
         fn handle_button(&self, _sender: &UIControl) {
             let ivars = self.ivars();
@@ -530,6 +569,11 @@ pub fn attach(
         (NodeKind::Switch, "change") => Some((UIControlEvents::ValueChanged, sel!(handleSwitch:))),
         (NodeKind::Slider, "change") => Some((UIControlEvents::ValueChanged, sel!(handleSlider:))),
         (NodeKind::Button, "press") => Some((UIControlEvents::TouchUpInside, sel!(handleButton:))),
+        (NodeKind::SegmentedControl, "change") => {
+            Some((UIControlEvents::ValueChanged, sel!(handleSegments:)))
+        }
+        (NodeKind::Stepper, "change") => Some((UIControlEvents::ValueChanged, sel!(handleStepper:))),
+        (NodeKind::DatePicker, "change") => Some((UIControlEvents::ValueChanged, sel!(handleDate:))),
         _ => None,
     };
     if let Some((events, action)) = control_action {
@@ -537,6 +581,30 @@ pub fn attach(
         let control: *const UIView = view;
         let control = control.cast::<UIControl>();
         unsafe { (*control).addTarget_action_forControlEvents(Some(&*target), action, events) };
+        return Some(AttachedListener::Control { events, action, target });
+    }
+
+    // La barra de búsqueda no es un control: lo es su campo de texto, que sí
+    // es un `UITextField`. Engancharse a él evita tener que implementar el
+    // delegado entero para saber que alguien escribió.
+    if kind == NodeKind::SearchBar {
+        let events = match event {
+            "input" => UIControlEvents::EditingChanged,
+            "submit" => UIControlEvents::EditingDidEndOnExit,
+            "focus" => UIControlEvents::EditingDidBegin,
+            "blur" => UIControlEvents::EditingDidEnd,
+            _ => return None,
+        };
+        let action = match event {
+            "input" => sel!(handleChange:),
+            "submit" => sel!(handleSubmit:),
+            "focus" => sel!(handleFocus:),
+            _ => sel!(handleBlur:),
+        };
+        let bar: *const UIView = view;
+        let field = unsafe { (*bar.cast::<objc2_ui_kit::UISearchBar>()).searchTextField() };
+        let target = ControlTarget::new(mtm, node, queue);
+        unsafe { field.addTarget_action_forControlEvents(Some(&*target), action, events) };
         return Some(AttachedListener::Control { events, action, target });
     }
 

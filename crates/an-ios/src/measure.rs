@@ -87,7 +87,7 @@ impl TextMeasurer for UikitMeasurer {
         };
         // Deslizadores, barras de progreso y de pestañas ocupan todo el ancho
         // que se les dé; su medida natural solo manda en el alto.
-        let stretches = matches!(name, "Slider" | "ProgressBar" | "TabBar");
+        let stretches = matches!(name, "Slider" | "ProgressBar" | "TabBar" | "SearchBar" | "SegmentedControl");
         match available_width {
             Some(available) if stretches && available.is_finite() => (available, height),
             _ => (width, height),
