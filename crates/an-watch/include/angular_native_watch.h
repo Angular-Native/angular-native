@@ -18,6 +18,12 @@ AnWatchRuntime *an_watch_runtime_new(float width, float height,
 int32_t an_watch_runtime_eval(AnWatchRuntime *rt, const char *name,
                               const char *code);
 
+/// Mete código nuevo en la app que ya corre: lo que usa `an dev` al guardar.
+/// Si el bundle nuevo encaja con lo montado, el estado se conserva; si no, se
+/// levanta todo otra vez. 0 si fue bien, -1 si falló.
+int32_t an_watch_runtime_reload(AnWatchRuntime *rt, const char *name,
+                                const char *code);
+
 void an_watch_runtime_set_viewport(AnWatchRuntime *rt, float width,
                                    float height);
 

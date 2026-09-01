@@ -56,15 +56,13 @@ pub fn assemble(
     let _ = std::fs::remove_dir_all(&app_dir);
     std::fs::create_dir_all(&app_dir)?;
 
-    let sources: Vec<String> = std::fs::read_dir(root.join("shells/ios/Sources"))?
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|e| e == "swift"))
-        .map(|path| path.to_string_lossy().into_owned())
-        .collect();
+    // `shells/shared` trae lo que no depende de la plataforma —el cliente del
+    // servidor de desarrollo—, que compilan los dos shells.
+    let mut sources: Vec<String> = swift_sources(&root.join("shells/ios/Sources"))?;
     if sources.is_empty() {
         bail!("no hay fuentes Swift en shells/ios/Sources");
     }
+    sources.extend(swift_sources(&root.join("shells/shared"))?);
 
     let lib_dir = root.join("target").join(TARGET).join(profile);
     let mut args: Vec<String> = vec![
@@ -104,6 +102,20 @@ pub fn assemble(
     }
 
     Ok(Package { dir: app_dir })
+}
+
+/// Los `.swift` de un directorio, en orden estable: `read_dir` los devuelve en
+/// el que le dé el sistema de ficheros, y con eso el comando de `swiftc`
+/// cambiaría entre máquinas sin que cambie nada.
+pub fn swift_sources(dir: &Path) -> Result<Vec<String>> {
+    let mut found: Vec<String> = std::fs::read_dir(dir)?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|e| e == "swift"))
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect();
+    found.sort();
+    Ok(found)
 }
 
 pub fn launch(package: &Package, device: &str) -> Result<()> {

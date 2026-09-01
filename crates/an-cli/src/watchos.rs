@@ -19,6 +19,7 @@ use std::process::Command;
 use anyhow::{bail, Context, Result};
 
 use crate::build::run;
+use crate::ios::swift_sources;
 use crate::workspace::Workspace;
 
 const APP_NAME: &str = "AngularNativeWatch";
@@ -32,7 +33,12 @@ pub struct Package {
     pub dir: PathBuf,
 }
 
-pub fn assemble(workspace: &Workspace, bundle: &Path, release: bool) -> Result<Package> {
+pub fn assemble(
+    workspace: &Workspace,
+    bundle: &Path,
+    release: bool,
+    dev_server: Option<&str>,
+) -> Result<Package> {
     let root = &workspace.root;
     let profile = if release { "release" } else { "debug" };
     let app_dir = root.join("build/watchos").join(format!("{APP_NAME}.app"));
@@ -74,15 +80,13 @@ pub fn assemble(workspace: &Workspace, bundle: &Path, release: bool) -> Result<P
     let _ = std::fs::remove_dir_all(&app_dir);
     std::fs::create_dir_all(&app_dir)?;
 
-    let sources: Vec<String> = std::fs::read_dir(root.join("shells/watchos/Sources"))?
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|e| e == "swift"))
-        .map(|path| path.to_string_lossy().into_owned())
-        .collect();
+    // `shells/shared` trae lo que no depende de la plataforma —el cliente del
+    // servidor de desarrollo—, que compilan los dos shells.
+    let mut sources: Vec<String> = swift_sources(&root.join("shells/watchos/Sources"))?;
     if sources.is_empty() {
         bail!("no hay fuentes Swift en shells/watchos/Sources");
     }
+    sources.extend(swift_sources(&root.join("shells/shared"))?);
 
     let lib_dir = root.join("target").join(TARGET).join(profile);
     let mut args: Vec<String> = vec![
@@ -116,6 +120,12 @@ pub fn assemble(workspace: &Workspace, bundle: &Path, release: bool) -> Result<P
 
     std::fs::copy(root.join("shells/watchos/Resources/Info.plist"), app_dir.join("Info.plist"))?;
     std::fs::copy(bundle, app_dir.join("main.js"))?;
+    match dev_server {
+        Some(url) => std::fs::write(app_dir.join("dev-server.txt"), url)?,
+        None => {
+            let _ = std::fs::remove_file(app_dir.join("dev-server.txt"));
+        }
+    }
 
     Ok(Package { dir: app_dir })
 }

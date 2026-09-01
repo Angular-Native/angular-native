@@ -134,6 +134,34 @@ pub unsafe extern "C" fn an_watch_runtime_eval(
     report(rt.worker.request(Request::Eval { name, code }).error)
 }
 
+/// Mete código nuevo en la app que ya está corriendo. Es lo que usa `an dev`.
+///
+/// Igual que en iOS: si el bundle nuevo encaja con lo que hay montado, solo
+/// cambian las definiciones de los componentes y el estado se conserva; si no,
+/// se levanta todo otra vez.
+///
+/// # Safety
+/// `rt` debe venir de `an_watch_runtime_new`; `name` y `code`, cadenas C.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn an_watch_runtime_reload(
+    rt: *mut AnWatchRuntime,
+    name: *const c_char,
+    code: *const c_char,
+) -> i32 {
+    let Some(rt) = (unsafe { rt.as_mut() }) else { return -1 };
+    let Some((name, code)) = (unsafe { read_pair(name, code) }) else { return -1 };
+    rt.settle();
+    drain_events(&rt.events);
+    let reply = rt.worker.request(Request::Reload { name, code });
+    // El modelo solo se vacía si hubo reinicio: en caliente el árbol sigue en
+    // pie, y tirarlo dejaría la pantalla vacía esperando unas altas que el
+    // núcleo no tiene por qué volver a mandar.
+    if !reply.hot {
+        rt.mount.clear();
+    }
+    report(reply.error)
+}
+
 /// # Safety
 /// `rt` debe venir de `an_watch_runtime_new` y seguir vivo.
 #[unsafe(no_mangle)]

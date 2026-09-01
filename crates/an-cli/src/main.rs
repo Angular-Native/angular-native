@@ -34,7 +34,7 @@ enum Command {
     Ios {
         app: Option<String>,
         /// Nombre del simulador.
-        #[arg(long, default_value = "iPhone 17 Pro")]
+        #[arg(long, default_value = TELEFONO_POR_DEFECTO)]
         device: String,
         #[arg(long)]
         release: bool,
@@ -46,7 +46,7 @@ enum Command {
     Watchos {
         app: Option<String>,
         /// Nombre del simulador de reloj.
-        #[arg(long, default_value = "Apple Watch Series 11 (46mm)")]
+        #[arg(long, default_value = RELOJ_POR_DEFECTO)]
         device: String,
         #[arg(long)]
         release: bool,
@@ -63,18 +63,27 @@ enum Command {
     /// Servidor de desarrollo: vigila los ficheros y recarga la app al guardar.
     Dev {
         app: Option<String>,
-        #[arg(long, default_value = "iPhone 17 Pro")]
+        #[arg(long, default_value = TELEFONO_POR_DEFECTO)]
         device: String,
         #[arg(long, default_value_t = 8420)]
         port: u16,
         /// Lanza en el emulador de Android en vez de en el simulador de iOS.
         #[arg(long)]
         android: bool,
+        /// Lanza en el simulador del reloj en vez de en el del teléfono.
+        #[arg(long)]
+        watchos: bool,
         /// No lanza nada; solo sirve el bundle.
         #[arg(long)]
         no_launch: bool,
     },
 }
+
+/// Simuladores por defecto. `an dev --watchos` no lleva su propio `--device`:
+/// si el que hay es el del teléfono, es que nadie lo eligió, y lo que quiere
+/// es el reloj.
+const TELEFONO_POR_DEFECTO: &str = "iPhone 17 Pro";
+const RELOJ_POR_DEFECTO: &str = "Apple Watch Series 11 (46mm)";
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -99,7 +108,7 @@ fn main() -> anyhow::Result<()> {
             // ancho no se lee.
             let app = workspace.app(Some(app.as_deref().unwrap_or("examples/hello-watch")))?;
             let bundle = build::bundle(&workspace, &app, release)?;
-            let package = watchos::assemble(&workspace, &bundle, release)?;
+            let package = watchos::assemble(&workspace, &bundle, release, None)?;
             watchos::launch(&package, &device)
         }
         Command::Android { app, release, no_launch } => {
@@ -112,9 +121,19 @@ fn main() -> anyhow::Result<()> {
             }
             android::install_and_launch(&workspace, &apk)
         }
-        Command::Dev { app, device, port, android, no_launch } => {
+        Command::Dev { app, device, port, android, watchos, no_launch } => {
             let app = workspace.app(app.as_deref())?;
-            let target = if android { dev::Target::Android } else { dev::Target::Ios { device } };
+            let target = match (android, watchos) {
+                (true, _) => dev::Target::Android,
+                (_, true) => dev::Target::WatchOs {
+                    device: if device == TELEFONO_POR_DEFECTO {
+                        RELOJ_POR_DEFECTO.to_owned()
+                    } else {
+                        device
+                    },
+                },
+                _ => dev::Target::Ios { device },
+            };
             dev::run(workspace, app, target, port, no_launch)
         }
     }

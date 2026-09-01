@@ -29,7 +29,7 @@ use notify::{RecursiveMode, Watcher};
 use tokio::sync::broadcast;
 
 use crate::workspace::Workspace;
-use crate::{build, ios};
+use crate::{build, ios, watchos};
 
 /// Los cambios llegan en ráfagas: guardar en un editor dispara varios eventos,
 /// y `ngc` escribe decenas de ficheros. Se espera a que amaine.
@@ -44,6 +44,7 @@ struct Server {
 /// Dónde lanzar la app que se va a recargar.
 pub enum Target {
     Ios { device: String },
+    WatchOs { device: String },
     Android,
 }
 
@@ -68,7 +69,9 @@ pub fn run(
     // El emulador de Android no ve `localhost`: la máquina anfitriona es
     // 10.0.2.2 desde dentro.
     let url = match target {
-        Target::Ios { .. } => format!("http://127.0.0.1:{port}"),
+        // El simulador del reloj comparte la red del Mac igual que el del
+        // teléfono, así que le vale la misma dirección.
+        Target::Ios { .. } | Target::WatchOs { .. } => format!("http://127.0.0.1:{port}"),
         Target::Android => format!("http://{}:{port}", crate::android::EMULATOR_HOST),
     };
 
@@ -96,6 +99,10 @@ pub fn run(
             Target::Ios { device } => {
                 let package = ios::assemble(&workspace, &bundle_path, false, Some(&url))?;
                 ios::launch(&package, device)?;
+            }
+            Target::WatchOs { device } => {
+                let package = watchos::assemble(&workspace, &bundle_path, false, Some(&url))?;
+                watchos::launch(&package, device)?;
             }
             Target::Android => {
                 let apk = crate::android::assemble(&workspace, &bundle_path, false, Some(&url))?;

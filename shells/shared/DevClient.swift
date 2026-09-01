@@ -5,6 +5,10 @@ import Foundation
 /// El `.app` trae un `dev-server.txt` cuando lo armó `an dev`. Si está, la app
 /// abre un WebSocket y espera avisos de recarga; si no está, este objeto no
 /// llega a existir y la app se comporta como una compilación normal.
+///
+/// Lo comparten el shell del teléfono y el del reloj: es Foundation pelado, no
+/// toca ni UIKit ni SwiftUI, y dos copias serían dos sitios donde arreglar el
+/// mismo fallo de reconexión.
 final class DevClient: NSObject {
     private let baseURL: URL
     private let onReload: (String) -> Void

@@ -18,6 +18,7 @@ final class AnRuntime {
 
     @ObservationIgnored private var runtime: OpaquePointer?
     @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored private var dev: DevClient?
     /// El reloj de la app empieza a contar al arrancar. Los temporizadores de
     /// JS avanzan con estos milisegundos, no con la hora del sistema.
     @ObservationIgnored private var epoch = Date()
@@ -42,6 +43,12 @@ final class AnRuntime {
             return
         }
         loadBundleScript(into: runtime)
+        // Solo existe si el `.app` lo armó `an dev`. En una compilación normal
+        // el inicializador devuelve `nil` y aquí no queda nada encendido.
+        dev = DevClient(bundle: .main) { [weak self] source in
+            self?.reload(source)
+        }
+        dev?.connect()
 
         epoch = Date()
         let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
@@ -81,6 +88,16 @@ final class AnRuntime {
         if an_watch_runtime_eval(runtime, "main.js", source) != 0 {
             NSLog("angular-native: main.js lanzó al evaluarse")
         }
+    }
+
+    /// Código nuevo encima del que ya corre. Lo llama el cliente de desarrollo
+    /// desde el hilo principal, que es el único que puede tocar el runtime.
+    private func reload(_ source: String) {
+        guard let runtime else { return }
+        if an_watch_runtime_reload(runtime, "main.js", source) != 0 {
+            NSLog("angular-native: la recarga falló")
+        }
+        tree.sync(runtime: runtime)
     }
 
     /// Un toque de SwiftUI hacia JS. Se encola aquí y JS lo ve en el tick
