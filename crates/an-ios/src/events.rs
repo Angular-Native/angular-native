@@ -15,8 +15,9 @@ use objc2::runtime::{ProtocolObject, Sel};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_foundation::NSObjectProtocol;
 use objc2_ui_kit::{
-    UIControl, UIControlEvents, UIGestureRecognizer, UIScrollView, UIScrollViewDelegate,
-    UITapGestureRecognizer, UITextField, UIView,
+    UIControl, UIControlEvents, UIGestureRecognizer, UIGestureRecognizerState, UIRectEdge,
+    UIScreenEdgePanGestureRecognizer, UIScrollView, UIScrollViewDelegate, UITapGestureRecognizer,
+    UITextField, UIView,
 };
 
 fn emit(queue: &EventQueue, target: NodeId, name: &str, payload: Vec<(String, PropValue)>) {
@@ -40,6 +41,17 @@ define_class!(
     pub struct GestureTarget;
 
     impl GestureTarget {
+        /// Gesto de volver atrás desde el borde. Solo cuenta al soltar: un
+        /// arrastre que se cancela no debe navegar.
+        #[unsafe(method(handleEdgePan:))]
+        fn handle_edge_pan(&self, recognizer: &UIGestureRecognizer) {
+            if recognizer.state() != UIGestureRecognizerState::Ended {
+                return;
+            }
+            let ivars = self.ivars();
+            emit(&ivars.queue, ivars.node, ivars.name, Vec::new());
+        }
+
         #[unsafe(method(handleGesture:))]
         fn handle_gesture(&self, recognizer: &UIGestureRecognizer) {
             let ivars = self.ivars();
@@ -65,6 +77,10 @@ impl GestureTarget {
 
     fn action() -> Sel {
         sel!(handleGesture:)
+    }
+
+    fn edge_action() -> Sel {
+        sel!(handleEdgePan:)
     }
 }
 
@@ -243,6 +259,25 @@ pub fn attach(
         let scroll = scroll.cast::<UIScrollView>();
         unsafe { (*scroll).setDelegate(Some(ProtocolObject::from_ref(&*delegate))) };
         return Some(AttachedListener::Scroll { _delegate: delegate });
+    }
+
+    if kind == NodeKind::StackView && event == "back" {
+        // El gesto de sistema: arrastrar desde el borde izquierdo. Aquí solo
+        // se avisa; deshacer la navegación es cosa del router.
+        let target = GestureTarget::new(mtm, node, "back", queue);
+        let recognizer = unsafe {
+            UIScreenEdgePanGestureRecognizer::initWithTarget_action(
+                UIScreenEdgePanGestureRecognizer::alloc(mtm),
+                Some(&target),
+                Some(GestureTarget::edge_action()),
+            )
+        };
+        recognizer.setEdges(UIRectEdge::Left);
+        view.addGestureRecognizer(&recognizer);
+        return Some(AttachedListener::Gesture {
+            recognizer: Retained::into_super(Retained::into_super(recognizer)),
+            _target: target,
+        });
     }
 
     let (name, taps): (&'static str, usize) = match event {

@@ -14,6 +14,10 @@ pub enum NodeKind {
     Image,
     ScrollView,
     TextInput,
+    /// Pila de pantallas. Es un contenedor normal de cara al layout —sus hijos
+    /// se apilan y ocupan todo— pero el host lo trata distinto: anima la
+    /// entrada y la salida, y engancha el gesto de volver atrás.
+    StackView,
 }
 
 impl NodeKind {
@@ -24,6 +28,7 @@ impl NodeKind {
             "Image" | "image" => NodeKind::Image,
             "ScrollView" | "scroll-view" => NodeKind::ScrollView,
             "TextInput" | "text-input" => NodeKind::TextInput,
+            "StackView" | "stack-view" => NodeKind::StackView,
             _ => return None,
         })
     }
@@ -44,6 +49,11 @@ impl NodeKind {
     /// Nodos cuyo contenido puede desbordar y necesita `contentSize`.
     pub fn is_scrollable(self) -> bool {
         self == NodeKind::ScrollView
+    }
+
+    /// Contenedores cuyos hijos entran y salen con animación.
+    pub fn is_stack(self) -> bool {
+        self == NodeKind::StackView
     }
 }
 

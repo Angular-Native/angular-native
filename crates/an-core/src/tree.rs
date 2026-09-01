@@ -141,6 +141,15 @@ impl ShadowTree {
         // ScrollView de 280.000 puntos de alto y el layout del padre revienta.
         // Es lo mismo que hace React Native, donde los hijos de un ScrollView
         // no cuentan para el tamaño del propio ScrollView.
+        // Una pila se comporta como un contenedor a pantalla completa: sus
+        // hijos van uno encima de otro, no en fila.
+        if kind.is_stack() {
+            node.style.set(StyleKey::Position, StyleValue::Keyword(an_layout::Keyword::Relative));
+            node.style.set(StyleKey::Overflow, StyleValue::Keyword(an_layout::Keyword::Hidden));
+            node.style.set(StyleKey::FlexGrow, StyleValue::Number(1.0));
+            node.style.set(StyleKey::FlexBasis, StyleValue::Points(0.0));
+            node.style.set(StyleKey::MinHeight, StyleValue::Points(0.0));
+        }
         if kind.is_scrollable() {
             node.style.set(StyleKey::Overflow, StyleValue::Keyword(an_layout::Keyword::Scroll));
             node.style.set(StyleKey::FlexBasis, StyleValue::Points(0.0));
@@ -211,6 +220,27 @@ impl ShadowTree {
         let index = index.min(self.node(parent)?.children.len());
         self.node_mut(parent)?.children.insert(index, child);
         self.node_mut(child)?.parent = Some(parent);
+
+        // Los hijos de una pila son pantallas: se superponen y ocupan todo.
+        // Es la definición de lo que hace una pila, no una preferencia de
+        // estilo, así que lo impone el core y no cada página.
+        if self.node(parent)?.kind.is_stack() && self.node(child)?.kind.is_mountable() {
+            for (key, value) in [
+                (StyleKey::Position, StyleValue::Keyword(an_layout::Keyword::Absolute)),
+                (StyleKey::Top, StyleValue::Points(0.0)),
+                (StyleKey::Left, StyleValue::Points(0.0)),
+                (StyleKey::Width, StyleValue::Percent(100.0)),
+                (StyleKey::Height, StyleValue::Percent(100.0)),
+            ] {
+                let node = self.node_mut(child)?;
+                if node.style.set(key, value) {
+                    let style = node.style.clone();
+                    self.layout
+                        .set_style(child, &style)
+                        .map_err(|e| Error::Layout(format!("{e:?}")))?;
+                }
+            }
+        }
 
         let child_kind = self.node(child)?.kind;
         if child_kind.is_mountable() && self.node(parent)?.kind.is_mountable() {

@@ -21,6 +21,7 @@ serde_json = "1.0.151"
 # compila vacío, para que `cargo test` del workspace siga funcionando en Mac.
 [target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))'.dependencies]
 objc2 = { version = "0.6", default-features = false, features = ["std"] }
+block2 = "0.6"
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
   "std", "NSString", "NSAttributedString", "NSDictionary", "NSValue", "NSGeometry", "objc2-core-foundation",
@@ -33,7 +34,8 @@ objc2-ui-kit = { version = "0.3", default-features = false, features = [
   "UIView", "UILabel", "UIImageView", "UIImage", "UIColor", "UIFont",
   "UIResponder", "UIScreen", "UIScrollView", "UITextField", "UIControl",
   "UIGestureRecognizer", "UITapGestureRecognizer", "UITextInputTraits", "UIDevice",
-  "UIBezierPath",
+  "UIBezierPath", "UIScreenEdgePanGestureRecognizer", "UIPanGestureRecognizer",
+  "UIGeometry", "block2",
   "NSStringDrawing", "NSParagraphStyle", "NSText", "NSAttributedString",
 ] }
 

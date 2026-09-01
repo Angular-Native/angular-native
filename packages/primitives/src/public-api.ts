@@ -10,6 +10,7 @@ export {
   NATIVE_PRIMITIVES,
   NativeVisual,
   ScrollView,
+  StackView,
   Text,
   TextInput,
   View

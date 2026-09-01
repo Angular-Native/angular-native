@@ -7,14 +7,25 @@ use std::collections::HashMap;
 use an_core::{NodeId, NodeKind, PropValue, Rect};
 use an_host::{EventQueue, HostRenderer};
 use objc2::rc::Retained;
-use objc2::MainThreadMarker;
+use objc2::{MainThreadMarker, Message};
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_foundation::NSString;
+use block2::RcBlock;
 use objc2_quartz_core::CAShapeLayer;
 use objc2_ui_kit::{
     NSLineBreakMode, NSTextAlignment, UIAccessibilityIdentification, UIBezierPath, UIFont,
     UIImageView, UILabel, UIScrollView, UITextField, UITextInputTraits, UIView,
 };
+
+/// La vista que hay justo debajo de otra dentro de un contenedor.
+fn previous_sibling(parent: &UIView, view: &UIView) -> Option<Retained<UIView>> {
+    let subviews = parent.subviews().to_vec();
+    let index = subviews.iter().position(|sibling| &**sibling == view)?;
+    if index == 0 {
+        return None;
+    }
+    subviews.get(index - 1).cloned()
+}
 
 /// Contorno de un rectángulo con un radio distinto por esquina.
 ///
@@ -69,6 +80,7 @@ fn rounded_path(width: f64, height: f64, radii: [f64; 4]) -> Retained<UIBezierPa
 /// de un `<Text>` no se aplican igual que las de un `<View>`.
 enum HostView {
     View(Retained<UIView>),
+    Stack(Retained<UIView>),
     Label(Retained<UILabel>),
     Image(Retained<UIImageView>),
     Scroll(Retained<UIScrollView>),
@@ -79,6 +91,7 @@ impl HostView {
     fn as_view(&self) -> &UIView {
         match self {
             HostView::View(v) => v,
+            HostView::Stack(v) => v,
             HostView::Label(v) => v,
             HostView::Image(v) => v,
             HostView::Scroll(v) => v,
@@ -89,6 +102,7 @@ impl HostView {
     fn kind(&self) -> NodeKind {
         match self {
             HostView::View(_) => NodeKind::View,
+            HostView::Stack(_) => NodeKind::StackView,
             HostView::Label(_) => NodeKind::Text,
             HostView::Image(_) => NodeKind::Image,
             HostView::Scroll(_) => NodeKind::ScrollView,
@@ -116,6 +130,18 @@ pub struct UikitHost {
     /// UIKit solo sabe de un radio único, así que cuando difieren hay que
     /// dibujar la forma a mano y usarla como máscara.
     corners: HashMap<NodeId, [f64; 4]>,
+    /// Sentido de la próxima transición de cada pila: `push`, `pop` o nada.
+    /// Lo decide Angular, que es quien sabe si se avanza o se retrocede.
+    transitions: HashMap<NodeId, String>,
+    /// Pantallas que acaban de entrar en una pila y todavía no se han animado.
+    /// La animación no puede lanzarse al insertar porque el marco aún no está
+    /// calculado: se hace en `flush`, cuando el layout ya pasó.
+    entering: Vec<(NodeId, NodeId)>,
+    /// Pantallas que salen. Se quedan en la jerarquía hasta que la animación
+    /// termina, así que hay que retenerlas aunque el árbol ya las olvidara.
+    leaving: Vec<(NodeId, Retained<UIView>)>,
+    /// Nodos cuya vista está animándose fuera: `destroy` no debe tocarlos.
+    animating_out: std::collections::HashSet<NodeId>,
     /// Suscripciones vivas, indexadas por nodo y evento. Se guardan porque hay
     /// que poder quitarlas: un `@if` que desmonta su rama destruye la vista,
     /// pero un `(press)` que deja de estar bindeado no.
@@ -134,6 +160,10 @@ impl UikitHost {
             views: HashMap::new(),
             fonts: HashMap::new(),
             corners: HashMap::new(),
+            transitions: HashMap::new(),
+            entering: Vec::new(),
+            leaving: Vec::new(),
+            animating_out: std::collections::HashSet::new(),
             listeners: HashMap::new(),
             events,
         }
@@ -177,6 +207,94 @@ impl UikitHost {
 
     fn font_mut(&mut self, id: NodeId) -> &mut an_layout::FontSpec {
         self.fonts.entry(id).or_default()
+    }
+
+    /// Anima las pantallas que entraron o salieron en este frame.
+    ///
+    /// Se hace aquí y no al insertar porque hasta que el layout no pasa no hay
+    /// marco que animar: una pantalla recién creada mide cero.
+    fn run_stack_animations(&mut self) {
+        let entering = std::mem::take(&mut self.entering);
+        let leaving = std::mem::take(&mut self.leaving);
+        if entering.is_empty() && leaving.is_empty() {
+            return;
+        }
+        let mtm = self.mtm;
+
+        for (stack, child) in entering {
+            let Some(stack_view) = self.views.get(&stack).map(|v| v.as_view().retain()) else {
+                continue;
+            };
+            let Some(view) = self.views.get(&child).map(|v| v.as_view().retain()) else { continue };
+            let width = stack_view.bounds().size.width;
+            let direction = self.transitions.get(&stack).map(String::as_str).unwrap_or("none");
+            if direction != "push" || width <= 0.0 {
+                continue;
+            }
+
+            // Entra desde la derecha; la de debajo se desplaza un tercio, que
+            // es el paralaje que hace UINavigationController.
+            let target = view.frame();
+            let mut start = target;
+            start.origin.x = width;
+            view.setFrame(start);
+
+            let below = previous_sibling(&stack_view, &view);
+            let below_target = below.as_ref().map(|v| {
+                let mut frame = v.frame();
+                frame.origin.x = -width / 3.0;
+                (v.clone(), frame)
+            });
+
+            let animations = RcBlock::new(move || {
+                view.setFrame(target);
+                if let Some((below, frame)) = &below_target {
+                    below.setFrame(*frame);
+                }
+            });
+            UIView::animateWithDuration_animations_completion(0.3, &animations, None, mtm);
+        }
+
+        for (stack, view) in leaving {
+            let Some(stack_view) = self.views.get(&stack).map(|v| v.as_view().retain()) else {
+                view.removeFromSuperview();
+                continue;
+            };
+            let width = stack_view.bounds().size.width;
+            if width <= 0.0 {
+                view.removeFromSuperview();
+                continue;
+            }
+
+            let below = previous_sibling(&stack_view, &view);
+            let below_target = below.as_ref().map(|v| {
+                let mut frame = v.frame();
+                frame.origin.x = 0.0;
+                (v.clone(), frame)
+            });
+            let mut target = view.frame();
+            target.origin.x = width;
+
+            let animated = view.clone();
+            let animations = RcBlock::new(move || {
+                animated.setFrame(target);
+                if let Some((below, frame)) = &below_target {
+                    below.setFrame(*frame);
+                }
+            });
+            // La vista se quita al acabar: hasta entonces tiene que seguir
+            // montada, y por eso el bloque la retiene.
+            let completion = RcBlock::new(move |_finished: objc2::runtime::Bool| {
+                view.removeFromSuperview();
+            });
+            UIView::animateWithDuration_animations_completion(
+                0.3,
+                &animations,
+                Some(&completion),
+                mtm,
+            );
+        }
+        self.animating_out.clear();
     }
 
     fn set_corner(&mut self, id: NodeId, corner: usize, radius: Option<f32>) {
@@ -234,6 +352,13 @@ impl HostRenderer for UikitHost {
             }
             NodeKind::Image => HostView::Image(UIImageView::new(mtm)),
             NodeKind::ScrollView => HostView::Scroll(UIScrollView::new(mtm)),
+            NodeKind::StackView => {
+                let stack = UIView::new(mtm);
+                // Las pantallas que entran y salen se salen del marco: sin
+                // recortar, se verían deslizándose por encima de lo demás.
+                stack.setClipsToBounds(true);
+                HostView::Stack(stack)
+            }
             NodeKind::TextInput => HostView::Field(UITextField::new(mtm)),
             _ => HostView::View(UIView::new(mtm)),
         };
@@ -245,7 +370,11 @@ impl HostRenderer for UikitHost {
 
     fn destroy(&mut self, id: NodeId) {
         if let Some(view) = self.views.remove(&id) {
-            view.as_view().removeFromSuperview();
+            // Una pantalla que se está yendo sigue en pantalla hasta que la
+            // animación acabe: quitarla ahora daría un salto.
+            if !self.animating_out.contains(&id) {
+                view.as_view().removeFromSuperview();
+            }
         }
         self.fonts.remove(&id);
         self.corners.remove(&id);
@@ -257,15 +386,32 @@ impl HostRenderer for UikitHost {
         else {
             return;
         };
-        parent_view
-            .as_view()
-            .insertSubview_atIndex(child_view.as_view(), index as isize);
+        let is_stack = matches!(parent_view, HostView::Stack(_));
+        // Una pantalla que entra tiene que quedar por encima de la que sale,
+        // aunque el árbol la coloque antes.
+        let index = if is_stack {
+            parent_view.as_view().subviews().len() as isize
+        } else {
+            index as isize
+        };
+        parent_view.as_view().insertSubview_atIndex(child_view.as_view(), index);
+        if is_stack {
+            self.entering.push((parent, child));
+        }
     }
 
-    fn remove(&mut self, _parent: NodeId, child: NodeId) {
-        if let Some(view) = self.views.get(&child) {
-            view.as_view().removeFromSuperview();
+    fn remove(&mut self, parent: NodeId, child: NodeId) {
+        let Some(view) = self.views.get(&child) else { return };
+        let native = view.as_view().retain();
+        let popping = matches!(self.views.get(&parent), Some(HostView::Stack(_)))
+            && self.transitions.get(&parent).map(String::as_str) == Some("pop");
+        if popping {
+            // Se queda montada hasta que termine de salir.
+            self.animating_out.insert(child);
+            self.leaving.push((parent, native));
+            return;
         }
+        native.removeFromSuperview();
     }
 
     fn set_prop(&mut self, id: NodeId, key: &str, value: &PropValue) {
@@ -305,6 +451,11 @@ impl HostRenderer for UikitHost {
             "borderWidth" | "border-width" => {
                 if let Some(v) = number {
                     native.layer().setBorderWidth(v as f64);
+                }
+            }
+            "transition" => {
+                if let Some(direction) = &text {
+                    self.transitions.insert(id, direction.clone());
                 }
             }
             "testID" | "accessibilityIdentifier" => {
@@ -462,6 +613,10 @@ impl HostRenderer for UikitHost {
         if let Some(HostView::Scroll(scroll)) = self.views.get(&id) {
             scroll.setContentSize(CGSize { width: width as f64, height: height as f64 });
         }
+    }
+
+    fn flush(&mut self) {
+        self.run_stack_animations();
     }
 
     fn set_root(&mut self, id: NodeId) {

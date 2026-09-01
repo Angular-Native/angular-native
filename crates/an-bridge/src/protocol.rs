@@ -46,6 +46,7 @@ pub fn kind_from_byte(byte: u8) -> Option<NodeKind> {
         3 => NodeKind::Image,
         4 => NodeKind::ScrollView,
         5 => NodeKind::TextInput,
+        6 => NodeKind::StackView,
         _ => return None,
     })
 }
@@ -58,6 +59,7 @@ pub fn kind_to_byte(kind: NodeKind) -> u8 {
         NodeKind::Image => 3,
         NodeKind::ScrollView => 4,
         NodeKind::TextInput => 5,
+        NodeKind::StackView => 6,
     }
 }
 

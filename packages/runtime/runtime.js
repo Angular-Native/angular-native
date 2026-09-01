@@ -224,7 +224,15 @@
     SET_ROOT: 0x0c
   }
 
-  const KIND = { View: 0, Text: 1, RawText: 2, Image: 3, ScrollView: 4, TextInput: 5 }
+  const KIND = {
+    View: 0,
+    Text: 1,
+    RawText: 2,
+    Image: 3,
+    ScrollView: 4,
+    TextInput: 5,
+    StackView: 6
+  }
 
   class CommandWriter {
     constructor(capacity) {

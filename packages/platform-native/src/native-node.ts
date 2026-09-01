@@ -22,7 +22,14 @@ declare const __an_dom: {
   listen(id: number, event: string, handler: (payload: unknown) => void): () => void
 }
 
-export type NativeKind = 'View' | 'Text' | 'RawText' | 'Image' | 'ScrollView' | 'TextInput'
+export type NativeKind =
+  | 'View'
+  | 'Text'
+  | 'RawText'
+  | 'Image'
+  | 'ScrollView'
+  | 'TextInput'
+  | 'StackView'
 
 /** Primitivas que el core sabe montar. El resto son error de plantilla. */
 const KINDS: Record<string, NativeKind> = {
@@ -30,7 +37,8 @@ const KINDS: Record<string, NativeKind> = {
   Text: 'Text',
   Image: 'Image',
   ScrollView: 'ScrollView',
-  TextInput: 'TextInput'
+  TextInput: 'TextInput',
+  StackView: 'StackView'
 }
 
 export class NativeNode {

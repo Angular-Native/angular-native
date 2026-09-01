@@ -8,7 +8,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 cargo an build examples/router >/dev/null
-OUTPUT="$(cargo run -q -p an-bridge --example headless -- build/bundle/router/main.js 4 200 2>&1)"
+OUTPUT="$(cargo run -q -p an-bridge --example headless -- build/bundle/router/main.js 6 200 2>&1)"
 
 fail=0
 check() {
@@ -21,9 +21,12 @@ check() {
 }
 
 echo "== router"
-check '"Sirena"' 'la ficha se montó tras el toque'
-check '"Puerto base: Ibiza"' 'el parámetro :id llegó al input del componente'
-check '"‹ Volver"' 'la página de detalle trae su botón de volver'
+check 'StackView#[0-9]+' 'la pila nativa se montó'
+check '\-\- atrás simulado' 'el gesto de volver atrás tiene quien lo escuche'
+check '"Barcos"' 'tras volver atrás se ve otra vez la lista'
+# Los ids son los del primer montaje: si la pantalla se hubiera rehecho, el
+# core habría repartido ids nuevos y más altos.
+check 'Text#8 .*"Barcos"' 'la pantalla anterior se reatachó, no se rehizo'
 if grep -qE -- 'búfer inválido|promesa rechazada|el arranque falló' <<<"$OUTPUT"; then
   echo "  FALLO hubo errores durante la navegación"
   fail=1

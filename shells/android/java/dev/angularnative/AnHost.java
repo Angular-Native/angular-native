@@ -37,6 +37,9 @@ public final class AnHost {
     private static final int KIND_IMAGE = 3;
     private static final int KIND_SCROLL = 4;
     private static final int KIND_INPUT = 5;
+    private static final int KIND_STACK = 6;
+    /** Lo que dura una transición de pila. Igual que en iOS. */
+    private static final long TRANSITION_MS = 300;
 
     private final Context context;
     private final AnViewGroup container;
@@ -50,6 +53,15 @@ public final class AnHost {
     private final SparseArray<float[]> corners = new SparseArray<>();
     /** Tipografía pendiente por nodo: llega en props sueltas y hay que juntarla. */
     private final SparseArray<float[]> fontState = new SparseArray<>();
+    /** Sentido de la próxima transición de cada pila: `push`, `pop` o nada. */
+    private final SparseArray<String> transitions = new SparseArray<>();
+    /** Pantallas que entraron en este frame y aún no se han animado. */
+    private final java.util.List<int[]> entering = new java.util.ArrayList<>();
+    /** Pantallas que salen: siguen montadas hasta que la animación acaba. */
+    private final java.util.List<Object[]> leaving = new java.util.ArrayList<>();
+    private final java.util.Set<Integer> animatingOut = new java.util.HashSet<>();
+    /** Nodos de pila suscritos a `back`, para el botón físico. */
+    private final java.util.List<Integer> backListeners = new java.util.ArrayList<>();
 
     private AnRuntime runtime;
     /** Última posición tocada, en puntos y relativa a la vista tocada. */
@@ -107,6 +119,13 @@ public final class AnHost {
                 view = input;
                 break;
             }
+            case KIND_STACK: {
+                AnViewGroup stack = new AnViewGroup(context);
+                // Las pantallas que entran y salen se salen del marco.
+                stack.setClipChildren(true);
+                view = stack;
+                break;
+            }
             case KIND_VIEW:
             default:
                 view = new AnViewGroup(context);
@@ -118,12 +137,16 @@ public final class AnHost {
 
     public void destroyView(int id) {
         View view = views.get(id);
-        if (view != null && view.getParent() instanceof ViewGroup) {
+        // Una pantalla que se está yendo sigue en pantalla hasta que la
+        // animación acabe: quitarla ahora daría un salto.
+        if (view != null && !animatingOut.contains(id) && view.getParent() instanceof ViewGroup) {
             ((ViewGroup) view.getParent()).removeView(view);
         }
         views.remove(id);
         scrollContent.remove(id);
         watchers.remove(id);
+        transitions.remove(id);
+        backListeners.remove(Integer.valueOf(id));
         corners.remove(id);
         fontState.remove(id);
         borderWidths.remove(id);
@@ -136,15 +159,29 @@ public final class AnHost {
         if (child == null || parent == null) {
             return;
         }
+        if (isStack(parentId)) {
+            // Una pantalla que entra queda por encima de la que sale, aunque
+            // el árbol la coloque antes.
+            parent.addView(child);
+            entering.add(new int[] {parentId, childId});
+            return;
+        }
         parent.addView(child, Math.min(index, parent.getChildCount()));
     }
 
     public void removeView(int parentId, int childId) {
         View child = views.get(childId);
         ViewGroup parent = parentFor(parentId);
-        if (child != null && parent != null) {
-            parent.removeView(child);
+        if (child == null || parent == null) {
+            return;
         }
+        if (isStack(parentId) && "pop".equals(transitions.get(parentId))) {
+            // Se queda montada hasta que termine de salir.
+            animatingOut.add(childId);
+            leaving.add(new Object[] {parentId, child});
+            return;
+        }
+        parent.removeView(child);
     }
 
     /** Un ScrollView no admite hijos sueltos: van a su contenedor interno. */
@@ -205,6 +242,83 @@ public final class AnHost {
     /** Se llama una vez por frame, cuando ya se aplicaron todas las ops. */
     public void flush() {
         container.requestLayout();
+        runStackAnimations();
+    }
+
+    private boolean isStack(int id) {
+        return views.get(id) instanceof AnViewGroup && transitions.indexOfKey(id) >= 0
+                || stackIds.contains(id);
+    }
+
+    private final java.util.Set<Integer> stackIds = new java.util.HashSet<>();
+
+    /**
+     * Anima las pantallas que entraron o salieron en este frame.
+     *
+     * Se hace aquí y no al insertar porque hasta que el layout no pasa no hay
+     * ancho que animar: una pantalla recién creada mide cero.
+     */
+    private void runStackAnimations() {
+        if (entering.isEmpty() && leaving.isEmpty()) {
+            return;
+        }
+        for (int[] pair : entering) {
+            View stack = views.get(pair[0]);
+            View screen = views.get(pair[1]);
+            if (stack == null || screen == null || !"push".equals(transitions.get(pair[0]))) {
+                continue;
+            }
+            int width = stack.getWidth();
+            if (width <= 0) {
+                continue;
+            }
+            // Entra desde la derecha; la de debajo se desplaza un tercio, que
+            // es el paralaje que hacen las dos plataformas.
+            screen.setTranslationX(width);
+            screen.animate().translationX(0).setDuration(TRANSITION_MS).start();
+            View below = previousSibling((ViewGroup) stack, screen);
+            if (below != null) {
+                below.animate().translationX(-width / 3f).setDuration(TRANSITION_MS).start();
+            }
+        }
+        entering.clear();
+
+        for (Object[] pair : leaving) {
+            int stackId = (Integer) pair[0];
+            View screen = (View) pair[1];
+            View stack = views.get(stackId);
+            ViewGroup parent = stack instanceof ViewGroup ? (ViewGroup) stack : null;
+            if (parent == null || parent.getWidth() <= 0) {
+                if (parent != null) parent.removeView(screen);
+                continue;
+            }
+            View below = previousSibling(parent, screen);
+            if (below != null) {
+                below.animate().translationX(0).setDuration(TRANSITION_MS).start();
+            }
+            screen.animate()
+                    .translationX(parent.getWidth())
+                    .setDuration(TRANSITION_MS)
+                    // La vista se quita al acabar; hasta entonces sigue montada.
+                    .withEndAction(() -> parent.removeView(screen))
+                    .start();
+        }
+        leaving.clear();
+        animatingOut.clear();
+    }
+
+    private static View previousSibling(ViewGroup parent, View view) {
+        int index = parent.indexOfChild(view);
+        return index > 0 ? parent.getChildAt(index - 1) : null;
+    }
+
+    /** La llama la Activity cuando el usuario pulsa atrás. */
+    public boolean dispatchBack() {
+        if (backListeners.isEmpty() || runtime == null) {
+            return false;
+        }
+        runtime.dispatchEvent(backListeners.get(backListeners.size() - 1), "back", 0f, 0f);
+        return true;
     }
 
     // ------------------------------------------------------------------ props
@@ -254,6 +368,10 @@ public final class AnHost {
                 break;
             case "opacity":
                 view.setAlpha(parseFloat(value) == null ? 1f : parseFloat(value));
+                break;
+            case "transition":
+                transitions.put(id, value);
+                stackIds.add(id);
                 break;
             case "testID":
                 view.setContentDescription(value);
@@ -474,6 +592,16 @@ public final class AnHost {
                                 : null);
                 return;
             }
+        }
+        if ("back".equals(event)) {
+            // El botón físico de atrás: el equivalente del gesto de borde de
+            // iOS. Aquí solo se avisa; deshacer la navegación es del router.
+            backListeners.remove(Integer.valueOf(id));
+            if (enabled) {
+                backListeners.add(id);
+                stackIds.add(id);
+            }
+            return;
         }
         if ("doublePress".equals(event)) {
             if (!enabled) {

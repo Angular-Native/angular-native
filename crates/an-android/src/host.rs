@@ -42,6 +42,7 @@ impl JniHost {
             NodeKind::Image => 3,
             NodeKind::ScrollView => 4,
             NodeKind::TextInput => 5,
+            NodeKind::StackView => 6,
         }
     }
 }

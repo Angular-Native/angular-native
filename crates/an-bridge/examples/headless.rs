@@ -25,6 +25,7 @@ struct TreeRecorder {
     root: Option<NodeId>,
     pressable: Vec<NodeId>,
     scrollable: Vec<NodeId>,
+    backable: Vec<NodeId>,
     /// Para poder afirmar que desplazarse no crea vistas.
     created: usize,
     destroyed: usize,
@@ -65,6 +66,7 @@ impl HostRenderer for TreeRecorder {
         let list = match event {
             "press" => &mut self.pressable,
             "scroll" => &mut self.scrollable,
+            "back" => &mut self.backable,
             _ => return,
         };
         if enabled {
@@ -134,6 +136,7 @@ fn main() {
         Renderer::new(TreeRecorder::default(), NaiveMeasurer, (393.0, 852.0), events);
     let mut tapped = false;
     let mut scrolled = false;
+    let mut went_back = false;
     // Recuento en el momento justo antes de desplazar, para poder decir
     // cuántas vistas costó el desplazamiento.
     let mut before_scroll = (0usize, 0usize);
@@ -181,6 +184,21 @@ fn main() {
                 }])
                 .expect("despacho de eventos");
                 scrolled = true;
+            }
+        }
+
+        // Cerca del final, el gesto de volver atrás: comprueba que la pila
+        // recupera la pantalla anterior en vez de rehacerla.
+        if !went_back && frames > 3 && frame == frames - 2 {
+            if let Some(target) = renderer.host().backable.first().copied() {
+                println!("-- atrás simulado en #{target}");
+                js.dispatch_events(&[HostEvent {
+                    target,
+                    name: "back".to_owned(),
+                    payload: Vec::new(),
+                }])
+                .expect("despacho de eventos");
+                went_back = true;
             }
         }
 

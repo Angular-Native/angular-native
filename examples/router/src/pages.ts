@@ -13,7 +13,8 @@ const SHIPS = [
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NATIVE_PRIMITIVES],
   template: `
-    <View [style.gap]="'12'" [style.padding]="'16'">
+    <View [style.gap]="'12'" [style.padding]="'16'" [backgroundColor]="'#0b1020'"
+          [style.width]="'100%'" [style.height]="'100%'">
       <Text [fontSize]="24" [fontWeight]="'bold'" [color]="'#f4f7ff'">Barcos</Text>
       @for (ship of ships; track ship.id) {
         <View
@@ -41,7 +42,8 @@ export class HomePage {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NATIVE_PRIMITIVES],
   template: `
-    <View [style.gap]="'12'" [style.padding]="'16'">
+    <View [style.gap]="'12'" [style.padding]="'16'" [backgroundColor]="'#141c33'"
+          [style.width]="'100%'" [style.height]="'100%'">
       <View [style.padding]="'12'" [backgroundColor]="'#2b1e4a'" [borderRadius]="8" (press)="back()">
         <Text [fontSize]="15" [color]="'#c4b5fd'">‹ Volver</Text>
       </View>

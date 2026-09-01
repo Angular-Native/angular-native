@@ -113,6 +113,14 @@ export class NativePlatformLocation extends PlatformLocation {
     return this.index > 0
   }
 
+  /**
+   * Posición actual en la pila. Comparar índices entre navegaciones es lo que
+   * distingue avanzar de retroceder, y de ahí sale el sentido de la animación.
+   */
+  get historyIndex(): number {
+    return this.index
+  }
+
   private split(): { pathname: string; search: string; hash: string } {
     const url = this.stack[this.index].url
     const hashAt = url.indexOf('#')
@@ -132,7 +140,10 @@ export class NativePlatformLocation extends PlatformLocation {
  * funcione aquí. Va junto a `provideRouter(routes)`.
  */
 export const NATIVE_LOCATION_PROVIDERS: Provider[] = [
-  { provide: PlatformLocation, useClass: NativePlatformLocation },
+  // Se registra la clase concreta además del token: la pila de navegación
+  // necesita el índice del historial, que `PlatformLocation` no expone.
+  NativePlatformLocation,
+  { provide: PlatformLocation, useExisting: NativePlatformLocation },
   { provide: LocationStrategy, useClass: PathLocationStrategy },
   { provide: APP_BASE_HREF, useValue: '/' }
 ]

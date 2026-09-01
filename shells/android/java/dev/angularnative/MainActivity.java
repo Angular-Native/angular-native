@@ -90,6 +90,16 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        // Si la app tiene una pila con pantallas encima, atrás navega dentro.
+        // Si no, se comporta como siempre y sale.
+        if (host == null || !host.dispatchBack()) {
+            super.onBackPressed();
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         if (frameCallback != null) {
             Choreographer.getInstance().removeFrameCallback(frameCallback);

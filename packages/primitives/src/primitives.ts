@@ -124,6 +124,27 @@ export abstract class NativeVisual {
 @Directive({ selector: 'View' })
 export class View extends NativeVisual {}
 
+/**
+ * Pila de pantallas.
+ *
+ * Sus hijos se superponen y ocupan todo —eso lo impone el core, no el estilo—
+ * y el host anima la entrada y la salida según `transition`. Rara vez se usa
+ * a pelo: lo normal es `NativeStack`, que la conecta con el router.
+ */
+@Directive({ selector: 'StackView' })
+export class StackView extends NativeVisual {
+  /**
+   * Sentido de la próxima transición. Lo decide quien navega, que es el
+   * único que sabe si se avanza o se retrocede.
+   */
+  @Input() set transition(value: 'push' | 'pop' | 'none' | null) {
+    this.set('transition', value ?? 'none')
+  }
+
+  /** Gesto de borde en iOS, botón físico en Android. */
+  readonly back = outputFromObservable(this.nativeEvent<void>('back'))
+}
+
 @Directive({ selector: 'ScrollView' })
 export class ScrollView extends NativeVisual {
   @Input() set showsScrollIndicator(value: boolean | null) {
@@ -247,4 +268,4 @@ export class TextInput extends NativeVisual {
 }
 
 /** Para importar todas de golpe en un componente standalone. */
-export const NATIVE_PRIMITIVES = [View, Text, Image, ScrollView, TextInput] as const
+export const NATIVE_PRIMITIVES = [View, Text, Image, ScrollView, TextInput, StackView] as const
