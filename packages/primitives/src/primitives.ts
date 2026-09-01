@@ -700,6 +700,21 @@ export class TabBar extends NativeVisual {
   )
 }
 
+/** Lo que el interruptor de Material tiene y el de UIKit no. */
+export type AndroidSwitchProps = {
+  /**
+   * Color de la vía con el interruptor apagado.
+   *
+   * `UISwitch` no lo expone: lo que circula por ahí es ponerle un
+   * `backgroundColor` y un radio de esquina a un control del sistema para que
+   * se le vea el fondo por detrás, y eso se rompe en cuanto Apple cambia el
+   * alto del control. En iOS se queda con el color del sistema.
+   */
+  trackColor?: string
+}
+
+const SWITCH_ANDROID = platformKeys('Switch', 'android', ['trackColor'])
+
 /** Interruptor del sistema. */
 @Directive({ selector: 'Switch' })
 export class Switch extends NativeControl {
@@ -712,11 +727,49 @@ export class Switch extends NativeControl {
     this.set('color', value)
   }
 
+  /** Color del pulgar, el que se mueve. */
+  @Input() set thumbColor(value: string | null) {
+    this.set('thumbColor', value)
+  }
+
+  @Input() set android(value: AndroidSwitchProps | null) {
+    this.platform(SWITCH_ANDROID, value)
+  }
+
   /** Emparejado con `on`, habilita `[(on)]` en la plantilla. */
   readonly onChange = outputFromObservable(
     this.nativeEvent<{ value: boolean }>('change').pipe(map((event) => event.value))
   )
 }
+
+/** Lo que el deslizador de UIKit tiene y el de Material no. */
+export type IosSliderProps = {
+  /**
+   * Si avisa mientras se arrastra o solo al soltar. `UISlider.isContinuous`.
+   * El de Material siempre avisa mientras se arrastra y no se puede cambiar.
+   */
+  continuous?: boolean
+}
+
+/** Lo que el deslizador de Material tiene y el de UIKit no. */
+export type AndroidSliderProps = {
+  /**
+   * Salto entre valores. `Slider.setStepSize`.
+   *
+   * No es una prop común porque `UISlider` es continuo y no tiene pasos.
+   * Redondear el valor en el host se puede, pero entonces el dedo va por un
+   * sitio y el valor por otro: el de Material se engancha a los pasos, y
+   * prometer «pasos» dando dos comportamientos distintos es peor que decir
+   * que solo lo tiene Android.
+   *
+   * Tiene que dividir el recorrido de forma exacta o Material se queja; si no
+   * lo hace, el host lo dice por el registro y deja el deslizador continuo.
+   */
+  stepSize?: number
+}
+
+const SLIDER_IOS = platformKeys('Slider', 'ios', ['continuous'])
+const SLIDER_ANDROID = platformKeys('Slider', 'android', ['stepSize'])
 
 /** Deslizador del sistema. */
 @Directive({ selector: 'Slider' })
@@ -735,6 +788,28 @@ export class Slider extends NativeControl {
 
   @Input() set color(value: string | null) {
     this.set('color', value)
+  }
+
+  /** El tramo recorrido, de la izquierda al pulgar. */
+  @Input() set minimumTrackColor(value: string | null) {
+    this.set('minimumTrackColor', value)
+  }
+
+  /** El que queda por recorrer. */
+  @Input() set maximumTrackColor(value: string | null) {
+    this.set('maximumTrackColor', value)
+  }
+
+  @Input() set thumbColor(value: string | null) {
+    this.set('thumbColor', value)
+  }
+
+  @Input() set ios(value: IosSliderProps | null) {
+    this.platform(SLIDER_IOS, value)
+  }
+
+  @Input() set android(value: AndroidSliderProps | null) {
+    this.platform(SLIDER_ANDROID, value)
   }
 
   readonly valueChange = outputFromObservable(

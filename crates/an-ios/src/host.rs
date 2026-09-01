@@ -1808,6 +1808,38 @@ impl HostRenderer for UikitHost {
                     slider.setValue(wanted);
                 }
             }
+            // Los colores sueltos del interruptor y del deslizador. `[color]`
+            // sigue siendo el principal —lo encendido, el tramo recorrido—;
+            // estos son los otros.
+            "thumbColor" => {
+                let Some(color) = text.as_deref().and_then(crate::color::to_uicolor) else {
+                    return;
+                };
+                match view {
+                    HostView::Toggle(toggle) => toggle.setThumbTintColor(Some(&color)),
+                    HostView::Slide(slider) => slider.setThumbTintColor(Some(&color)),
+                    _ => {}
+                }
+            }
+            "minimumTrackColor" | "maximumTrackColor" => {
+                let (HostView::Slide(slider), Some(color)) =
+                    (view, text.as_deref().and_then(crate::color::to_uicolor))
+                else {
+                    return;
+                };
+                if key == "minimumTrackColor" {
+                    slider.setMinimumTrackTintColor(Some(&color));
+                } else {
+                    slider.setMaximumTrackTintColor(Some(&color));
+                }
+            }
+            "ios:continuous" => {
+                if let HostView::Slide(slider) = view {
+                    // Apagado, el deslizador solo avisa al soltar. Sirve para
+                    // lo que cuesta caro recalcular en cada punto.
+                    slider.setContinuous(!matches!(value, PropValue::Bool(false)));
+                }
+            }
             "animating" => {
                 if let HostView::Spinner(spinner) = view {
                     if matches!(value, PropValue::Bool(false)) {

@@ -149,6 +149,15 @@ public final class AnHost {
 
     private final SparseArray<Integer> buttonColors = new SparseArray<>();
 
+    /**
+     * Colores de la vía del interruptor: el de encendido llega por `[color]` y
+     * el de apagado por `[android]`, y `ColorStateList` los quiere juntos.
+     */
+    private final SparseArray<int[]> switchTracks = new SparseArray<>();
+
+    /** Salto entre valores de cada deslizador, si se pidió alguno. */
+    private final SparseArray<Float> sliderSteps = new SparseArray<>();
+
     /** Centro de cada mapa: la latitud y la longitud llegan por separado. */
     private final java.util.HashMap<Integer, float[]> mapCenters = new java.util.HashMap<>();
 
@@ -447,6 +456,8 @@ public final class AnHost {
         borderColors.remove(id);
         sliderRanges.remove(id);
         sliderValues.remove(id);
+        sliderSteps.remove(id);
+        switchTracks.remove(id);
         safeArea.remove(id);
         AlertState alert = alerts.get(id);
         if (alert != null && alert.presented != null) {
@@ -812,9 +823,64 @@ public final class AnHost {
         float max = range[1] > range[0] ? range[1] : range[0] + 1f;
         slider.setValueFrom(min);
         slider.setValueTo(max);
-        if (value != null) {
-            slider.setValue(Math.max(min, Math.min(max, value)));
+        Float step = sliderSteps.get(id);
+        float applied = 0f;
+        if (step != null && step > 0f) {
+            float steps = (max - min) / step;
+            // Material exige que el paso divida el recorrido exacto: si no,
+            // revienta al dibujar. Antes que caerse, se dice y se deja
+            // continuo, que es lo que había.
+            if (Math.abs(steps - Math.round(steps)) > 1e-4f) {
+                android.util.Log.w(
+                        "angular-native",
+                        "[android].stepSize " + step + " no divide el recorrido "
+                                + (max - min) + ": el deslizador se queda continuo");
+            } else {
+                applied = step;
+            }
         }
+        slider.setStepSize(applied);
+        if (value != null) {
+            float clamped = Math.max(min, Math.min(max, value));
+            // Con paso, el valor tiene que caer en uno: Material rechaza
+            // cualquier otro.
+            if (applied > 0f) {
+                clamped = min + Math.round((clamped - min) / applied) * applied;
+                clamped = Math.max(min, Math.min(max, clamped));
+            }
+            slider.setValue(clamped);
+        }
+    }
+
+    /**
+     * La vía del interruptor, con su color encendido y su color apagado.
+     *
+     * Los dos llegan por props distintas, así que se guardan y se arma la
+     * lista de estados entera: un `ColorStateList` de un solo color pinta
+     * igual las dos posiciones y el interruptor deja de decir si está puesto.
+     */
+    private void applySwitchTrack(int id, View view) {
+        int[] colors = switchTracks.get(id);
+        if (colors == null || !(view instanceof androidx.appcompat.widget.SwitchCompat)) {
+            return;
+        }
+        ((androidx.appcompat.widget.SwitchCompat) view)
+                .setTrackTintList(
+                        new android.content.res.ColorStateList(
+                                new int[][] {
+                                    new int[] {android.R.attr.state_checked}, new int[0]
+                                },
+                                new int[] {colors[0], colors[1]}));
+    }
+
+    private int[] switchTrackOf(int id) {
+        int[] colors = switchTracks.get(id);
+        if (colors == null) {
+            // Sin nada dicho, el apagado es el gris de siempre de Material.
+            colors = new int[] {Color.GRAY, Color.argb(60, 120, 120, 120)};
+            switchTracks.put(id, colors);
+        }
+        return colors;
     }
 
     /** Lista de cadenas en JSON: es como viajan los títulos de las pestañas. */
@@ -1151,6 +1217,54 @@ public final class AnHost {
                 }
                 break;
             }
+            case "thumbColor": {
+                Integer thumb = parseColor(value);
+                if (thumb == null) {
+                    break;
+                }
+                if (view instanceof androidx.appcompat.widget.SwitchCompat) {
+                    ((androidx.appcompat.widget.SwitchCompat) view)
+                            .setThumbTintList(
+                                    android.content.res.ColorStateList.valueOf(thumb));
+                } else if (view instanceof com.google.android.material.slider.Slider) {
+                    ((com.google.android.material.slider.Slider) view)
+                            .setThumbTintList(
+                                    android.content.res.ColorStateList.valueOf(thumb));
+                }
+                break;
+            }
+            case "minimumTrackColor":
+            case "maximumTrackColor": {
+                Integer track = parseColor(value);
+                if (track == null
+                        || !(view instanceof com.google.android.material.slider.Slider)) {
+                    break;
+                }
+                com.google.android.material.slider.Slider bar =
+                        (com.google.android.material.slider.Slider) view;
+                android.content.res.ColorStateList tint =
+                        android.content.res.ColorStateList.valueOf(track);
+                if ("minimumTrackColor".equals(key)) {
+                    bar.setTrackActiveTintList(tint);
+                } else {
+                    bar.setTrackInactiveTintList(tint);
+                }
+                break;
+            }
+            case "android:trackColor": {
+                Integer off = parseColor(value);
+                if (off != null) {
+                    switchTrackOf(id)[1] = off;
+                    applySwitchTrack(id, view);
+                }
+                break;
+            }
+            case "android:stepSize":
+                if (view instanceof com.google.android.material.slider.Slider) {
+                    sliderSteps.put(id, parseFloat(value));
+                    applySliderValue(id, (com.google.android.material.slider.Slider) view);
+                }
+                break;
             case "animating":
                 if (view instanceof android.widget.ProgressBar) {
                     view.setVisibility("false".equals(value) ? View.INVISIBLE : View.VISIBLE);
@@ -1260,11 +1374,11 @@ public final class AnHost {
                 if (view instanceof AnTabBar) {
                     ((AnTabBar) view).setActiveColor(color);
                 } else if (view instanceof androidx.appcompat.widget.SwitchCompat) {
-                    // Solo la vía: el pulgar lo pinta Material para que
-                    // contraste con ella. Tintar los dos del mismo color
-                    // dejaba el pulgar invisible.
-                    ((androidx.appcompat.widget.SwitchCompat) view)
-                            .setTrackTintList(android.content.res.ColorStateList.valueOf(color));
+                    // Solo la vía, y solo la de encendido: el pulgar lo pinta
+                    // Material para que contraste con ella, y tintar los dos
+                    // del mismo color dejaba el pulgar invisible.
+                    switchTrackOf(id)[0] = color;
+                    applySwitchTrack(id, view);
                 } else if (view instanceof android.widget.ProgressBar) {
                     ((android.widget.ProgressBar) view)
                             .setProgressTintList(android.content.res.ColorStateList.valueOf(color));

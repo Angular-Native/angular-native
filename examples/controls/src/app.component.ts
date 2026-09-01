@@ -32,7 +32,12 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
 
         <View [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'12'">
           <Text [fontSize]="16" [color]="'#9fb0d4'" [style.flexGrow]="'1'">Notificaciones</Text>
-          <Switch [on]="notify()" [color]="'#6ee7b7'" (onChange)="notify.set($event)" />
+          <Switch
+            [on]="notify()"
+            [color]="'#6ee7b7'"
+            [thumbColor]="'#0b1020'"
+            [android]="{ trackColor: '#334155' }"
+            (onChange)="notify.set($event)" />
         </View>
 
         <View [style.gap]="'6'">
@@ -43,6 +48,11 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
             [minimumValue]="0"
             [maximumValue]="100"
             [color]="'#6ee7b7'"
+            [minimumTrackColor]="'#6ee7b7'"
+            [maximumTrackColor]="'#1e2a4a'"
+            [thumbColor]="'#f4f7ff'"
+            [ios]="{ continuous: true }"
+            [android]="{ stepSize: 5 }"
             (valueChange)="volume.set($event)" />
         </View>
 
