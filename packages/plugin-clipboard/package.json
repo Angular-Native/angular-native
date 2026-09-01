@@ -1,0 +1,22 @@
+{
+  "name": "@angular-native/plugin-clipboard",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/public-api.ts",
+  "peerDependencies": {
+    "@angular/core": ">=22.0.0"
+  },
+  "angularNative": {
+    "module": "clipboard",
+    "entry": "src/public-api.ts",
+    "ios": {
+      "sources": "native/ios",
+      "register": "AnClipboardPlugin"
+    },
+    "android": {
+      "sources": "native/android",
+      "register": "dev.angularnative.plugins.ClipboardPlugin"
+    }
+  }
+}

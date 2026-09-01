@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    // `dom` entra solo por los tipos: los .d.ts de Angular referencian Document,
+    // Element y Event. En tiempo de ejecución no existe ninguno de los tres.
+    "lib": ["es2022", "dom"],
+    "strict": true,
+    "skipLibCheck": true,
+    "useDefineForClassFields": false,
+    "experimentalDecorators": false,
+    "moduleDetection": "force",
+    "outDir": "../../build/js/clipboard",
+    "rootDir": "../..",
+    "paths": {
+      "@angular-native/platform": ["../../packages/platform-native/src/public-api.ts"],
+      "@angular-native/primitives": ["../../packages/primitives/src/public-api.ts"],
+      // Un plugin se declara aquí igual que los paquetes del framework: `ngc`
+      // lo compila con la app, bajo el mismo `rootDir`, y `an` le pone el alias
+      // de esbuild para que el import apunte a lo que acaba de salir.
+      "@angular-native/plugin-clipboard": [
+        "../../packages/plugin-clipboard/src/public-api.ts"
+      ]
+    },
+    "types": []
+  },
+  "files": ["src/main.ts"],
+  "angularCompilerOptions": {
+    "strictTemplates": true,
+    "compilationMode": "full"
+  }
+}

@@ -11,6 +11,10 @@ final class RootViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .black
 
+        // Antes de crear el runtime: el core construye un módulo nativo por
+        // plugin al arrancar el motor, y lo que se registre después no entra.
+        AnPluginRegistry.install(host: self)
+
         let bounds = view.bounds
         runtime = an_runtime_new(
             Unmanaged.passUnretained(view).toOpaque(),

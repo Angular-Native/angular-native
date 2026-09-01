@@ -115,10 +115,16 @@ módulos nativos tipados, y refresco en caliente: al guardar cambia el código d
 los componentes sin tirar la app, así que sigues en la misma pantalla y con lo
 que llevaras escrito.
 
+**Plugins** — módulos nativos que se escriben fuera del repo. Un paquete npm
+con su Swift y su Java dentro; la app lo declara como dependencia y `an`
+compila y registra lo suyo al armar el `.app` o el APK. Si un plugin no cubre la
+plataforma que se está compilando, el build se para y lo dice, en vez de dejar
+un método que se traga la llamada. Ver [docs/plugins.md](docs/plugins.md).
+
 ## Verificación sin dispositivo
 
 ```bash
-./scripts/check-all.sh        # todo: tests, las ocho apps y las dos compilaciones cruzadas
+./scripts/check-all.sh        # todo: tests, las apps de ejemplo y las dos compilaciones cruzadas
 
 cargo test                    # solo el núcleo Rust
 ./scripts/check-angular.sh    # la cadena entera: ngc, esbuild, QuickJS, taffy
@@ -128,6 +134,7 @@ cargo test                    # solo el núcleo Rust
 ./scripts/check-gestures.sh   # gestos, transformaciones y animación
 ./scripts/check-pickers.sh    # segmentos, desplegable, pasos, búsqueda y fecha
 ./scripts/check-web.sh        # cabecera, texto multilínea, navegador, hoja
+./scripts/check-plugins.sh    # que un plugin se descubre, se enlaza y contesta
 ./scripts/check-styles.sh     # que las dos listas de nombres de estilo no se separen
 ./scripts/check-kinds.sh      # que la etiqueta, la primitiva y el código digan lo mismo
 ./scripts/check-watchos.sh    # el modelo del reloj y su compilación cruzada
@@ -150,13 +157,14 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
 | `an-ios` | Host UIKit, medición, controles, animaciones y superficie C |
 | `an-android` | Host JNI, medición con `StaticLayout` y puntos de entrada JNI |
 | `an-watch` | Host watchOS: el árbol reflejado en un modelo que pinta SwiftUI |
-| `an-cli` | La herramienta `an`: build, ios, android, watchos y servidor de desarrollo |
+| `an-cli` | La herramienta `an`: build, ios, android, watchos, plugins y servidor de desarrollo |
 
 | Paquete npm | Qué hace |
 |---|---|
 | `packages/runtime` | Prelude JS: consola, temporizadores, `AbortController`, búfer de comandos |
 | `packages/platform-native` | `Renderer2`, plataforma, `PlatformLocation`, navegación, módulos |
 | `packages/primitives` | Todas las primitivas, controles y compuestos |
+| `packages/plugin-clipboard` | El plugin de referencia: portapapeles en Swift y en Java |
 
 ## Decisiones
 
@@ -223,6 +231,12 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   app conserva el estado; cambiar `packages/` o una dependencia obliga a
   reiniciar, porque en el intérprete solo cabe una copia de Angular. Se avisa y
   se reinicia, no se enseña código viejo.
+- **Un plugin aporta métodos, no vistas.** Puede añadir un módulo nativo —una
+  llamada que devuelve una promesa— pero no una primitiva nueva que se monte en
+  el árbol: eso exige abrir el `NodeKind` del core a nombres que no conoce en
+  tiempo de compilación y que los tres hosts sepan construir una vista ajena.
+  Lo que falta, en [docs/plugins.md](docs/plugins.md).
+
 - **El reloj va por la mitad.** watchOS pinta `an-view`, `an-text`, `an-button` y
   `an-scroll-view`, que es lo que da para una pantalla de verdad, pero le faltan el
   resto de primitivas, los gestos más allá del toque, la animación y la recarga

@@ -68,6 +68,31 @@ public final class AnRuntime {
         }
     }
 
+    // ── Plugins ────────────────────────────────────────────────────────────
+    //
+    // No llevan `handle`: los plugins son del proceso, no de un runtime. Se
+    // registran antes de crear el primero y sobreviven a un reinicio en
+    // caliente, igual que el `.app` de iOS.
+
+    /** Guarda el registro al que Rust le pasará cada llamada. */
+    static void setPluginRegistry(AnPluginRegistry registry) {
+        nativeSetPluginRegistry(registry);
+    }
+
+    /** Da de alta un plugin por el nombre con el que JS lo invoca. */
+    static void registerPlugin(String name) {
+        nativeRegisterPlugin(name);
+    }
+
+    /** Contesta a una llamada. `json` es el valor de vuelta ya serializado. */
+    static void pluginResolve(long id, String json) {
+        nativePluginResolve(id, json);
+    }
+
+    static void pluginReject(long id, String message) {
+        nativePluginReject(id, message);
+    }
+
     private static native long nativeNew(AnHost host, float width, float height);
 
     private static native int nativeEval(long handle, String name, String code);
@@ -91,4 +116,12 @@ public final class AnRuntime {
             long handle, int target, String name, int index);
 
     private static native void nativeFree(long handle);
+
+    private static native void nativeSetPluginRegistry(AnPluginRegistry registry);
+
+    private static native void nativeRegisterPlugin(String name);
+
+    private static native int nativePluginResolve(long id, String json);
+
+    private static native int nativePluginReject(long id, String message);
 }

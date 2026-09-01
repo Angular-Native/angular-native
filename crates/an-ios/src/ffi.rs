@@ -102,10 +102,16 @@ pub unsafe extern "C" fn an_runtime_new(
     // Los controles del sistema se miden aquí, en el hilo principal: crear un
     // UISwitch fuera de él no está permitido.
     let control_sizes = crate::controls::measure_controls(mtm);
+    // Los plugins que el shell registró antes de llegar aquí. Uno por nombre;
+    // lo que hacen vive en Swift, así que estos solo llevan y traen.
+    let plugins = crate::modules::host_plugins();
 
     let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
         let mut js = QuickJsRuntime::new()?;
         js.register_module(Box::new(device));
+        for plugin in plugins {
+            js.register_module(Box::new(plugin));
+        }
         Ok((js, ShadowSide::new(UikitMeasurer::new(control_sizes), (width, height))))
     });
     let worker = match worker {
@@ -197,6 +203,12 @@ pub unsafe extern "C" fn an_runtime_set_viewport(rt: *mut AnRuntime, width: f32,
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_runtime_frame(rt: *mut AnRuntime, now_ms: f64) -> i32 {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return -1 };
+
+    // Las llamadas a plugins que dejó el motor se atienden aquí, que es el
+    // hilo principal: es el único sitio donde un plugin puede tocar UIKit.
+    // Va antes del turno de JS para que una respuesta que llegue en el acto
+    // entre en este mismo frame.
+    crate::modules::pump();
 
     // Se monta lo que el worker haya terminado desde el frame anterior.
     let mut applied = rt.pump();

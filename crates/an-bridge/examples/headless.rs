@@ -9,6 +9,7 @@
 
 use std::collections::HashMap;
 
+use an_bridge::modules::{NativeModule, Responder};
 use an_bridge::{apply, JsRuntime, QuickJsRuntime};
 use an_core::{NaiveMeasurer, NodeId, NodeKind, PropValue, Rect};
 use an_host::{new_event_queue, HostEvent, HostRenderer, Renderer};
@@ -135,6 +136,66 @@ an_bridge::native_module! {
     }
 }
 
+/// Un plugin de mentira, con las respuestas escritas a mano.
+///
+/// Los plugins de verdad son Swift y Java, y aquí no hay ni lo uno ni lo otro.
+/// Lo que sí se puede probar sin simulador es todo lo demás: que el módulo se
+/// registra con el nombre que dice su `package.json`, que la llamada llega, que
+/// la respuesta resuelve la promesa y que un método que no está declarado la
+/// rechaza en vez de tragársela.
+///
+/// Se declara con `AN_PLUGINS`, un JSON de `{ módulo: { método: respuesta } }`:
+///
+/// ```text
+/// AN_PLUGINS='{"clipboard":{"read":"hola","write":null}}'
+/// ```
+struct CannedPlugin {
+    name: &'static str,
+    answers: serde_json::Map<String, serde_json::Value>,
+}
+
+impl NativeModule for CannedPlugin {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn call(&mut self, method: &str, _args: serde_json::Value, respond: Responder) {
+        match self.answers.get(method) {
+            Some(value) => respond.resolve(value.clone()),
+            // Lo mismo que haría el plugin de verdad: decir qué método se pidió.
+            None => respond.reject(format!(
+                "el plugin {} no tiene ninguna respuesta preparada para {method:?}",
+                self.name
+            )),
+        }
+    }
+}
+
+/// Lee `AN_PLUGINS` y devuelve un módulo por cada plugin declarado.
+fn canned_plugins() -> Vec<CannedPlugin> {
+    let Ok(raw) = std::env::var("AN_PLUGINS") else { return Vec::new() };
+    let parsed: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            eprintln!("AN_PLUGINS no es JSON válido: {error}");
+            std::process::exit(2);
+        }
+    };
+    let Some(modules) = parsed.as_object() else {
+        eprintln!("AN_PLUGINS tiene que ser un objeto de módulos");
+        std::process::exit(2);
+    };
+    modules
+        .iter()
+        .map(|(name, answers)| CannedPlugin {
+            // Igual que en el puente de verdad: el nombre llega en tiempo de
+            // ejecución y `NativeModule::name` lo quiere `&'static str`.
+            name: Box::leak(name.clone().into_boxed_str()),
+            answers: answers.as_object().cloned().unwrap_or_default(),
+        })
+        .collect()
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let path = args.next().unwrap_or_else(|| {
@@ -159,6 +220,11 @@ fn main() {
     // Un `device` de mentira: permite probar el camino completo de un módulo
     // nativo —promesa en JS, registro, respuesta, resolución— sin simulador.
     js.register_module(Box::new(FakeDevice));
+    // Y los plugins que declare `AN_PLUGINS`, si los hay.
+    for plugin in canned_plugins() {
+        println!("-- plugin de mentira: {}", plugin.name);
+        js.register_module(Box::new(plugin));
+    }
     if let Err(error) = js.eval(&path, &code) {
         eprintln!("{error}");
         std::process::exit(1);

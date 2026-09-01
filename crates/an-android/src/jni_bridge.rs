@@ -112,6 +112,9 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeNew(
 
         let events = new_event_queue();
         let mount = MountSide::new(JniHost::new(vm_host, host_ref));
+        // Los plugins que el shell registró antes de llegar aquí. Uno por
+        // nombre; lo que hacen vive en Java, así que estos solo llevan y traen.
+        let plugins = crate::plugins::host_plugins();
 
         let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
             let sink = crate::logging::AndroidLog::new(vm_device, device_ref);
@@ -120,6 +123,9 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeNew(
                 vm_module,
                 module_ref,
             )));
+            for plugin in plugins {
+                js.register_module(Box::new(plugin));
+            }
             Ok((js, ShadowSide::new(JniMeasurer::new(vm_measure, measure_ref), (width, height))))
         });
         let worker = match worker {
@@ -206,6 +212,11 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeFrame(
 ) -> jint {
     env.with_env(|env| -> Result<jint, jni::errors::Error> {
         let Some(runtime) = (unsafe { runtime(handle) }) else { return Ok(-1) };
+
+        // Las llamadas a plugins que dejó el motor se atienden aquí, que es el
+        // hilo de UI. Va antes del turno de JS para que una respuesta que
+        // llegue en el acto entre en este mismo frame.
+        crate::plugins::pump(env);
 
         // Se monta lo que el worker haya terminado desde el frame anterior, se le
         // manda el turno siguiente si no sigue ocupado, y se le espera lo que

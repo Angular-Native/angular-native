@@ -6,12 +6,14 @@
 //! por frame.
 
 pub mod modules;
+pub mod plugins;
 pub mod protocol;
 pub mod quickjs;
 pub mod runtime;
 pub mod worker;
 
 pub use modules::{ModuleRegistry, ModuleResult, NativeModule, Responder};
+pub use plugins::{HostPlugin, PluginBridge, PluginCall};
 pub use protocol::{apply, Encoder, ProtocolError};
 pub use quickjs::QuickJsRuntime;
 pub use worker::{Reply, Request, RuntimeWorker};
