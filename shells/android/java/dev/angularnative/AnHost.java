@@ -2389,6 +2389,15 @@ public final class AnHost {
         float width = probe.getMeasuredWidth() / density;
         float height = probe.getMeasuredHeight() / density;
 
+        // La barra de pestañas se aparta ella sola de la franja de gestos
+        // metiéndola como relleno propio. La sonda está suelta —sin ventana, sin
+        // márgenes que aplicar— así que ese hueco hay que sumarlo aquí: si no,
+        // los 80 dp de Material se reparten entre contenido y franja y el
+        // rótulo se queda con cero de alto.
+        if ("TabBar".equals(name)) {
+            height += bottomInsetDp();
+        }
+
         // Deslizadores y barras ocupan todo el ancho que se les dé; su medida
         // natural solo manda en el alto.
         boolean stretches = "Slider".equals(name) || "ProgressBar".equals(name);
@@ -2396,6 +2405,19 @@ public final class AnHost {
             width = availableWidthDp;
         }
         return pack(width, height);
+    }
+
+    /** Franja del sistema de abajo, en puntos. Cero si aún no se conoce. */
+    private float bottomInsetDp() {
+        android.view.WindowInsets insets = container.getRootWindowInsets();
+        if (insets == null) {
+            return 0f;
+        }
+        return insets.getInsets(
+                        android.view.WindowInsets.Type.systemBars()
+                                | android.view.WindowInsets.Type.displayCutout())
+                        .bottom
+                / density;
     }
 
     /** Ancho y alto en centésimas de punto, empaquetados en un long. */

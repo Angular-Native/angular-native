@@ -117,8 +117,6 @@ public final class AnTabBar extends BottomNavigationView {
                 }
             }
         }
-        // Después de rehacer el menú, no antes: al cambiar los elementos la
-        // barra vuelve al modo automático, que esconde los rótulos.
         setLabelVisibilityMode(LABEL_VISIBILITY_LABELED);
     }
 
