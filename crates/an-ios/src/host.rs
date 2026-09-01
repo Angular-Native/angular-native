@@ -540,7 +540,7 @@ impl UikitHost {
             attributed.addAttribute_value_range(
                 objc2_ui_kit::NSForegroundColorAttributeName,
                 &color,
-                objc2_foundation::NSRange { location: 0, length: string.len() },
+                objc2_foundation::NSRange { location: 0, length: string.len_utf16() },
             );
             field.setAttributedPlaceholder(Some(&attributed));
         }
@@ -604,7 +604,11 @@ impl UikitHost {
                 &string,
             )
         };
-        let range = objc2_foundation::NSRange { location: 0, length: string.len() };
+        // En UTF-16, que es como cuenta `NSString`. Con la longitud en bytes,
+        // cualquier texto con una tilde se sale del rango y `NSAttributedString`
+        // levanta una excepción: la app se cierra al montar la primera letra
+        // acentuada, y el volcado headless no lo ve porque ahí no hay UIKit.
+        let range = objc2_foundation::NSRange { location: 0, length: string.len_utf16() };
         if kern != 0.0 {
             let number = objc2_foundation::NSNumber::new_f64(kern as f64);
             unsafe {
@@ -681,12 +685,37 @@ impl UikitHost {
     /// Las dos props llegan sueltas y en cualquier orden, y cambiar la
     /// variante rehace la configuración de UIKit, que se lleva por delante el
     /// título y el color: hay que ponerlo todo de nuevo cada vez.
+    /// Rehace el botón entero con lo que lleve puesto.
+    ///
+    /// Variante, rótulo, subtítulo, icono, color y tipografía llegan en props
+    /// sueltas y en cualquier orden, y todas acaban en la misma
+    /// `UIButtonConfiguration`: cambiar una rehace la configuración y se lleva
+    /// por delante las otras cinco. Así que se guardan y se monta de una pieza.
     fn refresh_button(&self, id: NodeId) {
         let Some(HostView::Button(button)) = self.views.get(&id) else { return };
         let variant = self.button_variants.get(&id).map(String::as_str).unwrap_or("text");
+        let title = self.button_titles.get(&id).cloned().unwrap_or_default();
         let subtitle = self.button_subtitles.get(&id).cloned().unwrap_or_default();
         let icon = self.button_icons.get(&id).cloned();
-        let font = self.fonts.get(&id).map(|spec| self.build_font(spec));
+        let spec = self.fonts.get(&id).cloned();
+        let font = spec.as_ref().map(|spec| self.build_font(spec));
+        let raw_color = self.button_colors.get(&id).and_then(|raw| crate::color::parse(raw));
+        let color = raw_color.map(|(r, g, b, a)| {
+            objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(r, g, b, a)
+        });
+        // Con relleno, el rótulo va del color que se lea encima del fondo; sin
+        // relleno, del color pedido. Se calcula aquí y no se deja a UIKit
+        // porque el texto atribuido —el que lleva la tipografía— no hereda el
+        // color de la configuración: se quedaba del tinte, o sea verde sobre
+        // verde, o sea invisible.
+        let foreground = raw_color.map(|value| {
+            let (r, g, b, a) = if variant == "filled" {
+                crate::color::contrast_on(value)
+            } else {
+                value
+            };
+            objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(r, g, b, a)
+        });
         // `UIButtonConfiguration` es lo que da los botones actuales de iOS:
         // relleno, tintado, con contorno o pelado, con sus fondos y sus
         // esquinas. Un subtítulo, un icono o una tipografía propia solo se
@@ -694,8 +723,8 @@ impl UikitHost {
         // falta configuración aunque la variante sea la de solo rótulo.
         let needs_config =
             !subtitle.is_empty() || icon.is_some() || font.is_some() || variant != "text";
-        unsafe {
-            let config = match variant {
+        let config = unsafe {
+            match variant {
                 "filled" => {
                     Some(objc2_ui_kit::UIButtonConfiguration::filledButtonConfiguration(self.mtm))
                 }
@@ -712,62 +741,70 @@ impl UikitHost {
                     Some(objc2_ui_kit::UIButtonConfiguration::plainButtonConfiguration(self.mtm))
                 }
                 _ => None,
-            };
-            if let Some(config) = &config {
+            }
+        };
+        if let Some(config) = &config {
+            unsafe {
+                // Con configuración, todo va por ella y nada por las llamadas
+                // de siempre. Mezclar las dos vías —poner el rótulo con
+                // `setTitle:forState:` o el color con `tintColor` teniendo
+                // configuración— hace que UIKit rehaga la configuración por su
+                // cuenta, y en la variante de relleno el botón sale entero y
+                // sin texto.
+                config.setTitle(Some(&NSString::from_str(&title)));
                 if !subtitle.is_empty() {
                     config.setSubtitle(Some(&NSString::from_str(&subtitle)));
                 }
                 if let Some((name, position)) = &icon {
                     // El icono del botón se pide por nombre, igual que en
                     // `<Icon>`: es el símbolo del sistema, no un dibujo.
-                    config.setImage(crate::icons::symbol(name, 0.0, 400).as_deref());
+                    //
+                    // Y se pide al tamaño del rótulo. Sin decírselo viene al
+                    // suyo, que es el de una imagen suelta, y un botón con una
+                    // estrella el doble de alta que su texto no se parece a
+                    // ningún botón de iOS.
+                    let points = spec.as_ref().map(|spec| spec.size).unwrap_or(17.0);
+                    let weight = spec.as_ref().map(|spec| spec.weight).unwrap_or(400);
+                    config.setImage(crate::icons::symbol(name, points, weight).as_deref());
                     config.setImagePlacement(if position == "trailing" {
                         objc2_ui_kit::NSDirectionalRectEdge::Trailing
                     } else {
                         objc2_ui_kit::NSDirectionalRectEdge::Leading
                     });
+                    config.setImagePadding(6.0);
+                }
+                if let Some(color) = &color {
+                    // Con relleno el color pedido es el del fondo y el rótulo
+                    // va del que se lea encima; sin relleno es el del rótulo,
+                    // y con él el del icono.
+                    if variant == "filled" {
+                        config.setBaseBackgroundColor(Some(color));
+                    }
+                }
+                if let Some(foreground) = &foreground {
+                    config.setBaseForegroundColor(Some(foreground));
                 }
             }
+        }
+        unsafe {
             button.setConfiguration(config.as_deref());
-        }
-        if let Some(title) = self.button_titles.get(&id) {
-            // Con configuración, el rótulo con tipografía propia solo entra
-            // como texto atribuido: `titleLabel.font` lo pisa UIKit al
-            // resolver la configuración.
-            match (&font, unsafe { button.configuration() }) {
-                (Some(font), Some(config)) => unsafe {
-                    let attributed = objc2_foundation::NSMutableAttributedString::initWithString(
-                        self.mtm.alloc::<objc2_foundation::NSMutableAttributedString>(),
-                        &NSString::from_str(title),
-                    );
-                    attributed.addAttribute_value_range(
-                        objc2_ui_kit::NSFontAttributeName,
-                        font,
-                        objc2_foundation::NSRange { location: 0, length: title.len() },
-                    );
-                    config.setAttributedTitle(Some(&attributed));
-                    button.setConfiguration(Some(&config));
-                },
-                _ => unsafe {
-                    if let (Some(font), Some(label)) = (&font, button.titleLabel()) {
-                        label.setFont(Some(font));
-                    }
-                    button.setTitle_forState(
-                        Some(&NSString::from_str(title)),
-                        UIControlState::Normal,
-                    )
-                },
+            // La letra se le pide al rótulo en los dos casos. Con
+            // configuración, UIKit puede resolver la suya por encima —eso lo
+            // decide él y no hay forma de pedírselo sin un transformador de
+            // atributos—, así que `[fontSize]` manda seguro en la variante de
+            // solo texto y es una petición en las demás. Está apuntado en
+            // docs/wrapper-nativo.md.
+            if let (Some(font), Some(label)) = (&font, button.titleLabel()) {
+                label.setFont(Some(font));
             }
-        }
-        let color = self.button_colors.get(&id).and_then(|c| crate::color::to_uicolor(c));
-        if let Some(color) = color {
-            // El tinte manda sobre el fondo del relleno y sobre el tono.
-            unsafe { button.setTintColor(Some(&color)) };
-            // El color del rótulo solo se fuerza sin configuración: con ella
-            // lo elige UIKit para que contraste, y forzarlo dejaba el rótulo
-            // del mismo color que su fondo, o sea invisible.
-            if variant == "text" {
-                unsafe { button.setTitleColor_forState(Some(&color), UIControlState::Normal) };
+            if config.is_none() {
+                // Sin configuración manda el botón: rótulo y color por las
+                // llamadas de siempre.
+                button.setTitle_forState(Some(&NSString::from_str(&title)), UIControlState::Normal);
+                if let Some(color) = &color {
+                    button.setTitleColor_forState(Some(color), UIControlState::Normal);
+                    button.setTintColor(Some(color));
+                }
             }
         }
     }

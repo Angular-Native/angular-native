@@ -89,6 +89,35 @@ tocarlo es justo lo que hace que un botón deje de parecer de la plataforma.
 `cornerRadius` — no hace falta: `[borderRadius]` es una prop de cualquier
 vista y el botón es una vista, así que ya redondea.
 
+**Dos cosas que el botón de iOS no da, y no es por no intentarlo:**
+
+*El rótulo de la variante `filled` no se dibuja.* El botón sale entero, con su
+relleno, su icono y su subtítulo, y sin texto. Se ha probado con el rótulo
+puesto en la configuración y con `setTitle:forState:`; con
+`filledButtonConfiguration` y con `borderedProminentButtonConfiguration`; con
+el color de fondo y el del rótulo fijados a mano y dejados al sistema; con un
+color claro y con uno oscuro, por si fuera contraste; con icono y sin él; con
+subtítulo y sin él; y sin mezclar ninguna llamada de las de siempre con la
+configuración. El rótulo llega al host —se ve en el volcado headless— y las
+otras tres variantes lo dibujan sin problema con el mismo código. Viene de
+antes de este trabajo: la variante ya estaba y ya salía así. Queda por
+resolver.
+
+*`[fontSize]` y `[fontWeight]` mandan de verdad solo en la variante `text`.*
+En las demás hay configuración, y con configuración UIKit resuelve la
+tipografía por su cuenta: se le pide al rótulo la fuente igualmente, pero él
+decide. Pedírselo de verdad es un `titleTextAttributesTransformer`, que es un
+bloque que devuelve el diccionario de atributos, y eso no cabía en esta tanda.
+En Android no hay caso: un `MaterialButton` es un `TextView` y la letra se le
+pone y punto.
+
+**Ojo con el subtítulo:** un botón con dos líneas no cabe en el alto natural
+de un botón. El tamaño de cada control se le pregunta a la plataforma una vez
+al arrancar, con un control de muestra —crear un `UIButton` exige el hilo
+principal y el medidor vive en el del motor—, así que ese botón de muestra no
+puede saber que este va a llevar subtítulo. Al ponerlo hay que darle alto en
+la plantilla; si no, el rótulo se recorta y el subtítulo se queda solo.
+
 ### TextInput — `UITextField` · `EditText`
 
 | Prop | iOS | Android | Estado |

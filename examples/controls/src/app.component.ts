@@ -74,9 +74,18 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
           </Text>
         </View>
 
-        <View [style.flexDirection]="'row'" [style.gap]="'12'">
+        <!--
+          El botón del subtítulo lleva alto propio: el tamaño natural de un
+          control se pregunta una vez al arrancar, con uno de muestra, y ese no
+          sabe que este va a llevar dos líneas.
+        -->
+        <View
+          [style.flexDirection]="'row'"
+          [style.alignItems]="'flex-start'"
+          [style.gap]="'12'">
           <Button
             [style.flexGrow]="'1'"
+            [style.height]="'58'"
             [title]="'Modal'"
             [variant]="'filled'"
             [icon]="'star'"
