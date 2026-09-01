@@ -255,6 +255,21 @@ impl JsRuntime for QuickJsRuntime {
         })
     }
 
+    fn eval_hot(&mut self, name: &str, code: &str) -> Result<bool, JsError> {
+        self.context.with(|ctx| {
+            // La marca se pone a `false` antes de evaluar: si el bundle nuevo
+            // revienta a medias, lo que quedara en el global no puede hacer
+            // creer que salió bien.
+            ctx.globals()
+                .set("__anHotOk", false)
+                .map_err(|e| JsError::Engine(format!("{name}: {e}")))?;
+            ctx.eval::<(), _>(code)
+                .catch(&ctx)
+                .map_err(|e| JsError::Exception(format!("{name}: {e}")))?;
+            Ok(ctx.globals().get::<_, bool>("__anHotOk").unwrap_or(false))
+        })
+    }
+
     fn dispatch_events(&mut self, events: &[HostEvent]) -> Result<(), JsError> {
         if events.is_empty() {
             return Ok(());

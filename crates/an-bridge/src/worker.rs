@@ -97,25 +97,36 @@ impl RuntimeWorker {
                             ..Reply::default()
                         },
                         Request::Reload { name, code } => {
-                            // El estado que la app quiera conservar se pide
-                            // antes de tirar el motor y se le devuelve al
-                            // nuevo antes de evaluar nada: los componentes lo
-                            // leen mientras se construyen.
-                            let state = js.take_hot_state();
-                            shadow.reset();
-                            pending_layout.clear();
-                            match QuickJsRuntime::new() {
-                                Ok(fresh) => {
-                                    js = fresh;
-                                    let mut error =
-                                        js.restore_hot_state(&state).err().map(|e| e.to_string());
-                                    if error.is_none() {
-                                        error = js.eval(&name, &code).err().map(|e| e.to_string());
+                            // Primero se intenta en caliente: si el bundle
+                            // nuevo encaja con lo que ya está montado, se le
+                            // cambian las definiciones a los componentes y las
+                            // instancias siguen vivas, con su estado. El árbol
+                            // no se toca: lo que Angular rehaga sale por el
+                            // búfer de comandos como cualquier otro cambio.
+                            if matches!(js.eval_hot(&name, &code), Ok(true)) {
+                                Reply::default()
+                            } else {
+                                // El estado que la app quiera conservar se pide
+                                // antes de tirar el motor y se le devuelve al
+                                // nuevo antes de evaluar nada: los componentes lo
+                                // leen mientras se construyen.
+                                let state = js.take_hot_state();
+                                shadow.reset();
+                                pending_layout.clear();
+                                match QuickJsRuntime::new() {
+                                    Ok(fresh) => {
+                                        js = fresh;
+                                        let restored = js.restore_hot_state(&state);
+                                        let mut error = restored.err().map(|e| e.to_string());
+                                        if error.is_none() {
+                                            let evaluated = js.eval(&name, &code);
+                                            error = evaluated.err().map(|e| e.to_string());
+                                        }
+                                        Reply { error, ..Reply::default() }
                                     }
-                                    Reply { error, ..Reply::default() }
-                                }
-                                Err(error) => {
-                                    Reply { error: Some(error.to_string()), ..Reply::default() }
+                                    Err(error) => {
+                                        Reply { error: Some(error.to_string()), ..Reply::default() }
+                                    }
                                 }
                             }
                         }

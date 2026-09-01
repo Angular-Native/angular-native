@@ -136,6 +136,10 @@ fn main() {
     let step: f64 = args.next().and_then(|v| v.parse().ok()).unwrap_or(1000.0);
 
     let code = std::fs::read_to_string(&path).expect("no se pudo leer el bundle");
+    // `AN_HOT` apunta a un segundo bundle: el mismo ejemplo con algo cambiado.
+    // Se evalúa encima del primero para probar el refresco en caliente sin
+    // simulador ni servidor de desarrollo.
+    let hot = std::env::var("AN_HOT").ok();
     // `AN_STACK` permite tantear el límite de pila que necesita una app.
     let stack = std::env::var("AN_STACK")
         .ok()
@@ -171,6 +175,19 @@ fn main() {
         let pending = renderer.drain_events();
         if !pending.is_empty() {
             js.dispatch_events(&pending).expect("despacho de eventos");
+        }
+
+        // Cerca del final, cuando ya hubo toque y hay estado que perder, entra
+        // el bundle nuevo.
+        if let Some(other) = hot.as_ref() {
+            if frame + 2 == frames {
+                let updated = std::fs::read_to_string(other).expect("no se pudo leer el bundle");
+                match js.eval_hot(other, &updated) {
+                    Ok(true) => println!("-- refresco en caliente: sí"),
+                    Ok(false) => println!("-- refresco en caliente: no, toca reiniciar"),
+                    Err(error) => println!("-- refresco en caliente: falló ({error})"),
+                }
+            }
         }
 
         // A mitad de la ejecución, un toque en el primer nodo que escuche.

@@ -4,9 +4,16 @@
 //! WebSocket. La app se descarga el bundle nuevo y se reinicia sobre la marcha,
 //! sin volver a pasar por Xcode ni por el simulador.
 //!
-//! La recarga es completa: el estado se pierde. Preservarlo entre recargas
-//! —el *fast refresh* de React Native— exige saber qué componentes cambiaron y
-//! reconciliar el árbol, y es un proyecto en sí mismo.
+//! La recarga es en caliente siempre que se pueda: el bundle de desarrollo va
+//! partido en dos mitades —el framework arriba, la app abajo— y solo se
+//! reevalúa la de abajo, encima de la que ya corre. Angular se queda con la
+//! instancia de cada componente y le cambia la definición, así que el estado
+//! sobrevive: sigues en la misma pantalla y con lo que llevaras escrito.
+//!
+//! Si lo que cambió está en la mitad de arriba, no hay refresco que valga —en
+//! el intérprete solo cabe una copia de Angular— y se reinicia entero. Lo mismo
+//! si el árbol de componentes ya no encaja. Ver
+//! `packages/platform-native/src/hot-refresh.ts`.
 
 use std::path::PathBuf;
 use std::sync::Arc;

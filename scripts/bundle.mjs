@@ -5,7 +5,8 @@
 // de Angular lo hace con un plugin de Babel; sin él, la primera clase de
 // `@angular/common` que se instancia pide el compilador en tiempo de
 // ejecución, que es justo lo que este proyecto no lleva al dispositivo.
-import { readFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { readFile, writeFile } from 'node:fs/promises'
 import process from 'node:process'
 
 import { ConsoleLogger, LogLevel, NodeJSFileSystem } from '@angular/compiler-cli'
@@ -61,11 +62,9 @@ const angularLinker = {
   }
 }
 
-await esbuild.build({
-  entryPoints: [entry],
-  outfile,
+/** Lo común a las dos mitades y a la build de producción. */
+const common = {
   bundle: true,
-  format: 'iife',
   platform: 'neutral',
   target: 'es2022',
   // `es2015` antes que `module`: rxjs publica en `module` una build ES5
@@ -73,9 +72,109 @@ await esbuild.build({
   // Es la misma preferencia que aplica el CLI de Angular.
   mainFields: ['es2015', 'module', 'main'],
   conditions: ['es2015', 'module'],
-  alias,
-  minify: release,
-  define: release ? { ngDevMode: 'false', ngJitMode: 'false' } : {},
   logLevel: 'warning',
   plugins: [angularLinker]
-})
+}
+
+if (release) {
+  await esbuild.build({
+    ...common,
+    entryPoints: [entry],
+    outfile,
+    format: 'iife',
+    alias,
+    minify: true,
+    // `ngDevMode` a false quita las comprobaciones de desarrollo de Angular,
+    // que son casi la mitad del bundle.
+    define: { ngDevMode: 'false', ngJitMode: 'false' }
+  })
+} else {
+  await writeFile(outfile, await split())
+}
+
+/**
+ * El bundle de desarrollo, partido en dos mitades dentro de un mismo fichero.
+ *
+ * Arriba va lo que no cambia mientras se programa —Angular, rxjs y los
+ * paquetes del framework, entre ellos el que guarda el contador de nodos y el
+ * búfer de comandos—, envuelto en un `if` que solo entra la primera vez. Abajo
+ * va el código de la app, en un módulo que puede volver a evaluarse encima del
+ * que ya corre.
+ *
+ * Esa es toda la condición para que el refresco en caliente funcione: si al
+ * recargar se reevaluara Angular entero, en el intérprete habría dos copias, y
+ * la que sabe qué vistas hay montadas sería la vieja. Cambiar los componentes
+ * en la copia nueva no movería nada en pantalla.
+ */
+async function split() {
+  // La mitad de la app se empaqueta primero: de ahí sale la lista de lo que
+  // hay que meter en la otra.
+  const shared = new Set()
+  const externalize = {
+    name: 'externalize',
+    setup(build) {
+      // Todo lo que no sea una ruta relativa es un paquete, y todos los
+      // paquetes van arriba. Las primitivas incluidas: `platform-native`
+      // depende de ellas —`NativeStack` monta un `StackView`—, así que no se
+      // pueden separar. Tocar una primitiva provoca recarga entera, que es lo
+      // correcto: es código del framework, no de la app.
+      build.onResolve({ filter: /^[^./]/ }, (args) => {
+        shared.add(args.path)
+        return { path: args.path, external: true }
+      })
+    }
+  }
+
+  const app = await esbuild.build({
+    ...common,
+    entryPoints: [entry],
+    write: false,
+    format: 'cjs',
+    plugins: [...common.plugins, externalize]
+  })
+
+  const ids = [...shared].sort()
+  const imports = ids.map((id, i) => `import * as m${i} from ${JSON.stringify(id)}`).join('\n')
+  const table = ids.map((id, i) => `  [${JSON.stringify(id)}]: m${i}`).join(',\n')
+  const vendorEntry = `${imports}
+globalThis.__anModules = {
+${table}
+}
+globalThis.__anRequire = (id) => {
+  const mod = globalThis.__anModules[id]
+  if (!mod) {
+    throw new Error('angular-native: el bundle no trae el módulo ' + id)
+  }
+  return mod
+}
+`
+
+  const vendor = await esbuild.build({
+    ...common,
+    stdin: { contents: vendorEntry, resolveDir: process.cwd(), loader: 'js' },
+    write: false,
+    format: 'iife',
+    alias
+  })
+
+  const vendorCode = vendor.outputFiles[0].text
+  // La firma dice qué mitad de arriba está cargada. Si al recargar no coincide
+  // —se tocó `platform-native`, o una dependencia—, la mitad de abajo no se
+  // evalúa: pedir el reinicio entero es lo único honesto, porque el código
+  // nuevo de arriba no puede entrar en un intérprete que ya tiene el viejo.
+  const stamp = createHash('sha256').update(vendorCode).digest('hex').slice(0, 16)
+
+  return `// bundle de desarrollo: mitad compartida + mitad recargable
+if (!globalThis.__anModules) {
+${vendorCode}
+globalThis.__anVendor = ${JSON.stringify(stamp)}
+}
+if (globalThis.__anVendor !== ${JSON.stringify(stamp)}) {
+  globalThis.__anHotOk = false
+} else {
+  ;(function (require, module, exports) {
+${app.outputFiles[0].text}
+  })(globalThis.__anRequire, { exports: {} }, {})
+}
+`
+}

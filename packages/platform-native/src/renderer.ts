@@ -109,8 +109,14 @@ export class NativeRenderer extends Renderer2 {
 
   override destroyNode = (node: NativeNode): void => {
     if (node.destroyed) return
+    // Se pregunta antes de marcar: `mounted` es «materializado y vivo», así
+    // que marcar primero lo pone a `false` y la baja no llegaría nunca al
+    // core. Normalmente no se nota —Angular quita del árbol antes de
+    // destruir—, pero al refrescar en caliente destruye primero, y entonces
+    // la pantalla vieja se quedaba debajo de la nueva.
+    const wasMounted = node.mounted
     markDestroyed(node)
-    if (node.mounted) dom.destroyNode(node.id)
+    if (wasMounted) dom.destroyNode(node.id)
   }
 
   appendChild(parent: NativeNode, child: NativeNode): void {

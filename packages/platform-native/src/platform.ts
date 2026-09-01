@@ -17,6 +17,7 @@ import {
 } from '@angular/core'
 
 import { createFakeDocument } from './document'
+import { hotRefresh, rememberApplication, runningApplication } from './hot-refresh'
 import { dom, NativeNode } from './native-node'
 import { NativeRendererFactory } from './renderer'
 
@@ -58,11 +59,27 @@ export async function bootstrapNativeApplication(
   rootComponent: Type<unknown>,
   config: NativeApplicationConfig = {}
 ): Promise<ApplicationRef> {
+  const already = runningApplication()
+  if (already !== null) {
+    // Segunda evaluación del bundle: no es un arranque, es un guardado. En vez
+    // de montar otra app encima, se le pasan a la que hay las definiciones
+    // nuevas. Quien pidió la recarga mira la marca para saber si hizo falta
+    // reiniciar de verdad.
+    const globals = globalThis as typeof globalThis & { __anHotOk?: boolean }
+    try {
+      globals.__anHotOk = hotRefresh(rootComponent)
+    } catch (error) {
+      console.warn('[angular-native] el refresco en caliente falló, se reinicia:', error)
+      globals.__anHotOk = false
+    }
+    return already
+  }
+
   const document = createFakeDocument()
   setDocument(document)
   const root = createRootNode()
 
-  return internalCreateApplication({
+  const app = await internalCreateApplication({
     rootComponent,
     appProviders: [
       provideZonelessChangeDetection(),
@@ -81,4 +98,6 @@ export async function bootstrapNativeApplication(
       ...(config.providers ?? [])
     ]
   })
+  rememberApplication(rootComponent, app)
+  return app
 }

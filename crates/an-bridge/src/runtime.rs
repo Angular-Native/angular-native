@@ -54,6 +54,10 @@ pub trait JsRuntime {
     /// búfer de comandos que haya salido de todo ello.
     fn tick(&mut self, now_ms: f64) -> Result<Vec<u8>, JsError>;
 
+    /// Evalúa un bundle nuevo encima del que ya está corriendo. Devuelve si la
+    /// app pudo coserse en caliente; si no, hay que recargar entero.
+    fn eval_hot(&mut self, name: &str, code: &str) -> Result<bool, JsError>;
+
     /// Estado que la app quiere conservar si la recargan. Se pide justo antes
     /// de tirar el motor.
     fn take_hot_state(&mut self) -> String;
