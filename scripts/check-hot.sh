@@ -28,6 +28,14 @@ cp "$COPIA" "$FUENTE"
 
 OUTPUT="$(AN_HOT="$DESPUES" cargo run -q -p an-bridge --example headless -- "$ANTES" 6 2>&1)"
 
+# Si el runner no trae el soporte de `AN_HOT` no hay refresco que medir, y lo
+# que sale son cuatro fallos que no dicen nada. Suele pasar por un binario que
+# cargo dio por bueno sin serlo: `touch` al fuente y a compilar otra vez.
+if ! grep -q 'refresco en caliente' <<<"$OUTPUT"; then
+  echo "  FALLO el runner headless ignoró AN_HOT; recompila: cargo build -p an-bridge --example headless"
+  exit 1
+fi
+
 fail=0
 check() {
   if grep -qE -- "$1" <<<"$OUTPUT"; then
