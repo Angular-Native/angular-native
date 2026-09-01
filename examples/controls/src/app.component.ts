@@ -106,6 +106,34 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
             (press)="alert.set(true)"></an-button>
         </an-view>
 
+        <!--
+          Las cuatro variantes, con el mismo rótulo y el mismo color, para ver
+          de un vistazo que las cuatro lo dibujan: la de relleno invierte el
+          color del texto y las otras tres lo pintan del color pedido.
+        -->
+        <an-view [style.flexDirection]="'row'" [style.gap]="'8'">
+          <an-button
+            [style.flexGrow]="'1'"
+            [title]="'Texto'"
+            [variant]="'text'"
+            [color]="'#6ee7b7'"></an-button>
+          <an-button
+            [style.flexGrow]="'1'"
+            [title]="'Relleno'"
+            [variant]="'filled'"
+            [color]="'#6ee7b7'"></an-button>
+          <an-button
+            [style.flexGrow]="'1'"
+            [title]="'Tonal'"
+            [variant]="'tonal'"
+            [color]="'#6ee7b7'"></an-button>
+          <an-button
+            [style.flexGrow]="'1'"
+            [title]="'Borde'"
+            [variant]="'outlined'"
+            [color]="'#6ee7b7'"></an-button>
+        </an-view>
+
         <an-text
           [fontSize]="13"
           [color]="'#6b7a99'"

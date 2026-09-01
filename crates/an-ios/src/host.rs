@@ -8,6 +8,7 @@ use an_core::{NodeId, NodeKind, PropValue, Rect};
 use an_host::{EventQueue, HostRenderer};
 use objc2::rc::Retained;
 use objc2::{MainThreadMarker, Message};
+use core::ptr::NonNull;
 use objc2_core_foundation::{CGAffineTransform, CGPoint, CGRect, CGSize};
 use objc2_foundation::NSString;
 use block2::RcBlock;
@@ -745,12 +746,25 @@ impl UikitHost {
         };
         if let Some(config) = &config {
             unsafe {
+                // Antes de nada, borrar lo que dejó escrito la vía de siempre.
+                //
+                // Las props llegan sueltas y `variant` llega después que
+                // `title` y `color`, así que la primera pasada de cada botón
+                // corre siempre como si fuera `text`: sin configuración, y por
+                // tanto por `setTitle:forState:` y `setTitleColor:forState:`.
+                // Ese color se queda pegado al botón, y cuando después se le
+                // monta una configuración UIKit lo sigue aplicando **al
+                // título** por encima del `baseForegroundColor` —al subtítulo
+                // no, que sí lo respeta—. En las tres variantes en las que el
+                // rótulo va del color pedido eso no se nota, porque el residuo
+                // vale lo mismo; en `filled`, donde el rótulo va del color que
+                // contrasta con el fondo, el residuo pintaba el texto del
+                // mismo color que el relleno. De ahí el botón entero y sin
+                // rótulo.
+                button.setTitleColor_forState(None, UIControlState::Normal);
+                button.setTitle_forState(None, UIControlState::Normal);
                 // Con configuración, todo va por ella y nada por las llamadas
-                // de siempre. Mezclar las dos vías —poner el rótulo con
-                // `setTitle:forState:` o el color con `tintColor` teniendo
-                // configuración— hace que UIKit rehaga la configuración por su
-                // cuenta, y en la variante de relleno el botón sale entero y
-                // sin texto.
+                // de siempre.
                 config.setTitle(Some(&NSString::from_str(&title)));
                 if !subtitle.is_empty() {
                     config.setSubtitle(Some(&NSString::from_str(&subtitle)));
@@ -784,16 +798,44 @@ impl UikitHost {
                 if let Some(foreground) = &foreground {
                     config.setBaseForegroundColor(Some(foreground));
                 }
+                if let Some(font) = &font {
+                    // La tipografía de un botón con configuración la resuelve
+                    // UIKit: pedírsela al `titleLabel` es una sugerencia que
+                    // pisa en cuanto vuelve a montar el título. El sitio donde
+                    // manda de verdad es este transformador, que recibe los
+                    // atributos que UIKit iba a usar y devuelve los que se
+                    // usan. Se cambia solo la fuente: el color y lo demás
+                    // salen de la configuración y hay que dejarlos pasar.
+                    let font = font.clone();
+                    let block = RcBlock::new(
+                        move |attributes: NonNull<
+                            objc2_foundation::NSDictionary<
+                                objc2_foundation::NSAttributedStringKey,
+                                objc2::runtime::AnyObject,
+                            >,
+                        >| {
+                            let incoming = unsafe { attributes.as_ref() };
+                            let out = objc2_foundation::NSMutableDictionary::
+                                dictionaryWithDictionary(incoming);
+                            out.insert(objc2_ui_kit::NSFontAttributeName, font.as_ref());
+                            // El bloque devuelve el diccionario en +0, así que
+                            // se suelta en el pool: quedárselo lo filtra y
+                            // soltarlo aquí lo mata antes de que UIKit lo lea.
+                            let out: Retained<objc2_foundation::NSDictionary<_, _>> =
+                                out.into_super();
+                            NonNull::new(Retained::autorelease_return(out)).unwrap()
+                        },
+                    );
+                    config.setTitleTextAttributesTransformer(RcBlock::as_ptr(&block));
+                }
             }
         }
         unsafe {
             button.setConfiguration(config.as_deref());
             // La letra se le pide al rótulo en los dos casos. Con
-            // configuración, UIKit puede resolver la suya por encima —eso lo
-            // decide él y no hay forma de pedírselo sin un transformador de
-            // atributos—, así que `[fontSize]` manda seguro en la variante de
-            // solo texto y es una petición en las demás. Está apuntado en
-            // docs/wrapper-nativo.md.
+            // configuración quien manda es el transformador de arriba y esto
+            // sobra; sin ella no hay transformador que valga y esta es la
+            // única vía, así que se deja para las dos.
             if let (Some(font), Some(label)) = (&font, button.titleLabel()) {
                 label.setFont(Some(font));
             }

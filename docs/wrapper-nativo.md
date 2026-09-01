@@ -75,8 +75,8 @@ Leyenda: **hoy** = lo que ya existía; **nuevo** = lo que añade este trabajo;
 | `enabled` | `UIControl.isEnabled` | `setEnabled` | nuevo |
 | `icon` | `configuration.image` (SF Symbol) | `setIcon` (Material Symbol) | nuevo |
 | `iconPosition` `leading\|trailing` | `imagePlacement` | `setIconGravity` | nuevo |
-| `fontSize` | `titleLabel.font` | `setTextSize` | nuevo |
-| `fontWeight` | `titleLabel.font` | `setTypeface` | nuevo |
+| `fontSize` | `titleLabel.font` o `titleTextAttributesTransformer` | `setTextSize` | nuevo |
+| `fontWeight` | `titleLabel.font` o `titleTextAttributesTransformer` | `setTypeface` | nuevo |
 | `[ios].subtitle` | `configuration.subtitle` | — | nuevo |
 | `[android].rippleColor` | — | `setRippleColor` | nuevo |
 | `[android].allCaps` | — | `setAllCaps` | nuevo |
@@ -89,27 +89,46 @@ tocarlo es justo lo que hace que un botón deje de parecer de la plataforma.
 `cornerRadius` — no hace falta: `[borderRadius]` es una prop de cualquier
 vista y el botón es una vista, así que ya redondea.
 
-**Dos cosas que el botón de iOS no da, y no es por no intentarlo:**
+**El rótulo de la variante `filled`: resuelto.** Era un residuo de la vía
+antigua del `UIButton`, no un problema de contraste ni de configuración.
 
-*El rótulo de la variante `filled` no se dibuja.* El botón sale entero, con su
-relleno, su icono y su subtítulo, y sin texto. Se ha probado con el rótulo
-puesto en la configuración y con `setTitle:forState:`; con
-`filledButtonConfiguration` y con `borderedProminentButtonConfiguration`; con
-el color de fondo y el del rótulo fijados a mano y dejados al sistema; con un
-color claro y con uno oscuro, por si fuera contraste; con icono y sin él; con
-subtítulo y sin él; y sin mezclar ninguna llamada de las de siempre con la
-configuración. El rótulo llega al host —se ve en el volcado headless— y las
-otras tres variantes lo dibujan sin problema con el mismo código. Viene de
-antes de este trabajo: la variante ya estaba y ya salía así. Queda por
-resolver.
+El rótulo *sí* se dibujaba, y en su sitio: el volcado de la jerarquía real de
+la vista —recorrer las subvistas del `UIButton` e imprimir clase, marco, texto
+y color de cada una— enseñaba un `UILabel` con `text="Modal"`, marco
+`47x20.3`, visible y con alfa 1. Lo que enseñaba además es de qué color:
+`0.431373 0.905882 0.717647`, o sea `#6ee7b7`, el mismo verde del relleno. El
+subtítulo, en cambio, salía negro, que es el que le tocaba. Texto del color
+del fondo, no texto que falta.
 
-*`[fontSize]` y `[fontWeight]` mandan de verdad solo en la variante `text`.*
-En las demás hay configuración, y con configuración UIKit resuelve la
-tipografía por su cuenta: se le pide al rótulo la fuente igualmente, pero él
-decide. Pedírselo de verdad es un `titleTextAttributesTransformer`, que es un
-bloque que devuelve el diccionario de atributos, y eso no cabía en esta tanda.
-En Android no hay caso: un `MaterialButton` es un `TextView` y la letra se le
-pone y punto.
+El verde venía de una pasada anterior sobre el mismo botón. Las props llegan
+sueltas y en cualquier orden, y `variant` llega **después** que `title` y
+`color`, así que la primera vez que se monta cada botón se monta como si fuera
+`text`: sin configuración, y por tanto por `setTitle:forState:` y
+`setTitleColor:forState:`. Ese color se queda escrito en el botón, y cuando
+después se le pone una `UIButtonConfiguration` UIKit lo sigue aplicando **al
+título** por encima del `baseForegroundColor` de la configuración. Al subtítulo
+no: ese no tiene equivalente en la API antigua y sí respeta la configuración.
+De ahí el síntoma exacto —relleno, icono y subtítulo sí; rótulo no— y de ahí
+que las otras tres variantes salieran bien: en ellas el rótulo va del color
+pedido, que es justo lo que valía el residuo, así que pisarlo no se notaba.
+`filled` es la única en la que el rótulo va del color que contrasta con el
+fondo, y por eso es la única en la que el residuo lo hacía invisible.
+
+Por eso no lo encontró ninguna de las pruebas anteriores: todas cambiaban la
+última pasada, y el estropicio lo dejaba la primera. El arreglo es borrar el
+residuo —`setTitleColor:forState:` a `nil` y el título de la vía antigua
+también— justo antes de montar la configuración. `contrast_on` ya estaba y ya
+funcionaba: el subtítulo negro sobre verde lo demostraba.
+
+*`[fontSize]` y `[fontWeight]` ya mandan en las cuatro variantes.* Con
+configuración, pedirle la fuente al `titleLabel` es una sugerencia que UIKit
+pisa en cuanto vuelve a montar el título; el sitio donde manda de verdad es
+`titleTextAttributesTransformer`, un bloque que recibe los atributos que UIKit
+iba a usar y devuelve los que se usan. Se cambia solo la fuente y se deja pasar
+el resto, que es de dónde sale el color. Ojo al depurarlo: forzar
+`layoutIfNeeded()` sobre estos botones en cada frame —cosa que hacía el volcado
+de diagnóstico— deja al motor dando vueltas y la pantalla en blanco; el
+transformador por sí solo no.
 
 **Ojo con el subtítulo:** un botón con dos líneas no cabe en el alto natural
 de un botón. El tamaño de cada control se le pregunta a la plataforma una vez
