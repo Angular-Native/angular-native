@@ -72,8 +72,22 @@ public final class AnHost {
     private final SparseArray<TextWatcher> watchers = new SparseArray<>();
     /** Radios por esquina en puntos: arriba-izq, arriba-der, abajo-der, abajo-izq. */
     private final SparseArray<float[]> corners = new SparseArray<>();
-    /** Tipografía pendiente por nodo: llega en props sueltas y hay que juntarla. */
-    private final SparseArray<float[]> fontState = new SparseArray<>();
+    /**
+     * La tipografía llega en props sueltas —familia, cursiva, peso— y
+     * `Typeface.create` las quiere juntas: se guardan hasta poder aplicarlas.
+     */
+    private final SparseArray<FontState> fontState = new SparseArray<>();
+
+    /** Lo que se sabe de la letra de un nodo, según va llegando. */
+    private static final class FontState {
+        String family;
+        boolean italic;
+        boolean bold;
+        /** Espaciado entre letras en puntos; Android lo quiere en emes. */
+        Float letterSpacing;
+        /** Alto de línea en puntos. */
+        Float lineHeight;
+    }
     /** Sentido de la próxima transición de cada pila: `push`, `pop` o nada. */
     private final SparseArray<String> transitions = new SparseArray<>();
     /** Pantallas que entraron en este frame y aún no se han animado. */
@@ -1218,13 +1232,40 @@ public final class AnHost {
                     if (size != null) {
                         ((TextView) view)
                                 .setTextSize(TypedValue.COMPLEX_UNIT_PX, size * density);
+                        // El espaciado entre letras va en emes: al cambiar el
+                        // tamaño cambia lo que vale una eme.
+                        applyTextMetrics(id, (TextView) view);
                     }
                 }
                 break;
             case "fontWeight":
                 if (view instanceof TextView) {
-                    boolean bold = "bold".equals(value) || weightOf(value) >= 600;
-                    ((TextView) view).setTypeface(null, bold ? Typeface.BOLD : Typeface.NORMAL);
+                    fontStateOf(id).bold = "bold".equals(value) || weightOf(value) >= 600;
+                    applyTypeface(id, (TextView) view);
+                }
+                break;
+            case "fontStyle":
+                if (view instanceof TextView) {
+                    fontStateOf(id).italic = "italic".equals(value);
+                    applyTypeface(id, (TextView) view);
+                }
+                break;
+            case "fontFamily":
+                if (view instanceof TextView) {
+                    fontStateOf(id).family = value;
+                    applyTypeface(id, (TextView) view);
+                }
+                break;
+            case "letterSpacing":
+                if (view instanceof TextView) {
+                    fontStateOf(id).letterSpacing = parseFloat(value);
+                    applyTextMetrics(id, (TextView) view);
+                }
+                break;
+            case "lineHeight":
+                if (view instanceof TextView) {
+                    fontStateOf(id).lineHeight = parseFloat(value);
+                    applyTextMetrics(id, (TextView) view);
                 }
                 break;
             case "textAlign":
@@ -1284,6 +1325,44 @@ public final class AnHost {
             case "editable":
                 if (view instanceof EditText) {
                     ((EditText) view).setEnabled(!"false".equals(value));
+                }
+                break;
+            case "secureTextEntry":
+                if (view instanceof EditText) {
+                    EditText secret = (EditText) view;
+                    secret.setInputType(
+                            android.text.InputType.TYPE_CLASS_TEXT
+                                    | ("true".equals(value)
+                                            ? android.text.InputType
+                                                    .TYPE_TEXT_VARIATION_PASSWORD
+                                            : android.text.InputType
+                                                    .TYPE_TEXT_VARIATION_NORMAL));
+                    // Un campo de contraseña se dibuja en monoespaciada salvo
+                    // que se le devuelva la suya después de cambiarle el tipo.
+                    applyTypeface(id, secret);
+                }
+                break;
+            case "showsScrollIndicator":
+                if (view instanceof ScrollView) {
+                    boolean shown = !"false".equals(value);
+                    view.setVerticalScrollBarEnabled(shown);
+                    view.setHorizontalScrollBarEnabled(shown);
+                }
+                break;
+            case "bounces":
+                if (view instanceof ScrollView) {
+                    // El rebote de iOS aquí es el estirón del final del
+                    // desplazamiento: el mismo sitio del gesto, dibujado como
+                    // lo dibuja cada plataforma.
+                    view.setOverScrollMode(
+                            "false".equals(value)
+                                    ? View.OVER_SCROLL_NEVER
+                                    : View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+                }
+                break;
+            case "refreshing":
+                if (view instanceof AnScrollView) {
+                    ((AnScrollView) view).setRefreshing("true".equals(value));
                 }
                 break;
             default:
@@ -1362,6 +1441,58 @@ public final class AnHost {
         }
         backgroundOf(view)
                 .setStroke(Math.round(width[0] * density), color == null ? 0 : color);
+    }
+
+    private FontState fontStateOf(int id) {
+        FontState state = fontState.get(id);
+        if (state == null) {
+            state = new FontState();
+            fontState.put(id, state);
+        }
+        return state;
+    }
+
+    /**
+     * Familia, cursiva y negrita van juntas o no van.
+     *
+     * `setTypeface(null, style)` conserva la familia y `Typeface.create` pide
+     * el estilo, así que aplicar una sola de las tres props borra las otras
+     * dos. Se guardan las tres y se rehace la tipografía entera.
+     */
+    private void applyTypeface(int id, TextView text) {
+        FontState state = fontStateOf(id);
+        int style = state.bold
+                ? (state.italic ? Typeface.BOLD_ITALIC : Typeface.BOLD)
+                : (state.italic ? Typeface.ITALIC : Typeface.NORMAL);
+        text.setTypeface(
+                state.family == null ? null : Typeface.create(state.family, style), style);
+    }
+
+    /**
+     * Interlineado y espaciado entre letras.
+     *
+     * El núcleo ya medía con los dos y el host dibujaba sin ellos: el layout
+     * reservaba un hueco que el texto no llenaba. El espaciado va en emes, así
+     * que depende del tamaño de letra y hay que rehacerlo cuando cambia.
+     */
+    private void applyTextMetrics(int id, TextView text) {
+        FontState state = fontStateOf(id);
+        if (state.letterSpacing != null) {
+            float size = text.getTextSize();
+            text.setLetterSpacing(size > 0 ? state.letterSpacing * density / size : 0f);
+        }
+        if (state.lineHeight == null) {
+            return;
+        }
+        int px = Math.round(state.lineHeight * density);
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            text.setLineHeight(px);
+            return;
+        }
+        // Antes de API 28 no hay alto de línea, solo lo que se añade al que ya
+        // trae la fuente: se resta para llegar al mismo sitio.
+        int natural = text.getPaint().getFontMetricsInt(null);
+        text.setLineSpacing(Math.max(0, px - natural), 1f);
     }
 
     // ---------------------------------------------------------------- eventos

@@ -21,7 +21,12 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
 
       <SafeArea [edges]="['top']">
       <View [style.flexGrow]="'1'" [style.padding]="'16'" [style.gap]="'18'">
-        <Text [fontSize]="24" [fontWeight]="'bold'" [color]="'#f4f7ff'">
+        <Text
+          [fontSize]="24"
+          [fontWeight]="'bold'"
+          [letterSpacing]="2"
+          [lineHeight]="34"
+          [color]="'#f4f7ff'">
           {{ tabTitles[tab()] }}
         </Text>
 

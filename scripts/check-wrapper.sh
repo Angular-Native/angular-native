@@ -31,16 +31,7 @@ SOLO_NUCLEO = {
 
 # Props que sí deberían llegar y todavía no llegan. Cada una con su motivo en
 # docs/wrapper-nativo.md. La lista solo puede encoger.
-PENDIENTES = {
-    'bounces': 'Android tiene overScrollMode y nadie lo ha conectado',
-    'fontFamily': 'Android no crea el Typeface',
-    'fontStyle': 'Android no crea el Typeface',
-    'letterSpacing': 'la mide el núcleo pero no la dibuja ningún host',
-    'lineHeight': 'la mide el núcleo pero no la dibuja ningún host',
-    'refreshing': 'el arco de recarga de Android no se puede parar desde fuera',
-    'secureTextEntry': 'un campo de contraseña se ve en claro en Android',
-    'showsScrollIndicator': 'AnScrollView no expone la barra',
-}
+PENDIENTES: dict[str, str] = {}
 
 comunes = sorted(set(re.findall(r"this\.set\('([^']+)'", directivas)))
 fallos = []

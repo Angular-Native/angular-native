@@ -457,6 +457,74 @@ impl UikitHost {
         // el `MainThreadMarker` del host garantiza que vamos por el hilo bueno.
         unsafe { label.setFont(Some(&font)) };
         label.setNumberOfLines(spec.max_lines.unwrap_or(0) as isize);
+        self.apply_text_attributes(id);
+    }
+
+    /// Interlineado y espaciado entre letras, que `UILabel` no tiene como
+    /// propiedades.
+    ///
+    /// El núcleo ya medía con los dos —están en el `FontSpec` con el que
+    /// calcula el alto de cada línea— y el host dibujaba sin ellos, así que el
+    /// layout reservaba un hueco que el texto no llenaba. La única forma de
+    /// aplicarlos en UIKit es con texto atribuido: `kern` para el espaciado y
+    /// un `NSParagraphStyle` para el alto de línea.
+    ///
+    /// Se ponen solo esos dos atributos. La fuente y el color se dejan fuera a
+    /// propósito: sin ellos en los atributos, `UILabel` usa los suyos, y así
+    /// `[color]` y `[fontSize]` siguen funcionando como antes.
+    fn apply_text_attributes(&self, id: NodeId) {
+        let Some(label) = self.views.get(&id).and_then(HostView::as_label) else { return };
+        let spec = self.fonts.get(&id);
+        let kern = spec.map(|s| s.letter_spacing).unwrap_or(0.0);
+        let line_height = spec.and_then(|s| s.line_height);
+        let text = unsafe { label.text() }.map(|t| t.to_string()).unwrap_or_default();
+        if text.is_empty() {
+            return;
+        }
+        let string = NSString::from_str(&text);
+        if kern == 0.0 && line_height.is_none() {
+            // Sin nada que añadir se vuelve a texto llano: si no, quitar el
+            // espaciado dejaría puesto el de antes.
+            unsafe { label.setAttributedText(None) };
+            label.setText(Some(&string));
+            return;
+        }
+        let attributed = unsafe {
+            objc2_foundation::NSMutableAttributedString::initWithString(
+                self.mtm.alloc::<objc2_foundation::NSMutableAttributedString>(),
+                &string,
+            )
+        };
+        let range = objc2_foundation::NSRange { location: 0, length: string.len() };
+        if kern != 0.0 {
+            let number = objc2_foundation::NSNumber::new_f64(kern as f64);
+            unsafe {
+                attributed.addAttribute_value_range(
+                    objc2_ui_kit::NSKernAttributeName,
+                    &number,
+                    range,
+                )
+            };
+        }
+        if let Some(height) = line_height {
+            let style = objc2_ui_kit::NSMutableParagraphStyle::new();
+            // Mínimo y máximo iguales: el alto de línea es el que pide la
+            // plantilla, ni el que traiga la fuente ni uno mayor.
+            style.setMinimumLineHeight(height as f64);
+            style.setMaximumLineHeight(height as f64);
+            // El estilo de párrafo se lleva también el corte de línea, así que
+            // hay que devolverle el que tenía el rótulo o `numberOfLines`
+            // dejaría de poner puntos suspensivos.
+            style.setLineBreakMode(label.lineBreakMode());
+            unsafe {
+                attributed.addAttribute_value_range(
+                    objc2_ui_kit::NSParagraphStyleAttributeName,
+                    &style,
+                    range,
+                )
+            };
+        }
+        unsafe { label.setAttributedText(Some(&attributed)) };
     }
 
     /// Aplica un cambio visual, animado si el nodo lo pidió.
@@ -1426,6 +1494,14 @@ impl HostRenderer for UikitHost {
                 self.font_mut(id).family = text.clone();
                 self.apply_font(id);
             }
+            "letterSpacing" | "letter-spacing" => {
+                self.font_mut(id).letter_spacing = number.unwrap_or(0.0);
+                self.apply_text_attributes(id);
+            }
+            "lineHeight" | "line-height" => {
+                self.font_mut(id).line_height = number;
+                self.apply_text_attributes(id);
+            }
             // --- campos de texto
             "value" => {
                 if let (HostView::Slide(slider), Some(v)) = (view, number) {
@@ -1618,6 +1694,9 @@ impl HostRenderer for UikitHost {
     fn set_text(&mut self, id: NodeId, text: &str) {
         if let Some(label) = self.views.get(&id).and_then(HostView::as_label) {
             label.setText(Some(&NSString::from_str(text)));
+            // `setText` tira el texto atribuido, así que el espaciado y el
+            // interlineado hay que volver a ponerlos con cada palabra nueva.
+            self.apply_text_attributes(id);
         }
     }
 

@@ -26,6 +26,9 @@ cargo test --quiet 2>&1 | tail -1
 "$ROOT/scripts/check-media.sh"
 
 echo
+"$ROOT/scripts/check-android-java.sh"
+
+echo
 echo "== compilación cruzada"
 for target in aarch64-apple-ios-sim aarch64-linux-android; do
   case "$target" in

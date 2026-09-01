@@ -34,6 +34,10 @@ check 'Modal#[0-9]+ \[0,0 393x852\]' 'el modal cubre la pantalla'
 # árbol: ninguna de las dos cambia el marco.
 check 'Switch#[0-9]+ .*props color=#6ee7b7 on=true' 'el interruptor recibe su estado y su color'
 check 'ProgressBar#[0-9]+ .*props color=#6ee7b7 progress=0.35' 'la barra recibe el progreso calculado'
+# El interlineado y el espaciado los medía el núcleo y no los dibujaba ningún
+# host: el layout reservaba un hueco que el texto no llenaba.
+check 'Text#[0-9]+ .*letterSpacing=2' 'el espaciado entre letras llega al host'
+check 'Text#[0-9]+ .*lineHeight=34' 'el interlineado llega al host'
 # Los iconos: que midan lo suyo. El 24 es el de por defecto, sin `[size]`; los
 # otros vienen del tamaño pedido, que además elige el trazo del símbolo.
 check 'Icon#[0-9]+ \[[0-9]+,[0-9]+ 24x24\]' 'un icono sin medidas mide 24'
