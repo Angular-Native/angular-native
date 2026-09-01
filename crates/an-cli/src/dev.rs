@@ -28,6 +28,7 @@ use axum::Router;
 use notify::{RecursiveMode, Watcher};
 use tokio::sync::broadcast;
 
+use crate::plugins::Plugin;
 use crate::workspace::Workspace;
 use crate::{build, ios, watchos};
 
@@ -54,8 +55,9 @@ pub fn run(
     target: Target,
     port: u16,
     no_launch: bool,
+    plugins: Vec<Plugin>,
 ) -> Result<()> {
-    let bundle_path = build::bundle(&workspace, &app, false)?;
+    let bundle_path = build::bundle(&workspace, &app, false, &plugins)?;
     let source = std::fs::read_to_string(&bundle_path)?;
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -97,7 +99,7 @@ pub fn run(
     if !no_launch {
         match &target {
             Target::Ios { device } => {
-                let package = ios::assemble(&workspace, &bundle_path, false, Some(&url))?;
+                let package = ios::assemble(&workspace, &bundle_path, false, Some(&url), &plugins)?;
                 ios::launch(&package, device)?;
             }
             Target::WatchOs { device } => {
@@ -105,14 +107,15 @@ pub fn run(
                 watchos::launch(&package, device)?;
             }
             Target::Android => {
-                let apk = crate::android::assemble(&workspace, &bundle_path, false, Some(&url))?;
+                let apk =
+                    crate::android::assemble(&workspace, &bundle_path, false, Some(&url), &plugins)?;
                 crate::android::install_and_launch(&workspace, &apk)?;
             }
         }
     }
     eprintln!("==> vigilando {} y packages/", app.display());
 
-    watch(workspace, app, server, runtime)
+    watch(workspace, app, server, runtime, plugins)
 }
 
 async fn serve_bundle(State(server): State<Server>) -> impl IntoResponse {
@@ -154,6 +157,7 @@ fn watch(
     app: PathBuf,
     server: Server,
     runtime: tokio::runtime::Runtime,
+    plugins: Vec<Plugin>,
 ) -> Result<()> {
     let (tx, rx) = std::sync::mpsc::channel();
     let mut watcher = notify::recommended_watcher(move |event| {
@@ -187,7 +191,7 @@ fn watch(
         last = Instant::now();
 
         eprintln!("\n==> cambio detectado, recompilando");
-        match build::bundle(&workspace, &app, false) {
+        match build::bundle(&workspace, &app, false, &plugins) {
             Ok(path) => match std::fs::read_to_string(&path) {
                 Ok(source) => {
                     runtime.block_on(async {

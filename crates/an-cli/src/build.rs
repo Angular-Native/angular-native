@@ -8,9 +8,15 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 
+use crate::plugins::Plugin;
 use crate::workspace::Workspace;
 
-pub fn bundle(workspace: &Workspace, app: &Path, release: bool) -> Result<PathBuf> {
+pub fn bundle(
+    workspace: &Workspace,
+    app: &Path,
+    release: bool,
+    plugins: &[Plugin],
+) -> Result<PathBuf> {
     let name = Workspace::name(app);
     let tsconfig = app.join("tsconfig.json");
     let js_dir = PathBuf::from("build/js").join(&name);
@@ -53,6 +59,10 @@ pub fn bundle(workspace: &Workspace, app: &Path, release: bool) -> Result<PathBu
                 .display()
         ),
     ];
+    // Y uno por plugin que traiga su API en TypeScript: `ngc` la ha dejado en
+    // `build/js`, junto a la de la app, y el import del paquete tiene que
+    // apuntar ahí y no a lo que haya en `node_modules`.
+    args.extend(crate::plugins::aliases(workspace, app, plugins));
     if release {
         // `ngDevMode` a false quita las comprobaciones de desarrollo de Angular,
         // que son casi la mitad del bundle.

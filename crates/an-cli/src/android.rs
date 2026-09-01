@@ -10,6 +10,7 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 
+use crate::plugins::{self, Platform, Plugin};
 use crate::workspace::Workspace;
 
 const PACKAGE: &str = "dev.angularnative";
@@ -75,7 +76,11 @@ pub fn assemble(
     bundle: &Path,
     release: bool,
     dev_server: Option<&str>,
+    plugins: &[Plugin],
 ) -> Result<PathBuf> {
+    // Antes de compilar nada: si algún plugin no trae su parte de Android, el
+    // build se para aquí y dice cuál.
+    plugins::require(plugins, Platform::Android)?;
     let sdk = Sdk::discover()?;
     let root = &workspace.root;
     let profile = if release { "release" } else { "debug" };
@@ -175,15 +180,29 @@ pub fn assemble(
     let classes = out.join("classes");
     let _ = std::fs::remove_dir_all(&classes);
     std::fs::create_dir_all(&classes)?;
-    let sources: Vec<String> = std::fs::read_dir(root.join("shells/android/java/dev/angularnative"))?
-        .filter_map(|entry| entry.ok())
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|e| e == "java"))
-        .map(|path| path.to_string_lossy().into_owned())
-        .collect();
+    let mut sources: Vec<String> =
+        std::fs::read_dir(root.join("shells/android/java/dev/angularnative"))?
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|e| e == "java"))
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
     if sources.is_empty() {
         bail!("no hay fuentes Java en shells/android");
     }
+    // Los plugins: sus fuentes Java y el registro que las engancha. Todo entra
+    // en la misma invocación de `javac` que el shell, así que un plugin ve
+    // `AnPlugin` y `AnPluginCall` sin classpath adicional.
+    for plugin in plugins {
+        let aportadas = plugins::sources(plugin, Platform::Android)?;
+        eprintln!("==> plugin {} ({} fuentes Java)", plugin.module, aportadas.len());
+        sources.extend(aportadas);
+    }
+    sources.push(
+        plugins::generate_android(plugins, &out.join("gen-plugins"))?
+            .to_string_lossy()
+            .into_owned(),
+    );
     // `--release` en vez de `-source/-target`: con los modernos, javac
     // rechaza `-bootclasspath`, y aquí hace falta compilar contra android.jar
     // y no contra el JDK.

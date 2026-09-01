@@ -1,0 +1,9 @@
+{
+  "name": "@angular-native/example-clipboard",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@angular-native/plugin-clipboard": "0.0.1"
+  }
+}

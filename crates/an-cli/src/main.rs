@@ -8,10 +8,11 @@ mod android;
 mod build;
 mod dev;
 mod ios;
+mod plugins;
 mod watchos;
 mod workspace;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[command(name = "an", version, about = "Angular sobre vistas nativas", long_about = None)]
@@ -38,6 +39,10 @@ enum Command {
         device: String,
         #[arg(long)]
         release: bool,
+        /// Solo arma el .app, sin instalarlo. Compila el shell y los plugins,
+        /// que es lo que se puede comprobar sin simulador.
+        #[arg(long)]
+        no_launch: bool,
     },
     /// Compila, arma el .app del reloj y lo lanza en el simulador de watchOS.
     ///
@@ -60,6 +65,15 @@ enum Command {
         #[arg(long)]
         no_launch: bool,
     },
+    /// Enseña los plugins de los que depende una app.
+    ///
+    /// Con `--platform` además comprueba que todos cubran esa plataforma, que
+    /// es lo mismo que hace el build antes de compilar nada.
+    Plugins {
+        app: Option<String>,
+        #[arg(long)]
+        platform: Option<PlatformArg>,
+    },
     /// Servidor de desarrollo: vigila los ficheros y recarga la app al guardar.
     Dev {
         app: Option<String>,
@@ -79,6 +93,21 @@ enum Command {
     },
 }
 
+#[derive(Clone, Copy, ValueEnum)]
+enum PlatformArg {
+    Ios,
+    Android,
+}
+
+impl From<PlatformArg> for plugins::Platform {
+    fn from(value: PlatformArg) -> Self {
+        match value {
+            PlatformArg::Ios => plugins::Platform::Ios,
+            PlatformArg::Android => plugins::Platform::Android,
+        }
+    }
+}
+
 /// Simuladores por defecto. `an dev --watchos` no lleva su propio `--device`:
 /// si el que hay es el del teléfono, es que nadie lo eligió, y lo que quiere
 /// es el reloj.
@@ -92,14 +121,29 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Command::Build { app, release } => {
             let app = workspace.app(app.as_deref())?;
-            let bundle = build::bundle(&workspace, &app, release)?;
+            let found = plugins::discover(&workspace, &app)?;
+            let bundle = build::bundle(&workspace, &app, release, &found)?;
             println!("{}", bundle.display());
             Ok(())
         }
-        Command::Ios { app, device, release } => {
+        Command::Plugins { app, platform } => {
             let app = workspace.app(app.as_deref())?;
-            let bundle = build::bundle(&workspace, &app, release)?;
-            let package = ios::assemble(&workspace, &bundle, release, None)?;
+            let found = plugins::discover(&workspace, &app)?;
+            plugins::list(&workspace, &found);
+            match platform {
+                Some(platform) => plugins::require(&found, platform.into()),
+                None => Ok(()),
+            }
+        }
+        Command::Ios { app, device, release, no_launch } => {
+            let app = workspace.app(app.as_deref())?;
+            let found = plugins::discover(&workspace, &app)?;
+            let bundle = build::bundle(&workspace, &app, release, &found)?;
+            let package = ios::assemble(&workspace, &bundle, release, None, &found)?;
+            if no_launch {
+                println!("{}", package.dir.display());
+                return Ok(());
+            }
             ios::launch(&package, &device)
         }
         Command::Watchos { app, device, release } => {
@@ -107,14 +151,17 @@ fn main() -> anyhow::Result<()> {
             // `hello-angular` está pensado para un teléfono y en 205 puntos de
             // ancho no se lee.
             let app = workspace.app(Some(app.as_deref().unwrap_or("examples/hello-watch")))?;
-            let bundle = build::bundle(&workspace, &app, release)?;
+            let found = plugins::discover(&workspace, &app)?;
+            watchos::reject_plugins(&found)?;
+            let bundle = build::bundle(&workspace, &app, release, &found)?;
             let package = watchos::assemble(&workspace, &bundle, release, None)?;
             watchos::launch(&package, &device)
         }
         Command::Android { app, release, no_launch } => {
             let app = workspace.app(app.as_deref())?;
-            let bundle = build::bundle(&workspace, &app, release)?;
-            let apk = android::assemble(&workspace, &bundle, release, None)?;
+            let found = plugins::discover(&workspace, &app)?;
+            let bundle = build::bundle(&workspace, &app, release, &found)?;
+            let apk = android::assemble(&workspace, &bundle, release, None, &found)?;
             if no_launch {
                 println!("{}", apk.display());
                 return Ok(());
@@ -123,6 +170,7 @@ fn main() -> anyhow::Result<()> {
         }
         Command::Dev { app, device, port, android, watchos, no_launch } => {
             let app = workspace.app(app.as_deref())?;
+            let found = plugins::discover(&workspace, &app)?;
             let target = match (android, watchos) {
                 (true, _) => dev::Target::Android,
                 (_, true) => dev::Target::WatchOs {
@@ -134,7 +182,10 @@ fn main() -> anyhow::Result<()> {
                 },
                 _ => dev::Target::Ios { device },
             };
-            dev::run(workspace, app, target, port, no_launch)
+            if matches!(target, dev::Target::WatchOs { .. }) {
+                watchos::reject_plugins(&found)?;
+            }
+            dev::run(workspace, app, target, port, no_launch, found)
         }
     }
 }

@@ -20,6 +20,8 @@ mod logging;
 mod measure;
 #[cfg(target_os = "android")]
 mod modules;
+#[cfg(target_os = "android")]
+mod plugins;
 
 #[cfg(target_os = "android")]
 pub use host::JniHost;

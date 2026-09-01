@@ -53,6 +53,10 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
         float widthDp = metrics.widthPixels / metrics.density;
         float heightDp = metrics.heightPixels / metrics.density;
 
+        // Antes de crear el runtime: el core construye un módulo nativo por
+        // plugin al arrancar el motor, y lo que se registre después no entra.
+        AnPluginRegistry.install(this);
+
         host = new AnHost(this, container);
         runtime = new AnRuntime(host, widthDp, heightDp);
         if (!runtime.isValid()) {

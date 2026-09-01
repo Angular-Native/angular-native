@@ -10,6 +10,7 @@ use std::process::Command;
 use anyhow::{bail, Context, Result};
 
 use crate::build::run;
+use crate::plugins::{self, Platform, Plugin};
 use crate::workspace::Workspace;
 
 const APP_NAME: &str = "AngularNative";
@@ -29,7 +30,11 @@ pub fn assemble(
     bundle: &Path,
     release: bool,
     dev_server: Option<&str>,
+    plugins: &[Plugin],
 ) -> Result<Package> {
+    // Antes de compilar nada: si algún plugin no trae su parte de iOS, el
+    // build se para aquí y dice cuál.
+    plugins::require(plugins, Platform::Ios)?;
     let root = &workspace.root;
     let profile = if release { "release" } else { "debug" };
     let app_dir = root.join("build/ios").join(format!("{APP_NAME}.app"));
@@ -63,6 +68,20 @@ pub fn assemble(
         bail!("no hay fuentes Swift en shells/ios/Sources");
     }
     sources.extend(swift_sources(&root.join("shells/shared"))?);
+
+    // Los plugins: sus fuentes Swift y el registro que las engancha. Todo va
+    // en la misma invocación de `swiftc` que el shell, así que un plugin ve
+    // `AnPlugin` y `AnPluginCall` sin importar nada.
+    for plugin in plugins {
+        let aportadas = plugins::sources(plugin, Platform::Ios)?;
+        eprintln!("==> plugin {} ({} fuentes Swift)", plugin.module, aportadas.len());
+        sources.extend(aportadas);
+    }
+    sources.push(
+        plugins::generate_ios(plugins, &root.join("build/ios/generated"))?
+            .to_string_lossy()
+            .into_owned(),
+    );
 
     let lib_dir = root.join("target").join(TARGET).join(profile);
     let mut args: Vec<String> = vec![

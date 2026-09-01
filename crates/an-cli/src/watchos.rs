@@ -20,7 +20,26 @@ use anyhow::{bail, Context, Result};
 
 use crate::build::run;
 use crate::ios::swift_sources;
+use crate::plugins::Plugin;
 use crate::workspace::Workspace;
+
+/// El reloj todavía no carga plugins: `an-watch` no tiene el registro que
+/// tienen `an-ios` y `an-android`, y su shell no es un port del de iOS.
+///
+/// Se dice aquí y se para. Armar el `.app` igualmente dejaría una app en la
+/// que el módulo no existe y cada llamada se rechaza en tiempo de ejecución, y
+/// eso es justo lo que este sistema no debe hacer nunca.
+pub fn reject_plugins(plugins: &[Plugin]) -> Result<()> {
+    if plugins.is_empty() {
+        return Ok(());
+    }
+    let nombres: Vec<&str> = plugins.iter().map(|plugin| plugin.package.as_str()).collect();
+    bail!(
+        "esta app no se puede compilar para watchOS: el reloj todavía no carga plugins, \
+         y depende de {}. Ver docs/plugins.md.",
+        nombres.join(", ")
+    )
+}
 
 const APP_NAME: &str = "AngularNativeWatch";
 const BUNDLE_ID: &str = "dev.angularnative.playground.watchkitapp";
