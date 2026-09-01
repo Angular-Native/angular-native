@@ -5,7 +5,7 @@
 //! por su cuenta, dos copias de la misma tabla eran dos sitios donde `#0b1020`
 //! podía dejar de ser el mismo azul.
 
-pub use an_core::color::{contrast_on, parse, Rgba};
+pub use an_core::color::{contrast_on, parse};
 
 pub fn to_uicolor(raw: &str) -> Option<objc2::rc::Retained<objc2_ui_kit::UIColor>> {
     let (r, g, b, a) = parse(raw)?;

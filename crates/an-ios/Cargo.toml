@@ -25,6 +25,9 @@ block2 = "0.6"
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
   "std", "NSString", "NSAttributedString", "NSDictionary", "NSValue", "NSGeometry",
+  # Las manías del teclado se ponen por nombre de propiedad: en iOS 26 sus
+  # setters no están en la tabla de métodos de la clase.
+  "NSKeyValueCoding",
   "NSURL", "NSURLSession", "NSURLRequest", "NSData", "NSOperation", "NSError", "NSURLResponse",
   "NSArray", "block2", "objc2-core-foundation",
 ] }

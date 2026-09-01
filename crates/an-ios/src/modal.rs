@@ -9,12 +9,12 @@
 //!
 //! Con un `UIViewController` de por medio todo eso lo resuelve UIKit.
 
-use an_core::{NodeId, PropValue};
+use an_core::NodeId;
 use an_host::{push_event, EventQueue, HostEvent};
 use objc2::rc::Retained;
 use objc2::MainThreadMarker;
 use objc2_ui_kit::{
-    UIModalPresentationStyle, UIModalTransitionStyle, UISheetPresentationController,
+    UIModalPresentationStyle, UIModalTransitionStyle,
     UISheetPresentationControllerDetent, UIView, UIViewController,
 };
 

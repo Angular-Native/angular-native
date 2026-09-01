@@ -8,7 +8,6 @@
 use an_core::{NodeId, PropValue};
 use an_host::{push_event, EventQueue, HostEvent};
 use block2::RcBlock;
-use objc2::rc::Retained;
 use objc2::{MainThreadMarker, Message};
 use objc2_foundation::{
     NSData, NSError, NSOperationQueue, NSString, NSURL, NSURLResponse, NSURLSession,

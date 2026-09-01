@@ -17,7 +17,7 @@ use objc2_ui_kit::{
     UIViewAnimationOptions,
     NSLineBreakMode, NSTextAlignment, UIAccessibilityIdentification, UIActivityIndicatorView,
     UIBezierPath, UIButton, UIControlState, UIFont, UIImageView, UILabel, UIProgressView,
-    UIScrollView, UISlider, UISwitch, UITabBar, UITextField, UITextInputTraits, UIView,
+    UIScrollView, UISlider, UISwitch, UITextField, UITextInputTraits, UIView,
 };
 
 /// Lista de cadenas en JSON, sin traerse un analizador entero para esto.
@@ -50,46 +50,97 @@ fn parse_string_list(raw: &str) -> Vec<String> {
 
 /// Las manías del teclado de un campo o de un editor.
 ///
-/// Va genérica y no sobre un objeto de traits porque los métodos del protocolo
-/// piden `Sized`: son mensajes que se envían a un tipo concreto. Da igual, la
-/// lista es la misma para los dos controles.
-fn apply_text_traits<T: UITextInputTraits + objc2::Message>(
-    traits: &T,
-    key: &str,
-    text: Option<&str>,
-    value: &PropValue,
-) {
-    unsafe {
-        match key {
-            "keyboardType" => traits.setKeyboardType(match text {
+/// El mensaje se manda resolviendo antes su implementación por el runtime, y no
+/// con el setter que genera objc2. No es una manía:
+///
+/// objc2 comprueba que el método exista antes de mandarlo —comprobación que en
+/// este proyecto ha cazado firmas mal declaradas más de una vez— mirando la
+/// tabla de métodos de la clase. En iOS 26, `-[UITextField setKeyboardType:]`
+/// **no está en esa tabla**: UIKit lo resuelve la primera vez que alguien lo
+/// pide. `respondsToSelector:` dice que sí y `class_getInstanceMethod` dice que
+/// no, y objc2 hace caso al segundo y aborta el proceso. Resultado: cualquier
+/// app con un campo de texto se cerraba nada más arrancar.
+///
+/// `class_getMethodImplementation` es la función del runtime que **provoca**
+/// esa resolución, así que devuelve la implementación de verdad. Antes se
+/// pregunta si el objeto responde: si algún día dejara de responder, esto lo
+/// dice en vez de mandar un mensaje a ciegas.
+fn apply_text_traits(traits: &objc2_foundation::NSObject, key: &str, text: Option<&str>, value: &PropValue) {
+    use objc2::runtime::{NSObjectProtocol, Sel};
+
+    let (selector, setting) = match key {
+        "keyboardType" => (
+            objc2::sel!(setKeyboardType:),
+            match text {
                 Some("numeric") => objc2_ui_kit::UIKeyboardType::NumberPad,
                 Some("decimal") => objc2_ui_kit::UIKeyboardType::DecimalPad,
                 Some("email") => objc2_ui_kit::UIKeyboardType::EmailAddress,
                 Some("phone") => objc2_ui_kit::UIKeyboardType::PhonePad,
                 Some("url") => objc2_ui_kit::UIKeyboardType::URL,
                 _ => objc2_ui_kit::UIKeyboardType::Default,
-            }),
-            "returnKeyType" => traits.setReturnKeyType(match text {
+            }
+            .0,
+        ),
+        "returnKeyType" => (
+            objc2::sel!(setReturnKeyType:),
+            match text {
                 Some("done") => objc2_ui_kit::UIReturnKeyType::Done,
                 Some("go") => objc2_ui_kit::UIReturnKeyType::Go,
                 Some("next") => objc2_ui_kit::UIReturnKeyType::Next,
                 Some("search") => objc2_ui_kit::UIReturnKeyType::Search,
                 Some("send") => objc2_ui_kit::UIReturnKeyType::Send,
                 _ => objc2_ui_kit::UIReturnKeyType::Default,
-            }),
-            "autoCapitalize" => traits.setAutocapitalizationType(match text {
+            }
+            .0,
+        ),
+        "autoCapitalize" => (
+            objc2::sel!(setAutocapitalizationType:),
+            match text {
                 Some("none") => objc2_ui_kit::UITextAutocapitalizationType::None,
                 Some("words") => objc2_ui_kit::UITextAutocapitalizationType::Words,
                 Some("characters") => objc2_ui_kit::UITextAutocapitalizationType::AllCharacters,
                 _ => objc2_ui_kit::UITextAutocapitalizationType::Sentences,
-            }),
-            _ => traits.setAutocorrectionType(if matches!(value, PropValue::Bool(false)) {
+            }
+            .0,
+        ),
+        _ => (
+            objc2::sel!(setAutocorrectionType:),
+            if matches!(value, PropValue::Bool(false)) {
                 objc2_ui_kit::UITextAutocorrectionType::No
             } else {
                 objc2_ui_kit::UITextAutocorrectionType::Yes
-            }),
-        }
+            }
+            .0,
+        ),
+    };
+
+    if !traits.respondsToSelector(selector) {
+        eprintln!(
+            "angular-native: {} no atiende {selector:?}; la prop `{key}` no se aplicó",
+            traits.class().name().to_string_lossy()
+        );
+        return;
     }
+
+    // `objc2` declara este símbolo sin tipos, para que cada quien le ponga los
+    // suyos: es la función del runtime que resuelve el método —provocando la
+    // resolución perezosa— y devuelve su implementación.
+    unsafe extern "C" {
+        fn class_getMethodImplementation(
+            class: *const objc2::runtime::AnyClass,
+            selector: Sel,
+        ) -> Option<unsafe extern "C" fn()>;
+    }
+
+    // Las cuatro propiedades toman un solo `NSInteger`, así que la firma es la
+    // misma para todas.
+    type Setter = unsafe extern "C" fn(&objc2_foundation::NSObject, Sel, isize);
+    let Some(implementation) = (unsafe { class_getMethodImplementation(traits.class(), selector) })
+    else {
+        return;
+    };
+    let setter: Setter = unsafe { std::mem::transmute(implementation) };
+    unsafe { setter(traits, selector, setting) };
 }
 
 /// La vista que hay justo debajo de otra dentro de un contenedor.

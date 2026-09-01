@@ -78,12 +78,39 @@ impl AnRuntime {
 
 /// # Safety
 /// `container` debe ser un `UIView` vivo. Llamar desde el hilo principal.
+/// Deja los pánicos en el log del sistema antes de que se pierdan.
+///
+/// Un pánico dentro de un `extern "C"` no puede desenrollar, así que Rust
+/// aborta con «panic in a function that cannot unwind» y el mensaje de verdad
+/// —el que dice qué pasó— se pierde: lo que queda escrito en la salida de error
+/// no llega a salir antes de que el proceso muera. Aquí se escribe y se vacía a
+/// mano, que es la diferencia entre depurar un cierre y adivinarlo.
+fn report_panics() {
+    use std::sync::Once;
+    static UNA_VEZ: Once = Once::new();
+    UNA_VEZ.call_once(|| {
+        let anterior = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let donde = info
+                .location()
+                .map(|l| format!("{}:{}", l.file(), l.line()))
+                .unwrap_or_else(|| "sitio desconocido".to_owned());
+            use std::io::Write;
+            let mut salida = std::io::stderr().lock();
+            let _ = writeln!(salida, "angular-native: pánico en {donde}: {info}");
+            let _ = salida.flush();
+            anterior(info);
+        }));
+    });
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_runtime_new(
     container: *mut c_void,
     width: f32,
     height: f32,
 ) -> *mut AnRuntime {
+    report_panics();
     let Some(mtm) = MainThreadMarker::new() else {
         return std::ptr::null_mut();
     };
