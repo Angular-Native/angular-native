@@ -13,6 +13,7 @@ use objc2_foundation::NSString;
 use block2::RcBlock;
 use objc2_quartz_core::CAShapeLayer;
 use objc2_ui_kit::{
+    UIViewAnimationOptions,
     NSLineBreakMode, NSTextAlignment, UIAccessibilityIdentification, UIActivityIndicatorView,
     UIBezierPath, UIButton, UIControlState, UIFont, UIImageView, UILabel, UIProgressView,
     UIScrollView, UISlider, UISwitch, UITabBar, UITextField, UITextInputTraits, UIView,
@@ -238,6 +239,23 @@ fn concat(a: CGAffineTransform, b: CGAffineTransform) -> CGAffineTransform {
     }
 }
 
+/// Cómo anima una vista sus cambios.
+#[derive(Clone, Copy)]
+struct Animation {
+    /// Segundos. Cero apaga la animación sin borrar el resto de ajustes.
+    duration: f64,
+    delay: f64,
+    curve: UIViewAnimationOptions,
+}
+
+impl Default for Animation {
+    fn default() -> Self {
+        // Sale rápido y frena al llegar. Es como se mueven las cosas, y es la
+        // curva por defecto de casi todo en iOS.
+        Animation { duration: 0.0, delay: 0.0, curve: UIViewAnimationOptions::CurveEaseOut }
+    }
+}
+
 pub struct UikitHost {
     mtm: MainThreadMarker,
     /// Vista que da el shell de Xcode. La raíz del árbol cuelga de aquí.
@@ -258,6 +276,10 @@ pub struct UikitHost {
     /// llegan en props sueltas: hay que guardarlas para poder recomponer la
     /// matriz entera cada vez que cambia una.
     transforms: HashMap<NodeId, Transform>,
+    /// Nodos que animan sus cambios, y cómo. Mientras hay una entrada aquí,
+    /// mover, escalar, cambiar la opacidad o recolocar esa vista no salta al
+    /// valor nuevo: va hasta él.
+    animations: HashMap<NodeId, Animation>,
     /// Sentido de la próxima transición de cada pila: `push`, `pop` o nada.
     /// Lo decide Angular, que es quien sabe si se avanza o se retrocede.
     transitions: HashMap<NodeId, String>,
@@ -299,6 +321,7 @@ impl UikitHost {
             corners: HashMap::new(),
             slider_values: HashMap::new(),
             transforms: HashMap::new(),
+            animations: HashMap::new(),
             transitions: HashMap::new(),
             entering: Vec::new(),
             leaving: Vec::new(),
@@ -345,6 +368,30 @@ impl UikitHost {
         // el `MainThreadMarker` del host garantiza que vamos por el hilo bueno.
         unsafe { label.setFont(Some(&font)) };
         label.setNumberOfLines(spec.max_lines.unwrap_or(0) as isize);
+    }
+
+    /// Aplica un cambio visual, animado si el nodo lo pidió.
+    ///
+    /// No se puede animar "lo que pase dentro del bloque" y ya está: UIKit
+    /// necesita que el estado de partida esté puesto antes de entrar, y ese
+    /// es justo el que la vista tiene ahora. Por eso basta con meter el
+    /// cambio dentro; lo de fuera es lo que había.
+    fn animated(&self, id: NodeId, change: impl Fn() + 'static) {
+        let Some(anim) = self.animations.get(&id).copied().filter(|a| a.duration > 0.0) else {
+            change();
+            return;
+        };
+        let block = RcBlock::new(move || change());
+        unsafe {
+            UIView::animateWithDuration_delay_options_animations_completion(
+                anim.duration,
+                anim.delay,
+                anim.curve,
+                &block,
+                None,
+                self.mtm,
+            );
+        }
     }
 
     fn font_mut(&mut self, id: NodeId) -> &mut an_layout::FontSpec {
@@ -586,6 +633,7 @@ impl HostRenderer for UikitHost {
         self.alerts.remove(&id);
         self.slider_values.remove(&id);
         self.transforms.remove(&id);
+        self.animations.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
     }
 
@@ -635,8 +683,32 @@ impl HostRenderer for UikitHost {
             }
             "opacity" => {
                 if let Some(v) = number {
-                    native.setAlpha(v as f64);
+                    let view = native.retain();
+                    self.animated(id, move || view.setAlpha(v as f64));
                 }
+            }
+            // Animación. No es un valor que se vea: dice cómo se llega a los
+            // que sí.
+            "animate" => {
+                let entry = self.animations.entry(id).or_default();
+                // Los milisegundos son lo que se escribe en una plantilla;
+                // UIKit trabaja en segundos.
+                entry.duration = number.unwrap_or(0.0) as f64 / 1000.0;
+            }
+            "animateDelay" => {
+                let entry = self.animations.entry(id).or_default();
+                entry.delay = number.unwrap_or(0.0) as f64 / 1000.0;
+            }
+            "animateEasing" => {
+                let entry = self.animations.entry(id).or_default();
+                entry.curve = match text.as_deref() {
+                    Some("linear") => UIViewAnimationOptions::CurveLinear,
+                    Some("ease-in") => UIViewAnimationOptions::CurveEaseIn,
+                    Some("ease-in-out") => UIViewAnimationOptions::CurveEaseInOut,
+                    // `ease-out` es lo que se quiere casi siempre: sale rápido
+                    // y frena al llegar, que es como se mueven las cosas.
+                    _ => UIViewAnimationOptions::CurveEaseOut,
+                };
             }
             // Transformaciones. No pasan por el layout a propósito: mover o
             // escalar una vista no cambia el sitio que ocupa, así que no hay
@@ -656,7 +728,8 @@ impl HostRenderer for UikitHost {
                     _ => entry.rotate = v,
                 }
                 let transform = entry.matrix();
-                native.setTransform(transform);
+                let view = native.retain();
+                self.animated(id, move || view.setTransform(transform));
             }
             "borderRadius" | "border-radius" => {
                 if let Some(v) = number {
@@ -955,10 +1028,12 @@ impl HostRenderer for UikitHost {
 
     fn set_layout(&mut self, id: NodeId, frame: Rect) {
         let Some(view) = self.views.get(&id) else { return };
-        view.as_view().setFrame(CGRect {
+        let native = view.as_view().retain();
+        let rect = CGRect {
             origin: CGPoint { x: frame.x as f64, y: frame.y as f64 },
             size: CGSize { width: frame.width as f64, height: frame.height as f64 },
-        });
+        };
+        self.animated(id, move || native.setFrame(rect));
         if self.safe_area.contains_key(&id) {
             self.report_safe_area(id);
         }

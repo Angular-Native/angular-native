@@ -162,6 +162,32 @@ export abstract class NativeVisual {
   }
 
   /**
+   * Cuántos milisegundos tarda esta vista en llegar a sus valores nuevos.
+   *
+   * Con esto puesto, mover, escalar, cambiar la opacidad o recolocar la vista
+   * deja de ser un salto: la anima la plataforma, en su hilo de dibujo, sin
+   * volver a pasar por JavaScript en cada frame. Por eso una animación sigue
+   * yendo suave aunque el hilo del motor esté ocupado.
+   *
+   * Lo que se anima es el cambio, no un valor concreto: se pone una vez y
+   * vale para todos los que vengan después. Cero o `null` lo apaga.
+   */
+  @Input() set animate(value: number | null) {
+    this.set('animate', value)
+  }
+
+  @Input() set animateDelay(value: number | null) {
+    this.set('animateDelay', value)
+  }
+
+  /** Por defecto `ease-out`: sale rápido y frena al llegar. */
+  @Input() set animateEasing(
+    value: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | null
+  ) {
+    this.set('animateEasing', value)
+  }
+
+  /**
    * Desplazar, escalar y girar.
    *
    * No entran en el layout a propósito: una vista movida o escalada sigue

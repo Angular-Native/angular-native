@@ -95,6 +95,13 @@ public final class AnHost {
      */
     private static final float DEFAULT_FONT_SIZE = 14f;
 
+    /** Los ajustes de animación de cada vista que los haya pedido. */
+    private final android.util.SparseArray<Animation> animations = new android.util.SparseArray<>();
+
+    /** Las animaciones de marco en marcha, para poder cancelarlas. */
+    private final java.util.HashMap<View, android.animation.ValueAnimator> frameAnimations =
+            new java.util.HashMap<>();
+
     /** Los gestos activos de cada vista, uno por vista que tenga alguno. */
     private final java.util.HashMap<Integer, Gestures> gestures = new java.util.HashMap<>();
 
@@ -225,6 +232,8 @@ public final class AnHost {
             ((ViewGroup) view.getParent()).removeView(view);
         }
         views.remove(id);
+        animations.remove(id);
+        gestures.remove(Integer.valueOf(id));
         scrollContent.remove(id);
         watchers.remove(id);
         transitions.remove(id);
@@ -310,12 +319,17 @@ public final class AnHost {
             return;
         }
         AnViewGroup.Frame frame = (AnViewGroup.Frame) params;
-        frame.left = px(x);
-        frame.top = px(y);
-        frame.width = px(width);
-        frame.height = px(height);
-        view.setLayoutParams(frame);
-        view.requestLayout();
+        Animation anim = animations.get(id);
+        if (anim != null && anim.duration > 0 && frame.width > 0) {
+            animateFrame(view, frame, px(x), px(y), px(width), px(height), anim);
+        } else {
+            frame.left = px(x);
+            frame.top = px(y);
+            frame.width = px(width);
+            frame.height = px(height);
+            view.setLayoutParams(frame);
+            view.requestLayout();
+        }
         if (safeArea.indexOfKey(id) >= 0) {
             reportSafeArea(id);
         }
@@ -614,31 +628,41 @@ public final class AnHost {
                 applyBorder(view, id, key, value);
                 break;
             case "opacity":
-                view.setAlpha(parseFloat(value) == null ? 1f : parseFloat(value));
+                visual(view, id).alpha(number(value, 1f));
+                break;
+            // Animación: no es un valor que se vea, dice cómo se llega a los
+            // que sí.
+            case "animate":
+                animationFor(id).duration = (long) number(value, 0f);
+                break;
+            case "animateDelay":
+                animationFor(id).delay = (long) number(value, 0f);
+                break;
+            case "animateEasing":
+                animationFor(id).easing = value == null ? "ease-out" : value;
                 break;
             // Transformaciones. No pasan por el layout: mover o escalar una
             // vista no cambia el sitio que ocupa, así que no hay que
             // recalcular nada y se puede seguir al dedo sin coste.
             case "translateX":
-                view.setTranslationX(number(value, 0f) * density);
+                visual(view, id).translationX(number(value, 0f) * density);
                 break;
             case "translateY":
-                view.setTranslationY(number(value, 0f) * density);
+                visual(view, id).translationY(number(value, 0f) * density);
                 break;
             case "scale":
-                view.setScaleX(number(value, 1f));
-                view.setScaleY(number(value, 1f));
+                visual(view, id).scaleX(number(value, 1f)).scaleY(number(value, 1f));
                 break;
             case "scaleX":
-                view.setScaleX(number(value, 1f));
+                visual(view, id).scaleX(number(value, 1f));
                 break;
             case "scaleY":
-                view.setScaleY(number(value, 1f));
+                visual(view, id).scaleY(number(value, 1f));
                 break;
             case "rotate":
                 // La API va en radianes, como el gesto de girar; Android
                 // quiere grados.
-                view.setRotation((float) Math.toDegrees(number(value, 0f)));
+                visual(view, id).rotation((float) Math.toDegrees(number(value, 0f)));
                 break;
             // --- controles del sistema
             case "on":
@@ -1069,6 +1093,110 @@ public final class AnHost {
         }
     }
 
+    /**
+     * Lleva una vista de su marco actual al nuevo, interpolando.
+     *
+     * Aquí no vale `ViewPropertyAnimator`: ese anima propiedades de dibujo
+     * —desplazamiento, escala, opacidad— y el marco no es una de ellas, es el
+     * resultado del layout. Hay que interpolar los cuatro números y pedir
+     * layout en cada paso. Es más caro, y por eso solo pasa en las vistas que
+     * lo han pedido.
+     */
+    private void animateFrame(
+            View view,
+            AnViewGroup.Frame frame,
+            int left,
+            int top,
+            int width,
+            int height,
+            Animation anim) {
+        android.animation.ValueAnimator running = frameAnimations.get(view);
+        if (running != null) {
+            // Un cambio nuevo manda sobre el que estaba en marcha: seguir los
+            // dos a la vez haría que la vista fuese a dos sitios.
+            running.cancel();
+        }
+        final int fromLeft = frame.left;
+        final int fromTop = frame.top;
+        final int fromWidth = frame.width;
+        final int fromHeight = frame.height;
+        if (fromLeft == left && fromTop == top && fromWidth == width && fromHeight == height) {
+            return;
+        }
+        android.animation.ValueAnimator animator =
+                android.animation.ValueAnimator.ofFloat(0f, 1f);
+        animator.setDuration(anim.duration);
+        animator.setStartDelay(anim.delay);
+        animator.setInterpolator(anim.interpolator());
+        animator.addUpdateListener(
+                a -> {
+                    float t = (float) a.getAnimatedValue();
+                    frame.left = Math.round(fromLeft + (left - fromLeft) * t);
+                    frame.top = Math.round(fromTop + (top - fromTop) * t);
+                    frame.width = Math.round(fromWidth + (width - fromWidth) * t);
+                    frame.height = Math.round(fromHeight + (height - fromHeight) * t);
+                    view.setLayoutParams(frame);
+                });
+        animator.addListener(
+                new android.animation.AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(android.animation.Animator a) {
+                        frameAnimations.remove(view);
+                    }
+                });
+        frameAnimations.put(view, animator);
+        animator.start();
+    }
+
+    private Animation animationFor(int id) {
+        Animation anim = animations.get(id);
+        if (anim == null) {
+            anim = new Animation();
+            animations.put(id, anim);
+        }
+        return anim;
+    }
+
+    /**
+     * Por dónde aplicar un cambio de dibujo: directo, o animándolo.
+     *
+     * Las dos formas se manejan igual —`ViewPropertyAnimator` con duración
+     * cero aplica el valor y ya—, así que quien pone la prop no tiene que
+     * saber cuál de las dos le toca.
+     */
+    private android.view.ViewPropertyAnimator visual(View view, int id) {
+        Animation anim = animations.get(id);
+        android.view.ViewPropertyAnimator animator = view.animate();
+        if (anim == null || anim.duration <= 0) {
+            return animator.setDuration(0).setStartDelay(0);
+        }
+        return animator.setDuration(anim.duration)
+                .setStartDelay(anim.delay)
+                .setInterpolator(anim.interpolator());
+    }
+
+    /** Cómo anima una vista sus cambios. */
+    private static final class Animation {
+        /** Milisegundos. Cero apaga la animación sin borrar el resto. */
+        long duration;
+        long delay;
+        String easing = "ease-out";
+
+        android.animation.TimeInterpolator interpolator() {
+            switch (easing) {
+                case "linear":
+                    return new android.view.animation.LinearInterpolator();
+                case "ease-in":
+                    return new android.view.animation.AccelerateInterpolator();
+                case "ease-in-out":
+                    return new android.view.animation.AccelerateDecelerateInterpolator();
+                default:
+                    // Sale rápido y frena al llegar, como en iOS.
+                    return new android.view.animation.DecelerateInterpolator();
+            }
+        }
+    }
+
     /** Un número de una prop, con su valor por defecto si no llegó ninguno. */
     private float number(String value, float fallback) {
         Float parsed = parseFloat(value);
@@ -1197,15 +1325,18 @@ public final class AnHost {
                 return;
             }
             view.setOnTouchListener(this);
+            // Clicable siempre que haya algún gesto, aunque no haya nada que
+            // hacer al tocar: una vista que no lo es solo recibe el primer
+            // toque, y sin el resto del recorrido no hay doble toque ni
+            // deslizamiento que reconocer.
+            view.setClickable(true);
 
             // El click nativo solo cuando nadie se queda el toque; si no, el
             // toque suelto lo reconoce el detector.
             if (press && !consuming()) {
                 view.setOnClickListener(v -> dispatch("press", lastX, lastY));
-                view.setClickable(true);
             } else {
                 view.setOnClickListener(null);
-                view.setClickable(consuming());
             }
         }
 
@@ -1213,9 +1344,8 @@ public final class AnHost {
         public boolean onTouch(android.view.View v, android.view.MotionEvent ev) {
             lastX = ev.getX() / density;
             lastY = ev.getY() / density;
-            boolean handled = false;
             if (detector != null) {
-                handled = detector.onTouchEvent(ev);
+                detector.onTouchEvent(ev);
             }
             if (scaler != null) {
                 scaler.onTouchEvent(ev);
@@ -1226,7 +1356,13 @@ public final class AnHost {
             if (pan) {
                 trackPan(ev);
             }
-            return consuming() || handled;
+            // Aquí no vale devolver lo que diga el detector. El detector pide
+            // quedarse el primer toque para poder ver el gesto entero, y eso
+            // se lleva por delante el click de la vista: tocar dejaba de
+            // funcionar en cuanto la vista escuchaba también un deslizamiento.
+            // Solo se consume cuando hay un gesto continuo, que es cuando de
+            // verdad no debe llegar a nadie más.
+            return consuming();
         }
 
         /**

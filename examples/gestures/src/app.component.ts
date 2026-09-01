@@ -66,10 +66,19 @@ import type {
           </View>
         </View>
 
+        <!--
+          El panel crece y se destiñe animándose. Nada de esto vuelve a pasar
+          por JavaScript: se le dice a la vista cuánto tarda en llegar, y de
+          ahí en adelante los cambios los interpola la plataforma en su hilo
+          de dibujo.
+        -->
         <View
-          [style.height]="72"
+          [animate]="260"
+          [style.height]="abierto() ? 160 : 72"
+          [style.opacity]="abierto() ? 1 : 0.55"
           [backgroundColor]="'#1e293b'"
           [borderRadius]="12"
+          (press)="abierto.set(!abierto())"
           [style.alignItems]="'center'"
           [style.justifyContent]="'center'"
           (swipeLeft)="onSwipe('izquierda')"
@@ -83,6 +92,7 @@ import type {
             deja escribir siempre— no se quede en nada sin avisar.
           -->
           <Text [color]="'#cbd5f5'" [style.fontSize]="18">desliza aquí: {{ swipe() }}</Text>
+          <Text [color]="'#64748b'">{{ abierto() ? 'toca para cerrar' : 'toca para abrir' }}</Text>
         </View>
       </SafeArea>
     </View>
@@ -105,6 +115,7 @@ export class AppComponent {
   readonly label = signal('arrástrame')
   readonly status = signal('un dedo mueve; dos escalan y giran')
   readonly swipe = signal('—')
+  readonly abierto = signal(false)
 
 
   onPan(event: NativePanEvent): void {

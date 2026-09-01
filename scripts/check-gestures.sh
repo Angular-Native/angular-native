@@ -34,6 +34,10 @@ check "scale=1.00" "la escala arranca en 1, no en 0"
 # texto se medía con la letra por defecto. 23 de alto es 18 puntos; 17 sería
 # la de por defecto.
 check "Text#12 \[.* 149x23\]" "un [style.fontSize] llega a la medición"
+# El panel arranca a 72 de alto y el toque lo lleva a 160. Que la transición
+# se vea suave es del host y solo se comprueba en el dispositivo; aquí se
+# comprueba que el valor nuevo llega.
+check "View#11 \[.* 353x160\]" "el panel animado cambia de alto al tocarlo"
 
 if [[ $fail -ne 0 ]]; then
   echo "$OUTPUT"
