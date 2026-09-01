@@ -30,6 +30,17 @@
     </dict>
     <key>UILaunchScreen</key>
     <dict/>
+    <!--
+      Sin esto la app se declara solo para iPhone, y un iPad la corre en una
+      ventana de compatibilidad de 320x480 escalada: todo se ve gigante, y al
+      presentar cualquier controlador del sistema —un diálogo— iOS quita el
+      escalado y el contenido aparece diminuto en una esquina.
+    -->
+    <key>UIDeviceFamily</key>
+    <array>
+        <integer>1</integer>
+        <integer>2</integer>
+    </array>
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>

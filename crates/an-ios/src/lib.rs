@@ -17,6 +17,8 @@ mod ffi;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod host;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+mod icons;
+#[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod images;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod measure;

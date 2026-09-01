@@ -587,7 +587,21 @@ impl HostRenderer for UikitHost {
             }
             NodeKind::Image => HostView::Image(UIImageView::new(mtm)),
             NodeKind::ScrollView => HostView::Scroll(UIScrollView::new(mtm)),
-            NodeKind::TabBar => HostView::Tabs(UITabBar::new(mtm)),
+            NodeKind::TabBar => {
+                let bar = UITabBar::new(mtm);
+                // Desde iOS 26 una barra de pestañas suelta —fuera de un
+                // `UITabBarController`— adopta sola la presentación flotante
+                // del iPad y se dibuja donde le parece, además de en el marco
+                // que le da el layout: salían dos. Fijarle una apariencia la
+                // deja quieta en su sitio.
+                unsafe {
+                    let appearance = objc2_ui_kit::UITabBarAppearance::new(mtm);
+                    appearance.configureWithDefaultBackground();
+                    bar.setStandardAppearance(&appearance);
+                    bar.setScrollEdgeAppearance(Some(&appearance));
+                }
+                HostView::Tabs(bar)
+            }
             NodeKind::Switch => HostView::Toggle(UISwitch::new(mtm)),
             NodeKind::Slider => HostView::Slide(UISlider::new(mtm)),
             NodeKind::ActivityIndicator => {
