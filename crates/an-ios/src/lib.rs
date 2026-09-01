@@ -21,6 +21,8 @@ mod images;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod measure;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+mod modal;
+#[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod modules;
 
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]

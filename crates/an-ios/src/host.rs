@@ -301,6 +301,9 @@ pub struct UikitHost {
     alerts: HashMap<NodeId, crate::alert::AlertState>,
     /// Diálogos cuyo estado cambió en este frame.
     dirty_alerts: Vec<NodeId>,
+    /// Estado de presentación de cada `<Modal>`.
+    modals: HashMap<NodeId, crate::modal::ModalState>,
+    dirty_modals: Vec<NodeId>,
     /// Suscripciones vivas, indexadas por nodo y evento. Se guardan porque hay
     /// que poder quitarlas: un `@if` que desmonta su rama destruye la vista,
     /// pero un `(press)` que deja de estar bindeado no.
@@ -329,6 +332,8 @@ impl UikitHost {
             safe_area: HashMap::new(),
             alerts: HashMap::new(),
             dirty_alerts: Vec::new(),
+            modals: HashMap::new(),
+            dirty_modals: Vec::new(),
             listeners: HashMap::new(),
             events,
         }
@@ -601,6 +606,7 @@ impl HostRenderer for UikitHost {
             NodeKind::Modal => {
                 let overlay = UIView::new(mtm);
                 overlay.setHidden(true);
+                self.modals.insert(id, crate::modal::ModalState::default());
                 HostView::Overlay(overlay)
             }
             NodeKind::StackView => {
@@ -634,6 +640,7 @@ impl HostRenderer for UikitHost {
         self.slider_values.remove(&id);
         self.transforms.remove(&id);
         self.animations.remove(&id);
+        self.modals.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
     }
 
@@ -944,6 +951,28 @@ impl HostRenderer for UikitHost {
                     }
                 }
             }
+            "presentation" if self.modals.contains_key(&id) => {
+                if let Some(state) = self.modals.get_mut(&id) {
+                    state.sheet = text.as_deref() == Some("sheet");
+                }
+                if !self.dirty_modals.contains(&id) {
+                    self.dirty_modals.push(id);
+                }
+            }
+            "visible" if self.modals.contains_key(&id) => {
+                if let Some(state) = self.modals.get_mut(&id) {
+                    state.visible = matches!(value, PropValue::Bool(true));
+                }
+                // Escondida mientras no esté presentada. Al presentarla, es
+                // el controlador quien la enseña; si se dejara visible sin
+                // presentar, el contenido del modal se dibujaría en línea
+                // sobre la página.
+                let visible = self.modals.get(&id).is_some_and(|m| m.visible);
+                native.setHidden(!visible);
+                if !self.dirty_modals.contains(&id) {
+                    self.dirty_modals.push(id);
+                }
+            }
             "visible" => {
                 if let HostView::Overlay(overlay) = view {
                     overlay.setHidden(matches!(value, PropValue::Bool(false)));
@@ -1070,6 +1099,16 @@ impl HostRenderer for UikitHost {
             let Some(mut state) = self.alerts.remove(&id) else { continue };
             state.sync(self.mtm, &self.container, id, &self.events);
             self.alerts.insert(id, state);
+        }
+        // Presentar tiene que ir después del layout: el controlador se lleva
+        // la vista tal como esté, y si el marco todavía no está calculado se
+        // presenta una caja vacía.
+        for id in std::mem::take(&mut self.dirty_modals) {
+            let Some(mut state) = self.modals.remove(&id) else { continue };
+            if let Some(content) = self.views.get(&id).map(|v| v.as_view().retain()) {
+                state.sync(self.mtm, &self.container, &content, id, &self.events);
+            }
+            self.modals.insert(id, state);
         }
     }
 

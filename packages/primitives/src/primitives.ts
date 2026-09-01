@@ -569,17 +569,38 @@ export class Button extends NativeVisual {
 }
 
 /**
- * Capa que se presenta encima de todo.
+ * Contenido que se presenta encima de todo.
  *
- * No presenta un controlador: es una vista que se monta sobre la raíz. En iOS
- * lo canónico sería `presentViewController:`, pero aquí no hay un controlador
- * por pantalla, y una capa da el mismo resultado visual con menos maquinaria.
+ * Se presenta de verdad: un `UIViewController` en iOS y un `Dialog` en
+ * Android, no una vista puesta sobre las demás. Se ve parecido, pero la
+ * diferencia importa: el sistema sabe que hay algo modal delante, así que
+ * VoiceOver y TalkBack dejan de leer lo de detrás, el botón de atrás de
+ * Android lo cierra, y no compite en orden de dibujo con los diálogos del
+ * sistema.
  */
 @Directive({ selector: 'Modal' })
 export class Modal extends NativeVisual {
   @Input() set visible(value: boolean | null) {
     this.set('visible', value ?? false)
   }
+
+  /**
+   * `fullScreen` cubre la pantalla; `sheet` entra desde abajo con el tirador
+   * y los topes del sistema.
+   */
+  @Input() set presentation(value: 'fullScreen' | 'sheet' | null) {
+    this.set('presentation', value)
+  }
+
+  /**
+   * Se cerró.
+   *
+   * Puede cerrarlo el usuario sin pasar por la plantilla —bajando la hoja en
+   * iOS, con el botón de atrás en Android—, así que hay que escucharlo: si no,
+   * la señal que lo abrió se queda diciendo que sigue abierto y volver a
+   * ponerla a `true` no hace nada.
+   */
+  readonly dismiss = outputFromObservable(this.nativeEvent<void>('dismiss'))
 }
 
 /**

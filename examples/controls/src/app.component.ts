@@ -56,7 +56,7 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
         <View [style.flexDirection]="'row'" [style.gap]="'12'">
           <Button
             [style.flexGrow]="'1'"
-            [title]="'Capa'"
+            [title]="'Modal'"
             [color]="'#6ee7b7'"
             (press)="modal.set(true)"></Button>
           <Button
@@ -86,6 +86,8 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
 
       <Modal
         [visible]="modal()"
+        [presentation]="'fullScreen'"
+        (dismiss)="modal.set(false)"
         [style.position]="'absolute'"
         [style.top]="'0'"
         [style.left]="'0'"
@@ -100,9 +102,10 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
           [style.width]="'80%'"
           [backgroundColor]="'#141c33'"
           [borderRadius]="16">
-          <Text [fontSize]="18" [fontWeight]="'bold'" [color]="'#f4f7ff'">Una capa</Text>
+          <Text [fontSize]="18" [fontWeight]="'bold'" [color]="'#f4f7ff'">Presentado</Text>
           <Text [fontSize]="15" [color]="'#9fb0d4'">
-            Montada sobre la raíz, no presentada como controlador.
+            Un UIViewController en iOS y un Dialog en Android, no una vista
+            puesta encima.
           </Text>
           <Button [title]="'Cerrar'" [color]="'#6ee7b7'" (press)="modal.set(false)"></Button>
         </View>

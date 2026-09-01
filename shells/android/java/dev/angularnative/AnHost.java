@@ -95,6 +95,17 @@ public final class AnHost {
      */
     private static final float DEFAULT_FONT_SIZE = 14f;
 
+    /**
+     * Tema del diálogo: sin marco ni fondo, porque el contenido lo dibuja el
+     * árbol de vistas y el marco del sistema se vería por encima.
+     */
+    private static final int ANDROID_DIALOG_THEME = android.R.style.Theme_Translucent_NoTitleBar;
+
+    /** Estado de presentación de cada `<Modal>`. */
+    private final SparseArray<ModalState> modals = new SparseArray<>();
+
+    private final java.util.ArrayList<Integer> dirtyModals = new java.util.ArrayList<>();
+
     /** Los ajustes de animación de cada vista que los haya pedido. */
     private final android.util.SparseArray<Animation> animations = new android.util.SparseArray<>();
 
@@ -196,6 +207,7 @@ public final class AnHost {
             case KIND_MODAL: {
                 AnViewGroup overlay = new AnViewGroup(context);
                 overlay.setVisibility(View.GONE);
+                modals.put(id, new ModalState());
                 view = overlay;
                 break;
             }
@@ -233,6 +245,7 @@ public final class AnHost {
         }
         views.remove(id);
         animations.remove(id);
+        modals.remove(id);
         gestures.remove(Integer.valueOf(id));
         scrollContent.remove(id);
         watchers.remove(id);
@@ -351,6 +364,90 @@ public final class AnHost {
         container.requestLayout();
         runStackAnimations();
         syncAlerts();
+        syncModals();
+    }
+
+    private void markModalDirty(int id) {
+        if (!dirtyModals.contains(id)) {
+            dirtyModals.add(id);
+        }
+    }
+
+    /**
+     * Presenta o retira los `<Modal>` que cambiaron.
+     *
+     * Un `Dialog` de verdad, no una vista encima de las demás. La diferencia
+     * no es cómo se ve —eso era igual— sino que el sistema sepa que hay algo
+     * modal delante: el botón de atrás lo cierra, TalkBack deja de leer lo de
+     * detrás, y no compite en orden de dibujo con los diálogos del sistema.
+     *
+     * Va después del layout: el diálogo se lleva la vista tal como esté, y sin
+     * marco calculado presentaría una caja vacía.
+     */
+    private void syncModals() {
+        if (dirtyModals.isEmpty()) {
+            return;
+        }
+        for (int id : dirtyModals) {
+            ModalState state = modals.get(id);
+            View content = views.get(id);
+            if (state == null || content == null) {
+                continue;
+            }
+            if (!state.visible) {
+                if (state.presented != null) {
+                    state.presented.dismiss();
+                    state.presented = null;
+                }
+                continue;
+            }
+            if (state.presented != null) {
+                continue;
+            }
+            android.app.Dialog dialog = new android.app.Dialog(context, ANDROID_DIALOG_THEME);
+            if (content.getParent() instanceof ViewGroup) {
+                ((ViewGroup) content.getParent()).removeView(content);
+            }
+            dialog.setContentView(content);
+            if (dialog.getWindow() != null) {
+                android.view.Window window = dialog.getWindow();
+                window.setBackgroundDrawable(
+                        new android.graphics.drawable.ColorDrawable(
+                                android.graphics.Color.TRANSPARENT));
+                if (state.sheet) {
+                    // Pegado abajo y a lo ancho, que es lo que se espera de
+                    // una hoja. El alto lo pone el contenido.
+                    window.setGravity(android.view.Gravity.BOTTOM);
+                    window.setLayout(
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                            android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+                } else {
+                    window.setLayout(
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                            android.view.ViewGroup.LayoutParams.MATCH_PARENT);
+                }
+            }
+            dialog.setOnDismissListener(
+                    d -> {
+                        state.presented = null;
+                        // Cerrarlo desde fuera —el botón de atrás— también
+                        // tiene que llegar a la plantilla, o la señal que lo
+                        // abrió se queda diciendo que sigue abierto.
+                        if (runtime != null) {
+                            runtime.dispatchEvent(id, "dismiss", 0f, 0f);
+                        }
+                    });
+            dialog.show();
+            state.presented = dialog;
+        }
+        dirtyModals.clear();
+    }
+
+    /** Cómo está presentado un `<Modal>`. */
+    private static final class ModalState {
+        boolean visible;
+        boolean sheet;
+        android.app.Dialog presented;
     }
 
     private void markAlertDirty(int id) {
@@ -721,7 +818,22 @@ public final class AnHost {
                     markAlertDirty(id);
                     break;
                 }
+                if (modals.get(id) != null) {
+                    modals.get(id).visible = "true".equals(value);
+                    // Escondida mientras no esté presentada: quien la enseña
+                    // es el diálogo. Visible sin presentar se dibujaría en
+                    // línea sobre la página.
+                    view.setVisibility(modals.get(id).visible ? View.VISIBLE : View.GONE);
+                    markModalDirty(id);
+                    break;
+                }
                 view.setVisibility("false".equals(value) ? View.GONE : View.VISIBLE);
+                break;
+            case "presentation":
+                if (modals.get(id) != null) {
+                    modals.get(id).sheet = "sheet".equals(value);
+                    markModalDirty(id);
+                }
                 break;
             // --- diálogos del sistema
             case "message":
