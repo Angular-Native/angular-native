@@ -39,7 +39,7 @@ objc2-ui-kit = { version = "0.3", default-features = false, features = [
   "UITabBar", "UITabBarItem", "UIBarItem", "UIImage", "UITabBarAppearance", "UIBarAppearance",
   "UIAlertController", "UIAlert", "UIViewController", "UIWindow", "UIRefreshControl",
   "UIGestureRecognizer", "UITapGestureRecognizer", "UITextInputTraits", "UIDevice",
-  "UISheetPresentationController", "UIPresentationController", "UIPopoverPresentationController", "UIPopoverSupport",
+  "UISheetPresentationController", "UIPresentationController", "UIPopoverPresentationController", "UIPopoverSupport", "UIViewController",
   "UIImageSymbolConfiguration", "UIImageConfiguration",
   "UISegmentedControl", "UIStepper", "UISearchBar", "UIDatePicker", "UISearchTextField",
   "UIButtonConfiguration", "UITextView", "UINavigationBar", "UINavigationItem",

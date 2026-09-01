@@ -21,6 +21,8 @@ mod icons;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod images;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+mod map;
+#[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod measure;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod menu;
@@ -28,6 +30,8 @@ mod menu;
 mod modal;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod modules;
+#[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+mod video;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod web;
 

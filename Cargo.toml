@@ -12,6 +12,6 @@ repository = "https://github.com/nesgarbo/angular-native"
 an-core = { path = "crates/an-core" }
 an-layout = { path = "crates/an-layout" }
 an-host = { path = "crates/an-host" }
-slotmap = "1"
+slotmap = "1.1.1"
 smallvec = "1"
 thiserror = "2"

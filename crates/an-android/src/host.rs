@@ -2,7 +2,7 @@
 
 use an_core::{NodeId, NodeKind, PropValue, Rect};
 use an_host::HostRenderer;
-use jni::objects::{GlobalRef, JObject, JValue};
+use jni::objects::{Global, JObject, JValue};
 use jni::JavaVM;
 
 /// Envuelve el `AnHost` de Kotlin.
@@ -12,11 +12,61 @@ use jni::JavaVM;
 /// `attach_current_thread` es barato y no cambia de hilo.
 pub struct JniHost {
     vm: JavaVM,
-    host: GlobalRef,
+    host: Global<JObject<'static>>,
+}
+
+/// Llama a un método de Java y se traga el fallo.
+///
+/// Desde jni 0.22 el nombre del método y su firma ya no son `&str`: el nombre
+/// tiene que ir terminado en cero como lo pide JNI, y la firma va parseada en
+/// tipos. Es más seguro —una firma mal escrita se caza al construirla y no al
+/// llamar— pero llena de ruido cada sitio de llamada, así que se envuelve
+/// aquí una vez.
+///
+/// Un fallo se reporta y se sigue: un método suelto que no cuadra no debería
+/// dejar al usuario sin app.
+pub(crate) fn call_java(
+    env: &mut jni::Env,
+    obj: &JObject,
+    method: &str,
+    signature: &str,
+    args: &[JValue],
+) {
+    let Ok(sig) = jni::signature::RuntimeMethodSignature::from_str(signature) else {
+        eprintln!("angular-native: firma ilegible para {method}: {signature}");
+        return;
+    };
+    let name = jni::strings::JNIString::from(method);
+    if let Err(error) = env.call_method(obj, &name, sig.method_signature(), args) {
+        let _ = env.exception_clear();
+        eprintln!("angular-native: fallo llamando a {method}: {error}");
+    }
+}
+
+/// Igual que [`call_java`] pero para métodos que devuelven un `long`.
+///
+/// Devuelve `None` si algo falló, que es lo que quiere quien mide: usar su
+/// valor de reserva en vez de reventar.
+pub(crate) fn call_java_long(
+    env: &mut jni::Env,
+    obj: &JObject,
+    method: &str,
+    signature: &str,
+    args: &[JValue],
+) -> Option<i64> {
+    let sig = jni::signature::RuntimeMethodSignature::from_str(signature).ok()?;
+    let name = jni::strings::JNIString::from(method);
+    match env.call_method(obj, &name, sig.method_signature(), args).and_then(|v| v.j()) {
+        Ok(value) => Some(value),
+        Err(_) => {
+            let _ = env.exception_clear();
+            None
+        }
+    }
 }
 
 impl JniHost {
-    pub fn new(vm: JavaVM, host: GlobalRef) -> Self {
+    pub fn new(vm: JavaVM, host: Global<JObject<'static>>) -> Self {
         JniHost { vm, host }
     }
 
@@ -24,14 +74,13 @@ impl JniHost {
     /// la firma de Kotlin y la de Rust: se reporta y se sigue, porque tirar la
     /// app por un método suelto deja al usuario sin nada.
     fn call(&self, method: &str, signature: &str, args: &[JValue]) {
-        let Ok(mut env) = self.vm.attach_current_thread() else {
-            return;
-        };
-        let host: &JObject = self.host.as_obj();
-        if let Err(error) = env.call_method(host, method, signature, args) {
-            let _ = env.exception_clear();
-            eprintln!("angular-native: fallo llamando a AnHost.{method}: {error}");
-        }
+        // Desde jni 0.22 el hilo se engancha alrededor de un cierre en vez de
+        // devolver un guardián: la desconexión ya no depende de que nadie se
+        // olvide de soltarlo.
+        let _ = self.vm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
+            call_java(env, self.host.as_obj(), method, signature, args);
+            Ok(())
+        });
     }
 
     fn kind_code(kind: NodeKind) -> i32 {
@@ -60,6 +109,8 @@ impl JniHost {
             NodeKind::NavigationBar => 21,
             NodeKind::TextEditor => 22,
             NodeKind::WebView => 23,
+            NodeKind::MapView => 24,
+            NodeKind::VideoView => 25,
         }
     }
 }
@@ -98,9 +149,6 @@ impl HostRenderer for JniHost {
     }
 
     fn set_prop(&mut self, id: NodeId, key: &str, value: &PropValue) {
-        let Ok(mut env) = self.vm.attach_current_thread() else {
-            return;
-        };
         // Las props viajan como texto: el número de tipos distintos no
         // justifica una firma JNI por cada uno, y Kotlin ya sabe qué espera
         // cada propiedad.
@@ -111,50 +159,29 @@ impl HostRenderer for JniHost {
             PropValue::Str(v) => v.clone(),
             PropValue::Color(v) => format!("#{v:08x}"),
         };
-        let (Ok(key), Ok(text)) = (env.new_string(key), env.new_string(&text)) else {
-            return;
-        };
-        let result = env.call_method(
-            self.host.as_obj(),
-            "setProp",
-            "(ILjava/lang/String;Ljava/lang/String;)V",
-            &[JValue::Int(id as i32), JValue::Object(&key), JValue::Object(&text)],
-        );
-        if result.is_err() {
-            let _ = env.exception_clear();
-        }
+        let _ = self.vm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
+            let (Ok(key), Ok(text)) = (env.new_string(key), env.new_string(&text)) else {
+                return Ok(());
+            };
+            call_java(env, self.host.as_obj(), "setProp", "(ILjava/lang/String;Ljava/lang/String;)V", &[JValue::Int(id as i32), JValue::Object(&key), JValue::Object(&text)]);
+            Ok(())
+        });
     }
 
     fn set_text(&mut self, id: NodeId, text: &str) {
-        let Ok(mut env) = self.vm.attach_current_thread() else {
-            return;
-        };
-        let Ok(text) = env.new_string(text) else { return };
-        let result = env.call_method(
-            self.host.as_obj(),
-            "setText",
-            "(ILjava/lang/String;)V",
-            &[JValue::Int(id as i32), JValue::Object(&text)],
-        );
-        if result.is_err() {
-            let _ = env.exception_clear();
-        }
+        let _ = self.vm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
+            let Ok(text) = env.new_string(text) else { return Ok(()) };
+            call_java(env, self.host.as_obj(), "setText", "(ILjava/lang/String;)V", &[JValue::Int(id as i32), JValue::Object(&text)]);
+            Ok(())
+        });
     }
 
     fn set_listener(&mut self, id: NodeId, event: &str, enabled: bool) {
-        let Ok(mut env) = self.vm.attach_current_thread() else {
-            return;
-        };
-        let Ok(event) = env.new_string(event) else { return };
-        let result = env.call_method(
-            self.host.as_obj(),
-            "setListener",
-            "(ILjava/lang/String;Z)V",
-            &[JValue::Int(id as i32), JValue::Object(&event), JValue::Bool(enabled as u8)],
-        );
-        if result.is_err() {
-            let _ = env.exception_clear();
-        }
+        let _ = self.vm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
+            let Ok(event) = env.new_string(event) else { return Ok(()) };
+            call_java(env, self.host.as_obj(), "setListener", "(ILjava/lang/String;Z)V", &[JValue::Int(id as i32), JValue::Object(&event), JValue::Bool(enabled)]);
+            Ok(())
+        });
     }
 
     fn set_layout(&mut self, id: NodeId, frame: Rect) {

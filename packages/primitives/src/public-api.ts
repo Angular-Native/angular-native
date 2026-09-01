@@ -23,6 +23,7 @@ export {
   DatePicker,
   Icon,
   Image,
+  MapView,
   Modal,
   NavigationBar,
   ProgressBar,
@@ -40,6 +41,7 @@ export {
   Text,
   TextEditor,
   TextInput,
+  VideoView,
   View,
   WebView
 } from './primitives'

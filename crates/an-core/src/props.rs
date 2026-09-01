@@ -55,6 +55,10 @@ pub enum NodeKind {
     TextEditor,
     /// Navegador embebido.
     WebView,
+    /// Mapa.
+    MapView,
+    /// Reproductor de vídeo.
+    VideoView,
 }
 
 impl NodeKind {
@@ -75,6 +79,8 @@ impl NodeKind {
             "Modal" | "modal" => NodeKind::Modal,
             "Alert" | "alert" => NodeKind::Alert,
             "Icon" | "icon" => NodeKind::Icon,
+            "VideoView" | "video-view" => NodeKind::VideoView,
+            "MapView" | "map-view" => NodeKind::MapView,
             "WebView" | "web-view" => NodeKind::WebView,
             "TextEditor" | "text-editor" => NodeKind::TextEditor,
             "NavigationBar" | "navigation-bar" => NodeKind::NavigationBar,

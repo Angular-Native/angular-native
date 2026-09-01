@@ -377,10 +377,10 @@ impl LayoutStyle {
             }
             K::Width => set_dim(&mut s.size.width, value),
             K::Height => set_dim(&mut s.size.height, value),
-            K::MinWidth => set_dim(&mut s.min_size.width, value),
-            K::MinHeight => set_dim(&mut s.min_size.height, value),
-            K::MaxWidth => set_dim(&mut s.max_size.width, value),
-            K::MaxHeight => set_dim(&mut s.max_size.height, value),
+            K::MinWidth => set_min_max(&mut s.min_size.width, value),
+            K::MinHeight => set_min_max(&mut s.min_size.height, value),
+            K::MaxWidth => set_min_max(&mut s.max_size.width, value),
+            K::MaxHeight => set_min_max(&mut s.max_size.height, value),
             K::AspectRatio => s.aspect_ratio = value.number(),
             K::Margin => set_rect_lpa(&mut s.margin, value, Edge::All),
             K::MarginTop => set_rect_lpa(&mut s.margin, value, Edge::Top),
@@ -446,6 +446,21 @@ fn set_dim(slot: &mut Dimension, value: StyleValue) {
     }
 }
 
+/// Los mínimos y máximos, que en taffy 0.14 ya no son `Dimension` sino
+/// `LengthPercentageAuto`. Es el mismo conjunto de valores con otro nombre.
+///
+/// Sin valor significa `auto`, no cero: un máximo de cero dejaría la vista sin
+/// tamaño, que es lo contrario de "no hay máximo".
+fn set_min_max(slot: &mut LengthPercentageAuto, value: StyleValue) {
+    let resuelto = match value {
+        StyleValue::Unset => Some(LengthPercentageAuto::auto()),
+        otro => otro.length_percentage_auto(),
+    };
+    if let Some(v) = resuelto {
+        *slot = v;
+    }
+}
+
 fn set_rect_lp(rect: &mut taffy::Rect<LengthPercentage>, value: StyleValue, edge: Edge) {
     let Some(v) = value.length_percentage() else { return };
     match edge {
@@ -486,24 +501,24 @@ fn set_rect_lpa(rect: &mut taffy::Rect<LengthPercentageAuto>, value: StyleValue,
 
 fn to_align(k: Option<Keyword>) -> Option<AlignItems> {
     match k? {
-        Keyword::FlexStart => Some(AlignItems::FlexStart),
-        Keyword::FlexEnd => Some(AlignItems::FlexEnd),
-        Keyword::Center => Some(AlignItems::Center),
-        Keyword::Baseline => Some(AlignItems::Baseline),
-        Keyword::Stretch => Some(AlignItems::Stretch),
+        Keyword::FlexStart => Some(AlignItems::FLEX_START),
+        Keyword::FlexEnd => Some(AlignItems::FLEX_END),
+        Keyword::Center => Some(AlignItems::CENTER),
+        Keyword::Baseline => Some(AlignItems::BASELINE),
+        Keyword::Stretch => Some(AlignItems::STRETCH),
         _ => None,
     }
 }
 
 fn to_align_content(k: Option<Keyword>) -> Option<AlignContent> {
     match k? {
-        Keyword::FlexStart => Some(AlignContent::FlexStart),
-        Keyword::FlexEnd => Some(AlignContent::FlexEnd),
-        Keyword::Center => Some(AlignContent::Center),
-        Keyword::Stretch => Some(AlignContent::Stretch),
-        Keyword::SpaceBetween => Some(AlignContent::SpaceBetween),
-        Keyword::SpaceAround => Some(AlignContent::SpaceAround),
-        Keyword::SpaceEvenly => Some(AlignContent::SpaceEvenly),
+        Keyword::FlexStart => Some(AlignContent::FLEX_START),
+        Keyword::FlexEnd => Some(AlignContent::FLEX_END),
+        Keyword::Center => Some(AlignContent::CENTER),
+        Keyword::Stretch => Some(AlignContent::STRETCH),
+        Keyword::SpaceBetween => Some(AlignContent::SPACE_BETWEEN),
+        Keyword::SpaceAround => Some(AlignContent::SPACE_AROUND),
+        Keyword::SpaceEvenly => Some(AlignContent::SPACE_EVENLY),
         _ => None,
     }
 }

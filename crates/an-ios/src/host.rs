@@ -137,6 +137,8 @@ enum HostView {
     Area(Retained<objc2_ui_kit::UITextView>),
     Nav(Retained<objc2_ui_kit::UINavigationBar>),
     Web(Retained<crate::web::WKWebView>),
+    Map(Retained<crate::map::MKMapView>),
+    Video(Retained<UIView>),
 }
 
 impl HostView {
@@ -164,6 +166,8 @@ impl HostView {
             HostView::Area(v) => v,
             HostView::Nav(v) => v,
             HostView::Web(v) => v,
+            HostView::Map(v) => v,
+            HostView::Video(v) => v,
         }
     }
 
@@ -191,6 +195,8 @@ impl HostView {
             HostView::Area(_) => NodeKind::TextEditor,
             HostView::Nav(_) => NodeKind::NavigationBar,
             HostView::Web(_) => NodeKind::WebView,
+            HostView::Map(_) => NodeKind::MapView,
+            HostView::Video(_) => NodeKind::VideoView,
         }
     }
 
@@ -324,6 +330,16 @@ pub struct UikitHost {
     /// evento: se rehace cada vez que cambia el título.
     nav_backs: HashMap<NodeId, Retained<objc2_ui_kit::UIBarButtonItem>>,
     nav_targets: HashMap<NodeId, Retained<crate::events::ControlTarget>>,
+    /// Centro y zoom de cada mapa, que llegan en props sueltas.
+    maps: HashMap<NodeId, (f64, f64, f64)>,
+    /// Reproductor y capa de cada vídeo. La capa hay que redimensionarla a
+    /// mano: una capa no se estira con su vista.
+    videos: HashMap<
+        NodeId,
+        (Retained<crate::video::AVPlayer>, Retained<crate::video::AVPlayerViewController>),
+    >,
+    /// Los vídeos que deberían estar sonando.
+    video_playing: std::collections::HashSet<NodeId>,
     /// Valor pedido a cada `Stepper`, por lo mismo que en el deslizador: el
     /// rango y el valor llegan sueltos y en cualquier orden.
     stepper_values: HashMap<NodeId, f64>,
@@ -381,6 +397,9 @@ impl UikitHost {
             navs: HashMap::new(),
             nav_backs: HashMap::new(),
             nav_targets: HashMap::new(),
+            maps: HashMap::new(),
+            videos: HashMap::new(),
+            video_playing: std::collections::HashSet::new(),
             stepper_values: HashMap::new(),
             transitions: HashMap::new(),
             entering: Vec::new(),
@@ -763,6 +782,11 @@ impl HostRenderer for UikitHost {
                 let web = crate::web::WKWebView::new(mtm);
                 HostView::Web(web)
             }
+            NodeKind::MapView => HostView::Map(crate::map::MKMapView::new(mtm)),
+            NodeKind::VideoView => {
+                let player = UIView::new(mtm);
+                HostView::Video(player)
+            }
             NodeKind::SegmentedControl => {
                 HostView::Segments(objc2_ui_kit::UISegmentedControl::new(mtm))
             }
@@ -829,6 +853,9 @@ impl HostRenderer for UikitHost {
         self.navs.remove(&id);
         self.nav_backs.remove(&id);
         self.nav_targets.remove(&id);
+        self.maps.remove(&id);
+        self.videos.remove(&id);
+        self.video_playing.remove(&id);
         self.stepper_values.remove(&id);
         self.modals.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
@@ -887,6 +914,84 @@ impl HostRenderer for UikitHost {
             "variant" if matches!(view, HostView::Button(_)) => {
                 self.button_variants.insert(id, text.clone().unwrap_or_else(|| "text".to_owned()));
                 self.refresh_button(id);
+            }
+            // --- mapa
+            "latitude" | "longitude" | "zoom" | "showsUser"
+                if matches!(view, HostView::Map(_)) =>
+            {
+                let HostView::Map(map) = view else { return };
+                if key == "showsUser" {
+                    map.setShowsUserLocation(matches!(value, PropValue::Bool(true)));
+                    return;
+                }
+                let entry = self.maps.entry(id).or_insert((0.0, 0.0, 12.0));
+                match key {
+                    "latitude" => entry.0 = number.unwrap_or(0.0) as f64,
+                    "longitude" => entry.1 = number.unwrap_or(0.0) as f64,
+                    _ => entry.2 = number.unwrap_or(12.0) as f64,
+                }
+                let (lat, lon, zoom) = *entry;
+                // MapKit no tiene niveles de zoom: tiene cuánto globo se ve.
+                // Cada nivel es la mitad del anterior, y el 0 abarca los 360
+                // grados de longitud, así que el ancho es 360 / 2^zoom.
+                let span = 360.0 / 2f64.powf(zoom.max(0.0));
+                map.setRegion_animated(
+                    crate::map::MKCoordinateRegion {
+                        center: crate::map::CLLocationCoordinate2D {
+                            latitude: lat,
+                            longitude: lon,
+                        },
+                        span: crate::map::MKCoordinateSpan {
+                            latitude_delta: span,
+                            longitude_delta: span,
+                        },
+                    },
+                    false,
+                );
+            }
+            // --- vídeo
+            "url" | "playing" | "muted" if matches!(view, HostView::Video(_)) => {
+                let HostView::Video(container) = view else { return };
+                if key == "url" {
+                    let Some(raw) = text.as_deref() else { return };
+                    let Some(url) =
+                        (unsafe { objc2_foundation::NSURL::URLWithString(&NSString::from_str(raw)) })
+                    else {
+                        return;
+                    };
+                    let player = crate::video::AVPlayer::with_url(&url, self.mtm);
+                    let controller = crate::video::AVPlayerViewController::new(self.mtm);
+                    controller.setPlayer(Some(&player));
+                    controller.setShowsPlaybackControls(true);
+                    // Contención de verdad: el controlador entra como hijo del
+                    // que manda. Colgar solo su vista funciona hasta que algo
+                    // —una rotación, el modo pantalla completa— pregunta por
+                    // el controlador que la gobierna y no hay ninguno.
+                    if let Some(root) =
+                        self.container.window().and_then(|w| w.rootViewController())
+                    {
+                        unsafe { root.addChildViewController(&controller) };
+                        let view = controller.view().expect("el controlador trae vista");
+                        view.setFrame(container.bounds());
+                        container.addSubview(&view);
+                        unsafe { controller.didMoveToParentViewController(Some(&root)) };
+                    }
+                    self.videos.insert(id, (player, controller));
+                    return;
+                }
+                let Some((player, _)) = self.videos.get(&id) else { return };
+                match key {
+                    "playing" => {
+                        if matches!(value, PropValue::Bool(true)) {
+                            self.video_playing.insert(id);
+                            player.play();
+                        } else {
+                            self.video_playing.remove(&id);
+                            player.pause();
+                        }
+                    }
+                    _ => player.setMuted(matches!(value, PropValue::Bool(true))),
+                }
             }
             // --- cabecera de navegación
             "title" | "backTitle" | "showsBack" if matches!(view, HostView::Nav(_)) => {
@@ -1531,6 +1636,31 @@ impl HostRenderer for UikitHost {
     }
 
     fn flush(&mut self) {
+        // Volver a pedir que suene lo que debería estar sonando.
+        //
+        // `play()` sobre un reproductor que todavía no ha cargado nada no
+        // prende: el `rate` se queda en cero y ahí se queda para siempre, sin
+        // error y con la capa en negro. Como la prop `playing` llega una sola
+        // vez, hay que reintentarlo hasta que agarre.
+        for (id, (player, _)) in &self.videos {
+            if self.video_playing.contains(id) && player.rate() == 0.0 && player.status() == 1 {
+                player.play();
+            }
+        }
+
+        // La vista del reproductor al tamaño de la suya.
+        //
+        // No basta con hacerlo en `set_layout`: el reproductor se crea cuando
+        // llega la dirección del vídeo, que es *después* de que el marco esté
+        // puesto, así que nace con cero de ancho y nadie vuelve a tocarlo.
+        for (id, (_, controller)) in &self.videos {
+            let Some(view) = self.views.get(id) else { continue };
+            let Some(inner) = controller.view() else { continue };
+            let bounds = view.as_view().bounds();
+            if inner.frame().size != bounds.size {
+                inner.setFrame(bounds);
+            }
+        }
         self.run_stack_animations();
         for id in std::mem::take(&mut self.dirty_alerts) {
             let Some(mut state) = self.alerts.remove(&id) else { continue };

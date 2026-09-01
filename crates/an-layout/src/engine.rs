@@ -104,11 +104,16 @@ impl LayoutEngine {
             width: AvailableSpace::Definite(viewport.0),
             height: AvailableSpace::Definite(viewport.1),
         };
-        self.tree.compute_layout_with_measure(
-            node,
-            available,
-            |known, available, _node_id, ctx, _style| measure_leaf(known, available, ctx, measurer),
-        )?;
+        // En taffy 0.14 la función de medida ya no recibe las medidas sueltas
+        // ni devuelve un tamaño: recibe la entrada entera del layout y
+        // devuelve su salida. `compute_leaf_layout` hace el trabajo de en
+        // medio —aplicar estilos, bordes y relleno— y solo nos pide el tamaño
+        // del contenido, que es lo que sabemos.
+        self.tree.compute_layout_with_measure(node, available, |inputs, _node_id, ctx, style| {
+            taffy::compute_leaf_layout(inputs, style, |_, _| 0.0, |known, available| {
+                measure_leaf(known, available, ctx, measurer)
+            })
+        })?;
         Ok(())
     }
 
@@ -123,7 +128,10 @@ impl LayoutEngine {
     pub fn content_size(&self, id: u32) -> Result<(f32, f32), LayoutError> {
         let node = self.node(id)?;
         let l = self.tree.layout(node)?;
-        Ok((l.content_size.width, l.content_size.height))
+        // En 0.14 esto es el rectángulo de desbordamiento desplazable, medido
+        // desde el origen del scroll: su borde derecho e inferior son justo lo
+        // que ocupa el contenido, que es lo que quiere un `UIScrollView`.
+        Ok((l.scrollable_overflow_rect.right, l.scrollable_overflow_rect.bottom))
     }
 
     pub fn len(&self) -> usize {

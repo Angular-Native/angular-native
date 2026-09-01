@@ -6,7 +6,4 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-# Fijado: el código está escrito contra esta API. taffy 0.14 renombra
-# `content_size` y cambia la firma de la medición, así que subir es un
-# trabajo consciente, no algo que deba pasar de refilón al añadir otra cosa.
-taffy = { version = "=0.10.0", default-features = false, features = ["std", "flexbox", "taffy_tree", "content_size"] }
+taffy = { version = "0.14.0", default-features = false, features = ["std", "flexbox", "taffy_tree", "content_size"] }

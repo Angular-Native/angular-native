@@ -792,6 +792,64 @@ export class WebView extends NativeVisual {
 }
 
 /**
+ * Mapa.
+ *
+ * En iOS es `MKMapView`, el del sistema. En Android no hay ninguno en la
+ * plataforma —el de Google vive en Play Services, que pide clave de API y una
+ * dependencia que este build no puede traer—, así que ahí se dibujan teselas
+ * de OpenStreetMap sobre un `Canvas`: es una vista nativa, pero no es el mapa
+ * del sistema y no trae rutas ni búsqueda.
+ */
+@Directive({ selector: 'MapView' })
+export class MapView extends NativeVisual {
+  @Input() set latitude(value: number | null) {
+    this.set('latitude', value ?? 0)
+  }
+
+  @Input() set longitude(value: number | null) {
+    this.set('longitude', value ?? 0)
+  }
+
+  /**
+   * Nivel de zoom al estilo de las teselas: 0 es el mundo entero y cada nivel
+   * es el doble de cerca. MapKit no trabaja así —trabaja con cuántos grados se
+   * ven— y la conversión la hace el host, para que la misma cifra signifique
+   * lo mismo en las dos plataformas.
+   */
+  @Input() set zoom(value: number | null) {
+    this.set('zoom', value ?? 12)
+  }
+
+  /** El punto de dónde estás. Solo en iOS: el mapa de Android no lo sabe. */
+  @Input() set showsUser(value: boolean | null) {
+    this.set('showsUser', value ?? false)
+  }
+}
+
+/**
+ * Vídeo.
+ *
+ * `VideoView` en Android. En iOS no hay una vista de vídeo: hay una capa
+ * —`AVPlayerLayer`— que se cuelga de cualquier vista, así que el host la
+ * cuelga y le ajusta el marco. Una capa no se estira con su vista.
+ */
+@Directive({ selector: 'VideoView' })
+export class VideoView extends NativeVisual {
+  @Input() set url(value: string | null) {
+    this.set('url', value)
+  }
+
+  @Input() set playing(value: boolean | null) {
+    this.set('playing', value ?? false)
+  }
+
+  /** Solo en iOS: `VideoView` no entrega el reproductor de dentro. */
+  @Input() set muted(value: boolean | null) {
+    this.set('muted', value ?? false)
+  }
+}
+
+/**
  * Icono del sistema.
  *
  * No se dibuja nada ni se empaqueta ningún juego de iconos: en iOS es un SF
@@ -938,8 +996,10 @@ export const NATIVE_PRIMITIVES = [
   DatePicker,
   Icon,
   Modal,
+  MapView,
   NavigationBar,
   TextEditor,
+  VideoView,
   WebView,
   SearchBar,
   SegmentedControl,

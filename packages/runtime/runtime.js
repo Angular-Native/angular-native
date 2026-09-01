@@ -248,7 +248,9 @@
     DatePicker: 20,
     NavigationBar: 21,
     TextEditor: 22,
-    WebView: 23
+    WebView: 23,
+    MapView: 24,
+    VideoView: 25
   }
 
   class CommandWriter {

@@ -55,6 +55,8 @@ public final class AnHost {
     private static final int KIND_NAV = 21;
     private static final int KIND_TEXT_AREA = 22;
     private static final int KIND_WEB = 23;
+    private static final int KIND_MAP = 24;
+    private static final int KIND_VIDEO = 25;
     /** Lo que dura una transición de pila. Igual que en iOS. */
     private static final long TRANSITION_MS = 300;
     /** Resolución del deslizador y de la barra de progreso, que van en enteros. */
@@ -115,6 +117,9 @@ public final class AnHost {
     private final SparseArray<String> buttonVariants = new SparseArray<>();
 
     private final SparseArray<Integer> buttonColors = new SparseArray<>();
+
+    /** Centro de cada mapa: la latitud y la longitud llegan por separado. */
+    private final java.util.HashMap<Integer, float[]> mapCenters = new java.util.HashMap<>();
 
     /** Estado de presentación de cada `<Modal>`. */
     private final SparseArray<ModalState> modals = new SparseArray<>();
@@ -248,6 +253,17 @@ public final class AnHost {
                 view = area;
                 break;
             }
+            case KIND_MAP:
+                view = new AnMapView(context);
+                break;
+            case KIND_VIDEO: {
+                // `VideoView` sí está en la plataforma, con sus controles y su
+                // gestión de foco de audio.
+                android.widget.VideoView video = new android.widget.VideoView(context);
+                video.setOnPreparedListener(player -> player.setLooping(true));
+                view = video;
+                break;
+            }
             case KIND_WEB: {
                 android.webkit.WebView web = new android.webkit.WebView(context);
                 web.getSettings().setJavaScriptEnabled(true);
@@ -372,6 +388,7 @@ public final class AnHost {
         buttonVariants.remove(id);
         buttonColors.remove(id);
         modals.remove(id);
+        mapCenters.remove(id);
         gestures.remove(Integer.valueOf(id));
         scrollContent.remove(id);
         watchers.remove(id);
@@ -887,7 +904,40 @@ public final class AnHost {
                     ((AnStepper) view).setStep(number(value, 1f));
                 }
                 break;
+            case "latitude":
+            case "longitude":
+                if (view instanceof AnMapView) {
+                    float[] centro = mapCenters.computeIfAbsent(id, k -> new float[2]);
+                    centro["latitude".equals(key) ? 0 : 1] = number(value, 0f);
+                    ((AnMapView) view).setCenter(centro[0], centro[1]);
+                }
+                break;
+            case "zoom":
+                if (view instanceof AnMapView) {
+                    ((AnMapView) view).setZoom(number(value, 12f));
+                }
+                break;
+            case "showsUser":
+                // El mapa de aquí no sabe dónde estás: no es el del sistema.
+                break;
+            case "playing":
+                if (view instanceof android.widget.VideoView) {
+                    if ("true".equals(value)) {
+                        ((android.widget.VideoView) view).start();
+                    } else {
+                        ((android.widget.VideoView) view).pause();
+                    }
+                }
+                break;
+            case "muted":
+                // `VideoView` no expone el volumen; haría falta llegar al
+                // `MediaPlayer` de dentro, y no lo entrega.
+                break;
             case "url":
+                if (view instanceof android.widget.VideoView && value != null) {
+                    ((android.widget.VideoView) view).setVideoURI(android.net.Uri.parse(value));
+                    break;
+                }
                 if (view instanceof android.webkit.WebView && value != null) {
                     ((android.webkit.WebView) view).loadUrl(value);
                 }

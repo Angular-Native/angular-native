@@ -9,48 +9,43 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::rc::Rc;
 
 use an_bridge::runtime::LogSink;
-use jni::objects::{GlobalRef, JValue};
+use jni::objects::{Global, JObject, JValue};
 use jni::JavaVM;
 
 /// `console.*` desde JavaScript.
 pub struct AndroidLog {
     vm: JavaVM,
-    host: GlobalRef,
+    /// Compartida y no copiada: desde jni 0.22 una referencia global no se
+    /// puede duplicar sin el entorno, y usarla desde otro hilo sí es legal.
+    host: std::sync::Arc<Global<JObject<'static>>>,
 }
 
 impl AndroidLog {
-    pub fn new(vm: JavaVM, host: GlobalRef) -> Rc<Self> {
-        Rc::new(AndroidLog { vm, host })
+    pub fn new(vm: JavaVM, host: Global<JObject<'static>>) -> Rc<Self> {
+        Rc::new(AndroidLog { vm, host: std::sync::Arc::new(host) })
     }
 
-    /// Otra referencia a la misma JavaVM. El puntero es estable durante toda la
-    /// vida del proceso; envolverlo otra vez es la forma soportada de
-    /// compartirla.
+    /// Otra referencia a la misma JavaVM. Desde jni 0.22 `JavaVM` es `Clone`,
+    /// que es lo que antes había que hacer a mano envolviendo el puntero.
     pub fn java_vm(&self) -> JavaVM {
-        unsafe { JavaVM::from_raw(self.vm.get_java_vm_pointer()) }
-            .expect("la JavaVM sigue viva mientras el proceso lo esté")
+        self.vm.clone()
     }
 
-    pub fn host_ref(&self) -> GlobalRef {
-        self.host.clone()
-    }
 }
 
 impl LogSink for AndroidLog {
     fn log(&self, level: u8, message: &str) {
-        let Ok(mut env) = self.vm.attach_current_thread() else {
-            return;
-        };
-        let Ok(text) = env.new_string(message) else { return };
-        let result = env.call_method(
-            self.host.as_obj(),
-            "log",
-            "(ILjava/lang/String;)V",
-            &[JValue::Int(level as i32), JValue::Object(&text)],
-        );
-        if result.is_err() {
-            let _ = env.exception_clear();
-        }
+        let _ = self.vm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
+            let Ok(text) = env.new_string(message) else { return Ok(()) };
+            crate::host::call_java(
+                env,
+                self.host.as_obj(),
+                "log",
+                "(ILjava/lang/String;)V",
+                &[JValue::Int(level as i32), JValue::Object(&text)],
+            );
+            Ok(())
+        });
     }
 }
 
@@ -74,13 +69,11 @@ pub fn redirect_stderr(sink: Rc<AndroidLog>) {
     let read = unsafe { OwnedFd::from_raw_fd(read_fd) };
 
     // El sumidero usa JNI, que exige engancharse al hilo: por eso el hilo
-    // lector construye el suyo propio en vez de compartir el `Rc`.
-    // La JavaVM es válida durante toda la vida del proceso; envolver el
-    // puntero otra vez es la forma soportada de compartirla entre hilos.
-    let vm = Some(sink.java_vm());
+    // lector construye el suyo propio en vez de compartir el `Rc`, que no
+    // cruza hilos. La referencia al host sí, dentro de un `Arc`.
+    let vm = sink.java_vm();
     let host = sink.host.clone();
     std::thread::spawn(move || {
-        let Some(vm) = vm else { return };
         let sink = AndroidLog { vm, host };
         let reader = BufReader::new(std::fs::File::from(read));
         for line in reader.lines().map_while(Result::ok) {
