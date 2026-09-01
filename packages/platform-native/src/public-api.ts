@@ -1,5 +1,6 @@
 export { bootstrapNativeApplication, platformNative } from './platform'
 export { NATIVE_LOCATION_PROVIDERS, NativePlatformLocation } from './location'
+export { globalHotState, hotState } from './hot-state'
 export { callNative, Device, NativeModules } from './native-modules'
 export {
   NATIVE_STACK_PROVIDERS,

@@ -53,4 +53,12 @@ pub trait JsRuntime {
     /// Un frame de JS: timers vencidos, microtareas hasta agotarlas, y el
     /// búfer de comandos que haya salido de todo ello.
     fn tick(&mut self, now_ms: f64) -> Result<Vec<u8>, JsError>;
+
+    /// Estado que la app quiere conservar si la recargan. Se pide justo antes
+    /// de tirar el motor.
+    fn take_hot_state(&mut self) -> String;
+
+    /// Se lo devuelve al motor nuevo, antes de evaluar el bundle: los
+    /// componentes lo leen mientras se construyen.
+    fn restore_hot_state(&mut self, state: &str) -> Result<(), JsError>;
 }

@@ -473,6 +473,55 @@
     }
   }
 
+  // ------------------------------------------------------- estado entre recargas
+  //
+  // Una recarga tira el motor entero y levanta otro: los componentes son
+  // nuevos y sus señales vuelven a su valor inicial. Lo que sobrevive es lo
+  // que se apunte aquí — la ruta actual, el scroll, lo escrito en un
+  // formulario— que en la práctica es casi todo lo que uno no quiere perder.
+  //
+  // No es el *fast refresh* de React Native: eso conserva los propios
+  // componentes, y para eso hace falta cargar los módulos por separado y
+  // sustituir la metadata de los que cambiaron.
+
+  let restored = {}
+  const hotSources = new Map()
+
+  global.__an_hot = {
+    /** Lo que este `key` valía antes de la última recarga, si valía algo. */
+    read(key) {
+      return Object.prototype.hasOwnProperty.call(restored, key) ? restored[key] : undefined
+    },
+
+    /** Apunta de dónde leer el valor de `key` cuando toque recargar. */
+    register(key, read) {
+      hotSources.set(key, read)
+      return () => hotSources.delete(key)
+    }
+  }
+
+  /// La llama el core justo antes de tirar el motor.
+  global.__an_hot_state = function () {
+    const state = {}
+    for (const [key, read] of hotSources) {
+      try {
+        state[key] = read()
+      } catch (error) {
+        console.warn(`no se pudo guardar el estado de ${key}:`, error)
+      }
+    }
+    return JSON.stringify(state)
+  }
+
+  /// La llama el core en el motor nuevo, antes de evaluar el bundle.
+  global.__an_restore_hot_state = function (json) {
+    try {
+      restored = JSON.parse(json) || {}
+    } catch {
+      restored = {}
+    }
+  }
+
   // --------------------------------------------------------------- ciclo de frame
 
   /// Eventos nativos, antes que los timers: lo que tocó el usuario en este

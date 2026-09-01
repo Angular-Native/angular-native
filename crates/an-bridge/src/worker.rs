@@ -97,15 +97,22 @@ impl RuntimeWorker {
                             ..Reply::default()
                         },
                         Request::Reload { name, code } => {
+                            // El estado que la app quiera conservar se pide
+                            // antes de tirar el motor y se le devuelve al
+                            // nuevo antes de evaluar nada: los componentes lo
+                            // leen mientras se construyen.
+                            let state = js.take_hot_state();
                             shadow.reset();
                             pending_layout.clear();
                             match QuickJsRuntime::new() {
                                 Ok(fresh) => {
                                     js = fresh;
-                                    Reply {
-                                        error: js.eval(&name, &code).err().map(|e| e.to_string()),
-                                        ..Reply::default()
+                                    let mut error =
+                                        js.restore_hot_state(&state).err().map(|e| e.to_string());
+                                    if error.is_none() {
+                                        error = js.eval(&name, &code).err().map(|e| e.to_string());
                                     }
+                                    Reply { error, ..Reply::default() }
                                 }
                                 Err(error) => {
                                     Reply { error: Some(error.to_string()), ..Reply::default() }

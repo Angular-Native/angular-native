@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core'
+import { hotState } from '@angular-native/platform'
 import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
 
 /**
@@ -112,9 +113,12 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
 export class AppComponent {
   readonly tabTitles = ['Ajustes', 'Actividad', 'Cuenta']
 
-  readonly tab = signal(0)
+  // Estas sobreviven a una recarga en caliente: al guardar un fichero, la
+  // pestaña y el volumen siguen donde estaban.
+  readonly tab = hotState('controls.tab', 0)
+  readonly volume = hotState('controls.volume', 35)
+
   readonly notify = signal(true)
-  readonly volume = signal(35)
   readonly modal = signal(false)
   readonly alert = signal(false)
   readonly answer = signal('sin respuesta todavía')

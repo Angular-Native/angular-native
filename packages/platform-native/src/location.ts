@@ -1,4 +1,6 @@
 import { Injectable } from '@angular/core'
+
+import { globalHotState } from './hot-state'
 import {
   APP_BASE_HREF,
   LocationStrategy,
@@ -7,6 +9,27 @@ import {
   type LocationChangeListener
 } from '@angular/common'
 import type { Provider } from '@angular/core'
+
+/** Historial guardado por una recarga anterior, si lo hubo. */
+interface SavedHistory {
+  stack: Array<{ url: string; state: unknown }>
+  index: number
+}
+
+let historySource: (() => SavedHistory) | null = null
+const savedHistory = globalHotState<SavedHistory | null>('an.history', null)
+
+function restoreHistory(): SavedHistory | null {
+  return savedHistory()
+}
+
+function rememberHistory(read: () => SavedHistory): void {
+  historySource = read
+  savedHistory.set(read())
+  // La señal se lee al recargar, así que basta con mantenerla al día.
+  const original = historySource
+  savedHistory.update(() => original())
+}
 
 /**
  * `PlatformLocation` sobre una pila en memoria.
@@ -24,6 +47,18 @@ export class NativePlatformLocation extends PlatformLocation {
   private stack: Array<{ url: string; state: unknown }> = [{ url: '/', state: null }]
   private index = 0
   private readonly listeners: LocationChangeListener[] = []
+
+  constructor() {
+    super()
+    // La pila sobrevive a una recarga en caliente: volver al principio de la
+    // app cada vez que se guarda un fichero es lo primero que molesta.
+    const saved = restoreHistory()
+    if (saved) {
+      this.stack = saved.stack
+      this.index = saved.index
+    }
+    rememberHistory(() => ({ stack: this.stack, index: this.index }))
+  }
 
   override getBaseHrefFromDOM(): string {
     return '/'
@@ -80,6 +115,11 @@ export class NativePlatformLocation extends PlatformLocation {
 
   override replaceState(state: unknown, _title: string, url: string): void {
     this.stack[this.index] = { url, state }
+    this.remember()
+  }
+
+  private remember(): void {
+    if (historySource) savedHistory.set(historySource())
   }
 
   override pushState(state: unknown, _title: string, url: string): void {
@@ -88,6 +128,7 @@ export class NativePlatformLocation extends PlatformLocation {
     this.stack.length = this.index + 1
     this.stack.push({ url, state })
     this.index = this.stack.length - 1
+    this.remember()
   }
 
   override forward(): void {
@@ -102,6 +143,7 @@ export class NativePlatformLocation extends PlatformLocation {
     const next = this.index + relativePosition
     if (next < 0 || next >= this.stack.length) return
     this.index = next
+    this.remember()
     // El router escucha aquí para deshacer la navegación.
     for (const listener of this.listeners) {
       listener({ type: 'popstate', state: this.stack[next].state })

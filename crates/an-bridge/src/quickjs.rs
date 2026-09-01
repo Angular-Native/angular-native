@@ -284,6 +284,31 @@ impl JsRuntime for QuickJsRuntime {
         })
     }
 
+    fn take_hot_state(&mut self) -> String {
+        self.context
+            .with(|ctx| -> Result<String, JsError> {
+                let collect: Function = ctx
+                    .globals()
+                    .get("__an_hot_state")
+                    .map_err(|e| exception_message(&ctx, e))?;
+                collect.call::<_, String>(()).map_err(|e| exception_message(&ctx, e))
+            })
+            .unwrap_or_else(|error| {
+                eprintln!("angular-native: no se pudo guardar el estado: {error}");
+                "{}".to_owned()
+            })
+    }
+
+    fn restore_hot_state(&mut self, state: &str) -> Result<(), JsError> {
+        self.context.with(|ctx| -> Result<(), JsError> {
+            let restore: Function = ctx
+                .globals()
+                .get("__an_restore_hot_state")
+                .map_err(|e| exception_message(&ctx, e))?;
+            restore.call::<_, ()>((state,)).map_err(|e| exception_message(&ctx, e))
+        })
+    }
+
     fn tick(&mut self, now_ms: f64) -> Result<Vec<u8>, JsError> {
         self.context.with(|ctx| -> Result<(), JsError> {
             let tick: Function = ctx
