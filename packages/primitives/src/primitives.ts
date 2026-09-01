@@ -1,4 +1,13 @@
-import { DestroyRef, Directive, ElementRef, inject, Input, Renderer2 } from '@angular/core'
+import {
+  DestroyRef,
+  Directive,
+  effect,
+  ElementRef,
+  inject,
+  input,
+  Renderer2,
+  type Signal
+} from '@angular/core'
 import { outputFromObservable } from '@angular/core/rxjs-interop'
 import { map, Observable } from 'rxjs'
 
@@ -97,14 +106,108 @@ export interface NativeScrollEvent {
  * el nombre apaga la comprobación de propiedades: `[bakcgroundColor]` con
  * errata pasaría el compilador y fallaría en silencio en el dispositivo.
  *
- * Con directivas, cada prop es un `@Input` declarado: el compilador de
+ * Con directivas, cada prop es una entrada declarada: el compilador de
  * plantillas la comprueba, el editor la autocompleta, y la directiva es el
  * sitio natural donde convertir el valor antes de mandarlo al core.
+ *
+ * Todas son `input()` de señales. Un `set` de `@Input` corría en el momento
+ * exacto en que Angular escribía la entrada; una señal se lee cuando alguien
+ * la lee, así que quien manda las propiedades al núcleo es el `effect` de
+ * `forwardInputs`, uno por vista.
  */
+/**
+ * Los nombres de las entradas de una directiva, sacados de la definición que
+ * compila Angular.
+ *
+ * Se recorre la cadena de herencia en vez de fiarse de que la definición de la
+ * hija ya traiga las de la madre: eso lo hace una `feature` de Angular, y
+ * depender de cuándo corre para algo que se puede sumar aquí no compensa.
+ *
+ * Se calcula una vez por clase, no por vista: son las mismas para todas.
+ */
+const inputsByClass = new WeakMap<Function, readonly string[]>()
+
+function inputNames(type: Function): readonly string[] {
+  const found = inputsByClass.get(type)
+  if (found) {
+    return found
+  }
+  const names = new Set<string>()
+  for (let current: Function | null = type; current; current = Object.getPrototypeOf(current)) {
+    const def = Reflect.get(current, 'ɵdir') as { inputs?: Record<string, unknown> } | undefined
+    // `Reflect.get` sube por el prototipo, así que la definición de la madre
+    // aparecería otra vez en la hija; solo cuenta la suya.
+    if (def && Object.hasOwn(current, 'ɵdir')) {
+      for (const name of Object.keys(def.inputs ?? {})) {
+        names.add(name)
+      }
+    }
+  }
+  const list = [...names]
+  inputsByClass.set(type, list)
+  return list
+}
+
 @Directive()
 export abstract class NativeVisual {
   protected readonly node = inject(ElementRef).nativeElement
   protected readonly renderer = inject(Renderer2)
+
+  constructor() {
+    this.forwardInputs()
+  }
+
+  /**
+   * Manda al núcleo lo que cambie de las entradas.
+   *
+   * Un `effect` por vista y no uno por entrada: una `<View>` declara veinte y
+   * lo normal es que no haya ninguna puesta, y veinte nodos reactivos por
+   * vista se notan cuando hay setenta en pantalla.
+   *
+   * La lista de entradas sale de la definición que compila Angular, no de una
+   * escrita a mano: una entrada nueva que se olvidara de esa lista no haría
+   * nada, y nadie lo diría.
+   *
+   * `null` es «no lo toques»: una entrada sin poner vale `null` y no se manda,
+   * que es lo que hacía un `set` que no se llamaba nunca. En cuanto se manda
+   * una vez, se sigue mandando aunque vuelva a `null`, porque entonces `null`
+   * sí quiere decir «quítalo».
+   */
+  private forwardInputs(): void {
+    const names = inputNames(this.constructor)
+    const renamed = this.nativeNames()
+    const sent = new Map<string, unknown>()
+    effect(() => {
+      for (const name of names) {
+        const prop = name in renamed ? renamed[name] : name
+        // `null` es la forma de decir que esa entrada se maneja a mano.
+        if (prop === null) {
+          continue
+        }
+        const source: unknown = Reflect.get(this, name)
+        if (typeof source !== 'function') {
+          continue
+        }
+        const value = (source as Signal<unknown>)()
+        if (value === null && !sent.has(name)) {
+          continue
+        }
+        if (sent.has(name) && sent.get(name) === value) {
+          continue
+        }
+        sent.set(name, value)
+        this.set(prop, value)
+      }
+    })
+  }
+
+  /**
+   * Entradas cuyo nombre en el núcleo no es el de la plantilla, y entradas que
+   * no se reenvían —esas van con `null`—.
+   */
+  protected nativeNames(): Readonly<Record<string, string | null>> {
+    return {}
+  }
 
   protected set(name: string, value: unknown): void {
     this.renderer.setProperty(this.node, name, value ?? null)
@@ -172,9 +275,7 @@ export abstract class NativeVisual {
    */
   readonly safeArea = outputFromObservable(this.nativeEvent<NativeSafeAreaInsets>('safeArea'))
 
-  @Input() set backgroundColor(value: string | null) {
-    this.set('backgroundColor', value)
-  }
+  readonly backgroundColor = input<string | null>(null)
 
   /**
    * Cuántos milisegundos tarda esta vista en llegar a sus valores nuevos.
@@ -187,20 +288,12 @@ export abstract class NativeVisual {
    * Lo que se anima es el cambio, no un valor concreto: se pone una vez y
    * vale para todos los que vengan después. Cero o `null` lo apaga.
    */
-  @Input() set animate(value: number | null) {
-    this.set('animate', value)
-  }
+  readonly animate = input<number | null>(null)
 
-  @Input() set animateDelay(value: number | null) {
-    this.set('animateDelay', value)
-  }
+  readonly animateDelay = input<number | null>(null)
 
   /** Por defecto `ease-out`: sale rápido y frena al llegar. */
-  @Input() set animateEasing(
-    value: 'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | null
-  ) {
-    this.set('animateEasing', value)
-  }
+  readonly animateEasing = input<'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | null>(null)
 
   /**
    * Desplazar, escalar y girar.
@@ -211,70 +304,40 @@ export abstract class NativeVisual {
    * Para mover algo *y* que lo de al lado se aparte, hay que cambiar el
    * layout, no esto.
    */
-  @Input() set translateX(value: number | null) {
-    this.set('translateX', value)
-  }
+  readonly translateX = input<number | null>(null)
 
-  @Input() set translateY(value: number | null) {
-    this.set('translateY', value)
-  }
+  readonly translateY = input<number | null>(null)
 
-  @Input() set scale(value: number | null) {
-    this.set('scale', value)
-  }
+  readonly scale = input<number | null>(null)
 
-  @Input() set scaleX(value: number | null) {
-    this.set('scaleX', value)
-  }
+  readonly scaleX = input<number | null>(null)
 
-  @Input() set scaleY(value: number | null) {
-    this.set('scaleY', value)
-  }
+  readonly scaleY = input<number | null>(null)
 
   /** En radianes, como lo que manda el gesto de girar. */
-  @Input() set rotate(value: number | null) {
-    this.set('rotate', value)
-  }
+  readonly rotate = input<number | null>(null)
 
-  @Input() set borderRadius(value: number | null) {
-    this.set('borderRadius', value)
-  }
+  readonly borderRadius = input<number | null>(null)
 
   // Radios por esquina. UIKit solo sabe de un radio único, así que cuando
   // difieren el host dibuja el contorno y lo usa de máscara; Android lo
   // resuelve con `setCornerRadii`.
-  @Input() set borderTopLeftRadius(value: number | null) {
-    this.set('borderTopLeftRadius', value)
-  }
+  readonly borderTopLeftRadius = input<number | null>(null)
 
-  @Input() set borderTopRightRadius(value: number | null) {
-    this.set('borderTopRightRadius', value)
-  }
+  readonly borderTopRightRadius = input<number | null>(null)
 
-  @Input() set borderBottomRightRadius(value: number | null) {
-    this.set('borderBottomRightRadius', value)
-  }
+  readonly borderBottomRightRadius = input<number | null>(null)
 
-  @Input() set borderBottomLeftRadius(value: number | null) {
-    this.set('borderBottomLeftRadius', value)
-  }
+  readonly borderBottomLeftRadius = input<number | null>(null)
 
-  @Input() set borderWidth(value: number | null) {
-    this.set('borderWidth', value)
-  }
+  readonly borderWidth = input<number | null>(null)
 
-  @Input() set borderColor(value: string | null) {
-    this.set('borderColor', value)
-  }
+  readonly borderColor = input<string | null>(null)
 
-  @Input() set opacity(value: number | null) {
-    this.set('opacity', value)
-  }
+  readonly opacity = input<number | null>(null)
 
   /** Identificador para pruebas de interfaz; acaba en accessibilityIdentifier. */
-  @Input() set testID(value: string | null) {
-    this.set('testID', value)
-  }
+  readonly testID = input<string | null>(null)
 }
 
 @Directive({ selector: 'View' })
@@ -293,9 +356,9 @@ export class StackView extends NativeVisual {
    * Sentido de la próxima transición. Lo decide quien navega, que es el
    * único que sabe si se avanza o se retrocede.
    */
-  @Input() set transition(value: 'push' | 'pop' | 'none' | null) {
-    this.set('transition', value ?? 'none')
-  }
+  readonly transition = input<'push' | 'pop' | 'none' | null, 'push' | 'pop' | 'none' | null>(null, {
+    transform: (value) => value ?? 'none'
+  })
 
   /** Gesto de borde en iOS, botón físico en Android. */
   readonly back = outputFromObservable(this.nativeEvent<void>('back'))
@@ -303,22 +366,18 @@ export class StackView extends NativeVisual {
 
 @Directive({ selector: 'ScrollView' })
 export class ScrollView extends NativeVisual {
-  @Input() set showsScrollIndicator(value: boolean | null) {
-    this.set('showsScrollIndicator', value)
-  }
+  readonly showsScrollIndicator = input<boolean | null>(null)
 
   /** El rebote de iOS al llegar al final. */
-  @Input() set bounces(value: boolean | null) {
-    this.set('bounces', value)
-  }
+  readonly bounces = input<boolean | null>(null)
 
   /**
    * Si está recargando. Ponerlo a `false` cierra la ruedecilla; la abre el
    * propio gesto, no esta prop.
    */
-  @Input() set refreshing(value: boolean | null) {
-    this.set('refreshing', value ?? false)
-  }
+  readonly refreshing = input<boolean | null, boolean | null>(null, {
+    transform: (value) => value ?? false
+  })
 
   /**
    * Tirar para recargar.
@@ -362,100 +421,62 @@ export class Image extends NativeVisual {
    * Ruta de la imagen. Sin esquema es un recurso del bundle de la app; con
    * `http` o `https` se baja por red y aparece cuando llegue.
    */
-  @Input() set source(value: string | null) {
-    this.set('source', value)
-  }
+  readonly source = input<string | null>(null)
 
   /** `contain` por defecto; también `cover`, `stretch` y `center`. */
-  @Input() set resizeMode(value: 'contain' | 'cover' | 'stretch' | 'center' | null) {
-    this.set('resizeMode', value)
-  }
+  readonly resizeMode = input<'contain' | 'cover' | 'stretch' | 'center' | null>(null)
 
   /**
    * Tamaño intrínseco. Se rellena solo al cargar la imagen; fijarlo a mano
    * sirve para reservar el hueco antes de que llegue y evitar el salto.
    */
-  @Input() set intrinsicWidth(value: number | null) {
-    this.set('intrinsicWidth', value)
-  }
+  readonly intrinsicWidth = input<number | null>(null)
 
-  @Input() set intrinsicHeight(value: number | null) {
-    this.set('intrinsicHeight', value)
-  }
+  readonly intrinsicHeight = input<number | null>(null)
 
   readonly load = outputFromObservable(this.nativeEvent<NativeImageLoadEvent>('load'))
 }
 
 @Directive({ selector: 'Text' })
 export class Text extends NativeVisual {
-  @Input() set color(value: string | null) {
-    this.set('color', value)
-  }
+  readonly color = input<string | null>(null)
 
-  @Input() set fontSize(value: number | null) {
-    this.set('fontSize', value)
-  }
+  readonly fontSize = input<number | null>(null)
 
   /** `'bold'`, `'normal'` o la escala numérica de CSS (100..900). */
-  @Input() set fontWeight(value: string | number | null) {
-    this.set('fontWeight', value)
-  }
+  readonly fontWeight = input<string | number | null>(null)
 
-  @Input() set fontStyle(value: 'normal' | 'italic' | null) {
-    this.set('fontStyle', value)
-  }
+  readonly fontStyle = input<'normal' | 'italic' | null>(null)
 
-  @Input() set fontFamily(value: string | null) {
-    this.set('fontFamily', value)
-  }
+  readonly fontFamily = input<string | null>(null)
 
-  @Input() set letterSpacing(value: number | null) {
-    this.set('letterSpacing', value)
-  }
+  readonly letterSpacing = input<number | null>(null)
 
-  @Input() set lineHeight(value: number | null) {
-    this.set('lineHeight', value)
-  }
+  readonly lineHeight = input<number | null>(null)
 
-  @Input() set textAlign(value: 'left' | 'center' | 'right' | 'justify' | null) {
-    this.set('textAlign', value)
-  }
+  readonly textAlign = input<'left' | 'center' | 'right' | 'justify' | null>(null)
 
   /** 0 o nulo = sin límite. */
-  @Input() set numberOfLines(value: number | null) {
-    this.set('numberOfLines', value)
-  }
+  readonly numberOfLines = input<number | null>(null)
 }
 
 @Directive({ selector: 'TextInput' })
 export class TextInput extends NativeVisual {
-  @Input() set placeholder(value: string | null) {
-    this.set('placeholder', value)
-  }
+  readonly placeholder = input<string | null>(null)
 
   /**
    * El host solo escribe en el campo si el texto difiere de verdad: asignarlo
    * en cada tecla movería el cursor al final.
    */
-  @Input() set value(value: string | null) {
-    this.set('value', value)
-  }
+  readonly value = input<string | null>(null)
 
-  @Input() set secureTextEntry(value: boolean | null) {
-    this.set('secureTextEntry', value)
-  }
+  readonly secureTextEntry = input<boolean | null>(null)
 
-  @Input() set editable(value: boolean | null) {
-    this.set('editable', value)
-  }
+  readonly editable = input<boolean | null>(null)
 
-  @Input() set color(value: string | null) {
-    this.set('color', value)
-  }
+  readonly color = input<string | null>(null)
 
-  @Input() set fontSize(value: number | null) {
-    this.set('fontSize', value)
-  }
+  readonly fontSize = input<number | null>(null)
 
   /** Emparejado con `value`, habilita `[(value)]` en la plantilla. */
   readonly valueChange = outputFromObservable(
@@ -485,11 +506,11 @@ export interface NativeTabSelectEvent {
 @Directive({ selector: 'TabBar' })
 export class TabBar extends NativeVisual {
   /** Títulos, en orden. */
-  @Input() set items(value: readonly string[] | null) {
-    // El protocolo no lleva listas y una barra de pestañas no justifica
-    // añadirlas: viajan como JSON.
-    this.set('items', JSON.stringify(value ?? []))
-  }
+  // El protocolo no lleva listas y una barra de pestañas no justifica
+  // añadirlas: viajan como JSON.
+  readonly items = input<string | null, readonly string[] | null>(null, {
+    transform: (value) => JSON.stringify(value ?? [])
+  })
 
   /**
    * Iconos, en el mismo orden que los títulos.
@@ -498,18 +519,16 @@ export class TabBar extends NativeVisual {
    * `search`, `settings`— y también los nativos de cada plataforma. Una barra
    * de pestañas sin iconos es legal, pero no es lo que espera nadie.
    */
-  @Input() set icons(value: readonly string[] | null) {
-    this.set('icons', JSON.stringify(value ?? []))
-  }
+  readonly icons = input<string | null, readonly string[] | null>(null, {
+    transform: (value) => JSON.stringify(value ?? [])
+  })
 
-  @Input() set selectedIndex(value: number | null) {
-    this.set('selectedIndex', value ?? 0)
-  }
+  readonly selectedIndex = input<number | null, number | null>(null, {
+    transform: (value) => value ?? 0
+  })
 
   /** Color de la pestaña activa. */
-  @Input() set color(value: string | null) {
-    this.set('color', value)
-  }
+  readonly color = input<string | null>(null)
 
   readonly select = outputFromObservable(
     this.nativeEvent<NativeTabSelectEvent>('select').pipe(map((event) => event.index))
@@ -519,14 +538,12 @@ export class TabBar extends NativeVisual {
 /** Interruptor del sistema. */
 @Directive({ selector: 'Switch' })
 export class Switch extends NativeVisual {
-  @Input() set on(value: boolean | null) {
-    this.set('on', value ?? false)
-  }
+  readonly on = input<boolean | null, boolean | null>(null, {
+    transform: (value) => value ?? false
+  })
 
   /** Color cuando está encendido. */
-  @Input() set color(value: string | null) {
-    this.set('color', value)
-  }
+  readonly color = input<string | null>(null)
 
   /** Emparejado con `on`, habilita `[(on)]` en la plantilla. */
   readonly onChange = outputFromObservable(
@@ -537,21 +554,19 @@ export class Switch extends NativeVisual {
 /** Deslizador del sistema. */
 @Directive({ selector: 'Slider' })
 export class Slider extends NativeVisual {
-  @Input() set value(value: number | null) {
-    this.set('value', value ?? 0)
-  }
+  readonly value = input<number | null, number | null>(null, {
+    transform: (value) => value ?? 0
+  })
 
-  @Input() set minimumValue(value: number | null) {
-    this.set('minimumValue', value ?? 0)
-  }
+  readonly minimumValue = input<number | null, number | null>(null, {
+    transform: (value) => value ?? 0
+  })
 
-  @Input() set maximumValue(value: number | null) {
-    this.set('maximumValue', value ?? 1)
-  }
+  readonly maximumValue = input<number | null, number | null>(null, {
+    transform: (value) => value ?? 1
+  })
 
-  @Input() set color(value: string | null) {
-    this.set('color', value)
-  }
+  readonly color = input<string | null>(null)
 
   readonly valueChange = outputFromObservable(
     this.nativeEvent<{ value: number }>('change').pipe(map((event) => event.value))
@@ -561,37 +576,31 @@ export class Slider extends NativeVisual {
 /** Ruedecilla de carga. Se esconde sola cuando se para. */
 @Directive({ selector: 'ActivityIndicator' })
 export class ActivityIndicator extends NativeVisual {
-  @Input() set animating(value: boolean | null) {
-    this.set('animating', value ?? true)
-  }
+  readonly animating = input<boolean | null, boolean | null>(null, {
+    transform: (value) => value ?? true
+  })
 
-  @Input() set color(value: string | null) {
-    this.set('color', value)
-  }
+  readonly color = input<string | null>(null)
 }
 
 /** Barra de progreso determinada. `progress` va de 0 a 1. */
 @Directive({ selector: 'ProgressBar' })
 export class ProgressBar extends NativeVisual {
-  @Input() set progress(value: number | null) {
-    this.set('progress', value ?? 0)
-  }
+  readonly progress = input<number | null, number | null>(null, {
+    transform: (value) => value ?? 0
+  })
 
-  @Input() set color(value: string | null) {
-    this.set('color', value)
-  }
+  readonly color = input<string | null>(null)
 }
 
 /** Botón del sistema, con su tipografía y su respuesta al toque. */
 @Directive({ selector: 'Button' })
 export class Button extends NativeVisual {
-  @Input() set title(value: string | null) {
-    this.set('title', value ?? '')
-  }
+  readonly title = input<string | null, string | null>(null, {
+    transform: (value) => value ?? ''
+  })
 
-  @Input() set color(value: string | null) {
-    this.set('color', value)
-  }
+  readonly color = input<string | null>(null)
 
   /**
    * Cómo se ve: solo el rótulo, relleno, o con un fondo tenue del mismo color.
@@ -601,9 +610,9 @@ export class Button extends NativeVisual {
    * Android, donde los botones de Material 3 no están en la plataforma y la
    * píldora se dibuja a mano sobre un `Button` de verdad.
    */
-  @Input() set variant(value: 'text' | 'filled' | 'tonal' | null) {
-    this.set('variant', value ?? 'text')
-  }
+  readonly variant = input<'text' | 'filled' | 'tonal' | null, 'text' | 'filled' | 'tonal' | null>(null, {
+    transform: (value) => value ?? 'text'
+  })
 }
 
 /**
@@ -615,17 +624,15 @@ export class Button extends NativeVisual {
  */
 @Directive({ selector: 'SegmentedControl' })
 export class SegmentedControl extends NativeVisual {
-  @Input() set items(value: readonly string[] | null) {
-    this.set('items', JSON.stringify(value ?? []))
-  }
+  readonly items = input<string | null, readonly string[] | null>(null, {
+    transform: (value) => JSON.stringify(value ?? [])
+  })
 
-  @Input() set selectedIndex(value: number | null) {
-    this.set('selectedIndex', value ?? 0)
-  }
+  readonly selectedIndex = input<number | null, number | null>(null, {
+    transform: (value) => value ?? 0
+  })
 
-  @Input() set color(value: string | null) {
-    this.set('color', value)
-  }
+  readonly color = input<string | null>(null)
 
   readonly change = outputFromObservable(this.nativeEvent<NativeIndexEvent>('change'))
 }
@@ -638,22 +645,20 @@ export class SegmentedControl extends NativeVisual {
  */
 @Directive({ selector: 'Stepper' })
 export class Stepper extends NativeVisual {
-  @Input() set value(v: number | null) {
-    this.set('value', v ?? 0)
-  }
+  readonly value = input<number | null, number | null>(null, {
+    transform: (v) => v ?? 0
+  })
 
-  @Input() set minimumValue(v: number | null) {
-    this.set('minimumValue', v ?? 0)
-  }
+  readonly minimumValue = input<number | null, number | null>(null, {
+    transform: (v) => v ?? 0
+  })
 
-  @Input() set maximumValue(v: number | null) {
-    this.set('maximumValue', v ?? 100)
-  }
+  readonly maximumValue = input<number | null, number | null>(null, {
+    transform: (v) => v ?? 100
+  })
 
   /** Cuánto sube o baja cada toque. Uno por defecto. */
-  @Input() set step(v: number | null) {
-    this.set('stepValue', v ?? 1)
-  }
+  readonly step = input<number | null, number | null>(null, { transform: (v) => v ?? 1 })
 
   readonly change = outputFromObservable(this.nativeEvent<NativeValueEvent>('change'))
 }
@@ -667,13 +672,11 @@ export class Stepper extends NativeVisual {
  */
 @Directive({ selector: 'SearchBar' })
 export class SearchBar extends NativeVisual {
-  @Input() set value(v: string | null) {
-    this.set('value', v ?? '')
-  }
+  readonly value = input<string | null, string | null>(null, {
+    transform: (v) => v ?? ''
+  })
 
-  @Input() set placeholder(v: string | null) {
-    this.set('placeholder', v)
-  }
+  readonly placeholder = input<string | null>(null)
 
   readonly input = outputFromObservable(this.nativeEvent<NativeTextEvent>('input'))
   readonly submit = outputFromObservable(this.nativeEvent<NativeTextEvent>('submit'))
@@ -688,13 +691,13 @@ export class SearchBar extends NativeVisual {
  */
 @Directive({ selector: 'Picker' })
 export class Picker extends NativeVisual {
-  @Input() set items(value: readonly string[] | null) {
-    this.set('items', JSON.stringify(value ?? []))
-  }
+  readonly items = input<string | null, readonly string[] | null>(null, {
+    transform: (value) => JSON.stringify(value ?? [])
+  })
 
-  @Input() set selectedIndex(value: number | null) {
-    this.set('selectedIndex', value ?? 0)
-  }
+  readonly selectedIndex = input<number | null, number | null>(null, {
+    transform: (value) => value ?? 0
+  })
 
   readonly change = outputFromObservable(this.nativeEvent<NativeIndexEvent>('change'))
 }
@@ -708,14 +711,14 @@ export class Picker extends NativeVisual {
  */
 @Directive({ selector: 'DatePicker' })
 export class DatePicker extends NativeVisual {
-  @Input() set value(v: number | Date | null) {
-    const millis = v instanceof Date ? v.getTime() : (v ?? Date.now())
-    this.set('value', millis)
-  }
+  /** Milisegundos o `Date`; al núcleo siempre van milisegundos. */
+  readonly value = input<number | null, number | Date | null>(null, {
+    transform: (v) => (v instanceof Date ? v.getTime() : (v ?? Date.now()))
+  })
 
-  @Input() set mode(v: 'date' | 'time' | 'dateAndTime' | null) {
-    this.set('mode', v ?? 'date')
-  }
+  readonly mode = input<'date' | 'time' | 'dateAndTime' | null, 'date' | 'time' | 'dateAndTime' | null>(null, {
+    transform: (v) => v ?? 'date'
+  })
 
   readonly change = outputFromObservable(this.nativeEvent<NativeValueEvent>('change'))
 }
@@ -730,22 +733,20 @@ export class DatePicker extends NativeVisual {
  */
 @Directive({ selector: 'NavigationBar' })
 export class NavigationBar extends NativeVisual {
-  @Input() set title(value: string | null) {
-    this.set('title', value ?? '')
-  }
+  readonly title = input<string | null, string | null>(null, {
+    transform: (value) => value ?? ''
+  })
 
-  @Input() set showsBack(value: boolean | null) {
-    this.set('showsBack', value ?? false)
-  }
+  readonly showsBack = input<boolean | null, boolean | null>(null, {
+    transform: (value) => value ?? false
+  })
 
   /**
    * Rótulo del botón de atrás. Solo en iOS: en Android la barra de
    * herramientas lleva únicamente la flecha, que es lo que hace cualquier app
    * de la plataforma.
    */
-  @Input() set backTitle(value: string | null) {
-    this.set('backTitle', value)
-  }
+  readonly backTitle = input<string | null>(null)
 
   readonly back = outputFromObservable(this.nativeEvent<void>('back'))
 }
@@ -759,17 +760,15 @@ export class NavigationBar extends NativeVisual {
  */
 @Directive({ selector: 'TextEditor' })
 export class TextEditor extends NativeVisual {
-  @Input() set value(v: string | null) {
-    this.set('value', v ?? '')
-  }
+  readonly value = input<string | null, string | null>(null, {
+    transform: (v) => v ?? ''
+  })
 
-  @Input() set editable(v: boolean | null) {
-    this.set('editable', v ?? true)
-  }
+  readonly editable = input<boolean | null, boolean | null>(null, {
+    transform: (v) => v ?? true
+  })
 
-  @Input() set color(v: string | null) {
-    this.set('color', v)
-  }
+  readonly color = input<string | null>(null)
 
   readonly change = outputFromObservable(this.nativeEvent<NativeTextEvent>('change'))
 }
@@ -782,13 +781,9 @@ export class TextEditor extends NativeVisual {
  */
 @Directive({ selector: 'WebView' })
 export class WebView extends NativeVisual {
-  @Input() set url(value: string | null) {
-    this.set('url', value)
-  }
+  readonly url = input<string | null>(null)
 
-  @Input() set html(value: string | null) {
-    this.set('html', value)
-  }
+  readonly html = input<string | null>(null)
 }
 
 /**
@@ -802,13 +797,13 @@ export class WebView extends NativeVisual {
  */
 @Directive({ selector: 'MapView' })
 export class MapView extends NativeVisual {
-  @Input() set latitude(value: number | null) {
-    this.set('latitude', value ?? 0)
-  }
+  readonly latitude = input<number | null, number | null>(null, {
+    transform: (value) => value ?? 0
+  })
 
-  @Input() set longitude(value: number | null) {
-    this.set('longitude', value ?? 0)
-  }
+  readonly longitude = input<number | null, number | null>(null, {
+    transform: (value) => value ?? 0
+  })
 
   /**
    * Nivel de zoom al estilo de las teselas: 0 es el mundo entero y cada nivel
@@ -816,14 +811,14 @@ export class MapView extends NativeVisual {
    * ven— y la conversión la hace el host, para que la misma cifra signifique
    * lo mismo en las dos plataformas.
    */
-  @Input() set zoom(value: number | null) {
-    this.set('zoom', value ?? 12)
-  }
+  readonly zoom = input<number | null, number | null>(null, {
+    transform: (value) => value ?? 12
+  })
 
   /** El punto de dónde estás. Solo en iOS: el mapa de Android no lo sabe. */
-  @Input() set showsUser(value: boolean | null) {
-    this.set('showsUser', value ?? false)
-  }
+  readonly showsUser = input<boolean | null, boolean | null>(null, {
+    transform: (value) => value ?? false
+  })
 }
 
 /**
@@ -835,18 +830,16 @@ export class MapView extends NativeVisual {
  */
 @Directive({ selector: 'VideoView' })
 export class VideoView extends NativeVisual {
-  @Input() set url(value: string | null) {
-    this.set('url', value)
-  }
+  readonly url = input<string | null>(null)
 
-  @Input() set playing(value: boolean | null) {
-    this.set('playing', value ?? false)
-  }
+  readonly playing = input<boolean | null, boolean | null>(null, {
+    transform: (value) => value ?? false
+  })
 
   /** Solo en iOS: `VideoView` no entrega el reproductor de dentro. */
-  @Input() set muted(value: boolean | null) {
-    this.set('muted', value ?? false)
-  }
+  readonly muted = input<boolean | null, boolean | null>(null, {
+    transform: (value) => value ?? false
+  })
 }
 
 /**
@@ -868,37 +861,31 @@ export class VideoView extends NativeVisual {
 export class Icon extends NativeVisual {
   constructor() {
     super()
-    // Un `@Input` que no se enlaza no corre, así que sin esto un `<Icon>` sin
-    // `[size]` se quedaría sin tamaño y sin configuración de símbolo. El
-    // layout sí le da 24x24 por su cuenta; esto es para que el icono que se
-    // dibuja dentro sea el de ese tamaño.
-    this.size = null
+    // El tamaño no viaja como los demás porque no es una propiedad, son tres:
+    // la del símbolo, y el ancho y el alto de la vista. Y corre aunque nadie
+    // ponga `[size]`, o un `<Icon>` pelado se quedaría sin tamaño de símbolo
+    // —el layout sí le da 24x24 por su cuenta, pero el dibujo de dentro no—.
+    effect(() => {
+      const points = this.size() ?? 24
+      this.set('iconSize', points)
+      this.renderer.setStyle(this.node, 'width', points)
+      this.renderer.setStyle(this.node, 'height', points)
+    })
   }
 
-  @Input() set name(value: string | null) {
-    this.set('name', value)
-  }
+  readonly name = input<string | null>(null)
 
   /**
    * Puntos. Además de fijar el tamaño de la vista, elige el trazo del
    * símbolo: en iOS un icono grande no es el pequeño escalado, es otro
    * dibujo.
    */
-  @Input() set size(value: number | null) {
-    const points = value ?? 24
-    this.set('iconSize', points)
-    this.renderer.setStyle(this.node, 'width', points)
-    this.renderer.setStyle(this.node, 'height', points)
-  }
+  readonly size = input<number | null>(null)
 
   /** Grosor del trazo, en la escala de la tipografía: 100..900. */
-  @Input() set weight(value: number | null) {
-    this.set('iconWeight', value)
-  }
+  readonly weight = input<number | null>(null)
 
-  @Input() set color(value: string | null) {
-    this.set('color', value)
-  }
+  readonly color = input<string | null>(null)
 }
 
 /**
@@ -913,17 +900,15 @@ export class Icon extends NativeVisual {
  */
 @Directive({ selector: 'Modal' })
 export class Modal extends NativeVisual {
-  @Input() set visible(value: boolean | null) {
-    this.set('visible', value ?? false)
-  }
+  readonly visible = input<boolean | null, boolean | null>(null, {
+    transform: (value) => value ?? false
+  })
 
   /**
    * `fullScreen` cubre la pantalla; `sheet` entra desde abajo con el tirador
    * y los topes del sistema.
    */
-  @Input() set presentation(value: 'fullScreen' | 'sheet' | null) {
-    this.set('presentation', value)
-  }
+  readonly presentation = input<'fullScreen' | 'sheet' | null>(null)
 
   /**
    * Se cerró.
@@ -952,26 +937,26 @@ export class Alert extends NativeVisual {
    * el diálogo centrado es para confirmar o avisar. En iOS sale desde abajo,
    * en Android es una lista.
    */
-  @Input() set sheet(value: boolean | null) {
-    this.set('sheet', value ?? false)
-  }
+  readonly sheet = input<boolean | null, boolean | null>(null, {
+    transform: (value) => value ?? false
+  })
 
-  @Input() set visible(value: boolean | null) {
-    this.set('visible', value ?? false)
-  }
+  readonly visible = input<boolean | null, boolean | null>(null, {
+    transform: (value) => value ?? false
+  })
 
-  @Input() set title(value: string | null) {
-    this.set('title', value ?? '')
-  }
+  readonly title = input<string | null, string | null>(null, {
+    transform: (value) => value ?? ''
+  })
 
-  @Input() set message(value: string | null) {
-    this.set('message', value ?? '')
-  }
+  readonly message = input<string | null, string | null>(null, {
+    transform: (value) => value ?? ''
+  })
 
   /** Títulos de los botones, en orden. Sin ninguno, sale un «OK». */
-  @Input() set buttons(value: readonly string[] | null) {
-    this.set('buttons', JSON.stringify(value ?? []))
-  }
+  readonly buttons = input<string | null, readonly string[] | null>(null, {
+    transform: (value) => JSON.stringify(value ?? [])
+  })
 
   /** Índice del botón pulsado. */
   readonly select = outputFromObservable(
