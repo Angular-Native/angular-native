@@ -396,6 +396,11 @@ public final class AnHost {
                                 com.google.android.material.R.attr.materialButtonOutlinedStyle);
                 button.setAllCaps(false);
                 button.setStrokeWidth(0);
+                // Un rótulo de botón no se parte: si no cabe, se recorta. Es lo
+                // que hace UIKit, y un botón con la palabra cortada por la
+                // mitad parece roto.
+                button.setMaxLines(1);
+                button.setEllipsize(android.text.TextUtils.TruncateAt.END);
                 view = button;
                 break;
             }
@@ -2154,38 +2159,47 @@ public final class AnHost {
         refreshButton(button, id);
     }
 
+    /**
+     * Deja el botón como pide su variante.
+     *
+     * Todo va por la API de `MaterialButton` —tinte, trazo, color del rótulo—
+     * y nada por `setBackground`: un `MaterialButton` **descarta** los fondos
+     * que no ha hecho él, así que la píldora que se le pasara a mano no se
+     * dibujaría y encima no lo diría. Dibujar lo dibuja su `MaterialShapeDrawable`,
+     * que es el que sabe de esquinas, elevación y ondas al pulsar.
+     */
     private void refreshButton(android.widget.Button button, int id) {
-        String variant = buttonVariants.get(id);
-        Integer color = buttonColors.get(id);
-        if (variant == null || "text".equals(variant)) {
-            button.setBackground(null);
-            if (color != null) {
-                button.setTextColor(color);
-            }
+        if (!(button instanceof com.google.android.material.button.MaterialButton)) {
             return;
         }
+        com.google.android.material.button.MaterialButton material =
+                (com.google.android.material.button.MaterialButton) button;
+        String variant = buttonVariants.get(id);
+        Integer color = buttonColors.get(id);
         int tint = color == null ? Color.WHITE : color;
-        android.graphics.drawable.GradientDrawable pill =
-                new android.graphics.drawable.GradientDrawable();
-        // Radio enorme a propósito: `GradientDrawable` lo recorta a la mitad
-        // del alto, que es justo la píldora de Material 3.
-        pill.setCornerRadius(1000f);
-        if ("outlined".equals(variant)) {
-            // Contorno y nada dentro, como el `bordered` de UIKit.
-            pill.setColor(Color.TRANSPARENT);
-            pill.setStroke(Math.round(density), tint);
-            button.setTextColor(tint);
-        } else if ("filled".equals(variant)) {
-            pill.setColor(tint);
-            // Sobre un relleno fuerte el rótulo va del color del fondo de la
-            // app, no del color del botón, o no se lee.
-            button.setTextColor(contrastOn(tint));
-        } else {
-            // Tonal: el mismo color muy rebajado, con el rótulo en el color.
-            pill.setColor(Color.argb(48, Color.red(tint), Color.green(tint), Color.blue(tint)));
-            button.setTextColor(tint);
+        int trazo = 0;
+        int fondo = Color.TRANSPARENT;
+        int rotulo = tint;
+
+        if ("filled".equals(variant)) {
+            fondo = tint;
+            // Sobre un relleno fuerte el rótulo va del color que contraste, no
+            // del color del botón, o se queda verde sobre verde.
+            rotulo = contrastOn(tint);
+        } else if ("tonal".equals(variant)) {
+            // El mismo color muy rebajado. Material 3 usa aquí el contenedor
+            // secundario del tema; con un color puesto a mano, rebajarlo es lo
+            // más parecido que hay sin inventarse una paleta.
+            fondo = Color.argb(48, Color.red(tint), Color.green(tint), Color.blue(tint));
+        } else if ("outlined".equals(variant)) {
+            trazo = Math.round(density);
         }
-        button.setBackground(pill);
+
+        material.setBackgroundTintList(android.content.res.ColorStateList.valueOf(fondo));
+        material.setStrokeWidth(trazo);
+        material.setStrokeColor(android.content.res.ColorStateList.valueOf(tint));
+        material.setTextColor(rotulo);
+        material.setIconTint(android.content.res.ColorStateList.valueOf(rotulo));
     }
 
     /** Blanco o negro, el que se lea sobre ese color. */
