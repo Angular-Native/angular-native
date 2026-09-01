@@ -91,6 +91,50 @@ export interface NativeScrollEvent {
 }
 
 /**
+ * Las claves que un control acepta en `[ios]` o en `[android]`.
+ *
+ * Se declara la lista aunque el tipo del objeto ya la diga, y no es
+ * redundante: el tipo lo comprueba el compilador sobre lo que ve, y no ve un
+ * objeto armado a trozos ni uno que viene de fuera. La lista es la que queda
+ * en tiempo de ejecución, y es también la que lee `check-wrapper.sh` para
+ * exigir que el host de esa plataforma —y solo ese— la mire.
+ */
+interface PlatformKeys {
+  readonly primitive: string
+  readonly platform: 'ios' | 'android'
+  readonly keys: ReadonlySet<string>
+}
+
+function platformKeys(
+  primitive: string,
+  platform: 'ios' | 'android',
+  keys: readonly string[]
+): PlatformKeys {
+  return { primitive, platform, keys: new Set(keys) }
+}
+
+/**
+ * Avisa una vez por clave que nadie va a mirar.
+ *
+ * Mismo trato que `warnUnknownStyle()` en el renderer y por el mismo motivo:
+ * una prop que viaja, no la reconoce nadie y no da error es un fallo que se ve
+ * como "esto no hace nada" y se busca en el sitio equivocado. Una vez por
+ * clave, porque el objeto se vuelve a evaluar en cada detección de cambios.
+ */
+const warnedPlatformProps = new Set<string>()
+
+function warnUnknownPlatformProp(where: PlatformKeys, key: string): void {
+  const seen = `${where.primitive}.${where.platform}.${key}`
+  if (warnedPlatformProps.has(seen)) return
+  warnedPlatformProps.add(seen)
+  console.warn(
+    `[angular-native] <${where.primitive}> no tiene "${key}" en [${where.platform}], ` +
+      `así que no hará nada. Acepta: ${[...where.keys].sort().join(', ')}. ` +
+      'Si existe en las dos plataformas es una entrada normal, no va aquí.'
+  )
+}
+
+/**
  * Primitivas nativas como directivas.
  *
  * La alternativa era `CUSTOM_ELEMENTS_SCHEMA`, que además de exigir un guion en
@@ -108,6 +152,38 @@ export abstract class NativeVisual {
 
   protected set(name: string, value: unknown): void {
     this.renderer.setProperty(this.node, name, value ?? null)
+  }
+
+  /** Lo que se mandó la última vez en cada objeto de plataforma. */
+  private readonly platformSent = new Map<string, Set<string>>()
+
+  /**
+   * Descompone `[ios]` o `[android]` en props sueltas con su prefijo.
+   *
+   * El prefijo hace dos cosas: que el host de la otra plataforma pueda
+   * descartar la prop sin saber qué es, y que el nombre siga siendo greppable
+   * —`"ios:subtitle"` tiene que aparecer en el host de iOS y no en el de
+   * Android, y eso lo comprueba un script—.
+   */
+  protected platform(where: PlatformKeys, value: Record<string, unknown> | null): void {
+    const previous = this.platformSent.get(where.platform)
+    const sent = new Set<string>()
+    for (const [key, raw] of Object.entries(value ?? {})) {
+      if (!where.keys.has(key)) {
+        warnUnknownPlatformProp(where, key)
+        continue
+      }
+      sent.add(key)
+      this.set(`${where.platform}:${key}`, raw)
+    }
+    // Una clave que estaba puesta y ya no está tiene que volver a su valor de
+    // fábrica: el control no se entera solo de que se la han quitado.
+    if (previous) {
+      for (const key of previous) {
+        if (!sent.has(key)) this.set(`${where.platform}:${key}`, null)
+      }
+    }
+    this.platformSent.set(where.platform, sent)
   }
 
   /**
@@ -279,6 +355,24 @@ export abstract class NativeVisual {
 
 @Directive({ selector: 'View' })
 export class View extends NativeVisual {}
+
+/**
+ * Un control del sistema: algo que se toca y que se puede apagar.
+ *
+ * `enabled` está aquí y no repetido en cada uno porque significa lo mismo en
+ * los ocho y en las dos plataformas —`UIControl.isEnabled` y
+ * `View.setEnabled`—, incluido el gris y el que deje de responder al toque,
+ * que lo pone el sistema y no nosotros.
+ *
+ * Los campos de texto no entran: ya tienen `editable`, que es la misma idea
+ * con el nombre que usa un campo.
+ */
+@Directive()
+export abstract class NativeControl extends NativeVisual {
+  @Input() set enabled(value: boolean | null) {
+    this.set('enabled', value ?? true)
+  }
+}
 
 /**
  * Pila de pantallas.
@@ -518,7 +612,7 @@ export class TabBar extends NativeVisual {
 
 /** Interruptor del sistema. */
 @Directive({ selector: 'Switch' })
-export class Switch extends NativeVisual {
+export class Switch extends NativeControl {
   @Input() set on(value: boolean | null) {
     this.set('on', value ?? false)
   }
@@ -536,7 +630,7 @@ export class Switch extends NativeVisual {
 
 /** Deslizador del sistema. */
 @Directive({ selector: 'Slider' })
-export class Slider extends NativeVisual {
+export class Slider extends NativeControl {
   @Input() set value(value: number | null) {
     this.set('value', value ?? 0)
   }
@@ -582,9 +676,41 @@ export class ProgressBar extends NativeVisual {
   }
 }
 
+/**
+ * Lo que el botón de iOS tiene y el de Android no.
+ *
+ * Es un alias y no una interfaz a propósito: una interfaz no se puede pasar
+ * por un `Record<string, unknown>` —TypeScript no le da firma de índice— y el
+ * recorrido de claves que hace `platform()` la necesita. Un alias sí.
+ */
+export type IosButtonProps = {
+  /**
+   * Segunda línea, más pequeña, debajo del rótulo.
+   *
+   * `UIButtonConfiguration.subtitle`. Material no tiene nada equivalente: un
+   * botón de dos líneas no es un botón de Material, así que no se imita.
+   */
+  subtitle?: string
+}
+
+/** Lo que el botón de Material tiene y el de UIKit no. */
+export type AndroidButtonProps = {
+  /** Color de la onda que sale del dedo. `MaterialButton.setRippleColor`. */
+  rippleColor?: string
+  /**
+   * Rótulo en mayúsculas. Era lo normal en Material 2 y dejó de serlo en
+   * Material 3, pero sigue estando y hay marcas que lo piden. En iOS un botón
+   * nunca ha llevado el rótulo en mayúsculas.
+   */
+  allCaps?: boolean
+}
+
+const BUTTON_IOS = platformKeys('Button', 'ios', ['subtitle'])
+const BUTTON_ANDROID = platformKeys('Button', 'android', ['rippleColor', 'allCaps'])
+
 /** Botón del sistema, con su tipografía y su respuesta al toque. */
 @Directive({ selector: 'Button' })
-export class Button extends NativeVisual {
+export class Button extends NativeControl {
   @Input() set title(value: string | null) {
     this.set('title', value ?? '')
   }
@@ -594,15 +720,52 @@ export class Button extends NativeVisual {
   }
 
   /**
-   * Cómo se ve: solo el rótulo, relleno, o con un fondo tenue del mismo color.
+   * Cómo se ve: solo el rótulo, relleno, con un fondo tenue del mismo color, o
+   * con el contorno y nada dentro.
    *
    * `text` por defecto, que es lo que hace un botón sin más en iOS. Las otras
-   * dos las dibuja la plataforma —`UIButtonConfiguration` en iOS—, salvo en
+   * las dibuja la plataforma —`UIButtonConfiguration` en iOS—, salvo en
    * Android, donde los botones de Material 3 no están en la plataforma y la
    * píldora se dibuja a mano sobre un `Button` de verdad.
+   *
+   * No hay `elevated`: Material la tiene y UIKit no tiene nada parecido, así
+   * que sería una variante que solo hace algo en media plataforma. Quien la
+   * quiera, por `[android]`.
    */
-  @Input() set variant(value: 'text' | 'filled' | 'tonal' | null) {
+  @Input() set variant(value: 'text' | 'filled' | 'tonal' | 'outlined' | null) {
     this.set('variant', value ?? 'text')
+  }
+
+  /**
+   * Icono a un lado del rótulo, por nombre, igual que `<Icon>`.
+   *
+   * Un SF Symbol en iOS y un Material Symbol en Android, así que la misma
+   * plantilla da el icono que le toca a cada plataforma.
+   */
+  @Input() set icon(value: string | null) {
+    this.set('icon', value)
+  }
+
+  /** De qué lado del rótulo. `leading` por defecto. */
+  @Input() set iconPosition(value: 'leading' | 'trailing' | null) {
+    this.set('iconPosition', value ?? 'leading')
+  }
+
+  @Input() set fontSize(value: number | null) {
+    this.set('fontSize', value)
+  }
+
+  /** `'bold'`, `'normal'` o la escala numérica de CSS (100..900). */
+  @Input() set fontWeight(value: string | number | null) {
+    this.set('fontWeight', value)
+  }
+
+  @Input() set ios(value: IosButtonProps | null) {
+    this.platform(BUTTON_IOS, value)
+  }
+
+  @Input() set android(value: AndroidButtonProps | null) {
+    this.platform(BUTTON_ANDROID, value)
   }
 }
 
@@ -614,7 +777,7 @@ export class Button extends NativeVisual {
  * del sistema, como la barra de pestañas.
  */
 @Directive({ selector: 'SegmentedControl' })
-export class SegmentedControl extends NativeVisual {
+export class SegmentedControl extends NativeControl {
   @Input() set items(value: readonly string[] | null) {
     this.set('items', JSON.stringify(value ?? []))
   }
@@ -637,7 +800,7 @@ export class SegmentedControl extends NativeVisual {
  * con dos botones del sistema.
  */
 @Directive({ selector: 'Stepper' })
-export class Stepper extends NativeVisual {
+export class Stepper extends NativeControl {
   @Input() set value(v: number | null) {
     this.set('value', v ?? 0)
   }
@@ -666,7 +829,7 @@ export class Stepper extends NativeVisual {
  * aspecto que la gente reconoce como "aquí se busca".
  */
 @Directive({ selector: 'SearchBar' })
-export class SearchBar extends NativeVisual {
+export class SearchBar extends NativeControl {
   @Input() set value(v: string | null) {
     this.set('value', v ?? '')
   }
@@ -687,7 +850,7 @@ export class SearchBar extends NativeVisual {
  * lo que usa el sistema para una lista corta. En Android es un `Spinner`.
  */
 @Directive({ selector: 'Picker' })
-export class Picker extends NativeVisual {
+export class Picker extends NativeControl {
   @Input() set items(value: readonly string[] | null) {
     this.set('items', JSON.stringify(value ?? []))
   }
@@ -707,7 +870,7 @@ export class Picker extends NativeVisual {
  * dispositivo, y eso lo resuelve cada plataforma.
  */
 @Directive({ selector: 'DatePicker' })
-export class DatePicker extends NativeVisual {
+export class DatePicker extends NativeControl {
   @Input() set value(v: number | Date | null) {
     const millis = v instanceof Date ? v.getTime() : (v ?? Date.now())
     this.set('value', millis)

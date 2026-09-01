@@ -38,6 +38,15 @@ check 'ProgressBar#[0-9]+ .*props color=#6ee7b7 progress=0.35' 'la barra recibe 
 # host: el layout reservaba un hueco que el texto no llenaba.
 check 'Text#[0-9]+ .*letterSpacing=2' 'el espaciado entre letras llega al host'
 check 'Text#[0-9]+ .*lineHeight=34' 'el interlineado llega al host'
+# El botón configurable: lo que existe en las dos plataformas va como entrada
+# normal, y lo que solo tiene una va en su objeto y viaja con su prefijo, que
+# es lo que permite que cada host descarte lo que no es suyo.
+check 'Button#[0-9]+ .*fontSize=17 fontWeight=bold' 'el botón recibe su tipografía'
+check 'Button#[0-9]+ .*icon=star .*variant=filled' 'el botón recibe icono y variante'
+check 'Button#[0-9]+ .*iconPosition=trailing .*variant=outlined' 'y el contorno con el icono al otro lado'
+check 'Button#[0-9]+ .*enabled=true' 'un control se puede apagar'
+check 'Button#[0-9]+ .*ios:subtitle=a pantalla completa' 'el subtítulo viaja marcado como de iOS'
+check 'Button#[0-9]+ .*android:allCaps=false android:rippleColor=#ffffff55' 'y la onda y las mayúsculas como de Android'
 # Los iconos: que midan lo suyo. El 24 es el de por defecto, sin `[size]`; los
 # otros vienen del tamaño pedido, que además elige el trazo del símbolo.
 check 'Icon#[0-9]+ \[[0-9]+,[0-9]+ 24x24\]' 'un icono sin medidas mide 24'

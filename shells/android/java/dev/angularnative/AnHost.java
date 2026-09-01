@@ -1005,6 +1005,49 @@ public final class AnHost {
                     applyButtonVariant((android.widget.Button) view, id, value);
                 }
                 break;
+            case "icon":
+                if (view instanceof com.google.android.material.button.MaterialButton) {
+                    com.google.android.material.button.MaterialButton material =
+                            (com.google.android.material.button.MaterialButton) view;
+                    material.setIcon(value == null ? null : iconDrawableFor(value));
+                    // El icono se tiñe con el color del rótulo: en un botón,
+                    // icono y texto son la misma cosa a efectos de contraste.
+                    material.setIconTint(
+                            android.content.res.ColorStateList.valueOf(
+                                    material.getCurrentTextColor()));
+                }
+                break;
+            case "iconPosition":
+                if (view instanceof com.google.android.material.button.MaterialButton) {
+                    ((com.google.android.material.button.MaterialButton) view)
+                            .setIconGravity(
+                                    "trailing".equals(value)
+                                            ? com.google.android.material.button.MaterialButton
+                                                    .ICON_GRAVITY_TEXT_END
+                                            : com.google.android.material.button.MaterialButton
+                                                    .ICON_GRAVITY_TEXT_START);
+                }
+                break;
+            // Props de una sola plataforma. Las de iOS llegan con su prefijo y
+            // caen en el `default`, que es justo lo que tienen que hacer aquí.
+            case "android:rippleColor":
+                if (view instanceof com.google.android.material.button.MaterialButton) {
+                    Integer ripple = parseColor(value);
+                    ((com.google.android.material.button.MaterialButton) view)
+                            .setRippleColor(
+                                    ripple == null
+                                            ? null
+                                            : android.content.res.ColorStateList.valueOf(ripple));
+                }
+                break;
+            case "android:allCaps":
+                if (view instanceof android.widget.Button) {
+                    ((android.widget.Button) view).setAllCaps("true".equals(value));
+                }
+                break;
+            case "enabled":
+                setEnabledDeep(view, !"false".equals(value));
+                break;
             case "name":
                 if (view instanceof TextView && isIcon(view)) {
                     ((TextView) view).setText(iconGlyph(value));
@@ -1443,6 +1486,24 @@ public final class AnHost {
                 .setStroke(Math.round(width[0] * density), color == null ? 0 : color);
     }
 
+    /**
+     * Apaga un control y todo lo que lleve dentro.
+     *
+     * `setEnabled` en un `ViewGroup` no llega a los hijos, y tres de los
+     * controles de aquí —el de pasos, el segmentado y la barra de pestañas— no
+     * están en la plataforma y son grupos de vistas nuestras. Sin bajar por el
+     * árbol, apagarlos los dejaba respondiendo al toque.
+     */
+    private void setEnabledDeep(View view, boolean enabled) {
+        view.setEnabled(enabled);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                setEnabledDeep(group.getChildAt(i), enabled);
+            }
+        }
+    }
+
     private FontState fontStateOf(int id) {
         FontState state = fontState.get(id);
         if (state == null) {
@@ -1823,7 +1884,12 @@ public final class AnHost {
         // Radio enorme a propósito: `GradientDrawable` lo recorta a la mitad
         // del alto, que es justo la píldora de Material 3.
         pill.setCornerRadius(1000f);
-        if ("filled".equals(variant)) {
+        if ("outlined".equals(variant)) {
+            // Contorno y nada dentro, como el `bordered` de UIKit.
+            pill.setColor(Color.TRANSPARENT);
+            pill.setStroke(Math.round(density), tint);
+            button.setTextColor(tint);
+        } else if ("filled".equals(variant)) {
             pill.setColor(tint);
             // Sobre un relleno fuerte el rótulo va del color del fondo de la
             // app, no del color del botón, o no se lee.

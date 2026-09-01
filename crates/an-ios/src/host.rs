@@ -330,6 +330,10 @@ pub struct UikitHost {
     button_titles: HashMap<NodeId, String>,
     button_colors: HashMap<NodeId, String>,
     button_variants: HashMap<NodeId, String>,
+    /// Segunda línea del botón, que solo existe en iOS.
+    button_subtitles: HashMap<NodeId, String>,
+    /// Icono de cada botón y de qué lado va, que también llegan sueltos.
+    button_icons: HashMap<NodeId, (String, String)>,
     /// Título, rótulo del atrás y si se enseña, de cada cabecera.
     navs: HashMap<NodeId, (String, String, bool)>,
     /// El botón de atrás vivo de cada cabecera, para poder engancharle el
@@ -402,6 +406,8 @@ impl UikitHost {
             button_titles: HashMap::new(),
             button_colors: HashMap::new(),
             button_variants: HashMap::new(),
+            button_subtitles: HashMap::new(),
+            button_icons: HashMap::new(),
             navs: HashMap::new(),
             nav_backs: HashMap::new(),
             nav_targets: HashMap::new(),
@@ -431,32 +437,49 @@ impl UikitHost {
         self.views.len()
     }
 
-    fn apply_font(&mut self, id: NodeId) {
-        let Some(spec) = self.fonts.get(&id) else { return };
-        let Some(label) = self.views.get(&id).and_then(HostView::as_label) else { return };
+    /// La `UIFont` que pide un `FontSpec`. Sin tocar ninguna vista: el mismo
+    /// cálculo lo necesitan el rótulo, el campo, el editor y el botón.
+    fn build_font(&self, spec: &an_layout::FontSpec) -> Retained<UIFont> {
         let size = spec.size as f64;
-        let font = if let Some(family) = &spec.family {
+        if let Some(family) = &spec.family {
             let name = NSString::from_str(family);
-            UIFont::fontWithName_size(&name, size)
-                .unwrap_or_else(|| UIFont::systemFontOfSize(size))
-        } else if spec.italic {
-            UIFont::italicSystemFontOfSize(size)
-        } else {
-            let weight = match spec.weight {
-                0..=299 => -0.6,
-                300..=399 => -0.4,
-                400..=499 => 0.0,
-                500..=599 => 0.23,
-                600..=699 => 0.3,
-                700..=799 => 0.4,
-                _ => 0.6,
-            };
-            UIFont::systemFontOfSize_weight(size, weight)
+            return UIFont::fontWithName_size(&name, size)
+                .unwrap_or_else(|| UIFont::systemFontOfSize(size));
+        }
+        if spec.italic {
+            return UIFont::italicSystemFontOfSize(size);
+        }
+        let weight = match spec.weight {
+            0..=299 => -0.6,
+            300..=399 => -0.4,
+            400..=499 => 0.0,
+            500..=599 => 0.23,
+            600..=699 => 0.3,
+            700..=799 => 0.4,
+            _ => 0.6,
         };
+        UIFont::systemFontOfSize_weight(size, weight)
+    }
+
+    fn apply_font(&mut self, id: NodeId) {
+        let Some(spec) = self.fonts.get(&id).cloned() else { return };
+        let font = self.build_font(&spec);
+        let Some(view) = self.views.get(&id) else { return };
         // Estos setters de UIKit están marcados unsafe por no ser thread-safe;
         // el `MainThreadMarker` del host garantiza que vamos por el hilo bueno.
-        unsafe { label.setFont(Some(&font)) };
-        label.setNumberOfLines(spec.max_lines.unwrap_or(0) as isize);
+        match view {
+            HostView::Label(label) => unsafe {
+                label.setFont(Some(&font));
+                label.setNumberOfLines(spec.max_lines.unwrap_or(0) as isize);
+            },
+            // El campo, el editor y el botón también tienen letra, y hasta
+            // ahora se quedaban con la de UIKit: `[fontSize]` en un
+            // `<TextInput>` era una prop declarada que no hacía nada.
+            HostView::Field(field) => unsafe { field.setFont(Some(&font)) },
+            HostView::Area(area) => unsafe { area.setFont(Some(&font)) },
+            HostView::Button(_) => self.refresh_button(id),
+            _ => return,
+        }
         self.apply_text_attributes(id);
     }
 
@@ -559,8 +582,16 @@ impl UikitHost {
     fn refresh_button(&self, id: NodeId) {
         let Some(HostView::Button(button)) = self.views.get(&id) else { return };
         let variant = self.button_variants.get(&id).map(String::as_str).unwrap_or("text");
+        let subtitle = self.button_subtitles.get(&id).cloned().unwrap_or_default();
+        let icon = self.button_icons.get(&id).cloned();
+        let font = self.fonts.get(&id).map(|spec| self.build_font(spec));
         // `UIButtonConfiguration` es lo que da los botones actuales de iOS:
-        // relleno, tintado o pelado, con sus fondos y sus esquinas.
+        // relleno, tintado, con contorno o pelado, con sus fondos y sus
+        // esquinas. Un subtítulo, un icono o una tipografía propia solo se
+        // pueden pedir por ahí, así que en cuanto hay alguno de los tres hace
+        // falta configuración aunque la variante sea la de solo rótulo.
+        let needs_config =
+            !subtitle.is_empty() || icon.is_some() || font.is_some() || variant != "text";
         unsafe {
             let config = match variant {
                 "filled" => {
@@ -569,17 +600,62 @@ impl UikitHost {
                 "tonal" => {
                     Some(objc2_ui_kit::UIButtonConfiguration::tintedButtonConfiguration(self.mtm))
                 }
+                // El contorno de UIKit: fondo transparente y una línea
+                // alrededor, que es lo que hace el botón `outlined` de
+                // Material.
+                "outlined" => {
+                    Some(objc2_ui_kit::UIButtonConfiguration::borderedButtonConfiguration(self.mtm))
+                }
+                _ if needs_config => {
+                    Some(objc2_ui_kit::UIButtonConfiguration::plainButtonConfiguration(self.mtm))
+                }
                 _ => None,
             };
+            if let Some(config) = &config {
+                if !subtitle.is_empty() {
+                    config.setSubtitle(Some(&NSString::from_str(&subtitle)));
+                }
+                if let Some((name, position)) = &icon {
+                    // El icono del botón se pide por nombre, igual que en
+                    // `<Icon>`: es el símbolo del sistema, no un dibujo.
+                    config.setImage(crate::icons::symbol(name, 0.0, 400).as_deref());
+                    config.setImagePlacement(if position == "trailing" {
+                        objc2_ui_kit::NSDirectionalRectEdge::Trailing
+                    } else {
+                        objc2_ui_kit::NSDirectionalRectEdge::Leading
+                    });
+                }
+            }
             button.setConfiguration(config.as_deref());
         }
         if let Some(title) = self.button_titles.get(&id) {
-            unsafe {
-                button.setTitle_forState(
-                    Some(&NSString::from_str(title)),
-                    UIControlState::Normal,
-                )
-            };
+            // Con configuración, el rótulo con tipografía propia solo entra
+            // como texto atribuido: `titleLabel.font` lo pisa UIKit al
+            // resolver la configuración.
+            match (&font, unsafe { button.configuration() }) {
+                (Some(font), Some(config)) => unsafe {
+                    let attributed = objc2_foundation::NSMutableAttributedString::initWithString(
+                        self.mtm.alloc::<objc2_foundation::NSMutableAttributedString>(),
+                        &NSString::from_str(title),
+                    );
+                    attributed.addAttribute_value_range(
+                        objc2_ui_kit::NSFontAttributeName,
+                        font,
+                        objc2_foundation::NSRange { location: 0, length: title.len() },
+                    );
+                    config.setAttributedTitle(Some(&attributed));
+                    button.setConfiguration(Some(&config));
+                },
+                _ => unsafe {
+                    if let (Some(font), Some(label)) = (&font, button.titleLabel()) {
+                        label.setFont(Some(font));
+                    }
+                    button.setTitle_forState(
+                        Some(&NSString::from_str(title)),
+                        UIControlState::Normal,
+                    )
+                },
+            }
         }
         let color = self.button_colors.get(&id).and_then(|c| crate::color::to_uicolor(c));
         if let Some(color) = color {
@@ -947,6 +1023,8 @@ impl HostRenderer for UikitHost {
         self.button_titles.remove(&id);
         self.button_colors.remove(&id);
         self.button_variants.remove(&id);
+        self.button_subtitles.remove(&id);
+        self.button_icons.remove(&id);
         self.navs.remove(&id);
         self.nav_backs.remove(&id);
         self.nav_targets.remove(&id);
@@ -1008,9 +1086,51 @@ impl HostRenderer for UikitHost {
                     self.animated(id, move || view.setAlpha(v as f64));
                 }
             }
-            "variant" if matches!(view, HostView::Button(_)) => {
-                self.button_variants.insert(id, text.clone().unwrap_or_else(|| "text".to_owned()));
+            // Props de una sola plataforma. Viajan con su prefijo, así que
+            // este host descarta de un vistazo las que son de la otra: no
+            // tiene que saber qué significan, solo de quién son.
+            _ if key.starts_with("android:") => {}
+            "variant" | "icon" | "iconPosition" | "ios:subtitle"
+                if matches!(view, HostView::Button(_)) =>
+            {
+                match key {
+                    "variant" => {
+                        self.button_variants
+                            .insert(id, text.clone().unwrap_or_else(|| "text".to_owned()));
+                    }
+                    "ios:subtitle" => {
+                        self.button_subtitles.insert(id, text.clone().unwrap_or_default());
+                    }
+                    "icon" => {
+                        let entry = self.button_icons.entry(id).or_default();
+                        entry.0 = text.clone().unwrap_or_default();
+                    }
+                    _ => {
+                        let entry = self.button_icons.entry(id).or_default();
+                        entry.1 = text.clone().unwrap_or_else(|| "leading".to_owned());
+                    }
+                }
+                // Un botón sin nombre de icono no lleva icono, aunque le
+                // quede el lado puesto de antes.
+                if self.button_icons.get(&id).is_some_and(|(name, _)| name.is_empty()) {
+                    self.button_icons.remove(&id);
+                }
                 self.refresh_button(id);
+            }
+            // Apagar un control es cosa de `UIControl`, que sabe ponerse gris
+            // y dejar de responder. Los que no lo son se quedan sin toque, que
+            // es lo más parecido que hay.
+            "enabled" => {
+                let on = !matches!(value, PropValue::Bool(false));
+                match view {
+                    HostView::Button(v) | HostView::Menu(v) => v.setEnabled(on),
+                    HostView::Toggle(v) => v.setEnabled(on),
+                    HostView::Slide(v) => v.setEnabled(on),
+                    HostView::Segments(v) => v.setEnabled(on),
+                    HostView::Step(v) => v.setEnabled(on),
+                    HostView::Date(v) => v.setEnabled(on),
+                    _ => native.setUserInteractionEnabled(on),
+                }
             }
             // --- mapa
             "latitude" | "longitude" | "zoom" | "showsUser"

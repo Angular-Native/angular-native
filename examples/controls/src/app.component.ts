@@ -62,11 +62,21 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
           <Button
             [style.flexGrow]="'1'"
             [title]="'Modal'"
+            [variant]="'filled'"
+            [icon]="'star'"
+            [fontSize]="17"
+            [fontWeight]="'bold'"
             [color]="'#6ee7b7'"
+            [ios]="{ subtitle: 'a pantalla completa' }"
+            [android]="{ rippleColor: '#ffffff55', allCaps: false }"
             (press)="modal.set(true)"></Button>
           <Button
             [style.flexGrow]="'1'"
             [title]="'Diálogo'"
+            [variant]="'outlined'"
+            [icon]="'settings'"
+            [iconPosition]="'trailing'"
+            [enabled]="notify()"
             [color]="'#6ee7b7'"
             (press)="alert.set(true)"></Button>
         </View>

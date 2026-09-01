@@ -70,6 +70,18 @@ for plataforma, claves in declaradas.items():
                 'entonces es común y va sin prefijo'
             )
 
+# El objeto de plataforma tiene que pasar por `platform()`, que es quien avisa
+# de una clave que nadie va a mirar. Mandarlo con `set()` a pelo funcionaría
+# —y por eso hay que impedirlo—: la clave viajaría y se perdería en silencio.
+for plataforma, cuerpo in re.findall(
+    r"@Input\(\) set (ios|android)\([^)]*\)[^{]*\{(.*?)\n  \}", directivas, re.S
+):
+    if 'this.platform(' not in cuerpo:
+        fallos.append(
+            f'  FALLO un [{plataforma}] no pasa por platform(): '
+            'una clave desconocida se perdería sin avisar'
+        )
+
 for linea in fallos:
     print(linea)
 if fallos:
@@ -80,6 +92,7 @@ print(f'  ok   las {len(comunes) - len(SOLO_NUCLEO) - len(pendientes_vistas)} pr
       'llegan a los dos hosts')
 print(f'  ok   las {len(declaradas["ios"])} props de [ios] las mira solo iOS')
 print(f'  ok   las {len(declaradas["android"])} props de [android] las mira solo Android')
+print('  ok   todos los objetos de plataforma pasan por platform(), que avisa de lo que no reconoce')
 if pendientes_vistas:
     print(f'  ok   {len(pendientes_vistas)} pendientes conocidas: {", ".join(sorted(pendientes_vistas))}')
 PY
