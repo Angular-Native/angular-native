@@ -1,20 +1,22 @@
 package dev.angularnative;
 
 import android.content.Context;
-import android.graphics.Color;
-import android.graphics.drawable.GradientDrawable;
-import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.ViewGroup;
 import android.widget.LinearLayout;
-import android.widget.TextView;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.textview.MaterialTextView;
 
 /**
  * Subir y bajar de uno en uno.
  *
- * `UIStepper` no tiene equivalente en la plataforma de Android, así que se arma
- * con dos botones y el valor entre ellos. El valor se enseña porque en Android
- * un par de botones sueltos no dice qué están cambiando; en iOS el control no
- * lo enseña porque ahí la convención es tenerlo al lado.
+ * Material 3 no tiene «stepper»: no es que falte en la librería, es que no
+ * existe en el sistema de diseño. Así que se arma con piezas que sí son suyas
+ * —dos botones de icono y un rótulo—, y no dibujando una imitación.
+ *
+ * El valor se enseña porque en Android un par de botones sueltos no dice qué
+ * están cambiando; en iOS el control no lo enseña porque ahí la convención es
+ * tenerlo al lado.
  */
 public final class AnStepper extends LinearLayout {
 
@@ -27,39 +29,36 @@ public final class AnStepper extends LinearLayout {
     private double minimum;
     private double maximum = 100;
     private double step = 1;
-    private final TextView label;
+    private final MaterialTextView label;
+    private final MaterialButton menos;
+    private final MaterialButton mas;
 
     public AnStepper(Context context) {
         super(context);
-        float density = context.getResources().getDisplayMetrics().density;
         setOrientation(HORIZONTAL);
         setGravity(Gravity.CENTER_VERTICAL);
 
-        GradientDrawable fondo = new GradientDrawable();
-        fondo.setCornerRadius(1000f);
-        fondo.setColor(Color.argb(28, 255, 255, 255));
-        setBackground(fondo);
-
-        addView(boton(context, "−", -1), botonParams(density));
-        label = new TextView(context);
+        menos = boton(context, "−", -1);
+        mas = boton(context, "+", 1);
+        label = new MaterialTextView(context);
         label.setGravity(Gravity.CENTER);
-        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        label.setTextColor(Color.WHITE);
-        addView(label, new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
-        addView(boton(context, "+", 1), botonParams(density));
+        label.setTextAppearance(
+                com.google.android.material.R.style.TextAppearance_Material3_TitleMedium);
+
+        addView(menos);
+        addView(label, new LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+        addView(mas);
         refresh();
     }
 
-    private LayoutParams botonParams(float density) {
-        return new LayoutParams(Math.round(44 * density), LayoutParams.MATCH_PARENT);
-    }
-
-    private TextView boton(Context context, String texto, int direccion) {
-        TextView boton = new TextView(context);
+    private MaterialButton boton(Context context, String texto, int direccion) {
+        // Botón de icono de Material 3: redondo, del tamaño que manda el
+        // sistema y con sus ondas al pulsar. Lleva texto en vez de icono porque
+        // «−» y «+» son eso, un carácter.
+        MaterialButton boton =
+                new MaterialButton(
+                        context, null, com.google.android.material.R.attr.materialIconButtonStyle);
         boton.setText(texto);
-        boton.setGravity(Gravity.CENTER);
-        boton.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
-        boton.setTextColor(Color.WHITE);
         boton.setOnClickListener(v -> nudge(direccion));
         return boton;
     }
@@ -106,5 +105,9 @@ public final class AnStepper extends LinearLayout {
         } else {
             label.setText(String.valueOf(value));
         }
+        // Un botón que no puede hacer nada se apaga, que es lo que hace
+        // cualquier control del sistema al llegar al tope.
+        menos.setEnabled(value > minimum);
+        mas.setEnabled(value < maximum);
     }
 }
