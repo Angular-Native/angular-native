@@ -23,10 +23,16 @@ struct TreeRecorder {
     texts: HashMap<NodeId, String>,
     content: HashMap<NodeId, (f32, f32)>,
     root: Option<NodeId>,
-    /// Transformaciones aplicadas a cada vista. Solo estas: son las únicas
-    /// props que no se ven en el árbol —no cambian marco ni contenido— y por
-    /// tanto las únicas que hay que apuntar para poder comprobarlas.
+    /// Transformaciones aplicadas a cada vista. Van aparte del resto de props
+    /// porque se imprimen compuestas y con dos decimales: lo que se comprueba
+    /// de un arrastre es la cifra exacta que llegó.
     transforms: HashMap<NodeId, HashMap<String, f32>>,
+    /// Todo lo demás que el host recibió, tal cual.
+    ///
+    /// Sin esto, una prop que llega bien y una que no llega se ven igual en el
+    /// volcado: no cambian ni el marco ni el texto. Apuntarlas es lo que
+    /// permite comprobar sin simulador que `[variant]` o `[ios]` viajaron.
+    props: HashMap<NodeId, HashMap<String, String>>,
     pressable: Vec<NodeId>,
     pannable: Vec<NodeId>,
     scrollable: Vec<NodeId>,
@@ -48,6 +54,7 @@ impl HostRenderer for TreeRecorder {
         self.frames.remove(&id);
         self.texts.remove(&id);
         self.transforms.remove(&id);
+        self.props.remove(&id);
         for children in self.order.values_mut() {
             children.retain(|child| *child != id);
         }
@@ -76,7 +83,9 @@ impl HostRenderer for TreeRecorder {
             if let Some(number) = value.as_f32() {
                 self.transforms.entry(id).or_default().insert(key.to_owned(), number);
             }
+            return;
         }
+        self.props.entry(id).or_default().insert(key.to_owned(), show_prop(value));
     }
     fn set_text(&mut self, id: NodeId, text: &str) {
         self.texts.insert(id, text.to_owned());
@@ -313,6 +322,20 @@ fn print_node(host: &TreeRecorder, id: NodeId, depth: usize) {
         .unwrap_or_default();
     // Las transformaciones se imprimen ordenadas: son un mapa, y sin ordenar
     // la salida cambiaría de una ejecución a otra y no se podría comprobar.
+    // Las props se imprimen ordenadas por la misma razón que las
+    // transformaciones: son un mapa, y sin ordenar la salida cambiaría de una
+    // ejecución a otra y no habría nada que comprobar.
+    let props = host
+        .props
+        .get(&id)
+        .filter(|values| !values.is_empty())
+        .map(|values| {
+            let mut parts: Vec<String> =
+                values.iter().map(|(key, value)| format!("{key}={value}")).collect();
+            parts.sort();
+            format!("  props {}", parts.join(" "))
+        })
+        .unwrap_or_default();
     let transform = host
         .transforms
         .get(&id)
@@ -325,7 +348,7 @@ fn print_node(host: &TreeRecorder, id: NodeId, depth: usize) {
         })
         .unwrap_or_default();
     println!(
-        "{:indent$}{kind}#{id} [{:.0},{:.0} {:.0}x{:.0}]{content}{transform}{text}",
+        "{:indent$}{kind}#{id} [{:.0},{:.0} {:.0}x{:.0}]{content}{transform}{text}{props}",
         "",
         rect.x,
         rect.y,
@@ -337,6 +360,18 @@ fn print_node(host: &TreeRecorder, id: NodeId, depth: usize) {
         for child in children {
             print_node(host, *child, depth + 1);
         }
+    }
+}
+
+/// Una prop en una línea. Las cadenas largas se cortan: `items` de una barra
+/// de pestañas o el HTML de un navegador llenarían el volcado entero.
+fn show_prop(value: &PropValue) -> String {
+    match value {
+        PropValue::Null => "null".to_owned(),
+        PropValue::Bool(v) => v.to_string(),
+        PropValue::Number(v) => format!("{v}"),
+        PropValue::Str(v) => truncate(v, 32),
+        PropValue::Color(v) => format!("#{v:08x}"),
     }
 }
 

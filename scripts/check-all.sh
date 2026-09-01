@@ -9,6 +9,10 @@ echo "== listas duplicadas"
 "$ROOT/scripts/check-styles.sh"
 
 echo
+echo "== props que llegan a los dos hosts"
+"$ROOT/scripts/check-wrapper.sh"
+
+echo
 echo "== núcleo Rust"
 cargo test --quiet 2>&1 | tail -1
 

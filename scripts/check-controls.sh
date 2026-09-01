@@ -29,6 +29,11 @@ check 'ActivityIndicator#[0-9]+ \[[0-9]+,[0-9]+ 20x20\]' 'la ruedecilla tiene su
 check 'Button#[0-9]+ \[[0-9]+,[0-9]+ [0-9]+x44\]' 'el botón tiene el alto de un botón'
 check 'TabBar#[0-9]+ \[0,803 393x49\]' 'la barra de pestañas se pega abajo con su alto'
 check 'Modal#[0-9]+ \[0,0 393x852\]' 'el modal cubre la pantalla'
+# Que las props lleguen, no solo que el control se monte. El volcado las
+# imprime porque una prop que llega y una que se pierde se ven igual en el
+# árbol: ninguna de las dos cambia el marco.
+check 'Switch#[0-9]+ .*props color=#6ee7b7 on=true' 'el interruptor recibe su estado y su color'
+check 'ProgressBar#[0-9]+ .*props color=#6ee7b7 progress=0.35' 'la barra recibe el progreso calculado'
 # Los iconos: que midan lo suyo. El 24 es el de por defecto, sin `[size]`; los
 # otros vienen del tamaño pedido, que además elige el trazo del símbolo.
 check 'Icon#[0-9]+ \[[0-9]+,[0-9]+ 24x24\]' 'un icono sin medidas mide 24'
