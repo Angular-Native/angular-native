@@ -51,6 +51,7 @@ impl JniHost {
             NodeKind::Button => 12,
             NodeKind::Modal => 13,
             NodeKind::Alert => 14,
+            NodeKind::Icon => 15,
         }
     }
 }

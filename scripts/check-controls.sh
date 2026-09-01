@@ -28,7 +28,11 @@ check 'ProgressBar#[0-9]+ \[[0-9]+,[0-9]+ 361x4\]' 'la barra de progreso tambié
 check 'ActivityIndicator#[0-9]+ \[[0-9]+,[0-9]+ 20x20\]' 'la ruedecilla tiene su tamaño propio'
 check 'Button#[0-9]+ \[[0-9]+,[0-9]+ [0-9]+x44\]' 'el botón tiene el alto de un botón'
 check 'TabBar#[0-9]+ \[0,803 393x49\]' 'la barra de pestañas se pega abajo con su alto'
-check 'Modal#[0-9]+ \[0,0 393x852\]' 'la capa cubre la pantalla'
+check 'Modal#[0-9]+ \[0,0 393x852\]' 'el modal cubre la pantalla'
+# Los iconos: que midan lo suyo. El 24 es el de por defecto, sin `[size]`; los
+# otros vienen del tamaño pedido, que además elige el trazo del símbolo.
+check 'Icon#[0-9]+ \[[0-9]+,[0-9]+ 24x24\]' 'un icono sin medidas mide 24'
+check 'Icon#[0-9]+ \[[0-9]+,[0-9]+ 40x40\]' 'y con [size] mide lo que se le pide'
 
 if [ "$fail" -ne 0 ]; then
   echo

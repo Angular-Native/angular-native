@@ -17,6 +17,7 @@ export {
   ActivityIndicator,
   Alert,
   Button,
+  Icon,
   Image,
   Modal,
   ProgressBar,

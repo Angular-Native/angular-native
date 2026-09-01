@@ -43,6 +43,7 @@ export type NativeKind =
   | 'Button'
   | 'Modal'
   | 'Alert'
+  | 'Icon'
 
 /** Primitivas que el core sabe montar. El resto son hosts de componentes. */
 const KINDS: Record<string, NativeKind> = {
@@ -59,7 +60,8 @@ const KINDS: Record<string, NativeKind> = {
   ProgressBar: 'ProgressBar',
   Button: 'Button',
   Modal: 'Modal',
-  Alert: 'Alert'
+  Alert: 'Alert',
+  Icon: 'Icon'
 }
 
 export class NativeNode {

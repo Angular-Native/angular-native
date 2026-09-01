@@ -280,6 +280,12 @@ pub struct UikitHost {
     /// mover, escalar, cambiar la opacidad o recolocar esa vista no salta al
     /// valor nuevo: va hasta él.
     animations: HashMap<NodeId, Animation>,
+    /// Nombre, tamaño y peso del icono de cada nodo. Igual que con la fuente,
+    /// las tres partes llegan sueltas y hay que rehacer el símbolo entero cada
+    /// vez que cambia una.
+    icons: HashMap<NodeId, (String, f32, u16)>,
+    /// Títulos e iconos de cada barra de pestañas, que llegan por separado.
+    tabs: HashMap<NodeId, (Vec<String>, Vec<String>)>,
     /// Sentido de la próxima transición de cada pila: `push`, `pop` o nada.
     /// Lo decide Angular, que es quien sabe si se avanza o se retrocede.
     transitions: HashMap<NodeId, String>,
@@ -325,6 +331,8 @@ impl UikitHost {
             slider_values: HashMap::new(),
             transforms: HashMap::new(),
             animations: HashMap::new(),
+            icons: HashMap::new(),
+            tabs: HashMap::new(),
             transitions: HashMap::new(),
             entering: Vec::new(),
             leaving: Vec::new(),
@@ -586,6 +594,14 @@ impl HostRenderer for UikitHost {
                 HostView::Label(label)
             }
             NodeKind::Image => HostView::Image(UIImageView::new(mtm)),
+            NodeKind::Icon => {
+                let view = UIImageView::new(mtm);
+                // `AlwaysTemplate` es lo que deja teñir el símbolo con
+                // `tintColor`; sin eso saldría siempre con su color propio y
+                // `[color]` no haría nada.
+                unsafe { view.setContentMode(objc2_ui_kit::UIViewContentMode::ScaleAspectFit) };
+                HostView::Image(view)
+            }
             NodeKind::ScrollView => HostView::Scroll(UIScrollView::new(mtm)),
             NodeKind::TabBar => {
                 let bar = UITabBar::new(mtm);
@@ -654,6 +670,8 @@ impl HostRenderer for UikitHost {
         self.slider_values.remove(&id);
         self.transforms.remove(&id);
         self.animations.remove(&id);
+        self.icons.remove(&id);
+        self.tabs.remove(&id);
         self.modals.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
     }
@@ -706,6 +724,29 @@ impl HostRenderer for UikitHost {
                 if let Some(v) = number {
                     let view = native.retain();
                     self.animated(id, move || view.setAlpha(v as f64));
+                }
+            }
+            // Iconos. El nombre y el tamaño van juntos: el tamaño de un
+            // símbolo no escala el dibujo, elige el trazo, así que hay que
+            // rehacerlo cuando cambia cualquiera de los dos.
+            "name" | "iconSize" | "iconWeight" if matches!(view, HostView::Image(_)) => {
+                let entry = self.icons.entry(id).or_default();
+                match key {
+                    "name" => entry.0 = text.clone().unwrap_or_default(),
+                    "iconSize" => entry.1 = number.unwrap_or(24.0),
+                    _ => entry.2 = number.unwrap_or(400.0) as u16,
+                }
+                let (name, size, weight) = entry.clone();
+                if let HostView::Image(image_view) = view {
+                    let symbol = crate::icons::symbol(&name, size, weight);
+                    unsafe {
+                        let templated = symbol.map(|image| {
+                            image.imageWithRenderingMode(
+                                objc2_ui_kit::UIImageRenderingMode::AlwaysTemplate,
+                            )
+                        });
+                        image_view.setImage(templated.as_deref());
+                    }
                 }
             }
             // Animación. No es un valor que se vea: dice cómo se llega a los
@@ -828,6 +869,9 @@ impl HostRenderer for UikitHost {
                     HostView::Toggle(toggle) => toggle.setOnTintColor(Some(&color)),
                     HostView::Slide(slider) => slider.setMinimumTrackTintColor(Some(&color)),
                     HostView::Spinner(spinner) => unsafe { spinner.setColor(Some(&color)) },
+                    // Un símbolo se tiñe, no se recolorea: se dibuja en
+                    // plantilla y el tinte manda.
+                    HostView::Image(image) => unsafe { image.setTintColor(Some(&color)) },
                     HostView::Progress(bar) => bar.setProgressTintColor(Some(&color)),
                     HostView::Button(button) => unsafe {
                         button.setTitleColor_forState(Some(&color), UIControlState::Normal)
@@ -946,12 +990,21 @@ impl HostRenderer for UikitHost {
                     unsafe { button.setTitle_forState(title.as_deref(), UIControlState::Normal) };
                 }
             }
-            "items" => {
+            "items" | "icons" if matches!(view, HostView::Tabs(_)) => {
+                // Los títulos y los iconos llegan como JSON: el protocolo no
+                // lleva listas, y una barra de pestañas no justifica
+                // añadirlas. Llegan en props sueltas, así que se guardan y se
+                // rehacen los items con las dos cada vez.
+                let entry = self.tabs.entry(id).or_default();
+                let list = parse_string_list(text.as_deref().unwrap_or("[]"));
+                if key == "items" {
+                    entry.0 = list;
+                } else {
+                    entry.1 = list;
+                }
+                let (titles, icons) = entry.clone();
                 if let HostView::Tabs(bar) = view {
-                    // Los títulos llegan como JSON: el protocolo no lleva
-                    // listas, y una lista de pestañas no justifica añadirlas.
-                    let titles = parse_string_list(text.as_deref().unwrap_or("[]"));
-                    let items = crate::controls::tab_bar_items(self.mtm, &titles);
+                    let items = crate::controls::tab_bar_items(self.mtm, &titles, &icons);
                     bar.setItems(Some(&items));
                 }
             }

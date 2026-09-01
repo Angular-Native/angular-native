@@ -476,6 +476,17 @@ export class TabBar extends NativeVisual {
     this.set('items', JSON.stringify(value ?? []))
   }
 
+  /**
+   * Iconos, en el mismo orden que los títulos.
+   *
+   * Los nombres son los de `<Icon>`, así que valen los comunes —`home`,
+   * `search`, `settings`— y también los nativos de cada plataforma. Una barra
+   * de pestañas sin iconos es legal, pero no es lo que espera nadie.
+   */
+  @Input() set icons(value: readonly string[] | null) {
+    this.set('icons', JSON.stringify(value ?? []))
+  }
+
   @Input() set selectedIndex(value: number | null) {
     this.set('selectedIndex', value ?? 0)
   }
@@ -569,6 +580,58 @@ export class Button extends NativeVisual {
 }
 
 /**
+ * Icono del sistema.
+ *
+ * No se dibuja nada ni se empaqueta ningún juego de iconos: en iOS es un SF
+ * Symbol y en Android un drawable del sistema, pedidos por nombre. Un icono
+ * así envejece con la plataforma —cambia cuando cambia el sistema— en vez de
+ * quedarse anclado al día en que se metió en el proyecto, y ya viene con el
+ * peso y el trazo que le tocan a esa versión.
+ *
+ * Los nombres comunes —`home`, `search`, `settings`, `back`, `close`, `add`,
+ * `delete`, `edit`, `share`, `star`, `menu`, `check`…— se traducen al nombre
+ * de cada plataforma, así que la misma plantilla vale para las dos. Para lo
+ * específico se escribe el nombre nativo directamente: cualquier SF Symbol
+ * (`square.and.arrow.up`) o cualquier drawable de Android.
+ */
+@Directive({ selector: 'Icon' })
+export class Icon extends NativeVisual {
+  constructor() {
+    super()
+    // Un `@Input` que no se enlaza no corre, así que sin esto un `<Icon>` sin
+    // `[size]` se quedaría sin tamaño y sin configuración de símbolo. El
+    // layout sí le da 24x24 por su cuenta; esto es para que el icono que se
+    // dibuja dentro sea el de ese tamaño.
+    this.size = null
+  }
+
+  @Input() set name(value: string | null) {
+    this.set('name', value)
+  }
+
+  /**
+   * Puntos. Además de fijar el tamaño de la vista, elige el trazo del
+   * símbolo: en iOS un icono grande no es el pequeño escalado, es otro
+   * dibujo.
+   */
+  @Input() set size(value: number | null) {
+    const points = value ?? 24
+    this.set('iconSize', points)
+    this.renderer.setStyle(this.node, 'width', points)
+    this.renderer.setStyle(this.node, 'height', points)
+  }
+
+  /** Grosor del trazo, en la escala de la tipografía: 100..900. */
+  @Input() set weight(value: number | null) {
+    this.set('iconWeight', value)
+  }
+
+  @Input() set color(value: string | null) {
+    this.set('color', value)
+  }
+}
+
+/**
  * Contenido que se presenta encima de todo.
  *
  * Se presenta de verdad: un `UIViewController` en iOS y un `Dialog` en
@@ -649,6 +712,7 @@ export const NATIVE_PRIMITIVES = [
   ActivityIndicator,
   ProgressBar,
   Button,
+  Icon,
   Modal,
   Alert
 ] as const

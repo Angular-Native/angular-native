@@ -239,7 +239,8 @@
     ProgressBar: 11,
     Button: 12,
     Modal: 13,
-    Alert: 14
+    Alert: 14,
+    Icon: 15
   }
 
   class CommandWriter {

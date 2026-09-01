@@ -70,9 +70,18 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
       </View>
       </SafeArea>
 
+      <View [style.flexDirection]="'row'" [style.gap]="'18'" [style.alignItems]="'center'">
+        <Icon [name]="'home'" [color]="'#6ee7b7'" />
+        <Icon [name]="'search'" [size]="32" [color]="'#9fb0d4'" />
+        <Icon [name]="'settings'" [size]="40" [color]="'#f4f7ff'" />
+        <Icon [name]="'star'" [size]="28" [color]="'#fbbf24'" />
+        <Icon [name]="'share'" [size]="28" [color]="'#60a5fa'" />
+      </View>
+
       <TabBar
         [style.width]="'100%'"
         [items]="tabTitles"
+        [icons]="tabIcons"
         [selectedIndex]="tab()"
         [color]="'#6ee7b7'"
         (select)="tab.set($event)" />
@@ -123,6 +132,7 @@ export class AppComponent {
 
   readonly notify = signal(true)
   readonly modal = signal(false)
+  readonly tabIcons = ['settings', 'list', 'profile']
   readonly alert = signal(false)
   readonly answer = signal('sin respuesta todavía')
 

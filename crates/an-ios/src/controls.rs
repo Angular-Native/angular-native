@@ -59,6 +59,7 @@ pub fn measure_controls(mtm: MainThreadMarker) -> ControlSizes {
 pub fn tab_bar_items(
     mtm: MainThreadMarker,
     titles: &[String],
+    icons: &[String],
 ) -> Retained<objc2_foundation::NSArray<objc2_ui_kit::UITabBarItem>> {
     use objc2_foundation::{NSArray, NSString};
     use objc2_ui_kit::UITabBarItem;
@@ -66,13 +67,18 @@ pub fn tab_bar_items(
     let items: Vec<Retained<UITabBarItem>> = titles
         .iter()
         .enumerate()
-        .map(|(index, title)| unsafe {
-            UITabBarItem::initWithTitle_image_tag(
-                mtm.alloc::<UITabBarItem>(),
-                Some(&NSString::from_str(title)),
-                None,
-                index as isize,
-            )
+        .map(|(index, title)| {
+            // El icono no lleva tamaño: en una barra de pestañas lo elige
+            // UIKit, y forzarlo aquí sería pelearse con la barra.
+            let image = icons.get(index).and_then(|name| crate::icons::symbol(name, 0.0, 400));
+            unsafe {
+                UITabBarItem::initWithTitle_image_tag(
+                    mtm.alloc::<UITabBarItem>(),
+                    Some(&NSString::from_str(title)),
+                    image.as_deref(),
+                    index as isize,
+                )
+            }
         })
         .collect();
     NSArray::from_retained_slice(&items)

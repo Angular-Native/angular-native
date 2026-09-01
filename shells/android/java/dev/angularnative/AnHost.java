@@ -46,6 +46,7 @@ public final class AnHost {
     private static final int KIND_BUTTON = 12;
     private static final int KIND_MODAL = 13;
     private static final int KIND_ALERT = 14;
+    private static final int KIND_ICON = 15;
     /** Lo que dura una transición de pila. Igual que en iOS. */
     private static final long TRANSITION_MS = 300;
     /** Resolución del deslizador y de la barra de progreso, que van en enteros. */
@@ -151,6 +152,12 @@ public final class AnHost {
             case KIND_IMAGE:
                 view = new ImageView(context);
                 break;
+            case KIND_ICON: {
+                ImageView icon = new ImageView(context);
+                icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                view = icon;
+                break;
+            }
             case KIND_SCROLL: {
                 AnScrollView scroll = new AnScrollView(context);
                 AnViewGroup content = new AnViewGroup(context);
@@ -174,7 +181,9 @@ public final class AnHost {
                 break;
             }
             case KIND_TABBAR:
-                view = new AnTabBar(context);
+                AnTabBar tabBar = new AnTabBar(context);
+                tabBar.setIconResolver(this::iconDrawable);
+                view = tabBar;
                 break;
             case KIND_SWITCH:
                 view = new android.widget.Switch(context);
@@ -724,6 +733,22 @@ public final class AnHost {
             case "border-color":
                 applyBorder(view, id, key, value);
                 break;
+            case "icons":
+                if (view instanceof AnTabBar) {
+                    ((AnTabBar) view).setIcons(parseStringList(value));
+                }
+                break;
+            case "name":
+                if (view instanceof ImageView) {
+                    ((ImageView) view).setImageDrawable(iconDrawable(value));
+                }
+                break;
+            case "iconSize":
+            case "iconWeight":
+                // En Android el tamaño de un icono es el de su vista: los
+                // drawables del sistema no tienen variantes por trazo como
+                // los SF Symbols, así que el layout ya lo resuelve.
+                break;
             case "opacity":
                 visual(view, id).alpha(number(value, 1f));
                 break;
@@ -872,6 +897,11 @@ public final class AnHost {
                 }
                 if (view instanceof AnTabBar) {
                     ((AnTabBar) view).setActiveColor(color);
+                } else if (view instanceof ImageView) {
+                    // Un icono se tiñe: los drawables del sistema vienen en
+                    // gris y sin esto `[color]` no haría nada.
+                    ((ImageView) view).setImageTintList(
+                            android.content.res.ColorStateList.valueOf(color));
                 } else if (view instanceof android.widget.Switch) {
                     // El pulgar y la vía llevan tintes distintos; el mismo
                     // color en los dos es lo más parecido al de iOS.
@@ -1306,6 +1336,102 @@ public final class AnHost {
                     // Sale rápido y frena al llegar, como en iOS.
                     return new android.view.animation.DecelerateInterpolator();
             }
+        }
+    }
+
+    /**
+     * El icono del sistema que corresponde a un nombre.
+     *
+     * No se empaqueta ningún juego de iconos: se busca por nombre entre los
+     * del sistema, que es lo que hace que el icono envejezca con la
+     * plataforma en vez de quedarse anclado al día en que se metió aquí.
+     */
+    private android.graphics.drawable.Drawable iconDrawable(String name) {
+        if (name == null || name.isEmpty()) {
+            return null;
+        }
+        String resolved = translateIcon(name);
+        int id = context.getResources().getIdentifier(resolved, "drawable", "android");
+        if (id == 0) {
+            return null;
+        }
+        return context.getDrawable(id);
+    }
+
+    /**
+     * Nombres comunes, traducidos al drawable del sistema que les toca.
+     *
+     * Los nombres son los mismos que en iOS a propósito: quien escribe
+     * `[name]="'search'"` no debería tener que saber que en un sitio se llama
+     * `magnifyingglass` y en el otro `ic_menu_search`. Un nombre que no esté
+     * en la lista se busca tal cual, que es la salida para lo específico de
+     * cada plataforma.
+     */
+    private static String translateIcon(String name) {
+        switch (name) {
+            case "home":
+                // Android no trae icono de inicio en el juego del sistema.
+                // `ic_menu_view` es lo más cercano; con un juego propio se
+                // pasa el nombre del drawable directamente.
+                return "ic_menu_view";
+            case "search":
+                return "ic_menu_search";
+            case "settings":
+                return "ic_menu_preferences";
+            case "profile":
+            case "account":
+                return "ic_menu_myplaces";
+            case "back":
+                return "ic_media_previous";
+            case "forward":
+                return "ic_media_next";
+            case "close":
+                return "ic_menu_close_clear_cancel";
+            case "add":
+                return "ic_menu_add";
+            case "remove":
+                return "ic_menu_revert";
+            case "delete":
+                return "ic_menu_delete";
+            case "edit":
+                return "ic_menu_edit";
+            case "share":
+                return "ic_menu_share";
+            case "favorite":
+            case "star":
+                return "btn_star_big_on";
+            case "menu":
+                return "ic_menu_sort_by_size";
+            case "more":
+                return "ic_menu_more";
+            case "info":
+                return "ic_menu_info_details";
+            case "warning":
+                return "ic_dialog_alert";
+            case "refresh":
+                return "ic_menu_rotate";
+            case "calendar":
+                return "ic_menu_my_calendar";
+            case "camera":
+                return "ic_menu_camera";
+            case "chat":
+                return "ic_dialog_email";
+            case "mail":
+                return "ic_dialog_email";
+            case "list":
+                return "ic_menu_agenda";
+            case "play":
+                return "ic_media_play";
+            case "pause":
+                return "ic_media_pause";
+            case "upload":
+                return "ic_menu_upload";
+            case "location":
+                return "ic_menu_mylocation";
+            case "check":
+                return "checkbox_on_background";
+            default:
+                return name;
         }
     }
 

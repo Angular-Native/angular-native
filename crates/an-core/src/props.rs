@@ -30,6 +30,10 @@ pub enum NodeKind {
     Modal,
     /// Diálogo del sistema. No ocupa sitio: se presenta encima de la app.
     Alert,
+    /// Icono del sistema: un SF Symbol en iOS, un drawable en Android. No se
+    /// empaqueta ningún juego de iconos: se piden por nombre y los dibuja la
+    /// plataforma, con el trazo que le toque a esa versión.
+    Icon,
 }
 
 impl NodeKind {
@@ -49,6 +53,7 @@ impl NodeKind {
             "Button" | "button" => NodeKind::Button,
             "Modal" | "modal" => NodeKind::Modal,
             "Alert" | "alert" => NodeKind::Alert,
+            "Icon" | "icon" => NodeKind::Icon,
             _ => return None,
         })
     }
@@ -78,6 +83,7 @@ impl NodeKind {
                 | NodeKind::ActivityIndicator
                 | NodeKind::ProgressBar
                 | NodeKind::Button
+                | NodeKind::Icon
         )
     }
 
@@ -90,6 +96,7 @@ impl NodeKind {
             NodeKind::ActivityIndicator => "ActivityIndicator",
             NodeKind::ProgressBar => "ProgressBar",
             NodeKind::Button => "Button",
+            NodeKind::Icon => "Icon",
             _ => "",
         }
     }
