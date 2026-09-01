@@ -19,8 +19,8 @@ Angular, y qué queda todavía fuera del alcance.
    tardes con los estilos.
 
 Las dos primeras las comprueba el compilador de plantillas: las props son
-entradas declaradas y los objetos por plataforma son interfaces cerradas, así
-que `[ios]="{ subtitulo: 'x' }"` no compila. La tercera es para lo que el
+entradas declaradas y los objetos por plataforma son tipos cerrados, así que
+`[ios]="{ subtitulo: 'x' }"` no compila. La tercera es para lo que el
 compilador no ve: un objeto construido a mano, un `spread`, un `any` que se
 coló.
 
@@ -29,6 +29,25 @@ Que la prop llegue de verdad al otro extremo lo comprueba
 lo que miran `crates/an-ios/src/host.rs` y `AnHost.java`. Que además haga algo
 lo comprueban los scripts sobre el volcado headless, que desde ahora imprime
 las props de cada nodo.
+
+## Cómo viaja una prop
+
+Las props son entradas de señal —`input()`—, no `@Input() set`. Una entrada de
+señal no tiene un momento en el que "se asigna": se lee, y quien la lee decide
+cuándo. Aquí la lee un efecto por directiva, no uno por prop: un `<Text>`
+declara once props y casi ninguna plantilla usa más de tres, así que un efecto
+por prop haría que cada `<Text>` de una lista de cinco mil filas cargase con
+once nodos reactivos que nadie va a despertar. Leer once señales cuando cambia
+una sale más barato.
+
+Del efecto solo sale lo que cambió, y en la primera pasada se callan además
+los nulos: es lo que vale una entrada que nadie ha puesto, y mandarlos sería
+pedirle al host que borre algo que nunca escribió.
+
+Un efecto de más sale gratis en un sitio: `<Icon>` sin `[size]` ya no se queda
+sin tamaño. Un `set` que nadie enlaza no corre nunca —y por eso el constructor
+tenía que llamarlo a mano—, mientras que una señal se lee aunque nadie la
+escriba.
 
 ## Cómo viaja una prop de plataforma
 
@@ -58,7 +77,6 @@ Leyenda: **hoy** = lo que ya existía; **nuevo** = lo que añade este trabajo;
 | `iconPosition` `leading\|trailing` | `imagePlacement` | `setIconGravity` | nuevo |
 | `fontSize` | `titleLabel.font` | `setTextSize` | nuevo |
 | `fontWeight` | `titleLabel.font` | `setTypeface` | nuevo |
-| `cornerRadius` | `configuration.background.cornerRadius` | `setCornerRadius` | nuevo |
 | `[ios].subtitle` | `configuration.subtitle` | — | nuevo |
 | `[android].rippleColor` | — | `setRippleColor` | nuevo |
 | `[android].allCaps` | — | `setAllCaps` | nuevo |
@@ -68,6 +86,8 @@ equivalente, así que sería una variante que solo hace algo en media
 plataforma; quien la quiera la pide por `[android]`. `contentInsets` de
 `UIButtonConfiguration` — el hueco interior de un botón lo decide el sistema y
 tocarlo es justo lo que hace que un botón deje de parecer de la plataforma.
+`cornerRadius` — no hace falta: `[borderRadius]` es una prop de cualquier
+vista y el botón es una vista, así que ya redondea.
 
 ### TextInput — `UITextField` · `EditText`
 
@@ -187,12 +207,17 @@ vista al vuelo, que es justo lo que el árbol evita.
 
 ### Los demás controles
 
-`ActivityIndicator`, `ProgressBar`, `SegmentedControl`, `Stepper`, `SearchBar`,
-`DatePicker`, `NavigationBar`, `Image`, `TextEditor`, `WebView`, `MapView`,
-`VideoView` reciben de momento `enabled` donde tiene sentido —los que son
-`UIControl` en iOS y `View` en Android, que es todo— y nada más. Sus props
-propias siguen siendo las de hoy. Lo que cada uno ofrece de más está apuntado
-arriba en el mismo formato para cuando les toque tanda.
+`SegmentedControl`, `Stepper`, `SearchBar` y `DatePicker` reciben `enabled`,
+igual que el botón, el interruptor, el deslizador y el desplegable: los ocho
+heredan de `NativeControl`. `ActivityIndicator` y `ProgressBar` no lo reciben
+porque no se tocan, y los campos de texto tampoco porque ya tienen `editable`,
+que es la misma idea con el nombre que usa un campo.
+
+`NavigationBar`, `Image`, `TextEditor`, `WebView`, `MapView` y `VideoView` se
+quedan con las props que ya tenían. Cada uno da para su propia tanda —el
+editor comparte casi todas las del campo de una línea, la imagen tiene el
+recorte y la carga diferida, el navegador tiene JavaScript, cookies y zoom— y
+ninguno se ha tocado aquí para no dejarlos a medias.
 
 ---
 

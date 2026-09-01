@@ -33,7 +33,13 @@ SOLO_NUCLEO = {
 # docs/wrapper-nativo.md. La lista solo puede encoger.
 PENDIENTES: dict[str, str] = {}
 
-comunes = sorted(set(re.findall(r"this\.set\('([^']+)'", directivas)))
+# Las props comunes son las claves de los `push({...})` de cada directiva, más
+# las que alguna manda a mano —el tamaño de una imagen lo escribe su oyente de
+# carga, no una entrada—.
+comunes = set(re.findall(r"this\.set\('([^']+)'", directivas))
+for cuerpo in re.findall(r"this\.push\(\{(.*?)\n    \}\)", directivas, re.S):
+    comunes.update(re.findall(r"^      (\w+):", cuerpo, re.M))
+comunes = sorted(comunes)
 fallos = []
 pendientes_vistas = set()
 for prop in comunes:
@@ -70,17 +76,17 @@ for plataforma, claves in declaradas.items():
                 'entonces es común y va sin prefijo'
             )
 
-# El objeto de plataforma tiene que pasar por `platform()`, que es quien avisa
-# de una clave que nadie va a mirar. Mandarlo con `set()` a pelo funcionaría
-# —y por eso hay que impedirlo—: la clave viajaría y se perdería en silencio.
-for plataforma, cuerpo in re.findall(
-    r"@Input\(\) set (ios|android)\([^)]*\)[^{]*\{(.*?)\n  \}", directivas, re.S
-):
-    if 'this.platform(' not in cuerpo:
-        fallos.append(
-            f'  FALLO un [{plataforma}] no pasa por platform(): '
-            'una clave desconocida se perdería sin avisar'
-        )
+# El objeto de plataforma tiene que pasar por `pushPlatform()`, que es quien
+# avisa de una clave que nadie va a mirar. Mandarlo con `set()` a pelo
+# funcionaría —y por eso hay que impedirlo—: la clave viajaría y se perdería en
+# silencio. Se cuentan: una entrada `[ios]` o `[android]` por empujón.
+objetos = len(re.findall(r"^  readonly (?:ios|android) = input<", directivas, re.M))
+empujones = directivas.count('this.pushPlatform(')
+if objetos != empujones:
+    fallos.append(
+        f'  FALLO hay {objetos} entradas de plataforma y {empujones} pushPlatform(): '
+        'alguna clave desconocida se perdería sin avisar'
+    )
 
 for linea in fallos:
     print(linea)
