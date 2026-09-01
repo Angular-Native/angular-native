@@ -38,6 +38,9 @@ pub(crate) fn call_java(
     };
     let name = jni::strings::JNIString::from(method);
     if let Err(error) = env.call_method(obj, &name, sig.method_signature(), args) {
+        // La traza de la excepción antes de limpiarla: sin esto lo único que
+        // se ve es "Java exception was thrown", que no dice nada.
+        let _ = env.exception_describe();
         let _ = env.exception_clear();
         eprintln!("angular-native: fallo llamando a {method}: {error}");
     }

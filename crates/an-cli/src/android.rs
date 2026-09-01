@@ -117,6 +117,60 @@ pub fn assemble(
         std::fs::write(staging.join("assets/dev-server.txt"), url)?;
     }
 
+    // Las librerías de Android —Material y todo lo que arrastra— vienen
+    // resueltas y con sus recursos ya compilados por
+    // `scripts/prepare-android-deps.py`. Aquí solo se leen las listas.
+    let vendor = root.join("vendor/android/build");
+    let leer_lista = |nombre: &str| -> Vec<String> {
+        std::fs::read_to_string(vendor.join(nombre))
+            .unwrap_or_default()
+            .lines()
+            .filter(|linea| !linea.trim().is_empty())
+            .map(str::to_owned)
+            .collect()
+    };
+    let jars = leer_lista("classpath.txt");
+    let recursos = leer_lista("resources.txt");
+    let paquetes = leer_lista("packages.txt");
+    if jars.is_empty() {
+        bail!(
+            "faltan las dependencias de Android; ejecuta \
+             python3 scripts/prepare-android-deps.py"
+        );
+    }
+
+    // El enlace de recursos va antes que `javac`: de aquí salen las clases
+    // `R` que las librerías necesitan para encontrar sus propios recursos.
+    eprintln!("==> aapt2 link");
+    let unsigned = out.join("unsigned.apk");
+    let generado = out.join("gen");
+    let _ = std::fs::remove_dir_all(&generado);
+    std::fs::create_dir_all(&generado)?;
+    let mut link: Vec<String> = vec![
+        "link".into(),
+        "-I".into(),
+        sdk.android_jar.to_string_lossy().into_owned(),
+        "--manifest".into(),
+        root.join("shells/android/AndroidManifest.xml").to_string_lossy().into_owned(),
+        "--java".into(),
+        generado.to_string_lossy().into_owned(),
+        // Cada librería quiere su propia clase `R`, y sus identificadores no
+        // pueden ser constantes: se resuelven al enlazar la app.
+        "--extra-packages".into(),
+        paquetes.join(":"),
+        "--non-final-ids".into(),
+        // Los recursos de las librerías se solapan a propósito —unas
+        // redefinen estilos de otras— y sin esto aapt2 lo toma por un error.
+        "--auto-add-overlay".into(),
+        "-o".into(),
+        unsigned.to_string_lossy().into_owned(),
+    ];
+    for recurso in &recursos {
+        link.push("-R".into());
+        link.push(recurso.clone());
+    }
+    run(root, &sdk.tool("aapt2").to_string_lossy(), &link, "aapt2 link falló")?;
+
     eprintln!("==> shell Java");
     let classes = out.join("classes");
     let _ = std::fs::remove_dir_all(&classes);
@@ -133,6 +187,8 @@ pub fn assemble(
     // `--release` en vez de `-source/-target`: con los modernos, javac
     // rechaza `-bootclasspath`, y aquí hace falta compilar contra android.jar
     // y no contra el JDK.
+    let mut classpath = vec![sdk.android_jar.to_string_lossy().into_owned()];
+    classpath.extend(jars.iter().cloned());
     let mut javac: Vec<String> = vec![
         "-nowarn".into(),
         "-source".into(),
@@ -140,11 +196,18 @@ pub fn assemble(
         "-target".into(),
         "17".into(),
         "-classpath".into(),
-        sdk.android_jar.to_string_lossy().into_owned(),
+        classpath.join(":"),
         "-d".into(),
         classes.to_string_lossy().into_owned(),
     ];
     javac.extend(sources);
+    // Las clases `R` que acaba de escribir aapt2, una por paquete.
+    javac.extend(
+        walk(&generado)
+            .into_iter()
+            .filter(|path| path.extension().is_some_and(|e| e == "java"))
+            .map(|path| path.to_string_lossy().into_owned()),
+    );
     run(root, "javac", &javac, "la compilación del shell Java falló")?;
 
     eprintln!("==> d8");
@@ -165,34 +228,32 @@ pub fn assemble(
         d8.push("--release".into());
     }
     d8.extend(class_files);
+    // Y las librerías: sus clases tienen que acabar en el mismo dex.
+    d8.extend(jars.iter().cloned());
     run(root, &sdk.tool("d8").to_string_lossy(), &d8, "d8 falló")?;
 
-    eprintln!("==> aapt2 + firma");
-    let unsigned = out.join("unsigned.apk");
-    run(
-        root,
-        &sdk.tool("aapt2").to_string_lossy(),
-        &[
-            "link",
-            "-I",
-            &sdk.android_jar.to_string_lossy(),
-            "--manifest",
-            &root.join("shells/android/AndroidManifest.xml").to_string_lossy(),
-            "-o",
-            &unsigned.to_string_lossy(),
-        ],
-        "aapt2 link falló",
-    )?;
-
+    eprintln!("==> firma");
     // `aapt2` solo mete el manifiesto: el dex, la biblioteca nativa y los
     // assets se añaden al zip después, con las rutas que espera Android.
-    let mut entries = vec![
-        "classes.dex".to_owned(),
+    // Con las librerías de Material dentro, `d8` parte el dex en varios:
+    // `classes.dex`, `classes2.dex`… Desde API 21 Android los carga todos, pero
+    // hay que meterlos todos en el zip.
+    let mut dexes: Vec<String> = std::fs::read_dir(&staging)?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|nombre| nombre.starts_with("classes") && nombre.ends_with(".dex"))
+        .collect();
+    dexes.sort();
+    if dexes.is_empty() {
+        bail!("d8 no dejó ningún .dex");
+    }
+    let mut entries = dexes;
+    entries.extend([
         format!("lib/{ABI}/liban_android.so"),
         "assets/main.js".to_owned(),
         "assets/material-symbols.ttf".to_owned(),
         "assets/material-symbols.codepoints".to_owned(),
-    ];
+    ]);
     if dev_server.is_some() {
         entries.push("assets/dev-server.txt".to_owned());
     }

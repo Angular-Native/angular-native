@@ -96,7 +96,7 @@ public final class AnHost {
         String message = "";
         String[] buttons = new String[0];
         boolean visible;
-        android.app.AlertDialog presented;
+        androidx.appcompat.app.AlertDialog presented;
     }
 
     private AnRuntime runtime;
@@ -301,46 +301,61 @@ public final class AnHost {
                 view = input;
                 break;
             }
-            case KIND_TABBAR:
+            case KIND_TABBAR: {
                 AnTabBar tabBar = new AnTabBar(context);
-                tabBar.setIconFactory(this::tabIcon);
+                tabBar.setIconResolver(this::iconDrawableFor);
                 view = tabBar;
                 break;
+            }
             case KIND_SWITCH:
-                view = new android.widget.Switch(context);
+                // El de Material 3, con el pulgar que crece y su marca al
+                // encender. `android.widget.Switch` es el del framework y se
+                // quedó en el aspecto de hace años.
+                view = new com.google.android.material.materialswitch.MaterialSwitch(context);
                 break;
             case KIND_SLIDER: {
-                android.widget.SeekBar seek = new android.widget.SeekBar(context);
-                // El deslizador de Android trabaja con enteros; se usa una
-                // escala fija y se convierte al leer y al escribir.
-                seek.setMax(SLIDER_STEPS);
-                view = seek;
+                // El deslizador de Material 3: vía gruesa, tope con forma de
+                // barra y la etiqueta del valor al arrastrar. Trabaja con
+                // flotantes, así que no hace falta la escala de enteros que
+                // pedía `SeekBar`.
+                com.google.android.material.slider.Slider slider =
+                        new com.google.android.material.slider.Slider(context);
+                slider.setValueFrom(0f);
+                slider.setValueTo(1f);
+                view = slider;
                 break;
             }
             case KIND_SPINNER: {
-                android.widget.ProgressBar spinner = new android.widget.ProgressBar(context);
+                com.google.android.material.progressindicator.CircularProgressIndicator spinner =
+                        new com.google.android.material.progressindicator.CircularProgressIndicator(
+                                context);
                 spinner.setIndeterminate(true);
                 view = spinner;
                 break;
             }
             case KIND_PROGRESS: {
-                android.widget.ProgressBar bar =
-                        new android.widget.ProgressBar(
-                                context, null, android.R.attr.progressBarStyleHorizontal);
+                // La barra de progreso de Material 3: extremos redondeados y
+                // el hueco entre lo hecho y lo que falta.
+                com.google.android.material.progressindicator.LinearProgressIndicator bar =
+                        new com.google.android.material.progressindicator.LinearProgressIndicator(
+                                context);
+                bar.setIndeterminate(false);
                 bar.setMax(SLIDER_STEPS);
                 view = bar;
                 break;
             }
             case KIND_BUTTON: {
-                // Sin fondo por defecto, que es lo que hace un `UIButton` en
-                // iOS: así `<Button>` significa lo mismo en las dos
-                // plataformas. Con `[variant]` se pide el relleno.
-                android.widget.Button button =
-                        new android.widget.Button(
-                                new android.view.ContextThemeWrapper(
-                                        context,
-                                        android.R.style.Widget_DeviceDefault_Button_Borderless));
+                // `MaterialButton` en su variante de texto, que es lo que hace
+                // un `UIButton` en iOS: así `<Button>` significa lo mismo en
+                // las dos plataformas. Con `[variant]` se pide el relleno, y
+                // entonces la píldora la pone Material, no nosotros.
+                com.google.android.material.button.MaterialButton button =
+                        new com.google.android.material.button.MaterialButton(
+                                context,
+                                null,
+                                com.google.android.material.R.attr.materialButtonOutlinedStyle);
                 button.setAllCaps(false);
+                button.setStrokeWidth(0);
                 view = button;
                 break;
             }
@@ -625,15 +640,18 @@ public final class AnHost {
                 continue;
             }
             String[] buttons = state.buttons.length > 0 ? state.buttons : new String[] {"OK"};
-            android.app.AlertDialog.Builder builder =
-                    new android.app.AlertDialog.Builder(context)
+            // El de Material 3, no el del framework: esquinas redondeadas,
+            // botones sin mayúsculas forzadas y la tipografía que toca. El de
+            // `android.app` se quedó en el aspecto de hace diez años.
+            com.google.android.material.dialog.MaterialAlertDialogBuilder builder =
+                    new com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
                             .setTitle(state.title)
                             .setCancelable(false);
             if (state.sheet) {
                 // Una hoja de acciones en Android es una lista de opciones,
                 // no botones al pie: no hay un control aparte para esto.
                 builder.setItems(buttons, (dialog, which) -> emitAlertSelection(id, which));
-                android.app.AlertDialog created = builder.create();
+                androidx.appcompat.app.AlertDialog created = builder.create();
                 created.setOnDismissListener(d -> state.presented = null);
                 created.show();
                 state.presented = created;
@@ -748,20 +766,23 @@ public final class AnHost {
         return range;
     }
 
-    private void applySliderValue(int id, android.widget.SeekBar seek) {
+    /**
+     * Pone el rango y el valor en el deslizador de Material.
+     *
+     * Los tres llegan en props sueltas y en cualquier orden, y `Slider` se
+     * queja si el valor cae fuera del rango, así que se ponen juntos y en
+     * orden cada vez.
+     */
+    private void applySliderValue(int id, com.google.android.material.slider.Slider slider) {
         float[] range = sliderRange(id);
         Float value = sliderValues.get(id);
-        if (value == null) {
-            return;
+        float min = range[0];
+        float max = range[1] > range[0] ? range[1] : range[0] + 1f;
+        slider.setValueFrom(min);
+        slider.setValueTo(max);
+        if (value != null) {
+            slider.setValue(Math.max(min, Math.min(max, value)));
         }
-        float span = range[1] - range[0];
-        float ratio = span <= 0 ? 0 : (value - range[0]) / span;
-        seek.setProgress(Math.round(Math.max(0f, Math.min(1f, ratio)) * SLIDER_STEPS));
-    }
-
-    private float sliderValueOf(int id, int progress) {
-        float[] range = sliderRange(id);
-        return range[0] + (range[1] - range[0]) * progress / (float) SLIDER_STEPS;
     }
 
     /** Lista de cadenas en JSON: es como viajan los títulos de las pestañas. */
@@ -1033,8 +1054,8 @@ public final class AnHost {
                 break;
             // --- controles del sistema
             case "on":
-                if (view instanceof android.widget.Switch) {
-                    ((android.widget.Switch) view).setChecked("true".equals(value));
+                if (view instanceof androidx.appcompat.widget.SwitchCompat) {
+                    ((androidx.appcompat.widget.SwitchCompat) view).setChecked("true".equals(value));
                 }
                 break;
             case "minimumValue":
@@ -1048,10 +1069,10 @@ public final class AnHost {
                     }
                     break;
                 }
-                if (view instanceof android.widget.SeekBar && bound != null) {
+                if (view instanceof com.google.android.material.slider.Slider && bound != null) {
                     float[] range = sliderRange(id);
                     range["minimumValue".equals(key) ? 0 : 1] = bound;
-                    applySliderValue(id, (android.widget.SeekBar) view);
+                    applySliderValue(id, (com.google.android.material.slider.Slider) view);
                 }
                 break;
             }
@@ -1064,7 +1085,8 @@ public final class AnHost {
                 Float progress = parseFloat(value);
                 if (view instanceof android.widget.ProgressBar && progress != null) {
                     ((android.widget.ProgressBar) view)
-                            .setProgress(Math.round(Math.max(0f, Math.min(1f, progress)) * SLIDER_STEPS));
+                            .setProgress(
+                                    Math.round(Math.max(0f, Math.min(1f, progress)) * SLIDER_STEPS));
                 }
                 break;
             }
@@ -1162,12 +1184,11 @@ public final class AnHost {
                 }
                 if (view instanceof AnTabBar) {
                     ((AnTabBar) view).setActiveColor(color);
-                } else if (view instanceof android.widget.Switch) {
-                    // El pulgar y la vía llevan tintes distintos; el mismo
-                    // color en los dos es lo más parecido al de iOS.
-                    ((android.widget.Switch) view)
-                            .setThumbTintList(android.content.res.ColorStateList.valueOf(color));
-                    ((android.widget.Switch) view)
+                } else if (view instanceof androidx.appcompat.widget.SwitchCompat) {
+                    // Solo la vía: el pulgar lo pinta Material para que
+                    // contraste con ella. Tintar los dos del mismo color
+                    // dejaba el pulgar invisible.
+                    ((androidx.appcompat.widget.SwitchCompat) view)
                             .setTrackTintList(android.content.res.ColorStateList.valueOf(color));
                 } else if (view instanceof android.widget.ProgressBar) {
                     ((android.widget.ProgressBar) view)
@@ -1175,9 +1196,12 @@ public final class AnHost {
                     ((android.widget.ProgressBar) view)
                             .setIndeterminateTintList(
                                     android.content.res.ColorStateList.valueOf(color));
-                } else if (view instanceof android.widget.SeekBar) {
-                    ((android.widget.SeekBar) view)
-                            .setProgressTintList(android.content.res.ColorStateList.valueOf(color));
+                } else if (view instanceof com.google.android.material.slider.Slider) {
+                    ((com.google.android.material.slider.Slider) view)
+                            .setTrackActiveTintList(
+                                    android.content.res.ColorStateList.valueOf(color));
+                    ((com.google.android.material.slider.Slider) view)
+                            .setThumbTintList(android.content.res.ColorStateList.valueOf(color));
                 } else if (view instanceof android.widget.Button) {
                     // El color y la variante llegan sueltos y en cualquier
                     // orden: se guardan los dos y se rehace el botón entero.
@@ -1243,9 +1267,9 @@ public final class AnHost {
                     ((android.widget.SearchView) view).setQuery(value == null ? "" : value, false);
                     break;
                 }
-                if (view instanceof android.widget.SeekBar && sliderValue != null) {
+                if (view instanceof com.google.android.material.slider.Slider && sliderValue != null) {
                     sliderValues.put(id, sliderValue);
-                    applySliderValue(id, (android.widget.SeekBar) view);
+                    applySliderValue(id, (com.google.android.material.slider.Slider) view);
                     break;
                 }
                 if (view instanceof EditText) {
@@ -1432,8 +1456,8 @@ public final class AnHost {
                 return;
             }
         }
-        if (view instanceof android.widget.Switch && "change".equals(event)) {
-            ((android.widget.Switch) view)
+        if (view instanceof androidx.appcompat.widget.SwitchCompat && "change".equals(event)) {
+            ((androidx.appcompat.widget.SwitchCompat) view)
                     .setOnCheckedChangeListener(
                             enabled
                                     ? (button, checked) -> {
@@ -1445,31 +1469,18 @@ public final class AnHost {
                                     : null);
             return;
         }
-        if (view instanceof android.widget.SeekBar && "change".equals(event)) {
-            ((android.widget.SeekBar) view)
-                    .setOnSeekBarChangeListener(
-                            enabled
-                                    ? new android.widget.SeekBar.OnSeekBarChangeListener() {
-                                        @Override
-                                        public void onProgressChanged(
-                                                android.widget.SeekBar bar,
-                                                int progress,
-                                                boolean fromUser) {
-                                            if (fromUser && runtime != null) {
-                                                runtime.dispatchValueEvent(
-                                                        id,
-                                                        "change",
-                                                        String.valueOf(sliderValueOf(id, progress)));
-                                            }
-                                        }
-
-                                        @Override
-                                        public void onStartTrackingTouch(android.widget.SeekBar bar) {}
-
-                                        @Override
-                                        public void onStopTrackingTouch(android.widget.SeekBar bar) {}
-                                    }
-                                    : null);
+        if (view instanceof com.google.android.material.slider.Slider && "change".equals(event)) {
+            com.google.android.material.slider.Slider slider =
+                    (com.google.android.material.slider.Slider) view;
+            slider.clearOnChangeListeners();
+            if (enabled) {
+                slider.addOnChangeListener(
+                        (control, value, fromUser) -> {
+                            if (fromUser && runtime != null) {
+                                runtime.dispatchValueEvent(id, "change", String.valueOf(value));
+                            }
+                        });
+            }
             return;
         }
         if (view instanceof AnTabBar && "select".equals(event)) {
@@ -2342,25 +2353,34 @@ public final class AnHost {
         View probe;
         switch (name) {
             case "Switch":
-                probe = new android.widget.Switch(context);
+                probe = new com.google.android.material.materialswitch.MaterialSwitch(context);
                 break;
             case "Slider":
-                probe = new android.widget.SeekBar(context);
+                probe = new com.google.android.material.slider.Slider(context);
                 break;
             case "ActivityIndicator":
                 probe = new android.widget.ProgressBar(context);
                 break;
             case "ProgressBar":
                 probe =
-                        new android.widget.ProgressBar(
-                                context, null, android.R.attr.progressBarStyleHorizontal);
+                        new com.google.android.material.progressindicator.LinearProgressIndicator(
+                                context);
                 break;
             case "Button":
-                probe = new android.widget.Button(context);
+                probe = new com.google.android.material.button.MaterialButton(context);
                 break;
-            case "TabBar":
-                return pack(
-                        availableWidthDp > 0 ? availableWidthDp : 320f, AnTabBar.HEIGHT_DP);
+            case "TabBar": {
+                // El alto lo decide Material, no una constante nuestra: se le
+                // pregunta a una barra de verdad, que es lo que hace este
+                // método con todos los demás controles.
+                //
+                // Con una pestaña dentro: vacía mide cero, y entonces el
+                // layout no le reserva sitio y no se ve.
+                AnTabBar barra = new AnTabBar(context);
+                barra.setTitles(new String[] {" "});
+                probe = barra;
+                break;
+            }
             default:
                 return 0;
         }

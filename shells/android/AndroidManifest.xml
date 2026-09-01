@@ -10,15 +10,15 @@
       Sin barra de acción: la pantalla la dibuja la app entera, igual que en
       iOS, y el layout ya reserva el hueco de la barra de estado.
 
-      `DeviceDefault` y no `Material`: `Theme.Material` es Material 1, el de
-      2014, y con él los controles del sistema salen con el aspecto de
-      entonces —interruptor cuadrado, botón gris elevado—. `DeviceDefault` es
-      el tema que el fabricante mantiene al día, así que los mismos widgets
-      salen con el aspecto actual del dispositivo.
+      El tema es el de Material 3, que viene con la librería de Material: la
+      plataforma no lo trae. Con `DeviceDefault` los controles salían con el
+      aspecto que el fabricante mantiene al día, que no es lo mismo: los
+      componentes de Material 3 —la barra de navegación, los botones— no están
+      en la plataforma y necesitan su tema para dibujarse bien.
     -->
     <application
         android:label="AngularNative"
-        android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+        android:theme="@style/Theme.Material3.DayNight.NoActionBar"
         android:hardwareAccelerated="true"
         android:extractNativeLibs="true"
         android:usesCleartextTraffic="true">

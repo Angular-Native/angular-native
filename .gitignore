@@ -7,3 +7,7 @@ build/
 
 # Emulador y artefactos de Android
 *.apk
+
+# Las dependencias de Android: las baja `scripts/fetch-android-deps.py` y son
+# 11 MB de binarios de terceros que no tienen por qué vivir en el repo.
+vendor/android/

@@ -18,7 +18,18 @@ import java.nio.charset.StandardCharsets;
  * darle una vista donde montar, avisarle del tamaño y llamarle una vez por
  * frame.
  */
-public final class MainActivity extends Activity {
+public final class MainActivity extends androidx.appcompat.app.AppCompatActivity {
+
+    static {
+        // Los componentes de Material siguen al sistema, y las apps de aquí
+        // pintan sus colores a mano: con el sistema en claro salía una barra
+        // de navegación blanca debajo de una pantalla oscura.
+        //
+        // Se fuerza el oscuro hasta que la apariencia sea algo que la app
+        // declare. Debería serlo: es una decisión suya, no del shell.
+        androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
+                androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES);
+    }
 
     private static final String TAG = "angular-native";
 
