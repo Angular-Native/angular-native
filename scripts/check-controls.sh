@@ -47,6 +47,14 @@ check 'Button#[0-9]+ .*iconPosition=trailing .*variant=outlined' 'y el contorno 
 check 'Button#[0-9]+ .*enabled=true' 'un control se puede apagar'
 check 'Button#[0-9]+ .*ios:subtitle=a pantalla completa' 'el subtítulo viaja marcado como de iOS'
 check 'Button#[0-9]+ .*android:allCaps=false android:rippleColor=#ffffff55' 'y la onda y las mayúsculas como de Android'
+# Las cuatro variantes con rótulo. El de `filled` no se dibujaba en iOS —salía
+# del mismo color que el relleno— y de esta fila sale la captura con la que se
+# comprueba. El volcado no ve colores, pero sí que la fila sigue ahí: si alguien
+# la quita, la regresión se queda sin prueba visual.
+check 'Button#[0-9]+ .*title=Texto variant=text' 'la variante de solo texto lleva su rótulo'
+check 'Button#[0-9]+ .*title=Relleno variant=filled' 'la de relleno también'
+check 'Button#[0-9]+ .*title=Tonal variant=tonal' 'la tonal también'
+check 'Button#[0-9]+ .*title=Borde variant=outlined' 'y la de contorno'
 # El interruptor y el deslizador: `[color]` es el principal —lo encendido, el
 # tramo recorrido— y el resto de piezas van con su nombre.
 check 'Switch#[0-9]+ .*android:trackColor=#334155 color=#6ee7b7 .*thumbColor=#0b1020' 'el interruptor tiñe pulgar y vía por separado'
