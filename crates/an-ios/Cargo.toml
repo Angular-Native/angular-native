@@ -25,7 +25,7 @@ block2 = "0.6"
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
   "std", "NSString", "NSAttributedString", "NSDictionary", "NSValue", "NSGeometry",
-  "NSURL", "NSURLSession", "NSData", "NSOperation", "NSError", "NSURLResponse",
+  "NSURL", "NSURLSession", "NSURLRequest", "NSData", "NSOperation", "NSError", "NSURLResponse",
   "NSArray", "block2", "objc2-core-foundation",
 ] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGColor"] }
@@ -39,10 +39,11 @@ objc2-ui-kit = { version = "0.3", default-features = false, features = [
   "UITabBar", "UITabBarItem", "UIBarItem", "UIImage", "UITabBarAppearance", "UIBarAppearance",
   "UIAlertController", "UIAlert", "UIViewController", "UIWindow", "UIRefreshControl",
   "UIGestureRecognizer", "UITapGestureRecognizer", "UITextInputTraits", "UIDevice",
-  "UISheetPresentationController", "UIPresentationController",
+  "UISheetPresentationController", "UIPresentationController", "UIPopoverPresentationController", "UIPopoverSupport",
   "UIImageSymbolConfiguration", "UIImageConfiguration",
   "UISegmentedControl", "UIStepper", "UISearchBar", "UIDatePicker", "UISearchTextField",
-  "UIButtonConfiguration",
+  "UIButtonConfiguration", "UITextView", "UINavigationBar", "UINavigationItem",
+  "UIBarButtonItem", "NSTextContainer",
   "UIMenu", "UIMenuElement", "UIAction", "UIContextMenuInteraction",
   "UILongPressGestureRecognizer", "UISwipeGestureRecognizer", "UIPinchGestureRecognizer",
   "UIRotationGestureRecognizer",

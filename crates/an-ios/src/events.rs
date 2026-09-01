@@ -288,6 +288,17 @@ define_class!(
             );
         }
 
+        /// El botón de atrás de una cabecera.
+        ///
+        /// Fuera de un `UINavigationController` no hay atrás automático: el
+        /// botón se pone a mano y quien navega es el router, así que aquí solo
+        /// se avisa.
+        #[unsafe(method(handleNavBack:))]
+        fn handle_nav_back(&self, _sender: &objc2::runtime::AnyObject) {
+            let ivars = self.ivars();
+            emit(&ivars.queue, ivars.node, "back", Vec::new());
+        }
+
         #[unsafe(method(handleButton:))]
         fn handle_button(&self, _sender: &UIControl) {
             let ivars = self.ivars();
@@ -341,6 +352,20 @@ impl TabDelegate {
 }
 
 impl ControlTarget {
+    /// Un destino suelto, para engancharlo a algo que no es un `UIControl`
+    /// —un `UIBarButtonItem`, por ejemplo—.
+    pub fn standalone(
+        mtm: objc2::MainThreadMarker,
+        node: NodeId,
+        queue: EventQueue,
+    ) -> Retained<Self> {
+        Self::new(mtm, node, queue)
+    }
+
+    pub fn nav_back_action() -> Sel {
+        sel!(handleNavBack:)
+    }
+
     fn emit_with_value(&self, name: &str, field: &UITextField) {
         let ivars = self.ivars();
         let value = field.text().map(|t| t.to_string()).unwrap_or_default();

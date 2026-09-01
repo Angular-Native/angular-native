@@ -10,11 +10,14 @@ use block2::RcBlock;
 use objc2::rc::Retained;
 use objc2::MainThreadMarker;
 use objc2_foundation::NSString;
-use objc2_ui_kit::{UIAlertAction, UIAlertActionStyle, UIAlertController, UIAlertControllerStyle, UIView};
+use objc2_ui_kit::{
+    UIDevice,UIAlertAction, UIAlertActionStyle, UIAlertController, UIAlertControllerStyle, UIView};
 
 /// Estado de un diálogo declarado en la plantilla.
 #[derive(Default)]
 pub struct AlertState {
+    /// `true` para hoja de acciones en vez de diálogo centrado.
+    pub sheet: bool,
     pub title: String,
     pub message: String,
     pub buttons: Vec<String>,
@@ -44,7 +47,11 @@ impl AlertState {
             UIAlertController::alertControllerWithTitle_message_preferredStyle(
                 Some(&NSString::from_str(&self.title)),
                 Some(&NSString::from_str(&self.message)),
-                UIAlertControllerStyle::Alert,
+                if self.sheet {
+                    UIAlertControllerStyle::ActionSheet
+                } else {
+                    UIAlertControllerStyle::Alert
+                },
                 mtm,
             )
         };
@@ -77,6 +84,25 @@ impl AlertState {
         }
 
         unsafe {
+            // Una hoja de acciones en iPad sale de un sitio concreto, y si no
+            // se dice de cuál, UIKit no avisa: revienta la app.
+            //
+            // Solo en iPad. En iPhone la hoja sube desde abajo y ocupa el
+            // ancho; anclarla ahí la convierte en un globo con pico, que no es
+            // lo que hace ninguna app de iPhone.
+            let es_ipad = UIDevice::currentDevice(mtm).userInterfaceIdiom()
+                == objc2_ui_kit::UIUserInterfaceIdiom::Pad;
+            if let Some(popover) = controller.popoverPresentationController().filter(|_| es_ipad) {
+                popover.setSourceView(Some(container));
+                let bounds = container.bounds();
+                popover.setSourceRect(objc2_core_foundation::CGRect {
+                    origin: objc2_core_foundation::CGPoint {
+                        x: bounds.size.width / 2.0,
+                        y: bounds.size.height,
+                    },
+                    size: objc2_core_foundation::CGSize { width: 0.0, height: 0.0 },
+                });
+            }
             root.presentViewController_animated_completion(&controller, true, None);
         }
         self.presented = Some(controller);

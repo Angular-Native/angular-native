@@ -721,6 +721,77 @@ export class DatePicker extends NativeVisual {
 }
 
 /**
+ * Cabecera con título y botón de atrás.
+ *
+ * `UINavigationBar` en iOS y `Toolbar` en Android. Fuera de un
+ * `UINavigationController` no hay botón de atrás automático, así que se pone
+ * uno con el mismo símbolo y en el mismo sitio; navegar sigue siendo cosa del
+ * router, que es quien sabe a dónde se vuelve.
+ */
+@Directive({ selector: 'NavigationBar' })
+export class NavigationBar extends NativeVisual {
+  @Input() set title(value: string | null) {
+    this.set('title', value ?? '')
+  }
+
+  @Input() set showsBack(value: boolean | null) {
+    this.set('showsBack', value ?? false)
+  }
+
+  /**
+   * Rótulo del botón de atrás. Solo en iOS: en Android la barra de
+   * herramientas lleva únicamente la flecha, que es lo que hace cualquier app
+   * de la plataforma.
+   */
+  @Input() set backTitle(value: string | null) {
+    this.set('backTitle', value)
+  }
+
+  readonly back = outputFromObservable(this.nativeEvent<void>('back'))
+}
+
+/**
+ * Campo de texto de varias líneas.
+ *
+ * Es una primitiva aparte y no una prop de `<TextInput>` porque en iOS son dos
+ * controles distintos —`UITextField` y `UITextView`— y cambiar de uno a otro
+ * con la vista ya montada no es posible.
+ */
+@Directive({ selector: 'TextEditor' })
+export class TextEditor extends NativeVisual {
+  @Input() set value(v: string | null) {
+    this.set('value', v ?? '')
+  }
+
+  @Input() set editable(v: boolean | null) {
+    this.set('editable', v ?? true)
+  }
+
+  @Input() set color(v: string | null) {
+    this.set('color', v)
+  }
+
+  readonly change = outputFromObservable(this.nativeEvent<NativeTextEvent>('change'))
+}
+
+/**
+ * Navegador embebido: `WKWebView` en iOS, `WebView` en Android.
+ *
+ * Se le da una dirección o un HTML suelto. Es una vista más del árbol: ocupa
+ * el sitio que le dé el layout y se puede poner al lado de cualquier otra.
+ */
+@Directive({ selector: 'WebView' })
+export class WebView extends NativeVisual {
+  @Input() set url(value: string | null) {
+    this.set('url', value)
+  }
+
+  @Input() set html(value: string | null) {
+    this.set('html', value)
+  }
+}
+
+/**
  * Icono del sistema.
  *
  * No se dibuja nada ni se empaqueta ningún juego de iconos: en iOS es un SF
@@ -816,6 +887,17 @@ export class Modal extends NativeVisual {
  */
 @Directive({ selector: 'Alert' })
 export class Alert extends NativeVisual {
+  /**
+   * Hoja de acciones en vez de diálogo centrado.
+   *
+   * Es la forma de ofrecer varias acciones sobre algo que se acaba de tocar;
+   * el diálogo centrado es para confirmar o avisar. En iOS sale desde abajo,
+   * en Android es una lista.
+   */
+  @Input() set sheet(value: boolean | null) {
+    this.set('sheet', value ?? false)
+  }
+
   @Input() set visible(value: boolean | null) {
     this.set('visible', value ?? false)
   }
@@ -856,6 +938,9 @@ export const NATIVE_PRIMITIVES = [
   DatePicker,
   Icon,
   Modal,
+  NavigationBar,
+  TextEditor,
+  WebView,
   SearchBar,
   SegmentedControl,
   Picker,

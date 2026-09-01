@@ -52,6 +52,9 @@ public final class AnHost {
     private static final int KIND_SEARCH = 18;
     private static final int KIND_SELECT = 19;
     private static final int KIND_DATE = 20;
+    private static final int KIND_NAV = 21;
+    private static final int KIND_TEXT_AREA = 22;
+    private static final int KIND_WEB = 23;
     /** Lo que dura una transición de pila. Igual que en iOS. */
     private static final long TRANSITION_MS = 300;
     /** Resolución del deslizador y de la barra de progreso, que van en enteros. */
@@ -86,6 +89,7 @@ public final class AnHost {
 
     /** Lo que un `Alert` lleva puesto mientras no se presenta. */
     private static final class AlertState {
+        boolean sheet;
         String title = "";
         String message = "";
         String[] buttons = new String[0];
@@ -218,6 +222,39 @@ public final class AnHost {
                             public void onNothingSelected(android.widget.AdapterView<?> parent) {}
                         });
                 view = spinner;
+                break;
+            }
+            case KIND_NAV: {
+                android.widget.Toolbar toolbar = new android.widget.Toolbar(context);
+                toolbar.setNavigationOnClickListener(
+                        v -> {
+                            if (runtime != null) {
+                                runtime.dispatchEvent(id, "back", 0f, 0f);
+                            }
+                        });
+                view = toolbar;
+                break;
+            }
+            case KIND_TEXT_AREA: {
+                EditText area = new EditText(context);
+                // Varias líneas y sin fondo propio: el marco lo pone la
+                // plantilla, igual que en el campo de una línea.
+                area.setInputType(
+                        android.text.InputType.TYPE_CLASS_TEXT
+                                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+                area.setGravity(Gravity.TOP | Gravity.START);
+                area.setBackground(null);
+                area.setPadding(0, 0, 0, 0);
+                view = area;
+                break;
+            }
+            case KIND_WEB: {
+                android.webkit.WebView web = new android.webkit.WebView(context);
+                web.getSettings().setJavaScriptEnabled(true);
+                // Sin esto los enlaces se abren en el navegador del sistema y
+                // la vista se queda en blanco.
+                web.setWebViewClient(new android.webkit.WebViewClient());
+                view = web;
                 break;
             }
             case KIND_DATE: {
@@ -574,8 +611,18 @@ public final class AnHost {
             android.app.AlertDialog.Builder builder =
                     new android.app.AlertDialog.Builder(context)
                             .setTitle(state.title)
-                            .setMessage(state.message)
                             .setCancelable(false);
+            if (state.sheet) {
+                // Una hoja de acciones en Android es una lista de opciones,
+                // no botones al pie: no hay un control aparte para esto.
+                builder.setItems(buttons, (dialog, which) -> emitAlertSelection(id, which));
+                android.app.AlertDialog created = builder.create();
+                created.setOnDismissListener(d -> state.presented = null);
+                created.show();
+                state.presented = created;
+                continue;
+            }
+            builder.setMessage(state.message);
             // Android coloca los botones por papel, no por orden: con más de
             // tres no cabrían, así que a partir de ahí se usa una lista.
             if (buttons.length <= 3) {
@@ -840,6 +887,29 @@ public final class AnHost {
                     ((AnStepper) view).setStep(number(value, 1f));
                 }
                 break;
+            case "url":
+                if (view instanceof android.webkit.WebView && value != null) {
+                    ((android.webkit.WebView) view).loadUrl(value);
+                }
+                break;
+            case "html":
+                if (view instanceof android.webkit.WebView) {
+                    ((android.webkit.WebView) view)
+                            .loadDataWithBaseURL(
+                                    null, value == null ? "" : value, "text/html", "utf-8", null);
+                }
+                break;
+            case "backTitle":
+                // Android no pone rótulo al atrás: solo el icono, que es lo
+                // que hace cualquier app de la plataforma.
+                break;
+            case "showsBack":
+                if (view instanceof android.widget.Toolbar) {
+                    ((android.widget.Toolbar) view)
+                            .setNavigationIcon(
+                                    "true".equals(value) ? iconDrawableFor("arrow_back") : null);
+                }
+                break;
             case "mode":
                 if (view instanceof AnDateField) {
                     ((AnDateField) view).setMode(value == null ? "date" : value);
@@ -949,6 +1019,10 @@ public final class AnHost {
                 break;
             }
             case "title":
+                if (view instanceof android.widget.Toolbar) {
+                    ((android.widget.Toolbar) view).setTitle(value);
+                    break;
+                }
                 if (alerts.get(id) != null) {
                     alerts.get(id).title = value == null ? "" : value;
                     markAlertDirty(id);
@@ -996,6 +1070,12 @@ public final class AnHost {
                 }
                 break;
             // --- diálogos del sistema
+            case "sheet":
+                if (alerts.get(id) != null) {
+                    alerts.get(id).sheet = "true".equals(value);
+                    markAlertDirty(id);
+                }
+                break;
             case "message":
             case "buttons":
                 if (alerts.get(id) != null) {
@@ -1570,6 +1650,35 @@ public final class AnHost {
                 (0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color))
                         / 255.0;
         return luz > 0.6 ? Color.BLACK : Color.WHITE;
+    }
+
+    /**
+     * Un icono de Material como `Drawable`, para donde el sistema pide uno y
+     * no una vista: la flecha de atrás de la barra de herramientas.
+     */
+    private android.graphics.drawable.Drawable iconDrawableFor(String name) {
+        String glyph = iconGlyph(name);
+        if (glyph.isEmpty()) {
+            return null;
+        }
+        android.graphics.Paint paint = new android.graphics.Paint(
+                android.graphics.Paint.ANTI_ALIAS_FLAG);
+        paint.setTypeface(iconTypeface());
+        paint.setTextSize(24 * density);
+        paint.setColor(android.graphics.Color.WHITE);
+        android.graphics.Rect bounds = new android.graphics.Rect();
+        paint.getTextBounds(glyph, 0, glyph.length(), bounds);
+        int side = Math.round(24 * density);
+        android.graphics.Bitmap bitmap =
+                android.graphics.Bitmap.createBitmap(
+                        side, side, android.graphics.Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+        canvas.drawText(
+                glyph,
+                (side - bounds.width()) / 2f - bounds.left,
+                (side - bounds.height()) / 2f - bounds.top,
+                paint);
+        return new android.graphics.drawable.BitmapDrawable(context.getResources(), bitmap);
     }
 
     private void dispatchIndex(int id, int index) {

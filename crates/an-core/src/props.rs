@@ -47,6 +47,14 @@ pub enum NodeKind {
     Picker,
     /// Selector de fecha y hora del sistema.
     DatePicker,
+    /// Cabecera con título y botón de atrás.
+    NavigationBar,
+    /// Campo de texto de varias líneas. Es otra clase de vista y no una prop
+    /// del campo de una línea: en iOS son `UITextField` y `UITextView`, dos
+    /// controles distintos, y cambiar de uno a otro en marcha no es posible.
+    TextEditor,
+    /// Navegador embebido.
+    WebView,
 }
 
 impl NodeKind {
@@ -67,6 +75,9 @@ impl NodeKind {
             "Modal" | "modal" => NodeKind::Modal,
             "Alert" | "alert" => NodeKind::Alert,
             "Icon" | "icon" => NodeKind::Icon,
+            "WebView" | "web-view" => NodeKind::WebView,
+            "TextEditor" | "text-editor" => NodeKind::TextEditor,
+            "NavigationBar" | "navigation-bar" => NodeKind::NavigationBar,
             "DatePicker" | "date-picker" => NodeKind::DatePicker,
             "Picker" | "picker" => NodeKind::Picker,
             "SearchBar" | "search-bar" => NodeKind::SearchBar,
@@ -107,6 +118,7 @@ impl NodeKind {
                 | NodeKind::SearchBar
                 | NodeKind::Picker
                 | NodeKind::DatePicker
+                | NodeKind::NavigationBar
         )
     }
 
@@ -125,6 +137,7 @@ impl NodeKind {
             NodeKind::SearchBar => "SearchBar",
             NodeKind::Picker => "Picker",
             NodeKind::DatePicker => "DatePicker",
+            NodeKind::NavigationBar => "NavigationBar",
             _ => "",
         }
     }

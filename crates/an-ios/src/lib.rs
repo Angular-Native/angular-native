@@ -28,6 +28,8 @@ mod menu;
 mod modal;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod modules;
+#[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+mod web;
 
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 pub use host::UikitHost;

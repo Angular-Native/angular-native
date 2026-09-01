@@ -18,6 +18,10 @@ pub enum StyleKey {
     AlignItems,
     AlignSelf,
     AlignContent,
+    /// El atajo: `flex: N` es crecer N, encoger 1 y partir de cero. Es lo
+    /// que significa en CSS y en React Native, y es lo que casi todo el
+    /// mundo escribe en vez de las tres por separado.
+    Flex,
     FlexGrow,
     FlexShrink,
     FlexBasis,
@@ -91,6 +95,7 @@ impl StyleKey {
             "alignItems" => AlignItems,
             "alignSelf" => AlignSelf,
             "alignContent" => AlignContent,
+            "flex" => Flex,
             "flexGrow" => FlexGrow,
             "flexShrink" => FlexShrink,
             "flexBasis" => FlexBasis,
@@ -390,6 +395,12 @@ impl LayoutStyle {
             K::Right => set_rect_lpa(&mut s.inset, value, Edge::Right),
             K::Bottom => set_rect_lpa(&mut s.inset, value, Edge::Bottom),
             K::Left => set_rect_lpa(&mut s.inset, value, Edge::Left),
+            K::Flex => {
+                let Some(grow) = value.number() else { return };
+                s.flex_grow = grow;
+                s.flex_shrink = 1.0;
+                s.flex_basis = taffy::Dimension::length(0.0);
+            }
             K::Gap => {
                 if let Some(lp) = value.length_percentage() {
                     s.gap = taffy::Size { width: lp, height: lp };

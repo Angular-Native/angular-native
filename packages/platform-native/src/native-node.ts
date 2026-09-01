@@ -49,6 +49,9 @@ export type NativeKind =
   | 'SearchBar'
   | 'Picker'
   | 'DatePicker'
+  | 'NavigationBar'
+  | 'TextEditor'
+  | 'WebView'
 
 /** Primitivas que el core sabe montar. El resto son hosts de componentes. */
 const KINDS: Record<string, NativeKind> = {
@@ -71,7 +74,10 @@ const KINDS: Record<string, NativeKind> = {
   Stepper: 'Stepper',
   SearchBar: 'SearchBar',
   Picker: 'Picker',
-  DatePicker: 'DatePicker'
+  DatePicker: 'DatePicker',
+  NavigationBar: 'NavigationBar',
+  TextEditor: 'TextEditor',
+  WebView: 'WebView'
 }
 
 export class NativeNode {

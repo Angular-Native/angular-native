@@ -24,6 +24,7 @@ export {
   Icon,
   Image,
   Modal,
+  NavigationBar,
   ProgressBar,
   SearchBar,
   SegmentedControl,
@@ -37,6 +38,8 @@ export {
   ScrollView,
   StackView,
   Text,
+  TextEditor,
   TextInput,
-  View
+  View,
+  WebView
 } from './primitives'

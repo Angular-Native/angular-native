@@ -134,6 +134,9 @@ enum HostView {
     /// Un desplegable: un botón que abre un menú del sistema.
     Menu(Retained<UIButton>),
     Date(Retained<objc2_ui_kit::UIDatePicker>),
+    Area(Retained<objc2_ui_kit::UITextView>),
+    Nav(Retained<objc2_ui_kit::UINavigationBar>),
+    Web(Retained<crate::web::WKWebView>),
 }
 
 impl HostView {
@@ -158,6 +161,9 @@ impl HostView {
             HostView::Search(v) => v,
             HostView::Menu(v) => v,
             HostView::Date(v) => v,
+            HostView::Area(v) => v,
+            HostView::Nav(v) => v,
+            HostView::Web(v) => v,
         }
     }
 
@@ -182,6 +188,9 @@ impl HostView {
             HostView::Search(_) => NodeKind::SearchBar,
             HostView::Menu(_) => NodeKind::Picker,
             HostView::Date(_) => NodeKind::DatePicker,
+            HostView::Area(_) => NodeKind::TextEditor,
+            HostView::Nav(_) => NodeKind::NavigationBar,
+            HostView::Web(_) => NodeKind::WebView,
         }
     }
 
@@ -309,6 +318,12 @@ pub struct UikitHost {
     button_titles: HashMap<NodeId, String>,
     button_colors: HashMap<NodeId, String>,
     button_variants: HashMap<NodeId, String>,
+    /// Título, rótulo del atrás y si se enseña, de cada cabecera.
+    navs: HashMap<NodeId, (String, String, bool)>,
+    /// El botón de atrás vivo de cada cabecera, para poder engancharle el
+    /// evento: se rehace cada vez que cambia el título.
+    nav_backs: HashMap<NodeId, Retained<objc2_ui_kit::UIBarButtonItem>>,
+    nav_targets: HashMap<NodeId, Retained<crate::events::ControlTarget>>,
     /// Valor pedido a cada `Stepper`, por lo mismo que en el deslizador: el
     /// rango y el valor llegan sueltos y en cualquier orden.
     stepper_values: HashMap<NodeId, f64>,
@@ -363,6 +378,9 @@ impl UikitHost {
             button_titles: HashMap::new(),
             button_colors: HashMap::new(),
             button_variants: HashMap::new(),
+            navs: HashMap::new(),
+            nav_backs: HashMap::new(),
+            nav_targets: HashMap::new(),
             stepper_values: HashMap::new(),
             transitions: HashMap::new(),
             entering: Vec::new(),
@@ -721,6 +739,30 @@ impl HostRenderer for UikitHost {
                 HostView::Stack(stack)
             }
             NodeKind::TextInput => HostView::Field(UITextField::new(mtm)),
+            NodeKind::TextEditor => {
+                let text_view = objc2_ui_kit::UITextView::new(mtm);
+                unsafe {
+                    // Sin fondo ni márgenes propios: los pone la plantilla,
+                    // igual que en un campo de una línea.
+                    text_view.setBackgroundColor(None);
+                    text_view.setTextContainerInset(objc2_ui_kit::UIEdgeInsets {
+                        top: 0.0,
+                        left: 0.0,
+                        bottom: 0.0,
+                        right: 0.0,
+                    });
+                    text_view.textContainer().setLineFragmentPadding(0.0);
+                }
+                HostView::Area(text_view)
+            }
+            NodeKind::NavigationBar => {
+                let bar = objc2_ui_kit::UINavigationBar::new(mtm);
+                HostView::Nav(bar)
+            }
+            NodeKind::WebView => {
+                let web = crate::web::WKWebView::new(mtm);
+                HostView::Web(web)
+            }
             NodeKind::SegmentedControl => {
                 HostView::Segments(objc2_ui_kit::UISegmentedControl::new(mtm))
             }
@@ -784,6 +826,9 @@ impl HostRenderer for UikitHost {
         self.button_titles.remove(&id);
         self.button_colors.remove(&id);
         self.button_variants.remove(&id);
+        self.navs.remove(&id);
+        self.nav_backs.remove(&id);
+        self.nav_targets.remove(&id);
         self.stepper_values.remove(&id);
         self.modals.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
@@ -842,6 +887,96 @@ impl HostRenderer for UikitHost {
             "variant" if matches!(view, HostView::Button(_)) => {
                 self.button_variants.insert(id, text.clone().unwrap_or_else(|| "text".to_owned()));
                 self.refresh_button(id);
+            }
+            // --- cabecera de navegación
+            "title" | "backTitle" | "showsBack" if matches!(view, HostView::Nav(_)) => {
+                let HostView::Nav(bar) = view else { return };
+                let entry = self.navs.entry(id).or_default();
+                match key {
+                    "title" => entry.0 = text.clone().unwrap_or_default(),
+                    "backTitle" => entry.1 = text.clone().unwrap_or_default(),
+                    _ => entry.2 = matches!(value, PropValue::Bool(true)),
+                }
+                let (title, back_title, shows_back) = entry.clone();
+                let item = objc2_ui_kit::UINavigationItem::new(self.mtm);
+                unsafe { item.setTitle(Some(&NSString::from_str(&title))) };
+                if shows_back {
+                    // Fuera de un `UINavigationController` no hay botón de
+                    // atrás automático: se pone uno con el mismo símbolo y el
+                    // mismo sitio, y quien navega es el router.
+                    // El destino vive tanto como la cabecera: el botón se
+                    // rehace en cada cambio de título y el destino no.
+                    let target = self
+                        .nav_targets
+                        .entry(id)
+                        .or_insert_with(|| {
+                            crate::events::ControlTarget::standalone(
+                                self.mtm,
+                                id,
+                                self.events.clone(),
+                            )
+                        })
+                        .clone();
+                    let action = crate::events::ControlTarget::nav_back_action();
+                    let back = if back_title.is_empty() {
+                        unsafe {
+                        objc2_ui_kit::UIBarButtonItem::initWithImage_style_target_action(
+                            self.mtm.alloc::<objc2_ui_kit::UIBarButtonItem>(),
+                            crate::icons::symbol("chevron.left", 0.0, 400).as_deref(),
+                            objc2_ui_kit::UIBarButtonItemStyle::Plain,
+                            Some(&*target),
+                            Some(action),
+                        )
+                        }
+                    } else {
+                        unsafe {
+                            objc2_ui_kit::UIBarButtonItem::initWithTitle_style_target_action(
+                                self.mtm.alloc::<objc2_ui_kit::UIBarButtonItem>(),
+                                Some(&NSString::from_str(&back_title)),
+                                objc2_ui_kit::UIBarButtonItemStyle::Plain,
+                                Some(&*target),
+                                Some(action),
+                            )
+                        }
+                    };
+                    unsafe { item.setLeftBarButtonItem(Some(&back)) };
+                    self.nav_backs.insert(id, back);
+                }
+                bar.setItems(Some(&objc2_foundation::NSArray::from_retained_slice(&[item])));
+            }
+            // --- texto de varias líneas
+            "value" if matches!(view, HostView::Area(_)) => {
+                let HostView::Area(area) = view else { return };
+                let next = text.clone().unwrap_or_default();
+                // Igual que en el campo de una línea: no se reescribe si ya
+                // dice eso, o el cursor salta al final mientras se escribe.
+                let current = unsafe { area.text() }.to_string();
+                if current != next {
+                    unsafe { area.setText(Some(&NSString::from_str(&next))) };
+                }
+            }
+            "editable" if matches!(view, HostView::Area(_)) => {
+                let HostView::Area(area) = view else { return };
+                unsafe { area.setEditable(!matches!(value, PropValue::Bool(false))) };
+            }
+            // --- navegador embebido
+            "url" if matches!(view, HostView::Web(_)) => {
+                let HostView::Web(web) = view else { return };
+                let Some(raw) = text.as_deref() else { return };
+                let Some(url) = (unsafe {
+                    objc2_foundation::NSURL::URLWithString(&NSString::from_str(raw))
+                }) else {
+                    return;
+                };
+                let request = unsafe { objc2_foundation::NSURLRequest::requestWithURL(&url) };
+                let _ = web.loadRequest(&request);
+            }
+            "html" if matches!(view, HostView::Web(_)) => {
+                let HostView::Web(web) = view else { return };
+                let _ = web.loadHTMLString_baseURL(
+                    &NSString::from_str(text.as_deref().unwrap_or("")),
+                    None,
+                );
             }
             // --- control segmentado, desplegable y selector de fecha
             "items" if matches!(view, HostView::Segments(_) | HostView::Menu(_)) => {
@@ -1045,7 +1180,9 @@ impl HostRenderer for UikitHost {
                 }
             }
             // --- diálogos del sistema
-            "title" | "message" | "buttons" | "visible" if self.alerts.contains_key(&id) => {
+            "title" | "message" | "buttons" | "visible" | "sheet"
+                if self.alerts.contains_key(&id) =>
+            {
                 let Some(state) = self.alerts.get_mut(&id) else { return };
                 match key {
                     "title" => state.title = text.clone().unwrap_or_default(),
@@ -1053,6 +1190,7 @@ impl HostRenderer for UikitHost {
                     "buttons" => {
                         state.buttons = parse_string_list(text.as_deref().unwrap_or("[]"))
                     }
+                    "sheet" => state.sheet = matches!(value, PropValue::Bool(true)),
                     _ => state.visible = matches!(value, PropValue::Bool(true)),
                 }
                 if !self.dirty_alerts.contains(&id) {
@@ -1094,6 +1232,7 @@ impl HostRenderer for UikitHost {
                 match view {
                     HostView::Label(label) => unsafe { label.setTextColor(Some(&color)) },
                     HostView::Field(field) => unsafe { field.setTextColor(Some(&color)) },
+                    HostView::Area(area) => unsafe { area.setTextColor(Some(&color)) },
                     HostView::Toggle(toggle) => toggle.setOnTintColor(Some(&color)),
                     HostView::Slide(slider) => slider.setMinimumTrackTintColor(Some(&color)),
                     HostView::Spinner(spinner) => unsafe { spinner.setColor(Some(&color)) },

@@ -245,7 +245,10 @@
     Stepper: 17,
     SearchBar: 18,
     Picker: 19,
-    DatePicker: 20
+    DatePicker: 20,
+    NavigationBar: 21,
+    TextEditor: 22,
+    WebView: 23
   }
 
   class CommandWriter {

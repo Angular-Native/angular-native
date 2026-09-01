@@ -61,6 +61,9 @@ pub fn kind_from_byte(byte: u8) -> Option<NodeKind> {
         18 => NodeKind::SearchBar,
         19 => NodeKind::Picker,
         20 => NodeKind::DatePicker,
+        21 => NodeKind::NavigationBar,
+        22 => NodeKind::TextEditor,
+        23 => NodeKind::WebView,
         _ => return None,
     })
 }
@@ -88,6 +91,9 @@ pub fn kind_to_byte(kind: NodeKind) -> u8 {
         NodeKind::SearchBar => 18,
         NodeKind::Picker => 19,
         NodeKind::DatePicker => 20,
+        NodeKind::NavigationBar => 21,
+        NodeKind::TextEditor => 22,
+        NodeKind::WebView => 23,
     }
 }
 

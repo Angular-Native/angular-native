@@ -101,6 +101,7 @@ pub trait TextMeasurer {
             "SearchBar" => (320.0, 56.0),
             "Select" => (140.0, 44.0),
             "DatePicker" => (200.0, 44.0),
+            "NavigationBar" => (320.0, 44.0),
             _ => (0.0, 0.0),
         }
     }

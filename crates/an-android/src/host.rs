@@ -57,6 +57,9 @@ impl JniHost {
             NodeKind::SearchBar => 18,
             NodeKind::Picker => 19,
             NodeKind::DatePicker => 20,
+            NodeKind::NavigationBar => 21,
+            NodeKind::TextEditor => 22,
+            NodeKind::WebView => 23,
         }
     }
 }
