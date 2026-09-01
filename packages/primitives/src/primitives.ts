@@ -84,6 +84,25 @@ export abstract class NativeVisual {
     this.set('borderRadius', value)
   }
 
+  // Radios por esquina. UIKit solo sabe de un radio único, así que cuando
+  // difieren el host dibuja el contorno y lo usa de máscara; Android lo
+  // resuelve con `setCornerRadii`.
+  @Input() set borderTopLeftRadius(value: number | null) {
+    this.set('borderTopLeftRadius', value)
+  }
+
+  @Input() set borderTopRightRadius(value: number | null) {
+    this.set('borderTopRightRadius', value)
+  }
+
+  @Input() set borderBottomRightRadius(value: number | null) {
+    this.set('borderBottomRightRadius', value)
+  }
+
+  @Input() set borderBottomLeftRadius(value: number | null) {
+    this.set('borderBottomLeftRadius', value)
+  }
+
   @Input() set borderWidth(value: number | null) {
     this.set('borderWidth', value)
   }

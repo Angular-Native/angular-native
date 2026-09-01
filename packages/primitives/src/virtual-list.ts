@@ -17,19 +17,27 @@ export interface VirtualListContext<T> {
   index: number
 }
 
+/** Una ranura del carrusel. Su `key` no cambia nunca; su contenido sí. */
+interface Slot<T> {
+  key: number
+  index: number
+  top: string
+  row: T | undefined
+  context: VirtualListContext<T> | null
+}
+
 /**
- * Lista con ventana: solo monta las filas que se ven.
+ * Lista con reciclado de vistas.
  *
- * Un `@for` sobre diez mil elementos crea diez mil `UIView`. Aquí se montan
- * las visibles más un margen, y cada fila se coloca en posición absoluta a
- * `index * itemHeight`. El contenedor lleva la altura total, así que el
- * `contentSize` del `UIScrollView` sale del layout sin cálculos aparte y la
- * barra de scroll mide lo que tiene que medir.
+ * Monta un número fijo de ranuras —las que caben en pantalla más un margen— y
+ * al desplazarse no crea ni destruye ninguna: cambia lo que muestra cada una y
+ * dónde está. Diez mil filas cuestan las mismas veinte vistas nativas que
+ * veinte filas.
  *
- * **Esto es ventana, no reciclado de celdas.** Al salir de la ventana, la
- * vista se destruye; no se reutiliza como haría un `UITableView`. Reciclar
- * exigiría reasignar el contexto de una vista de Angular ya creada, y eso es
- * un problema distinto y bastante más grande.
+ * El truco está en el `track slot.key`: la clave de una ranura es su posición
+ * en el carrusel, no el elemento que enseña, así que Angular reutiliza la vista
+ * incrustada y solo actualiza sus bindings. `NgTemplateOutlet` hace lo mismo
+ * mientras las claves del contexto no cambien, que es el caso.
  *
  * Requiere altura de fila fija: sin ella no se puede saber qué hay en el
  * desplazamiento Y sin haber medido todo lo anterior.
@@ -45,6 +53,7 @@ export interface VirtualListContext<T> {
 @Component({
   selector: 'VirtualList',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [ScrollView, View, NgTemplateOutlet],
   // El host tampoco puede dimensionarse por el contenido, o se lleva por
   // delante el layout del padre igual que haría el ScrollView de dentro.
   host: {
@@ -53,7 +62,6 @@ export interface VirtualListContext<T> {
     '[style.flexShrink]': "'1'",
     '[style.overflow]': "'hidden'"
   },
-  imports: [ScrollView, View, NgTemplateOutlet],
   template: `
     <ScrollView
       [style.flexGrow]="'1'"
@@ -61,16 +69,19 @@ export interface VirtualListContext<T> {
       (layout)="onLayout($event)"
       (scroll)="onScroll($event)">
       <View [style.height]="totalHeight()" [style.position]="'relative'">
-        @for (row of window(); track row.index) {
+        @for (slot of slots(); track slot.key) {
           <View
             [style.position]="'absolute'"
-            [style.top]="row.top"
+            [style.top]="slot.top"
             [style.left]="'0'"
             [style.width]="'100%'"
-            [style.height]="itemHeight()">
-            <ng-container
-              [ngTemplateOutlet]="template()!"
-              [ngTemplateOutletContext]="row.context" />
+            [style.height]="itemHeight()"
+            [style.display]="slot.context ? 'flex' : 'none'">
+            @if (slot.context) {
+              <ng-container
+                [ngTemplateOutlet]="template()!"
+                [ngTemplateOutletContext]="slot.context" />
+            }
           </View>
         }
       </View>
@@ -80,7 +91,7 @@ export interface VirtualListContext<T> {
 export class VirtualList<T> {
   readonly items = input.required<readonly T[]>()
   readonly itemHeight = input.required<number>()
-  /** Filas de más a cada lado, para que un scroll rápido no deje huecos. */
+  /** Ranuras de más a cada lado, para que un scroll rápido no deje huecos. */
   readonly overscan = input(4)
 
   protected readonly template = contentChild(TemplateRef<VirtualListContext<T>>)
@@ -90,24 +101,44 @@ export class VirtualList<T> {
 
   protected readonly totalHeight = computed(() => this.items().length * this.itemHeight())
 
-  protected readonly window = computed(() => {
+  /**
+   * Cuántas ranuras hay. Solo cambia si cambia el alto del viewport o el de
+   * las filas; desplazarse no la mueve, que es justo lo que permite reciclar.
+   */
+  private readonly slotCount = computed(() => {
+    const visible = Math.ceil(this.viewport() / this.itemHeight())
+    // Sin alto de viewport todavía no se sabe cuántas caben; se montan unas
+    // pocas para que el primer frame no salga vacío.
+    return (visible > 0 ? visible : 1) + this.overscan() * 2
+  })
+
+  protected readonly slots = computed<Slot<T>[]>(() => {
     const height = this.itemHeight()
     const items = this.items()
-    // Sin altura de viewport todavía no se sabe cuántas caben; se monta un
-    // puñado para que el primer frame no salga vacío.
-    const visible = this.viewport() > 0 ? Math.ceil(this.viewport() / height) : this.overscan()
-    const first = Math.max(0, Math.floor(this.offset() / height) - this.overscan())
-    const last = Math.min(items.length, first + visible + this.overscan() * 2)
+    const count = slotCountFor(this.slotCount(), items.length)
+    const first = Math.max(
+      0,
+      Math.min(
+        Math.floor(this.offset() / height) - this.overscan(),
+        Math.max(0, items.length - count)
+      )
+    )
 
-    const rows = []
-    for (let index = first; index < last; index++) {
-      rows.push({
+    const slots: Slot<T>[] = []
+    for (let key = 0; key < count; key++) {
+      const index = first + key
+      const row = index < items.length ? items[index] : undefined
+      slots.push({
+        key,
         index,
         top: String(index * height),
-        context: { $implicit: items[index], index } satisfies VirtualListContext<T>
+        row,
+        // Las claves del contexto no cambian nunca, y por eso
+        // `NgTemplateOutlet` actualiza la vista en vez de rehacerla.
+        context: row === undefined ? null : { $implicit: row, index }
       })
     }
-    return rows
+    return slots
   })
 
   protected onScroll(event: NativeScrollEvent): void {
@@ -117,4 +148,13 @@ export class VirtualList<T> {
   protected onLayout(event: NativeLayoutEvent): void {
     this.viewport.set(event.height)
   }
+}
+
+/**
+ * Una lista más corta que el carrusel no necesita ranuras vacías: se recorta.
+ * Pasar de una lista corta a una larga sí crea ranuras, pero eso ocurre al
+ * filtrar, no al desplazarse.
+ */
+function slotCountFor(desired: number, total: number): number {
+  return Math.min(desired, Math.max(total, 1))
 }

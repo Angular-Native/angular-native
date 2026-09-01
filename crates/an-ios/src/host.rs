@@ -10,10 +10,60 @@ use objc2::rc::Retained;
 use objc2::MainThreadMarker;
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_foundation::NSString;
+use objc2_quartz_core::CAShapeLayer;
 use objc2_ui_kit::{
-    NSLineBreakMode, NSTextAlignment, UIAccessibilityIdentification, UIFont, UIImageView,
-    UILabel, UIScrollView, UITextField, UITextInputTraits, UIView,
+    NSLineBreakMode, NSTextAlignment, UIAccessibilityIdentification, UIBezierPath, UIFont,
+    UIImageView, UILabel, UIScrollView, UITextField, UITextInputTraits, UIView,
 };
+
+/// Contorno de un rectángulo con un radio distinto por esquina.
+///
+/// Las esquinas van en el orden arriba-izq, arriba-der, abajo-der, abajo-izq,
+/// el mismo que usa CSS y el mismo que espera Android.
+fn rounded_path(width: f64, height: f64, radii: [f64; 4]) -> Retained<UIBezierPath> {
+    use std::f64::consts::{FRAC_PI_2, PI};
+
+    let limit = (width.min(height)) / 2.0;
+    let [tl, tr, br, bl] = radii.map(|r| r.clamp(0.0, limit));
+    let path = UIBezierPath::new();
+    let point = |x: f64, y: f64| CGPoint { x, y };
+
+    path.moveToPoint(point(tl, 0.0));
+    path.addLineToPoint(point(width - tr, 0.0));
+    path.addArcWithCenter_radius_startAngle_endAngle_clockwise(
+        point(width - tr, tr),
+        tr,
+        -FRAC_PI_2,
+        0.0,
+        true,
+    );
+    path.addLineToPoint(point(width, height - br));
+    path.addArcWithCenter_radius_startAngle_endAngle_clockwise(
+        point(width - br, height - br),
+        br,
+        0.0,
+        FRAC_PI_2,
+        true,
+    );
+    path.addLineToPoint(point(bl, height));
+    path.addArcWithCenter_radius_startAngle_endAngle_clockwise(
+        point(bl, height - bl),
+        bl,
+        FRAC_PI_2,
+        PI,
+        true,
+    );
+    path.addLineToPoint(point(0.0, tl));
+    path.addArcWithCenter_radius_startAngle_endAngle_clockwise(
+        point(tl, tl),
+        tl,
+        PI,
+        PI + FRAC_PI_2,
+        true,
+    );
+    path.closePath();
+    path
+}
 
 /// Vista nativa de un nodo. Se guarda con su tipo concreto porque las props
 /// de un `<Text>` no se aplican igual que las de un `<View>`.
@@ -62,6 +112,10 @@ pub struct UikitHost {
     /// Fuente pendiente por nodo: `fontSize` y `fontWeight` llegan en props
     /// separadas y hay que reconstruir la `UIFont` con las dos.
     fonts: HashMap<NodeId, an_layout::FontSpec>,
+    /// Radios por esquina: arriba-izq, arriba-der, abajo-der, abajo-izq.
+    /// UIKit solo sabe de un radio único, así que cuando difieren hay que
+    /// dibujar la forma a mano y usarla como máscara.
+    corners: HashMap<NodeId, [f64; 4]>,
     /// Suscripciones vivas, indexadas por nodo y evento. Se guardan porque hay
     /// que poder quitarlas: un `@if` que desmonta su rama destruye la vista,
     /// pero un `(press)` que deja de estar bindeado no.
@@ -79,6 +133,7 @@ impl UikitHost {
             container,
             views: HashMap::new(),
             fonts: HashMap::new(),
+            corners: HashMap::new(),
             listeners: HashMap::new(),
             events,
         }
@@ -123,6 +178,47 @@ impl UikitHost {
     fn font_mut(&mut self, id: NodeId) -> &mut an_layout::FontSpec {
         self.fonts.entry(id).or_default()
     }
+
+    fn set_corner(&mut self, id: NodeId, corner: usize, radius: Option<f32>) {
+        let radii = self.corners.entry(id).or_insert([0.0; 4]);
+        radii[corner] = radius.unwrap_or(0.0) as f64;
+        self.apply_corners(id);
+    }
+
+    /// Aplica los radios al nodo.
+    ///
+    /// Si los cuatro son iguales basta `cornerRadius`, que es barato y deja
+    /// que UIKit recorte por su cuenta. Si difieren no hay API: hay que
+    /// dibujar el contorno y ponerlo de máscara, y rehacerlo cada vez que la
+    /// vista cambia de tamaño, porque una máscara no se estira sola.
+    fn apply_corners(&mut self, id: NodeId) {
+        let Some(radii) = self.corners.get(&id).copied() else { return };
+        let Some(view) = self.views.get(&id) else { return };
+        let native = view.as_view();
+        let layer = native.layer();
+
+        let uniform = radii.iter().all(|r| (*r - radii[0]).abs() < f64::EPSILON);
+        if uniform {
+            // Como el resto de setters de UIKit: marcado unsafe por no ser
+            // thread-safe, y aquí siempre vamos por el hilo de UI.
+            unsafe { layer.setMask(None) };
+            layer.setCornerRadius(radii[0]);
+            native.setClipsToBounds(radii[0] > 0.0);
+            return;
+        }
+
+        layer.setCornerRadius(0.0);
+        native.setClipsToBounds(true);
+        let bounds = native.bounds();
+        if bounds.size.width <= 0.0 || bounds.size.height <= 0.0 {
+            // Todavía no tiene tamaño; el marco llegará y volveremos aquí.
+            return;
+        }
+        let path = rounded_path(bounds.size.width, bounds.size.height, radii);
+        let shape = CAShapeLayer::new();
+        unsafe { shape.setPath(Some(&path.CGPath())) };
+        unsafe { layer.setMask(Some(&shape)) };
+    }
 }
 
 impl HostRenderer for UikitHost {
@@ -152,6 +248,7 @@ impl HostRenderer for UikitHost {
             view.as_view().removeFromSuperview();
         }
         self.fonts.remove(&id);
+        self.corners.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
     }
 
@@ -189,11 +286,14 @@ impl HostRenderer for UikitHost {
             }
             "borderRadius" | "border-radius" => {
                 if let Some(v) = number {
-                    let layer = native.layer();
-                    layer.setCornerRadius(v as f64);
-                    native.setClipsToBounds(v > 0.0);
+                    self.corners.insert(id, [v as f64; 4]);
+                    self.apply_corners(id);
                 }
             }
+            "borderTopLeftRadius" => self.set_corner(id, 0, number),
+            "borderTopRightRadius" => self.set_corner(id, 1, number),
+            "borderBottomRightRadius" => self.set_corner(id, 2, number),
+            "borderBottomLeftRadius" => self.set_corner(id, 3, number),
             "borderColor" | "border-color" => {
                 if let Some(color) = text.as_deref().and_then(crate::color::to_uicolor) {
                     // `CGColor` no está garantizado thread-safe; aquí siempre
@@ -337,6 +437,15 @@ impl HostRenderer for UikitHost {
             origin: CGPoint { x: frame.x as f64, y: frame.y as f64 },
             size: CGSize { width: frame.width as f64, height: frame.height as f64 },
         });
+        // Una máscara de esquinas desiguales no se estira con la vista: hay
+        // que redibujarla con el tamaño nuevo.
+        if self
+            .corners
+            .get(&id)
+            .is_some_and(|radii| radii.iter().any(|r| (*r - radii[0]).abs() > f64::EPSILON))
+        {
+            self.apply_corners(id);
+        }
     }
 
     fn clear(&mut self) {
@@ -345,6 +454,7 @@ impl HostRenderer for UikitHost {
         }
         self.views.clear();
         self.fonts.clear();
+        self.corners.clear();
         self.listeners.clear();
     }
 

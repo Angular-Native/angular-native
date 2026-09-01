@@ -7,7 +7,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 cargo an build examples/kitchen >/dev/null
-OUTPUT="$(cargo run -q -p an-bridge --example headless -- build/bundle/kitchen/main.js 3 2>&1)"
+OUTPUT="$(cargo run -q -p an-bridge --example headless -- build/bundle/kitchen/main.js 6 2>&1)"
 
 fail=0
 check() {
@@ -24,9 +24,10 @@ check 'TextInput#[0-9]+ \[16,70 361x40\]' 'el campo de texto se midió y se colo
 check '"headless 0.0 . es-ES"' 'el módulo nativo contestó y la promesa resolvió'
 check 'ScrollView#[0-9]+ \[0,0 393x666\]' 'el ScrollView llena el hueco, no crece con su contenido'
 check 'contenido 393x280000' 'el contentSize sale del layout: 5000 filas de 56'
-check '"fila número 19"' 'la ventana llega hasta la última fila visible'
-if grep -qE -- '"fila número 40"' <<<"$OUTPUT"; then
-  echo "  FALLO la ventana debería acabar mucho antes de la fila 40"
+check '"fila número 7[0-9]"' 'tras desplazarse se ven las filas de esa altura'
+check 'desplazarse costó 0 vistas creadas y 0 destruidas' 'desplazarse recicla: ni una vista nueva'
+if grep -qE -- '"fila número (1|2|300)"' <<<"$OUTPUT"; then
+  echo "  FALLO tras desplazarse no debería quedar nada del principio ni del final"
   fail=1
 else
   echo "  ok   fuera de la ventana no se monta nada"

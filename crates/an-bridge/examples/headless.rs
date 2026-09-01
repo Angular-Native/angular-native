@@ -24,13 +24,19 @@ struct TreeRecorder {
     content: HashMap<NodeId, (f32, f32)>,
     root: Option<NodeId>,
     pressable: Vec<NodeId>,
+    scrollable: Vec<NodeId>,
+    /// Para poder afirmar que desplazarse no crea vistas.
+    created: usize,
+    destroyed: usize,
 }
 
 impl HostRenderer for TreeRecorder {
     fn create(&mut self, id: NodeId, kind: NodeKind) {
+        self.created += 1;
         self.kinds.insert(id, kind);
     }
     fn destroy(&mut self, id: NodeId) {
+        self.destroyed += 1;
         self.kinds.remove(&id);
         self.parents.remove(&id);
         self.frames.remove(&id);
@@ -56,13 +62,15 @@ impl HostRenderer for TreeRecorder {
         self.texts.insert(id, text.to_owned());
     }
     fn set_listener(&mut self, id: NodeId, event: &str, enabled: bool) {
-        if event != "press" {
-            return;
-        }
+        let list = match event {
+            "press" => &mut self.pressable,
+            "scroll" => &mut self.scrollable,
+            _ => return,
+        };
         if enabled {
-            self.pressable.push(id);
+            list.push(id);
         } else {
-            self.pressable.retain(|node| *node != id);
+            list.retain(|node| *node != id);
         }
     }
     fn set_layout(&mut self, id: NodeId, frame: Rect) {
@@ -125,6 +133,10 @@ fn main() {
     let mut renderer =
         Renderer::new(TreeRecorder::default(), NaiveMeasurer, (393.0, 852.0), events);
     let mut tapped = false;
+    let mut scrolled = false;
+    // Recuento en el momento justo antes de desplazar, para poder decir
+    // cuántas vistas costó el desplazamiento.
+    let mut before_scroll = (0usize, 0usize);
 
     for frame in 0..frames {
         let now = frame as f64 * step;
@@ -153,6 +165,25 @@ fn main() {
             }
         }
 
+        // Un frame después del toque, un desplazamiento largo: mueve la
+        // ventana entera y deja ver si la lista recicla o rehace.
+        if !scrolled && frame >= frames / 2 {
+            if let Some(target) = renderer.host().scrollable.first().copied() {
+                before_scroll = (renderer.host().created, renderer.host().destroyed);
+                println!("-- desplazamiento simulado en #{target} hasta y=4000");
+                js.dispatch_events(&[HostEvent {
+                    target,
+                    name: "scroll".to_owned(),
+                    payload: vec![
+                        ("x".to_owned(), PropValue::Number(0.0)),
+                        ("y".to_owned(), PropValue::Number(4000.0)),
+                    ],
+                }])
+                .expect("despacho de eventos");
+                scrolled = true;
+            }
+        }
+
         let commands = match js.tick(now) {
             Ok(commands) => commands,
             Err(error) => {
@@ -175,6 +206,13 @@ fn main() {
         None => println!("(sin raíz: la app no llegó a montar nada)"),
     }
     println!("\nvistas nativas montadas: {}", host.kinds.len());
+    if scrolled {
+        println!(
+            "desplazarse costó {} vistas creadas y {} destruidas",
+            host.created - before_scroll.0,
+            host.destroyed - before_scroll.1
+        );
+    }
 }
 
 fn print_node(host: &TreeRecorder, id: NodeId, depth: usize) {

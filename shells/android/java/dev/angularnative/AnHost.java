@@ -46,6 +46,10 @@ public final class AnHost {
     private final SparseArray<AnViewGroup> scrollContent = new SparseArray<>();
     private final TextPaint measurePaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     private final SparseArray<TextWatcher> watchers = new SparseArray<>();
+    /** Radios por esquina en puntos: arriba-izq, arriba-der, abajo-der, abajo-izq. */
+    private final SparseArray<float[]> corners = new SparseArray<>();
+    /** Tipografía pendiente por nodo: llega en props sueltas y hay que juntarla. */
+    private final SparseArray<float[]> fontState = new SparseArray<>();
 
     private AnRuntime runtime;
     /** Última posición tocada, en puntos y relativa a la vista tocada. */
@@ -120,6 +124,10 @@ public final class AnHost {
         views.remove(id);
         scrollContent.remove(id);
         watchers.remove(id);
+        corners.remove(id);
+        fontState.remove(id);
+        borderWidths.remove(id);
+        borderColors.remove(id);
     }
 
     public void insertView(int parentId, int childId, int index) {
@@ -219,8 +227,30 @@ public final class AnHost {
                 applyBackground(view, parseColor(value), null);
                 break;
             case "borderRadius":
-            case "border-radius":
-                applyBackground(view, null, parseFloat(value));
+            case "border-radius": {
+                Float radius = parseFloat(value);
+                float[] all = cornersOf(id);
+                java.util.Arrays.fill(all, radius == null ? 0f : radius);
+                applyCorners(view, all);
+                break;
+            }
+            case "borderTopLeftRadius":
+                setCorner(view, id, 0, parseFloat(value));
+                break;
+            case "borderTopRightRadius":
+                setCorner(view, id, 1, parseFloat(value));
+                break;
+            case "borderBottomRightRadius":
+                setCorner(view, id, 2, parseFloat(value));
+                break;
+            case "borderBottomLeftRadius":
+                setCorner(view, id, 3, parseFloat(value));
+                break;
+            case "borderWidth":
+            case "border-width":
+            case "borderColor":
+            case "border-color":
+                applyBorder(view, id, key, value);
                 break;
             case "opacity":
                 view.setAlpha(parseFloat(value) == null ? 1f : parseFloat(value));
@@ -292,18 +322,77 @@ public final class AnHost {
         }
     }
 
-    private void applyBackground(View view, Integer color, Float radiusDp) {
-        GradientDrawable drawable =
-                view.getBackground() instanceof GradientDrawable
-                        ? (GradientDrawable) view.getBackground()
-                        : new GradientDrawable();
-        if (color != null) {
-            drawable.setColor(color);
+    private GradientDrawable backgroundOf(View view) {
+        if (view.getBackground() instanceof GradientDrawable) {
+            return (GradientDrawable) view.getBackground();
         }
-        if (radiusDp != null) {
-            drawable.setCornerRadius(radiusDp * density);
-        }
+        GradientDrawable drawable = new GradientDrawable();
         view.setBackground(drawable);
+        return drawable;
+    }
+
+    private void applyBackground(View view, Integer color, Float unused) {
+        if (color != null) {
+            backgroundOf(view).setColor(color);
+        }
+    }
+
+    private float[] cornersOf(int id) {
+        float[] radii = corners.get(id);
+        if (radii == null) {
+            radii = new float[4];
+            corners.put(id, radii);
+        }
+        return radii;
+    }
+
+    private void setCorner(View view, int id, int corner, Float radius) {
+        float[] radii = cornersOf(id);
+        radii[corner] = radius == null ? 0f : radius;
+        applyCorners(view, radii);
+    }
+
+    /**
+     * `setCornerRadii` quiere ocho valores —radio X e Y de cada esquina— en el
+     * orden arriba-izq, arriba-der, abajo-der, abajo-izq.
+     */
+    private void applyCorners(View view, float[] radii) {
+        GradientDrawable drawable = backgroundOf(view);
+        boolean uniform = radii[0] == radii[1] && radii[1] == radii[2] && radii[2] == radii[3];
+        if (uniform) {
+            drawable.setCornerRadius(radii[0] * density);
+            return;
+        }
+        drawable.setCornerRadii(
+                new float[] {
+                    radii[0] * density, radii[0] * density,
+                    radii[1] * density, radii[1] * density,
+                    radii[2] * density, radii[2] * density,
+                    radii[3] * density, radii[3] * density
+                });
+    }
+
+    /** El borde son dos props que llegan sueltas y se aplican juntas. */
+    private final SparseArray<float[]> borderWidths = new SparseArray<>();
+    private final SparseArray<Integer> borderColors = new SparseArray<>();
+
+    private void applyBorder(View view, int id, String key, String value) {
+        if (key.startsWith("borderWidth") || key.startsWith("border-width")) {
+            Float width = parseFloat(value);
+            borderWidths.put(id, new float[] {width == null ? 0f : width});
+        } else {
+            Integer color = parseColor(value);
+            if (color != null) {
+                borderColors.put(id, color);
+            }
+        }
+        float[] width = borderWidths.get(id);
+        Integer color = borderColors.get(id);
+        if (width == null) {
+            return;
+        }
+        backgroundOf(view)
+                .setStroke(Math.round(width[0] * density), color == null ? 0 : color);
     }
 
     // ---------------------------------------------------------------- eventos
@@ -385,6 +474,28 @@ public final class AnHost {
                                 : null);
                 return;
             }
+        }
+        if ("doublePress".equals(event)) {
+            if (!enabled) {
+                view.setOnTouchListener(null);
+                return;
+            }
+            android.view.GestureDetector detector =
+                    new android.view.GestureDetector(
+                            context,
+                            new android.view.GestureDetector.SimpleOnGestureListener() {
+                                @Override
+                                public boolean onDoubleTap(android.view.MotionEvent e) {
+                                    if (runtime != null) {
+                                        runtime.dispatchEvent(
+                                                id, "doublePress", e.getX() / density, e.getY() / density);
+                                    }
+                                    return true;
+                                }
+                            });
+            view.setOnTouchListener((v, touch) -> detector.onTouchEvent(touch));
+            view.setClickable(true);
+            return;
         }
         if ("press".equals(event) || "click".equals(event) || "tap".equals(event)) {
             if (!enabled) {

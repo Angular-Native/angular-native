@@ -5,6 +5,8 @@
 //! La diferencia es que aquí el puntero al runtime viaja como `long`, porque es
 //! lo que la JVM sabe guardar.
 
+use std::time::Duration;
+
 use an_bridge::{QuickJsRuntime, Request, RuntimeWorker};
 use an_core::PropValue;
 use an_host::{drain_events, new_event_queue, EventQueue, HostEvent, MountSide, ShadowSide};
@@ -19,6 +21,9 @@ use crate::measure::JniMeasurer;
 /// necesita algo más de 3 MB de pila para completar una navegación.
 const RUNTIME_STACK: usize = 8 * 1024 * 1024;
 
+/// Lo que el hilo de UI espera al motor dentro del frame, igual que en iOS.
+const FRAME_BUDGET: Duration = Duration::from_millis(12);
+
 pub struct AndroidRuntime {
     worker: RuntimeWorker,
     mount: MountSide<JniHost>,
@@ -30,16 +35,23 @@ impl AndroidRuntime {
     fn pump(&mut self) -> jint {
         let mut applied = 0;
         while let Some(reply) = self.worker.try_reply() {
-            if let Some(error) = reply.error {
-                eprintln!("angular-native: {error}");
-                applied = -1;
-            }
-            let count = self.mount.apply(&reply.frame);
-            if applied >= 0 {
-                applied += count as jint;
-            }
+            applied = self.mount_reply(reply, applied);
         }
         applied
+    }
+
+    /// Aplica una respuesta y acumula el recuento.
+    fn mount_reply(&mut self, reply: an_bridge::Reply, applied: jint) -> jint {
+        let failed = reply.error.is_some();
+        if let Some(error) = reply.error {
+            eprintln!("angular-native: {error}");
+        }
+        let count = self.mount.apply(&reply.frame);
+        if failed || applied < 0 {
+            -1
+        } else {
+            applied + count as jint
+        }
     }
 
     /// Vacía lo que quede en vuelo antes de una operación de control.
@@ -173,12 +185,17 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeFrame(
 ) -> jint {
     let Some(runtime) = (unsafe { runtime(handle) }) else { return -1 };
 
-    // Primero se monta lo que el worker haya terminado; después se le manda el
-    // turno siguiente, y solo si no sigue ocupado.
-    let applied = runtime.pump();
+    // Se monta lo que el worker haya terminado desde el frame anterior, se le
+    // manda el turno siguiente si no sigue ocupado, y se le espera lo que
+    // queda de frame: si contesta a tiempo, lo que el usuario acaba de tocar
+    // se ve en este mismo frame.
+    let mut applied = runtime.pump();
     if !runtime.worker.busy() {
         let events = drain_events(&runtime.events);
         runtime.worker.post(Request::Tick { now_ms, events });
+        if let Some(reply) = runtime.worker.wait_reply_until(FRAME_BUDGET) {
+            applied = runtime.mount_reply(reply, applied);
+        }
     }
     applied
 }

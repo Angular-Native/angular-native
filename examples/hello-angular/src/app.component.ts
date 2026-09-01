@@ -19,8 +19,13 @@ import { NATIVE_PRIMITIVES, type NativePressEvent } from '@angular-native/primit
       <View [style.flexDirection]="'row'" [style.gap]="'12'">
         @for (card of cards; track card.color) {
           <View [style.flexGrow]="card.grow" [style.height]="'88'"
-                [backgroundColor]="card.color" [borderRadius]="12"
-                (press)="onPress($event)"></View>
+                [backgroundColor]="card.color"
+                [borderTopLeftRadius]="card.corners[0]"
+                [borderTopRightRadius]="card.corners[1]"
+                [borderBottomRightRadius]="card.corners[2]"
+                [borderBottomLeftRadius]="card.corners[3]"
+                (press)="onPress($event)"
+                (doublePress)="taps.set(0)"></View>
         }
       </View>
 
@@ -41,8 +46,9 @@ import { NATIVE_PRIMITIVES, type NativePressEvent } from '@angular-native/primit
 })
 export class AppComponent {
   readonly cards = [
-    { color: '#1e2a4a', grow: 1 },
-    { color: '#2b1e4a', grow: 2 }
+    // Radios distintos por esquina, que es lo que UIKit no sabe hacer solo.
+    { color: '#1e2a4a', grow: 1, corners: [24, 4, 24, 4] },
+    { color: '#2b1e4a', grow: 2, corners: [4, 24, 4, 24] }
   ]
 
   readonly seconds = signal(0)
@@ -52,7 +58,7 @@ export class AppComponent {
   readonly lastPoint = signal<NativePressEvent | null>(null)
   readonly tapLabel = computed(() => {
     const point = this.lastPoint()
-    if (!point) return 'toca una tarjeta'
+    if (!point) return 'toca una tarjeta; dos toques la ponen a cero'
     return `toques: ${this.taps()} (último en ${Math.round(point.x)}, ${Math.round(point.y)})`
   })
 

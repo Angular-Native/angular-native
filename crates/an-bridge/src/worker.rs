@@ -6,18 +6,22 @@
 //! iOS tiene 1 MB que no se pueden cambiar. Un hilo propio sí admite la pila
 //! que se le pida.
 //!
-//! Los `Tick` van sin esperar respuesta: el hilo de UI los manda y sigue, y
-//! monta el frame que llegue, que será el del turno anterior. Cuesta un frame
-//! de latencia y a cambio un turno de JS lento deja de congelar la interfaz —
-//! el scroll nativo sigue yendo suave mientras Angular piensa. Es lo mismo que
-//! hace Fabric.
+//! El `Tick` se manda y se espera, pero con plazo. Si el turno de JS cabe en
+//! lo que queda de frame —el caso normal— se monta en el mismo frame y no hay
+//! latencia añadida. Si se pasa del plazo, el hilo de UI sigue y monta ese
+//! frame cuando llegue, sin congelarse.
+//!
+//! Es el punto medio entre bloquear siempre, que congela la interfaz cuando
+//! Angular tarda, y no esperar nunca, que añade un frame de latencia a cada
+//! toque aunque el turno haya durado dos milisegundos.
 //!
 //! Las operaciones de control —evaluar, recargar, cambiar el viewport— sí
 //! esperan: son raras y el orden importa.
 
 use std::cell::Cell;
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use an_core::{Frame, TextMeasurer};
 use an_host::{HostEvent, ShadowSide};
@@ -192,7 +196,32 @@ impl RuntimeWorker {
         }
     }
 
-    /// Espera a la siguiente respuesta pendiente.
+    /// Espera a la siguiente respuesta hasta agotar el plazo.
+    ///
+    /// Devuelve `None` si no hay nada en vuelo o si el plazo venció: en ese
+    /// caso la petición sigue viva y su respuesta se recogerá más adelante con
+    /// `try_reply`.
+    pub fn wait_reply_until(&self, deadline: Duration) -> Option<Reply> {
+        if self.in_flight.get() == 0 {
+            return None;
+        }
+        match self.replies.recv_timeout(deadline) {
+            Ok(reply) => {
+                self.in_flight.set(self.in_flight.get().saturating_sub(1));
+                Some(reply)
+            }
+            Err(RecvTimeoutError::Timeout) => None,
+            Err(RecvTimeoutError::Disconnected) => {
+                self.in_flight.set(0);
+                Some(Reply {
+                    error: Some("el hilo del runtime murió".to_owned()),
+                    ..Reply::default()
+                })
+            }
+        }
+    }
+
+    /// Espera a la siguiente respuesta pendiente, sin plazo.
     pub fn wait_reply(&self) -> Option<Reply> {
         if self.in_flight.get() == 0 {
             return None;

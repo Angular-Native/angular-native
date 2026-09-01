@@ -26,13 +26,14 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
   "std", "NSString", "NSAttributedString", "NSDictionary", "NSValue", "NSGeometry", "objc2-core-foundation",
 ] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGColor"] }
-objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "objc2-core-foundation", "objc2-core-graphics"] }
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "CAShapeLayer", "objc2-core-foundation", "objc2-core-graphics"] }
 objc2-ui-kit = { version = "0.3", default-features = false, features = [
   "std", "objc2-core-foundation", "objc2-quartz-core", "objc2-core-graphics",
   "UIFontDescriptor", "UIAccessibilityIdentification",
   "UIView", "UILabel", "UIImageView", "UIImage", "UIColor", "UIFont",
   "UIResponder", "UIScreen", "UIScrollView", "UITextField", "UIControl",
   "UIGestureRecognizer", "UITapGestureRecognizer", "UITextInputTraits", "UIDevice",
+  "UIBezierPath",
   "NSStringDrawing", "NSParagraphStyle", "NSText", "NSAttributedString",
 ] }
 
