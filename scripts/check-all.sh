@@ -21,6 +21,7 @@ cargo test --quiet 2>&1 | tail -1
 "$ROOT/scripts/check-web.sh"
 "$ROOT/scripts/check-media.sh"
 "$ROOT/scripts/check-hot.sh"
+"$ROOT/scripts/check-watchos.sh"
 
 echo
 echo "== compilación cruzada"

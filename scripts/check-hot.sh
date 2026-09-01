@@ -26,13 +26,24 @@ cargo an build examples/hello-angular >/dev/null
 cp build/bundle/hello-angular/main.js "$DESPUES"
 cp "$COPIA" "$FUENTE"
 
-OUTPUT="$(AN_HOT="$DESPUES" cargo run -q -p an-bridge --example headless -- "$ANTES" 6 2>&1)"
+correr() {
+  AN_HOT="$1" cargo run -q -p an-bridge --example headless -- "$ANTES" 6 2>&1
+}
 
-# Si el runner no trae el soporte de `AN_HOT` no hay refresco que medir, y lo
-# que sale son cuatro fallos que no dicen nada. Suele pasar por un binario que
-# cargo dio por bueno sin serlo: `touch` al fuente y a compilar otra vez.
+OUTPUT="$(correr "$DESPUES")"
+
+# Si el runner ni menciona el refresco es que no trae el soporte de `AN_HOT`:
+# `cargo test` y `cargo run --example` no siempre coinciden en qué binario del
+# ejemplo es el bueno, y el que queda puede ser de antes del cambio. Se le
+# fuerza la recompilación una vez; si sigue igual, es un fallo de verdad y no
+# vale disfrazarlo de refresco que no funciona.
 if ! grep -q 'refresco en caliente' <<<"$OUTPUT"; then
-  echo "  FALLO el runner headless ignoró AN_HOT; recompila: cargo build -p an-bridge --example headless"
+  touch crates/an-bridge/examples/headless.rs
+  cargo build -q -p an-bridge --example headless
+  OUTPUT="$(correr "$DESPUES")"
+fi
+if ! grep -q 'refresco en caliente' <<<"$OUTPUT"; then
+  echo "  FALLO el runner headless no trae el soporte de AN_HOT ni recompilándolo"
   exit 1
 fi
 
@@ -63,7 +74,7 @@ fi
 # caliente: hay una sola copia en el intérprete. Cuando cambia, lo honesto es
 # pedir el reinicio, y eso es lo que se comprueba aquí falseando la firma.
 sed 's/globalThis.__anVendor !== "/globalThis.__anVendor !== "x/' "$DESPUES" >"$DESPUES.otro"
-OTRO="$(AN_HOT="$DESPUES.otro" cargo run -q -p an-bridge --example headless -- "$ANTES" 6 2>&1)"
+OTRO="$(correr "$DESPUES.otro")"
 if grep -qE -- 'refresco en caliente: no, toca reiniciar' <<<"$OTRO"; then
   echo "  ok   si cambia el framework se pide reinicio en vez de mentir"
 else

@@ -94,6 +94,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "an-watch"
+version = "0.0.1"
+dependencies = [
+ "an-bridge",
+ "an-core",
+ "an-host",
+ "an-layout",
+ "objc2",
+ "objc2-core-foundation",
+ "objc2-foundation",
+ "objc2-ui-kit",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

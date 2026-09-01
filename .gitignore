@@ -1,5 +1,7 @@
 target/
-node_modules/
+# Sin la barra: en un worktree lo normal es enlazarlo al del repo principal en
+# vez de instalarlo otra vez, y un enlace no es un directorio para git.
+node_modules
 dist/
 .DS_Store
 *.xcuserdatad/

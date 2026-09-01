@@ -1,0 +1,36 @@
+[package]
+name = "an-watch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+# staticlib para enlazar desde el shell de SwiftUI; rlib para poder testear el
+# modelo y la serialización desde Rust, en el Mac y sin simulador.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+an-core.workspace = true
+an-host.workspace = true
+an-layout.workspace = true
+an-bridge = { path = "../an-bridge" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.151"
+
+# watchOS trae un UIKit recortado: no hay `UIView` ni jerarquía de vistas, pero
+# sí `UIFont` y el dibujado de cadenas de Foundation. Es todo lo que hace falta
+# aquí, porque este host no monta vistas: solo mide texto para que taffy pueda
+# colocar. Fuera de watchOS el crate compila con el medidor aproximado, para
+# que `cargo test` del workspace siga funcionando en el Mac.
+[target.'cfg(target_os = "watchos")'.dependencies]
+objc2 = { version = "0.6", default-features = false, features = ["std"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std", "NSString", "NSAttributedString", "NSDictionary", "NSValue", "NSGeometry",
+] }
+objc2-ui-kit = { version = "0.3", default-features = false, features = [
+  "std", "objc2-core-foundation",
+  "UIFont", "UIFontDescriptor", "NSStringDrawing", "NSParagraphStyle", "NSText",
+  "NSAttributedString",
+] }
