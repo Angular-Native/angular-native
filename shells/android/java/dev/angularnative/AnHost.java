@@ -72,8 +72,39 @@ public final class AnHost {
     private final SparseArray<TextWatcher> watchers = new SparseArray<>();
     /** Radios por esquina en puntos: arriba-izq, arriba-der, abajo-der, abajo-izq. */
     private final SparseArray<float[]> corners = new SparseArray<>();
-    /** Tipografía pendiente por nodo: llega en props sueltas y hay que juntarla. */
-    private final SparseArray<float[]> fontState = new SparseArray<>();
+    /**
+     * La tipografía llega en props sueltas —familia, cursiva, peso— y
+     * `Typeface.create` las quiere juntas: se guardan hasta poder aplicarlas.
+     */
+    private final SparseArray<FontState> fontState = new SparseArray<>();
+
+    /**
+     * Lo que se sabe del teclado de cada campo.
+     *
+     * En Android el teclado, las mayúsculas, el corrector y la contraseña son
+     * banderas del mismo `inputType`, así que aplicar una sola borra las
+     * demás: hay que guardarlas y componerlo entero cada vez.
+     */
+    private final SparseArray<InputState> inputState = new SparseArray<>();
+
+    /** Las banderas del teclado de un campo, según van llegando. */
+    private static final class InputState {
+        String keyboard = "default";
+        String capitalize = "sentences";
+        boolean correct = true;
+        boolean secure;
+    }
+
+    /** Lo que se sabe de la letra de un nodo, según va llegando. */
+    private static final class FontState {
+        String family;
+        boolean italic;
+        boolean bold;
+        /** Espaciado entre letras en puntos; Android lo quiere en emes. */
+        Float letterSpacing;
+        /** Alto de línea en puntos. */
+        Float lineHeight;
+    }
     /** Sentido de la próxima transición de cada pila: `push`, `pop` o nada. */
     private final SparseArray<String> transitions = new SparseArray<>();
     /** Pantallas que entraron en este frame y aún no se han animado. */
@@ -117,6 +148,15 @@ public final class AnHost {
     private final SparseArray<String> buttonVariants = new SparseArray<>();
 
     private final SparseArray<Integer> buttonColors = new SparseArray<>();
+
+    /**
+     * Colores de la vía del interruptor: el de encendido llega por `[color]` y
+     * el de apagado por `[android]`, y `ColorStateList` los quiere juntos.
+     */
+    private final SparseArray<int[]> switchTracks = new SparseArray<>();
+
+    /** Salto entre valores de cada deslizador, si se pidió alguno. */
+    private final SparseArray<Float> sliderSteps = new SparseArray<>();
 
     /** Centro de cada mapa: la latitud y la longitud llegan por separado. */
     private final java.util.HashMap<Integer, float[]> mapCenters = new java.util.HashMap<>();
@@ -411,10 +451,13 @@ public final class AnHost {
         backListeners.remove(Integer.valueOf(id));
         corners.remove(id);
         fontState.remove(id);
+        inputState.remove(id);
         borderWidths.remove(id);
         borderColors.remove(id);
         sliderRanges.remove(id);
         sliderValues.remove(id);
+        sliderSteps.remove(id);
+        switchTracks.remove(id);
         safeArea.remove(id);
         AlertState alert = alerts.get(id);
         if (alert != null && alert.presented != null) {
@@ -780,9 +823,64 @@ public final class AnHost {
         float max = range[1] > range[0] ? range[1] : range[0] + 1f;
         slider.setValueFrom(min);
         slider.setValueTo(max);
-        if (value != null) {
-            slider.setValue(Math.max(min, Math.min(max, value)));
+        Float step = sliderSteps.get(id);
+        float applied = 0f;
+        if (step != null && step > 0f) {
+            float steps = (max - min) / step;
+            // Material exige que el paso divida el recorrido exacto: si no,
+            // revienta al dibujar. Antes que caerse, se dice y se deja
+            // continuo, que es lo que había.
+            if (Math.abs(steps - Math.round(steps)) > 1e-4f) {
+                android.util.Log.w(
+                        "angular-native",
+                        "[android].stepSize " + step + " no divide el recorrido "
+                                + (max - min) + ": el deslizador se queda continuo");
+            } else {
+                applied = step;
+            }
         }
+        slider.setStepSize(applied);
+        if (value != null) {
+            float clamped = Math.max(min, Math.min(max, value));
+            // Con paso, el valor tiene que caer en uno: Material rechaza
+            // cualquier otro.
+            if (applied > 0f) {
+                clamped = min + Math.round((clamped - min) / applied) * applied;
+                clamped = Math.max(min, Math.min(max, clamped));
+            }
+            slider.setValue(clamped);
+        }
+    }
+
+    /**
+     * La vía del interruptor, con su color encendido y su color apagado.
+     *
+     * Los dos llegan por props distintas, así que se guardan y se arma la
+     * lista de estados entera: un `ColorStateList` de un solo color pinta
+     * igual las dos posiciones y el interruptor deja de decir si está puesto.
+     */
+    private void applySwitchTrack(int id, View view) {
+        int[] colors = switchTracks.get(id);
+        if (colors == null || !(view instanceof androidx.appcompat.widget.SwitchCompat)) {
+            return;
+        }
+        ((androidx.appcompat.widget.SwitchCompat) view)
+                .setTrackTintList(
+                        new android.content.res.ColorStateList(
+                                new int[][] {
+                                    new int[] {android.R.attr.state_checked}, new int[0]
+                                },
+                                new int[] {colors[0], colors[1]}));
+    }
+
+    private int[] switchTrackOf(int id) {
+        int[] colors = switchTracks.get(id);
+        if (colors == null) {
+            // Sin nada dicho, el apagado es el gris de siempre de Material.
+            colors = new int[] {Color.GRAY, Color.argb(60, 120, 120, 120)};
+            switchTracks.put(id, colors);
+        }
+        return colors;
     }
 
     /** Lista de cadenas en JSON: es como viajan los títulos de las pestañas. */
@@ -991,6 +1089,49 @@ public final class AnHost {
                     applyButtonVariant((android.widget.Button) view, id, value);
                 }
                 break;
+            case "icon":
+                if (view instanceof com.google.android.material.button.MaterialButton) {
+                    com.google.android.material.button.MaterialButton material =
+                            (com.google.android.material.button.MaterialButton) view;
+                    material.setIcon(value == null ? null : iconDrawableFor(value));
+                    // El icono se tiñe con el color del rótulo: en un botón,
+                    // icono y texto son la misma cosa a efectos de contraste.
+                    material.setIconTint(
+                            android.content.res.ColorStateList.valueOf(
+                                    material.getCurrentTextColor()));
+                }
+                break;
+            case "iconPosition":
+                if (view instanceof com.google.android.material.button.MaterialButton) {
+                    ((com.google.android.material.button.MaterialButton) view)
+                            .setIconGravity(
+                                    "trailing".equals(value)
+                                            ? com.google.android.material.button.MaterialButton
+                                                    .ICON_GRAVITY_TEXT_END
+                                            : com.google.android.material.button.MaterialButton
+                                                    .ICON_GRAVITY_TEXT_START);
+                }
+                break;
+            // Props de una sola plataforma. Las de iOS llegan con su prefijo y
+            // caen en el `default`, que es justo lo que tienen que hacer aquí.
+            case "android:rippleColor":
+                if (view instanceof com.google.android.material.button.MaterialButton) {
+                    Integer ripple = parseColor(value);
+                    ((com.google.android.material.button.MaterialButton) view)
+                            .setRippleColor(
+                                    ripple == null
+                                            ? null
+                                            : android.content.res.ColorStateList.valueOf(ripple));
+                }
+                break;
+            case "android:allCaps":
+                if (view instanceof android.widget.Button) {
+                    ((android.widget.Button) view).setAllCaps("true".equals(value));
+                }
+                break;
+            case "enabled":
+                setEnabledDeep(view, !"false".equals(value));
+                break;
             case "name":
                 if (view instanceof TextView && isIcon(view)) {
                     ((TextView) view).setText(iconGlyph(value));
@@ -1076,6 +1217,54 @@ public final class AnHost {
                 }
                 break;
             }
+            case "thumbColor": {
+                Integer thumb = parseColor(value);
+                if (thumb == null) {
+                    break;
+                }
+                if (view instanceof androidx.appcompat.widget.SwitchCompat) {
+                    ((androidx.appcompat.widget.SwitchCompat) view)
+                            .setThumbTintList(
+                                    android.content.res.ColorStateList.valueOf(thumb));
+                } else if (view instanceof com.google.android.material.slider.Slider) {
+                    ((com.google.android.material.slider.Slider) view)
+                            .setThumbTintList(
+                                    android.content.res.ColorStateList.valueOf(thumb));
+                }
+                break;
+            }
+            case "minimumTrackColor":
+            case "maximumTrackColor": {
+                Integer track = parseColor(value);
+                if (track == null
+                        || !(view instanceof com.google.android.material.slider.Slider)) {
+                    break;
+                }
+                com.google.android.material.slider.Slider bar =
+                        (com.google.android.material.slider.Slider) view;
+                android.content.res.ColorStateList tint =
+                        android.content.res.ColorStateList.valueOf(track);
+                if ("minimumTrackColor".equals(key)) {
+                    bar.setTrackActiveTintList(tint);
+                } else {
+                    bar.setTrackInactiveTintList(tint);
+                }
+                break;
+            }
+            case "android:trackColor": {
+                Integer off = parseColor(value);
+                if (off != null) {
+                    switchTrackOf(id)[1] = off;
+                    applySwitchTrack(id, view);
+                }
+                break;
+            }
+            case "android:stepSize":
+                if (view instanceof com.google.android.material.slider.Slider) {
+                    sliderSteps.put(id, parseFloat(value));
+                    applySliderValue(id, (com.google.android.material.slider.Slider) view);
+                }
+                break;
             case "animating":
                 if (view instanceof android.widget.ProgressBar) {
                     view.setVisibility("false".equals(value) ? View.INVISIBLE : View.VISIBLE);
@@ -1185,11 +1374,11 @@ public final class AnHost {
                 if (view instanceof AnTabBar) {
                     ((AnTabBar) view).setActiveColor(color);
                 } else if (view instanceof androidx.appcompat.widget.SwitchCompat) {
-                    // Solo la vía: el pulgar lo pinta Material para que
-                    // contraste con ella. Tintar los dos del mismo color
-                    // dejaba el pulgar invisible.
-                    ((androidx.appcompat.widget.SwitchCompat) view)
-                            .setTrackTintList(android.content.res.ColorStateList.valueOf(color));
+                    // Solo la vía, y solo la de encendido: el pulgar lo pinta
+                    // Material para que contraste con ella, y tintar los dos
+                    // del mismo color dejaba el pulgar invisible.
+                    switchTrackOf(id)[0] = color;
+                    applySwitchTrack(id, view);
                 } else if (view instanceof android.widget.ProgressBar) {
                     ((android.widget.ProgressBar) view)
                             .setProgressTintList(android.content.res.ColorStateList.valueOf(color));
@@ -1218,13 +1407,40 @@ public final class AnHost {
                     if (size != null) {
                         ((TextView) view)
                                 .setTextSize(TypedValue.COMPLEX_UNIT_PX, size * density);
+                        // El espaciado entre letras va en emes: al cambiar el
+                        // tamaño cambia lo que vale una eme.
+                        applyTextMetrics(id, (TextView) view);
                     }
                 }
                 break;
             case "fontWeight":
                 if (view instanceof TextView) {
-                    boolean bold = "bold".equals(value) || weightOf(value) >= 600;
-                    ((TextView) view).setTypeface(null, bold ? Typeface.BOLD : Typeface.NORMAL);
+                    fontStateOf(id).bold = "bold".equals(value) || weightOf(value) >= 600;
+                    applyTypeface(id, (TextView) view);
+                }
+                break;
+            case "fontStyle":
+                if (view instanceof TextView) {
+                    fontStateOf(id).italic = "italic".equals(value);
+                    applyTypeface(id, (TextView) view);
+                }
+                break;
+            case "fontFamily":
+                if (view instanceof TextView) {
+                    fontStateOf(id).family = value;
+                    applyTypeface(id, (TextView) view);
+                }
+                break;
+            case "letterSpacing":
+                if (view instanceof TextView) {
+                    fontStateOf(id).letterSpacing = parseFloat(value);
+                    applyTextMetrics(id, (TextView) view);
+                }
+                break;
+            case "lineHeight":
+                if (view instanceof TextView) {
+                    fontStateOf(id).lineHeight = parseFloat(value);
+                    applyTextMetrics(id, (TextView) view);
                 }
                 break;
             case "textAlign":
@@ -1284,6 +1500,121 @@ public final class AnHost {
             case "editable":
                 if (view instanceof EditText) {
                     ((EditText) view).setEnabled(!"false".equals(value));
+                }
+                break;
+            case "secureTextEntry":
+            case "keyboardType":
+            case "autoCapitalize":
+            case "autoCorrect":
+                if (view instanceof EditText) {
+                    InputState state = inputStateOf(id);
+                    switch (key) {
+                        case "secureTextEntry":
+                            state.secure = "true".equals(value);
+                            break;
+                        case "keyboardType":
+                            state.keyboard = value == null ? "default" : value;
+                            break;
+                        case "autoCapitalize":
+                            state.capitalize = value == null ? "sentences" : value;
+                            break;
+                        default:
+                            state.correct = !"false".equals(value);
+                            break;
+                    }
+                    applyInputType(id, (EditText) view);
+                }
+                break;
+            case "returnKeyType":
+                if (view instanceof EditText) {
+                    int action;
+                    switch (value == null ? "default" : value) {
+                        case "done":
+                            action = android.view.inputmethod.EditorInfo.IME_ACTION_DONE;
+                            break;
+                        case "go":
+                            action = android.view.inputmethod.EditorInfo.IME_ACTION_GO;
+                            break;
+                        case "next":
+                            action = android.view.inputmethod.EditorInfo.IME_ACTION_NEXT;
+                            break;
+                        case "search":
+                            action = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH;
+                            break;
+                        case "send":
+                            action = android.view.inputmethod.EditorInfo.IME_ACTION_SEND;
+                            break;
+                        default:
+                            action = android.view.inputmethod.EditorInfo.IME_ACTION_UNSPECIFIED;
+                            break;
+                    }
+                    ((EditText) view).setImeOptions(action);
+                }
+                break;
+            case "placeholderColor":
+                if (view instanceof TextView) {
+                    Integer hint = parseColor(value);
+                    if (hint != null) {
+                        ((TextView) view).setHintTextColor(hint);
+                    }
+                }
+                break;
+            case "android:selectAllOnFocus":
+                if (view instanceof EditText) {
+                    ((EditText) view).setSelectAllOnFocus("true".equals(value));
+                }
+                break;
+            case "android:cursorVisible":
+                if (view instanceof EditText) {
+                    ((EditText) view).setCursorVisible(!"false".equals(value));
+                }
+                break;
+            case "textDecoration":
+                if (view instanceof TextView) {
+                    android.graphics.Paint paint = ((TextView) view).getPaint();
+                    paint.setUnderlineText("underline".equals(value));
+                    paint.setStrikeThruText("lineThrough".equals(value));
+                    view.invalidate();
+                }
+                break;
+            case "android:selectable":
+                if (view instanceof TextView) {
+                    ((TextView) view).setTextIsSelectable("true".equals(value));
+                }
+                break;
+            case "unselectedColor": {
+                Integer inactive = parseColor(value);
+                if (inactive != null && view instanceof AnTabBar) {
+                    ((AnTabBar) view).setInactiveColor(inactive);
+                }
+                break;
+            }
+            case "scrollEnabled":
+                if (view instanceof AnScrollView) {
+                    ((AnScrollView) view).setScrollEnabled(!"false".equals(value));
+                }
+                break;
+            case "showsScrollIndicator":
+                if (view instanceof ScrollView) {
+                    boolean shown = !"false".equals(value);
+                    view.setVerticalScrollBarEnabled(shown);
+                    view.setHorizontalScrollBarEnabled(shown);
+                }
+                break;
+            case "bounces":
+                if (view instanceof ScrollView) {
+                    // El rebote de iOS aquí es el estirón del final del
+                    // desplazamiento: el mismo sitio del gesto, dibujado como
+                    // lo dibuja cada plataforma.
+                    view.setOverScrollMode(
+                            "false".equals(value)
+                                    ? View.OVER_SCROLL_NEVER
+                                    : View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+                }
+                break;
+            case "refreshing":
+                if (view instanceof AnScrollView) {
+                    ((AnScrollView) view).setRefreshing("true".equals(value));
                 }
                 break;
             default:
@@ -1362,6 +1693,153 @@ public final class AnHost {
         }
         backgroundOf(view)
                 .setStroke(Math.round(width[0] * density), color == null ? 0 : color);
+    }
+
+    /**
+     * Apaga un control y todo lo que lleve dentro.
+     *
+     * `setEnabled` en un `ViewGroup` no llega a los hijos, y tres de los
+     * controles de aquí —el de pasos, el segmentado y la barra de pestañas— no
+     * están en la plataforma y son grupos de vistas nuestras. Sin bajar por el
+     * árbol, apagarlos los dejaba respondiendo al toque.
+     */
+    private void setEnabledDeep(View view, boolean enabled) {
+        view.setEnabled(enabled);
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                setEnabledDeep(group.getChildAt(i), enabled);
+            }
+        }
+    }
+
+    private InputState inputStateOf(int id) {
+        InputState state = inputState.get(id);
+        if (state == null) {
+            state = new InputState();
+            inputState.put(id, state);
+        }
+        return state;
+    }
+
+    /**
+     * Compone el `inputType` entero con lo que se sabe del campo.
+     *
+     * El teclado que sale, las mayúsculas automáticas, el corrector y si el
+     * texto se ve o se tapa son banderas del mismo entero: aplicar una sola
+     * borraría las otras tres.
+     */
+    private void applyInputType(int id, EditText input) {
+        InputState state = inputStateOf(id);
+        int type;
+        switch (state.keyboard) {
+            case "numeric":
+                type = android.text.InputType.TYPE_CLASS_NUMBER;
+                break;
+            case "decimal":
+                type = android.text.InputType.TYPE_CLASS_NUMBER
+                        | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL;
+                break;
+            case "phone":
+                type = android.text.InputType.TYPE_CLASS_PHONE;
+                break;
+            case "email":
+                type = android.text.InputType.TYPE_CLASS_TEXT
+                        | android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS;
+                break;
+            case "url":
+                type = android.text.InputType.TYPE_CLASS_TEXT
+                        | android.text.InputType.TYPE_TEXT_VARIATION_URI;
+                break;
+            default:
+                type = android.text.InputType.TYPE_CLASS_TEXT;
+                break;
+        }
+        boolean numeric = (type & android.text.InputType.TYPE_CLASS_NUMBER) != 0;
+        if (state.secure) {
+            // La contraseña manda sobre la variante: un campo tapado con
+            // teclado de correo enseñaría el texto.
+            type = numeric
+                    ? android.text.InputType.TYPE_CLASS_NUMBER
+                            | android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                    : android.text.InputType.TYPE_CLASS_TEXT
+                            | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD;
+        } else if (!numeric) {
+            // Las mayúsculas y el corrector solo existen en el teclado de
+            // texto; en el numérico no hay nada que capitalizar.
+            switch (state.capitalize) {
+                case "none":
+                    break;
+                case "words":
+                    type |= android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS;
+                    break;
+                case "characters":
+                    type |= android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS;
+                    break;
+                default:
+                    type |= android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;
+                    break;
+            }
+            if (!state.correct) {
+                type |= android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+            }
+        }
+        input.setInputType(type);
+        // Cambiar el tipo devuelve el campo a la monoespaciada de las
+        // contraseñas: hay que volver a ponerle la suya.
+        applyTypeface(id, input);
+    }
+
+    private FontState fontStateOf(int id) {
+        FontState state = fontState.get(id);
+        if (state == null) {
+            state = new FontState();
+            fontState.put(id, state);
+        }
+        return state;
+    }
+
+    /**
+     * Familia, cursiva y negrita van juntas o no van.
+     *
+     * `setTypeface(null, style)` conserva la familia y `Typeface.create` pide
+     * el estilo, así que aplicar una sola de las tres props borra las otras
+     * dos. Se guardan las tres y se rehace la tipografía entera.
+     */
+    private void applyTypeface(int id, TextView text) {
+        FontState state = fontStateOf(id);
+        int style = state.bold
+                ? (state.italic ? Typeface.BOLD_ITALIC : Typeface.BOLD)
+                : (state.italic ? Typeface.ITALIC : Typeface.NORMAL);
+        text.setTypeface(
+                state.family == null ? null : Typeface.create(state.family, style), style);
+    }
+
+    /**
+     * Interlineado y espaciado entre letras.
+     *
+     * El núcleo ya medía con los dos y el host dibujaba sin ellos: el layout
+     * reservaba un hueco que el texto no llenaba. El espaciado va en emes, así
+     * que depende del tamaño de letra y hay que rehacerlo cuando cambia.
+     */
+    private void applyTextMetrics(int id, TextView text) {
+        FontState state = fontStateOf(id);
+        if (state.letterSpacing != null) {
+            float size = text.getTextSize();
+            text.setLetterSpacing(size > 0 ? state.letterSpacing * density / size : 0f);
+        }
+        if (state.lineHeight == null) {
+            return;
+        }
+        int px = Math.round(state.lineHeight * density);
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            text.setLineHeight(px);
+            return;
+        }
+        // Antes de API 28 no hay alto de línea, solo lo que se añade al que ya
+        // trae la fuente: se resta para llegar al mismo sitio.
+        int natural = text.getPaint().getFontMetricsInt(null);
+        text.setLineSpacing(Math.max(0, px - natural), 1f);
     }
 
     // ---------------------------------------------------------------- eventos
@@ -1692,7 +2170,12 @@ public final class AnHost {
         // Radio enorme a propósito: `GradientDrawable` lo recorta a la mitad
         // del alto, que es justo la píldora de Material 3.
         pill.setCornerRadius(1000f);
-        if ("filled".equals(variant)) {
+        if ("outlined".equals(variant)) {
+            // Contorno y nada dentro, como el `bordered` de UIKit.
+            pill.setColor(Color.TRANSPARENT);
+            pill.setStroke(Math.round(density), tint);
+            button.setTextColor(tint);
+        } else if ("filled".equals(variant)) {
             pill.setColor(tint);
             // Sobre un relleno fuerte el rótulo va del color del fondo de la
             // app, no del color del botón, o no se lee.

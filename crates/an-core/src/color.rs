@@ -94,3 +94,18 @@ mod tests {
         assert_eq!(parse("no-es-un-color"), None);
     }
 }
+
+/// Blanco o negro, el que se lea encima del color que se le pase.
+///
+/// La luminancia va con los pesos de siempre —el ojo ve mucho más el verde que
+/// el azul—, y el corte en 0,55 es el que deja el texto legible tanto sobre un
+/// amarillo como sobre un azul marino.
+pub fn contrast_on(color: Rgba) -> Rgba {
+    let (r, g, b, _) = color;
+    let luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+    if luminance > 0.55 {
+        (0.0, 0.0, 0.0, 1.0)
+    } else {
+        (1.0, 1.0, 1.0, 1.0)
+    }
+}

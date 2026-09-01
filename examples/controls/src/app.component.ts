@@ -20,14 +20,30 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
       [backgroundColor]="'#0b1020'">
 
       <SafeArea [edges]="['top']">
+      <ScrollView
+        [style.flexGrow]="'1'"
+        [style.overflow]="'scroll'"
+        [scrollEnabled]="true"
+        [showsScrollIndicator]="false"
+        [ios]="{ pagingEnabled: false, keyboardDismissMode: 'onDrag' }">
       <View [style.flexGrow]="'1'" [style.padding]="'16'" [style.gap]="'18'">
-        <Text [fontSize]="24" [fontWeight]="'bold'" [color]="'#f4f7ff'">
+        <Text
+          [fontSize]="24"
+          [fontWeight]="'bold'"
+          [letterSpacing]="2"
+          [lineHeight]="34"
+          [color]="'#f4f7ff'">
           {{ tabTitles[tab()] }}
         </Text>
 
         <View [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'12'">
           <Text [fontSize]="16" [color]="'#9fb0d4'" [style.flexGrow]="'1'">Notificaciones</Text>
-          <Switch [on]="notify()" [color]="'#6ee7b7'" (onChange)="notify.set($event)" />
+          <Switch
+            [on]="notify()"
+            [color]="'#6ee7b7'"
+            [thumbColor]="'#0b1020'"
+            [android]="{ trackColor: '#334155' }"
+            (onChange)="notify.set($event)" />
         </View>
 
         <View [style.gap]="'6'">
@@ -38,6 +54,11 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
             [minimumValue]="0"
             [maximumValue]="100"
             [color]="'#6ee7b7'"
+            [minimumTrackColor]="'#6ee7b7'"
+            [maximumTrackColor]="'#1e2a4a'"
+            [thumbColor]="'#f4f7ff'"
+            [ios]="{ continuous: true }"
+            [android]="{ stepSize: 5 }"
             (valueChange)="volume.set($event)" />
         </View>
 
@@ -53,21 +74,45 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
           </Text>
         </View>
 
-        <View [style.flexDirection]="'row'" [style.gap]="'12'">
+        <!--
+          El botón del subtítulo lleva alto propio: el tamaño natural de un
+          control se pregunta una vez al arrancar, con uno de muestra, y ese no
+          sabe que este va a llevar dos líneas.
+        -->
+        <View
+          [style.flexDirection]="'row'"
+          [style.alignItems]="'flex-start'"
+          [style.gap]="'12'">
           <Button
             [style.flexGrow]="'1'"
+            [style.height]="'58'"
             [title]="'Modal'"
+            [variant]="'filled'"
+            [icon]="'star'"
+            [fontSize]="17"
+            [fontWeight]="'bold'"
             [color]="'#6ee7b7'"
+            [ios]="{ subtitle: 'a pantalla completa' }"
+            [android]="{ rippleColor: '#ffffff55', allCaps: false }"
             (press)="modal.set(true)"></Button>
           <Button
             [style.flexGrow]="'1'"
             [title]="'Diálogo'"
+            [variant]="'outlined'"
+            [icon]="'settings'"
+            [iconPosition]="'trailing'"
+            [enabled]="notify()"
             [color]="'#6ee7b7'"
             (press)="alert.set(true)"></Button>
         </View>
 
-        <Text [fontSize]="13" [color]="'#6b7a99'">{{ answer() }}</Text>
+        <Text
+          [fontSize]="13"
+          [color]="'#6b7a99'"
+          [textDecoration]="'underline'"
+          [android]="{ selectable: true }">{{ answer() }}</Text>
       </View>
+      </ScrollView>
       </SafeArea>
 
       <View [style.flexDirection]="'row'" [style.gap]="'18'" [style.alignItems]="'center'">
@@ -84,6 +129,8 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
         [icons]="tabIcons"
         [selectedIndex]="tab()"
         [color]="'#6ee7b7'"
+        [unselectedColor]="'#6b7a99'"
+        [ios]="{ translucent: true }"
         (select)="tab.set($event)" />
 
       <Alert

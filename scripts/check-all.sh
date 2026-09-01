@@ -12,6 +12,10 @@ echo
 "$ROOT/scripts/check-signals.sh"
 
 echo
+echo "== props que llegan a los dos hosts"
+"$ROOT/scripts/check-wrapper.sh"
+
+echo
 echo "== núcleo Rust"
 cargo test --quiet 2>&1 | tail -1
 
@@ -25,6 +29,9 @@ cargo test --quiet 2>&1 | tail -1
 "$ROOT/scripts/check-media.sh"
 "$ROOT/scripts/check-hot.sh"
 "$ROOT/scripts/check-watchos.sh"
+
+echo
+"$ROOT/scripts/check-android-java.sh"
 
 echo
 echo "== compilación cruzada"

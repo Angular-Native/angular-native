@@ -31,6 +31,8 @@ public final class AnScrollView extends ScrollView {
 
     private OnRefresh listener;
     private boolean refreshing;
+    /** Si el dedo mueve el contenido. Sigue recortando igual. */
+    private boolean scrollEnabled = true;
     private float startY = Float.NaN;
     private float pull;
     private float spin;
@@ -56,8 +58,27 @@ public final class AnScrollView extends ScrollView {
         invalidate();
     }
 
+    public void setScrollEnabled(boolean enabled) {
+        this.scrollEnabled = enabled;
+    }
+
+    /**
+     * Sin gesto, el `ScrollView` no llega ni a mirar el toque.
+     *
+     * Android no tiene un `setScrollEnabled` como el de UIKit: lo que hay es
+     * decidir si se intercepta el arrastre, así que se dice aquí y el toque
+     * sigue su camino hacia los hijos.
+     */
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent event) {
+        return scrollEnabled && super.onInterceptTouchEvent(event);
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
+        if (!scrollEnabled) {
+            return false;
+        }
         if (listener != null) {
             switch (event.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:

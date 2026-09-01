@@ -1,13 +1,4 @@
-import {
-  DestroyRef,
-  Directive,
-  effect,
-  ElementRef,
-  inject,
-  input,
-  Renderer2,
-  type Signal
-} from '@angular/core'
+import { DestroyRef, Directive, effect, ElementRef, inject, input, Renderer2 } from '@angular/core'
 import { outputFromObservable } from '@angular/core/rxjs-interop'
 import { map, Observable } from 'rxjs'
 
@@ -100,6 +91,50 @@ export interface NativeScrollEvent {
 }
 
 /**
+ * Las claves que un control acepta en `[ios]` o en `[android]`.
+ *
+ * Se declara la lista aunque el tipo del objeto ya la diga, y no es
+ * redundante: el tipo lo comprueba el compilador sobre lo que ve, y no ve un
+ * objeto armado a trozos ni uno que viene de fuera. La lista es la que queda
+ * en tiempo de ejecución, y es también la que lee `check-wrapper.sh` para
+ * exigir que el host de esa plataforma —y solo ese— la mire.
+ */
+interface PlatformKeys {
+  readonly primitive: string
+  readonly platform: 'ios' | 'android'
+  readonly keys: ReadonlySet<string>
+}
+
+function platformKeys(
+  primitive: string,
+  platform: 'ios' | 'android',
+  keys: readonly string[]
+): PlatformKeys {
+  return { primitive, platform, keys: new Set(keys) }
+}
+
+/**
+ * Avisa una vez por clave que nadie va a mirar.
+ *
+ * Mismo trato que `warnUnknownStyle()` en el renderer y por el mismo motivo:
+ * una prop que viaja, no la reconoce nadie y no da error es un fallo que se ve
+ * como "esto no hace nada" y se busca en el sitio equivocado. Una vez por
+ * clave, porque el objeto se vuelve a evaluar en cada detección de cambios.
+ */
+const warnedPlatformProps = new Set<string>()
+
+function warnUnknownPlatformProp(where: PlatformKeys, key: string): void {
+  const seen = `${where.primitive}.${where.platform}.${key}`
+  if (warnedPlatformProps.has(seen)) return
+  warnedPlatformProps.add(seen)
+  console.warn(
+    `[angular-native] <${where.primitive}> no tiene "${key}" en [${where.platform}], ` +
+      `así que no hará nada. Acepta: ${[...where.keys].sort().join(', ')}. ` +
+      'Si existe en las dos plataformas es una entrada normal, no va aquí.'
+  )
+}
+
+/**
  * Primitivas nativas como directivas.
  *
  * La alternativa era `CUSTOM_ELEMENTS_SCHEMA`, que además de exigir un guion en
@@ -109,108 +144,110 @@ export interface NativeScrollEvent {
  * Con directivas, cada prop es una entrada declarada: el compilador de
  * plantillas la comprueba, el editor la autocompleta, y la directiva es el
  * sitio natural donde convertir el valor antes de mandarlo al core.
- *
- * Todas son `input()` de señales. Un `set` de `@Input` corría en el momento
- * exacto en que Angular escribía la entrada; una señal se lee cuando alguien
- * la lee, así que quien manda las propiedades al núcleo es el `effect` de
- * `forwardInputs`, uno por vista.
  */
-/**
- * Los nombres de las entradas de una directiva, sacados de la definición que
- * compila Angular.
- *
- * Se recorre la cadena de herencia en vez de fiarse de que la definición de la
- * hija ya traiga las de la madre: eso lo hace una `feature` de Angular, y
- * depender de cuándo corre para algo que se puede sumar aquí no compensa.
- *
- * Se calcula una vez por clase, no por vista: son las mismas para todas.
- */
-const inputsByClass = new WeakMap<Function, readonly string[]>()
-
-function inputNames(type: Function): readonly string[] {
-  const found = inputsByClass.get(type)
-  if (found) {
-    return found
-  }
-  const names = new Set<string>()
-  for (let current: Function | null = type; current; current = Object.getPrototypeOf(current)) {
-    const def = Reflect.get(current, 'ɵdir') as { inputs?: Record<string, unknown> } | undefined
-    // `Reflect.get` sube por el prototipo, así que la definición de la madre
-    // aparecería otra vez en la hija; solo cuenta la suya.
-    if (def && Object.hasOwn(current, 'ɵdir')) {
-      for (const name of Object.keys(def.inputs ?? {})) {
-        names.add(name)
-      }
-    }
-  }
-  const list = [...names]
-  inputsByClass.set(type, list)
-  return list
-}
-
 @Directive()
 export abstract class NativeVisual {
   protected readonly node = inject(ElementRef).nativeElement
   protected readonly renderer = inject(Renderer2)
 
-  constructor() {
-    this.forwardInputs()
+  protected set(name: string, value: unknown): void {
+    this.renderer.setProperty(this.node, name, value ?? null)
   }
 
   /**
-   * Manda al núcleo lo que cambie de las entradas.
+   * Empuja al core las entradas de esta directiva.
    *
-   * Un `effect` por vista y no uno por entrada: una `<View>` declara veinte y
-   * lo normal es que no haya ninguna puesta, y veinte nodos reactivos por
-   * vista se notan cuando hay setenta en pantalla.
+   * Una entrada de señal no tiene un momento en el que "se asigna": se lee, y
+   * quien la lee decide cuándo. Aquí la lee un efecto.
    *
-   * La lista de entradas sale de la definición que compila Angular, no de una
-   * escrita a mano: una entrada nueva que se olvidara de esa lista no haría
-   * nada, y nadie lo diría.
+   * Uno por directiva y no uno por entrada. Un `<Text>` declara once props y
+   * casi ninguna plantilla usa más de tres: con un efecto por prop, cada
+   * `<Text>` de una lista de cinco mil filas cargaría con once nodos
+   * reactivos que nadie va a despertar. Leer once señales cuando cambia una
+   * es más barato que tener once efectos esperando.
    *
-   * `null` es «no lo toques»: una entrada sin poner vale `null` y no se manda,
-   * que es lo que hacía un `set` que no se llamaba nunca. En cuanto se manda
-   * una vez, se sigue mandando aunque vuelva a `null`, porque entonces `null`
-   * sí quiere decir «quítalo».
+   * Solo viaja lo que cambió. Y en la primera pasada se callan además los
+   * nulos, que es lo que vale una entrada que nadie ha puesto: mandarlos
+   * sería pedirle al host que borre algo que nunca escribió.
    */
-  private forwardInputs(): void {
-    const names = inputNames(this.constructor)
-    const renamed = this.nativeNames()
+  protected push(props: Record<string, () => unknown>): void {
+    const entries = Object.entries(props)
     const sent = new Map<string, unknown>()
+    let first = true
     effect(() => {
-      for (const name of names) {
-        const prop = name in renamed ? renamed[name] : name
-        // `null` es la forma de decir que esa entrada se maneja a mano.
-        if (prop === null) {
-          continue
-        }
-        const source: unknown = Reflect.get(this, name)
-        if (typeof source !== 'function') {
-          continue
-        }
-        const value = (source as Signal<unknown>)()
-        if (value === null && !sent.has(name)) {
-          continue
-        }
-        if (sent.has(name) && sent.get(name) === value) {
-          continue
-        }
+      for (const [name, read] of entries) {
+        const value = read()
+        if (sent.has(name) && Object.is(sent.get(name), value)) continue
         sent.set(name, value)
-        this.set(prop, value)
+        if (first && (value === null || value === undefined)) continue
+        this.set(name, value)
       }
+      first = false
     })
   }
 
-  /**
-   * Entradas cuyo nombre en el núcleo no es el de la plantilla, y entradas que
-   * no se reenvían —esas van con `null`—.
-   */
-  protected nativeNames(): Readonly<Record<string, string | null>> {
-    return {}
+  /** Lo mismo para el objeto de una plataforma, que se manda descompuesto. */
+  protected pushPlatform(
+    where: PlatformKeys,
+    value: () => Record<string, unknown> | null
+  ): void {
+    effect(() => this.platform(where, value()))
   }
 
-  protected set(name: string, value: unknown): void {
-    this.renderer.setProperty(this.node, name, value ?? null)
+  constructor() {
+    this.push({
+      backgroundColor: this.backgroundColor,
+      animate: this.animate,
+      animateDelay: this.animateDelay,
+      animateEasing: this.animateEasing,
+      translateX: this.translateX,
+      translateY: this.translateY,
+      scale: this.scale,
+      scaleX: this.scaleX,
+      scaleY: this.scaleY,
+      rotate: this.rotate,
+      borderRadius: this.borderRadius,
+      borderTopLeftRadius: this.borderTopLeftRadius,
+      borderTopRightRadius: this.borderTopRightRadius,
+      borderBottomRightRadius: this.borderBottomRightRadius,
+      borderBottomLeftRadius: this.borderBottomLeftRadius,
+      borderWidth: this.borderWidth,
+      borderColor: this.borderColor,
+      opacity: this.opacity,
+      testID: this.testID
+    })
+  }
+
+  /** Lo que se mandó la última vez en cada objeto de plataforma. */
+  private readonly platformSent = new Map<string, Set<string>>()
+
+  /**
+   * Descompone `[ios]` o `[android]` en props sueltas con su prefijo.
+   *
+   * El prefijo hace dos cosas: que el host de la otra plataforma pueda
+   * descartar la prop sin saber qué es, y que el nombre siga siendo greppable
+   * —`"ios:subtitle"` tiene que aparecer en el host de iOS y no en el de
+   * Android, y eso lo comprueba un script—.
+   */
+  protected platform(where: PlatformKeys, value: Record<string, unknown> | null): void {
+    const previous = this.platformSent.get(where.platform)
+    const sent = new Set<string>()
+    for (const [key, raw] of Object.entries(value ?? {})) {
+      if (!where.keys.has(key)) {
+        warnUnknownPlatformProp(where, key)
+        continue
+      }
+      sent.add(key)
+      this.set(`${where.platform}:${key}`, raw)
+    }
+    // Una clave que estaba puesta y ya no está tiene que volver a su valor de
+    // fábrica: el control no se entera solo de que se la han quitado.
+    if (previous) {
+      for (const key of previous) {
+        if (!sent.has(key)) this.set(`${where.platform}:${key}`, null)
+      }
+    }
+    this.platformSent.set(where.platform, sent)
   }
 
   /**
@@ -344,6 +381,29 @@ export abstract class NativeVisual {
 export class View extends NativeVisual {}
 
 /**
+ * Un control del sistema: algo que se toca y que se puede apagar.
+ *
+ * `enabled` está aquí y no repetido en cada uno porque significa lo mismo en
+ * los ocho y en las dos plataformas —`UIControl.isEnabled` y
+ * `View.setEnabled`—, incluido el gris y el que deje de responder al toque,
+ * que lo pone el sistema y no nosotros.
+ *
+ * Los campos de texto no entran: ya tienen `editable`, que es la misma idea
+ * con el nombre que usa un campo.
+ */
+@Directive()
+export abstract class NativeControl extends NativeVisual {
+  constructor() {
+    super()
+    this.push({
+      enabled: this.enabled
+    })
+  }
+
+  readonly enabled = input<boolean | null>(true)
+}
+
+/**
  * Pila de pantallas.
  *
  * Sus hijos se superponen y ocupan todo —eso lo impone el core, no el estilo—
@@ -352,21 +412,67 @@ export class View extends NativeVisual {}
  */
 @Directive({ selector: 'StackView' })
 export class StackView extends NativeVisual {
+  constructor() {
+    super()
+    this.push({
+      transition: this.transition
+    })
+  }
+
   /**
    * Sentido de la próxima transición. Lo decide quien navega, que es el
    * único que sabe si se avanza o se retrocede.
    */
-  readonly transition = input<'push' | 'pop' | 'none' | null, 'push' | 'pop' | 'none' | null>(null, {
-    transform: (value) => value ?? 'none'
-  })
+  readonly transition = input<'push' | 'pop' | 'none' | null>('none')
 
   /** Gesto de borde en iOS, botón físico en Android. */
   readonly back = outputFromObservable(this.nativeEvent<void>('back'))
 }
 
+/** Lo que el `UIScrollView` tiene y el de Android no. */
+export type IosScrollViewProps = {
+  /**
+   * El desplazamiento se para en múltiplos del tamaño de la vista.
+   * `UIScrollView.isPagingEnabled`. Android no lo trae: lo suyo es
+   * `ViewPager2`, que es otra vista con su adaptador, no una prop.
+   */
+  pagingEnabled?: boolean
+  /**
+   * Qué hace el teclado al desplazarse. `keyboardDismissMode`. En Android el
+   * teclado no se esconde al desplazar y no hay nada que pedirle.
+   */
+  keyboardDismissMode?: 'none' | 'onDrag' | 'interactive'
+}
+
+const SCROLL_VIEW_IOS = platformKeys('ScrollView', 'ios', [
+  'pagingEnabled',
+  'keyboardDismissMode'
+])
+
 @Directive({ selector: 'ScrollView' })
 export class ScrollView extends NativeVisual {
+  constructor() {
+    super()
+    this.push({
+      showsScrollIndicator: this.showsScrollIndicator,
+      scrollEnabled: this.scrollEnabled,
+      bounces: this.bounces,
+      refreshing: this.refreshing
+    })
+    this.pushPlatform(SCROLL_VIEW_IOS, this.ios)
+  }
+
   readonly showsScrollIndicator = input<boolean | null>(null)
+
+  /**
+   * Si el dedo mueve el contenido.
+   *
+   * Apagado, la vista sigue recortando y el contenido sigue pudiendo
+   * desplazarse desde el código: lo que se quita es el gesto.
+   */
+  readonly scrollEnabled = input<boolean | null>(true)
+
+  readonly ios = input<IosScrollViewProps | null>(null)
 
   /** El rebote de iOS al llegar al final. */
   readonly bounces = input<boolean | null>(null)
@@ -375,9 +481,7 @@ export class ScrollView extends NativeVisual {
    * Si está recargando. Ponerlo a `false` cierra la ruedecilla; la abre el
    * propio gesto, no esta prop.
    */
-  readonly refreshing = input<boolean | null, boolean | null>(null, {
-    transform: (value) => value ?? false
-  })
+  readonly refreshing = input<boolean | null>(false)
 
   /**
    * Tirar para recargar.
@@ -415,6 +519,12 @@ export class Image extends NativeVisual {
       this.set('intrinsicHeight', size.height)
     })
     inject(DestroyRef).onDestroy(unlisten)
+    this.push({
+      source: this.source,
+      resizeMode: this.resizeMode,
+      intrinsicWidth: this.intrinsicWidth,
+      intrinsicHeight: this.intrinsicHeight
+    })
   }
 
   /**
@@ -437,8 +547,38 @@ export class Image extends NativeVisual {
   readonly load = outputFromObservable(this.nativeEvent<NativeImageLoadEvent>('load'))
 }
 
+/** Lo que el `TextView` de Android tiene y el `UILabel` de iOS no. */
+export type AndroidTextProps = {
+  /**
+   * Deja seleccionar y copiar el texto.
+   *
+   * `UILabel` no lo hace: en iOS un texto seleccionable es un `UITextView`
+   * apagado, que es otra vista y otra medición, así que aquí no se imita.
+   */
+  selectable?: boolean
+}
+
+const TEXT_ANDROID = platformKeys('Text', 'android', ['selectable'])
+
 @Directive({ selector: 'Text' })
 export class Text extends NativeVisual {
+  constructor() {
+    super()
+    this.push({
+      color: this.color,
+      fontSize: this.fontSize,
+      fontWeight: this.fontWeight,
+      fontStyle: this.fontStyle,
+      fontFamily: this.fontFamily,
+      letterSpacing: this.letterSpacing,
+      lineHeight: this.lineHeight,
+      textAlign: this.textAlign,
+      numberOfLines: this.numberOfLines,
+      textDecoration: this.textDecoration
+    })
+    this.pushPlatform(TEXT_ANDROID, this.android)
+  }
+
   readonly color = input<string | null>(null)
 
   readonly fontSize = input<number | null>(null)
@@ -458,10 +598,66 @@ export class Text extends NativeVisual {
 
   /** 0 o nulo = sin límite. */
   readonly numberOfLines = input<number | null>(null)
+
+  /** Subrayado o tachado. Una raya sencilla, que es lo que se pide siempre. */
+  readonly textDecoration = input<'none' | 'underline' | 'lineThrough' | null>('none')
+
+  readonly android = input<AndroidTextProps | null>(null)
 }
+
+/** Lo que el campo de UIKit tiene y el de Android no. */
+export type IosTextInputProps = {
+  /**
+   * La equis para vaciar el campo. `UITextField.clearButtonMode`. Android no
+   * la tiene: ahí la convención es borrar con el teclado.
+   */
+  clearButtonMode?: 'never' | 'whileEditing' | 'always'
+  /**
+   * El marco que dibuja UIKit alrededor del campo.
+   * `UITextField.borderStyle`. En Android el fondo de un `EditText` lo pone el
+   * tema, y aquí se quita a propósito para que el marco lo ponga la plantilla.
+   */
+  borderStyle?: 'none' | 'line' | 'bezel' | 'roundedRect'
+}
+
+/** Lo que el campo de Android tiene y el de UIKit no. */
+export type AndroidTextInputProps = {
+  /** Al recibir el foco, todo el texto queda seleccionado. */
+  selectAllOnFocus?: boolean
+  /** Esconde el cursor. `EditText.setCursorVisible`. */
+  cursorVisible?: boolean
+}
+
+const TEXT_INPUT_IOS = platformKeys('TextInput', 'ios', ['clearButtonMode', 'borderStyle'])
+const TEXT_INPUT_ANDROID = platformKeys('TextInput', 'android', [
+  'selectAllOnFocus',
+  'cursorVisible'
+])
 
 @Directive({ selector: 'TextInput' })
 export class TextInput extends NativeVisual {
+  constructor() {
+    super()
+    this.push({
+      placeholder: this.placeholder,
+      value: this.value,
+      secureTextEntry: this.secureTextEntry,
+      editable: this.editable,
+      color: this.color,
+      fontSize: this.fontSize,
+      fontWeight: this.fontWeight,
+      fontFamily: this.fontFamily,
+      textAlign: this.textAlign,
+      keyboardType: this.keyboardType,
+      returnKeyType: this.returnKeyType,
+      autoCapitalize: this.autoCapitalize,
+      autoCorrect: this.autoCorrect,
+      placeholderColor: this.placeholderColor
+    })
+    this.pushPlatform(TEXT_INPUT_IOS, this.ios)
+    this.pushPlatform(TEXT_INPUT_ANDROID, this.android)
+  }
+
   readonly placeholder = input<string | null>(null)
 
   /**
@@ -477,6 +673,41 @@ export class TextInput extends NativeVisual {
   readonly color = input<string | null>(null)
 
   readonly fontSize = input<number | null>(null)
+
+  /** `'bold'`, `'normal'` o la escala numérica de CSS (100..900). */
+  readonly fontWeight = input<string | number | null>(null)
+
+  readonly fontFamily = input<string | null>(null)
+
+  readonly textAlign = input<'left' | 'center' | 'right' | null>(null)
+
+  /**
+   * Qué teclado sale.
+   *
+   * No es un adorno: un campo de correo con el teclado de texto obliga a
+   * buscar la arroba, y uno de teléfono con letras deja escribir cosas que no
+   * son un teléfono. En iOS es `keyboardType`; en Android, el `inputType`, que
+   * además cambia lo que el campo acepta.
+   */
+  readonly keyboardType = input<'default' | 'numeric' | 'decimal' | 'email' | 'phone' | 'url' | null>('default')
+
+  /**
+   * Qué pone la tecla de retorno. Cambia el rótulo y, con él, lo que la
+   * persona espera que pase al pulsarla.
+   */
+  readonly returnKeyType = input<'default' | 'done' | 'go' | 'next' | 'search' | 'send' | null>('default')
+
+  readonly autoCapitalize = input<'none' | 'sentences' | 'words' | 'characters' | null>('sentences')
+
+  /** El corrector del sistema. Apagarlo es lo normal en un usuario o un código. */
+  readonly autoCorrect = input<boolean | null>(true)
+
+  /** Color del texto de ayuda, que no tiene por qué ser el del texto. */
+  readonly placeholderColor = input<string | null>(null)
+
+  readonly ios = input<IosTextInputProps | null>(null)
+
+  readonly android = input<AndroidTextInputProps | null>(null)
 
   /** Emparejado con `value`, habilita `[(value)]` en la plantilla. */
   readonly valueChange = outputFromObservable(
@@ -503,14 +734,35 @@ export interface NativeTabSelectEvent {
  * hereda su tipografía, su fondo translúcido y su comportamiento con el texto
  * grande de accesibilidad.
  */
+/** Lo que la barra de iOS tiene y la de Material no. */
+export type IosTabBarProps = {
+  /**
+   * Si se ve lo que pasa por detrás. `UITabBar.isTranslucent`. La barra de
+   * Material es opaca por diseño y no tiene un interruptor para esto.
+   */
+  translucent?: boolean
+}
+
+const TAB_BAR_IOS = platformKeys('TabBar', 'ios', ['translucent'])
+
 @Directive({ selector: 'TabBar' })
 export class TabBar extends NativeVisual {
+  constructor() {
+    super()
+    this.push({
+      items: () => JSON.stringify(this.items() ?? []),
+      icons: () => JSON.stringify(this.icons() ?? []),
+      selectedIndex: this.selectedIndex,
+      color: this.color,
+      unselectedColor: this.unselectedColor
+    })
+    this.pushPlatform(TAB_BAR_IOS, this.ios)
+  }
+
   /** Títulos, en orden. */
   // El protocolo no lleva listas y una barra de pestañas no justifica
   // añadirlas: viajan como JSON.
-  readonly items = input<string | null, readonly string[] | null>(null, {
-    transform: (value) => JSON.stringify(value ?? [])
-  })
+  readonly items = input<readonly string[] | null>(null)
 
   /**
    * Iconos, en el mismo orden que los títulos.
@@ -519,31 +771,65 @@ export class TabBar extends NativeVisual {
    * `search`, `settings`— y también los nativos de cada plataforma. Una barra
    * de pestañas sin iconos es legal, pero no es lo que espera nadie.
    */
-  readonly icons = input<string | null, readonly string[] | null>(null, {
-    transform: (value) => JSON.stringify(value ?? [])
-  })
+  readonly icons = input<readonly string[] | null>(null)
 
-  readonly selectedIndex = input<number | null, number | null>(null, {
-    transform: (value) => value ?? 0
-  })
+  readonly selectedIndex = input<number | null>(0)
 
   /** Color de la pestaña activa. */
   readonly color = input<string | null>(null)
+
+  /**
+   * Color de las demás.
+   *
+   * Sin esto salía el activo rebajado, que en una barra clara puede acabar
+   * siendo casi el color del fondo: los rótulos están ahí y no se leen.
+   */
+  readonly unselectedColor = input<string | null>(null)
+
+  readonly ios = input<IosTabBarProps | null>(null)
 
   readonly select = outputFromObservable(
     this.nativeEvent<NativeTabSelectEvent>('select').pipe(map((event) => event.index))
   )
 }
 
+/** Lo que el interruptor de Material tiene y el de UIKit no. */
+export type AndroidSwitchProps = {
+  /**
+   * Color de la vía con el interruptor apagado.
+   *
+   * `UISwitch` no lo expone: lo que circula por ahí es ponerle un
+   * `backgroundColor` y un radio de esquina a un control del sistema para que
+   * se le vea el fondo por detrás, y eso se rompe en cuanto Apple cambia el
+   * alto del control. En iOS se queda con el color del sistema.
+   */
+  trackColor?: string
+}
+
+const SWITCH_ANDROID = platformKeys('Switch', 'android', ['trackColor'])
+
 /** Interruptor del sistema. */
 @Directive({ selector: 'Switch' })
-export class Switch extends NativeVisual {
-  readonly on = input<boolean | null, boolean | null>(null, {
-    transform: (value) => value ?? false
-  })
+export class Switch extends NativeControl {
+  constructor() {
+    super()
+    this.push({
+      on: this.on,
+      color: this.color,
+      thumbColor: this.thumbColor
+    })
+    this.pushPlatform(SWITCH_ANDROID, this.android)
+  }
+
+  readonly on = input<boolean | null>(false)
 
   /** Color cuando está encendido. */
   readonly color = input<string | null>(null)
+
+  /** Color del pulgar, el que se mueve. */
+  readonly thumbColor = input<string | null>(null)
+
+  readonly android = input<AndroidSwitchProps | null>(null)
 
   /** Emparejado con `on`, habilita `[(on)]` en la plantilla. */
   readonly onChange = outputFromObservable(
@@ -551,22 +837,72 @@ export class Switch extends NativeVisual {
   )
 }
 
+/** Lo que el deslizador de UIKit tiene y el de Material no. */
+export type IosSliderProps = {
+  /**
+   * Si avisa mientras se arrastra o solo al soltar. `UISlider.isContinuous`.
+   * El de Material siempre avisa mientras se arrastra y no se puede cambiar.
+   */
+  continuous?: boolean
+}
+
+/** Lo que el deslizador de Material tiene y el de UIKit no. */
+export type AndroidSliderProps = {
+  /**
+   * Salto entre valores. `Slider.setStepSize`.
+   *
+   * No es una prop común porque `UISlider` es continuo y no tiene pasos.
+   * Redondear el valor en el host se puede, pero entonces el dedo va por un
+   * sitio y el valor por otro: el de Material se engancha a los pasos, y
+   * prometer «pasos» dando dos comportamientos distintos es peor que decir
+   * que solo lo tiene Android.
+   *
+   * Tiene que dividir el recorrido de forma exacta o Material se queja; si no
+   * lo hace, el host lo dice por el registro y deja el deslizador continuo.
+   */
+  stepSize?: number
+}
+
+const SLIDER_IOS = platformKeys('Slider', 'ios', ['continuous'])
+const SLIDER_ANDROID = platformKeys('Slider', 'android', ['stepSize'])
+
 /** Deslizador del sistema. */
 @Directive({ selector: 'Slider' })
-export class Slider extends NativeVisual {
-  readonly value = input<number | null, number | null>(null, {
-    transform: (value) => value ?? 0
-  })
+export class Slider extends NativeControl {
+  constructor() {
+    super()
+    this.push({
+      value: this.value,
+      minimumValue: this.minimumValue,
+      maximumValue: this.maximumValue,
+      color: this.color,
+      minimumTrackColor: this.minimumTrackColor,
+      maximumTrackColor: this.maximumTrackColor,
+      thumbColor: this.thumbColor
+    })
+    this.pushPlatform(SLIDER_IOS, this.ios)
+    this.pushPlatform(SLIDER_ANDROID, this.android)
+  }
 
-  readonly minimumValue = input<number | null, number | null>(null, {
-    transform: (value) => value ?? 0
-  })
+  readonly value = input<number | null>(0)
 
-  readonly maximumValue = input<number | null, number | null>(null, {
-    transform: (value) => value ?? 1
-  })
+  readonly minimumValue = input<number | null>(0)
+
+  readonly maximumValue = input<number | null>(1)
 
   readonly color = input<string | null>(null)
+
+  /** El tramo recorrido, de la izquierda al pulgar. */
+  readonly minimumTrackColor = input<string | null>(null)
+
+  /** El que queda por recorrer. */
+  readonly maximumTrackColor = input<string | null>(null)
+
+  readonly thumbColor = input<string | null>(null)
+
+  readonly ios = input<IosSliderProps | null>(null)
+
+  readonly android = input<AndroidSliderProps | null>(null)
 
   readonly valueChange = outputFromObservable(
     this.nativeEvent<{ value: number }>('change').pipe(map((event) => event.value))
@@ -576,9 +912,15 @@ export class Slider extends NativeVisual {
 /** Ruedecilla de carga. Se esconde sola cuando se para. */
 @Directive({ selector: 'ActivityIndicator' })
 export class ActivityIndicator extends NativeVisual {
-  readonly animating = input<boolean | null, boolean | null>(null, {
-    transform: (value) => value ?? true
-  })
+  constructor() {
+    super()
+    this.push({
+      animating: this.animating,
+      color: this.color
+    })
+  }
+
+  readonly animating = input<boolean | null>(true)
 
   readonly color = input<string | null>(null)
 }
@@ -586,33 +928,107 @@ export class ActivityIndicator extends NativeVisual {
 /** Barra de progreso determinada. `progress` va de 0 a 1. */
 @Directive({ selector: 'ProgressBar' })
 export class ProgressBar extends NativeVisual {
-  readonly progress = input<number | null, number | null>(null, {
-    transform: (value) => value ?? 0
-  })
+  constructor() {
+    super()
+    this.push({
+      progress: this.progress,
+      color: this.color
+    })
+  }
+
+  readonly progress = input<number | null>(0)
 
   readonly color = input<string | null>(null)
 }
 
+/**
+ * Lo que el botón de iOS tiene y el de Android no.
+ *
+ * Es un alias y no una interfaz a propósito: una interfaz no se puede pasar
+ * por un `Record<string, unknown>` —TypeScript no le da firma de índice— y el
+ * recorrido de claves que hace `platform()` la necesita. Un alias sí.
+ */
+export type IosButtonProps = {
+  /**
+   * Segunda línea, más pequeña, debajo del rótulo.
+   *
+   * `UIButtonConfiguration.subtitle`. Material no tiene nada equivalente: un
+   * botón de dos líneas no es un botón de Material, así que no se imita.
+   */
+  subtitle?: string
+}
+
+/** Lo que el botón de Material tiene y el de UIKit no. */
+export type AndroidButtonProps = {
+  /** Color de la onda que sale del dedo. `MaterialButton.setRippleColor`. */
+  rippleColor?: string
+  /**
+   * Rótulo en mayúsculas. Era lo normal en Material 2 y dejó de serlo en
+   * Material 3, pero sigue estando y hay marcas que lo piden. En iOS un botón
+   * nunca ha llevado el rótulo en mayúsculas.
+   */
+  allCaps?: boolean
+}
+
+const BUTTON_IOS = platformKeys('Button', 'ios', ['subtitle'])
+const BUTTON_ANDROID = platformKeys('Button', 'android', ['rippleColor', 'allCaps'])
+
 /** Botón del sistema, con su tipografía y su respuesta al toque. */
 @Directive({ selector: 'Button' })
-export class Button extends NativeVisual {
-  readonly title = input<string | null, string | null>(null, {
-    transform: (value) => value ?? ''
-  })
+export class Button extends NativeControl {
+  constructor() {
+    super()
+    this.push({
+      title: this.title,
+      color: this.color,
+      variant: this.variant,
+      icon: this.icon,
+      iconPosition: this.iconPosition,
+      fontSize: this.fontSize,
+      fontWeight: this.fontWeight
+    })
+    this.pushPlatform(BUTTON_IOS, this.ios)
+    this.pushPlatform(BUTTON_ANDROID, this.android)
+  }
+
+  readonly title = input<string | null>('')
 
   readonly color = input<string | null>(null)
 
   /**
-   * Cómo se ve: solo el rótulo, relleno, o con un fondo tenue del mismo color.
+   * Cómo se ve: solo el rótulo, relleno, con un fondo tenue del mismo color, o
+   * con el contorno y nada dentro.
    *
    * `text` por defecto, que es lo que hace un botón sin más en iOS. Las otras
-   * dos las dibuja la plataforma —`UIButtonConfiguration` en iOS—, salvo en
+   * las dibuja la plataforma —`UIButtonConfiguration` en iOS—, salvo en
    * Android, donde los botones de Material 3 no están en la plataforma y la
    * píldora se dibuja a mano sobre un `Button` de verdad.
+   *
+   * No hay `elevated`: Material la tiene y UIKit no tiene nada parecido, así
+   * que sería una variante que solo hace algo en media plataforma. Quien la
+   * quiera, por `[android]`.
    */
-  readonly variant = input<'text' | 'filled' | 'tonal' | null, 'text' | 'filled' | 'tonal' | null>(null, {
-    transform: (value) => value ?? 'text'
-  })
+  readonly variant = input<'text' | 'filled' | 'tonal' | 'outlined' | null>('text')
+
+  /**
+   * Icono a un lado del rótulo, por nombre, igual que `<Icon>`.
+   *
+   * Un SF Symbol en iOS y un Material Symbol en Android, así que la misma
+   * plantilla da el icono que le toca a cada plataforma.
+   */
+  readonly icon = input<string | null>(null)
+
+  /** De qué lado del rótulo. `leading` por defecto. */
+  readonly iconPosition = input<'leading' | 'trailing' | null>('leading')
+
+  readonly fontSize = input<number | null>(null)
+
+  /** `'bold'`, `'normal'` o la escala numérica de CSS (100..900). */
+  readonly fontWeight = input<string | number | null>(null)
+
+  readonly ios = input<IosButtonProps | null>(null)
+
+  readonly android = input<AndroidButtonProps | null>(null)
 }
 
 /**
@@ -623,14 +1039,19 @@ export class Button extends NativeVisual {
  * del sistema, como la barra de pestañas.
  */
 @Directive({ selector: 'SegmentedControl' })
-export class SegmentedControl extends NativeVisual {
-  readonly items = input<string | null, readonly string[] | null>(null, {
-    transform: (value) => JSON.stringify(value ?? [])
-  })
+export class SegmentedControl extends NativeControl {
+  constructor() {
+    super()
+    this.push({
+      items: () => JSON.stringify(this.items() ?? []),
+      selectedIndex: this.selectedIndex,
+      color: this.color
+    })
+  }
 
-  readonly selectedIndex = input<number | null, number | null>(null, {
-    transform: (value) => value ?? 0
-  })
+  readonly items = input<readonly string[] | null>(null)
+
+  readonly selectedIndex = input<number | null>(0)
 
   readonly color = input<string | null>(null)
 
@@ -644,21 +1065,25 @@ export class SegmentedControl extends NativeVisual {
  * con dos botones del sistema.
  */
 @Directive({ selector: 'Stepper' })
-export class Stepper extends NativeVisual {
-  readonly value = input<number | null, number | null>(null, {
-    transform: (v) => v ?? 0
-  })
+export class Stepper extends NativeControl {
+  constructor() {
+    super()
+    this.push({
+      value: this.value,
+      minimumValue: this.minimumValue,
+      maximumValue: this.maximumValue,
+      stepValue: this.step
+    })
+  }
 
-  readonly minimumValue = input<number | null, number | null>(null, {
-    transform: (v) => v ?? 0
-  })
+  readonly value = input<number | null>(0)
 
-  readonly maximumValue = input<number | null, number | null>(null, {
-    transform: (v) => v ?? 100
-  })
+  readonly minimumValue = input<number | null>(0)
+
+  readonly maximumValue = input<number | null>(100)
 
   /** Cuánto sube o baja cada toque. Uno por defecto. */
-  readonly step = input<number | null, number | null>(null, { transform: (v) => v ?? 1 })
+  readonly step = input<number | null>(1)
 
   readonly change = outputFromObservable(this.nativeEvent<NativeValueEvent>('change'))
 }
@@ -671,10 +1096,16 @@ export class Stepper extends NativeVisual {
  * aspecto que la gente reconoce como "aquí se busca".
  */
 @Directive({ selector: 'SearchBar' })
-export class SearchBar extends NativeVisual {
-  readonly value = input<string | null, string | null>(null, {
-    transform: (v) => v ?? ''
-  })
+export class SearchBar extends NativeControl {
+  constructor() {
+    super()
+    this.push({
+      value: this.value,
+      placeholder: this.placeholder
+    })
+  }
+
+  readonly value = input<string | null>('')
 
   readonly placeholder = input<string | null>(null)
 
@@ -690,14 +1121,18 @@ export class SearchBar extends NativeVisual {
  * lo que usa el sistema para una lista corta. En Android es un `Spinner`.
  */
 @Directive({ selector: 'Picker' })
-export class Picker extends NativeVisual {
-  readonly items = input<string | null, readonly string[] | null>(null, {
-    transform: (value) => JSON.stringify(value ?? [])
-  })
+export class Picker extends NativeControl {
+  constructor() {
+    super()
+    this.push({
+      items: () => JSON.stringify(this.items() ?? []),
+      selectedIndex: this.selectedIndex
+    })
+  }
 
-  readonly selectedIndex = input<number | null, number | null>(null, {
-    transform: (value) => value ?? 0
-  })
+  readonly items = input<readonly string[] | null>(null)
+
+  readonly selectedIndex = input<number | null>(0)
 
   readonly change = outputFromObservable(this.nativeEvent<NativeIndexEvent>('change'))
 }
@@ -710,15 +1145,24 @@ export class Picker extends NativeVisual {
  * dispositivo, y eso lo resuelve cada plataforma.
  */
 @Directive({ selector: 'DatePicker' })
-export class DatePicker extends NativeVisual {
-  /** Milisegundos o `Date`; al núcleo siempre van milisegundos. */
-  readonly value = input<number | null, number | Date | null>(null, {
-    transform: (v) => (v instanceof Date ? v.getTime() : (v ?? Date.now()))
-  })
+export class DatePicker extends NativeControl {
+  constructor() {
+    super()
+    this.push({
+      // Una fecha viaja en milisegundos desde 1970, que es lo que da y toma
+      // `Date`: formatearla depende del idioma y de la zona del dispositivo,
+      // y eso lo resuelve cada plataforma.
+      value: () => {
+        const value = this.value()
+        return value instanceof Date ? value.getTime() : (value ?? Date.now())
+      },
+      mode: this.mode
+    })
+  }
 
-  readonly mode = input<'date' | 'time' | 'dateAndTime' | null, 'date' | 'time' | 'dateAndTime' | null>(null, {
-    transform: (v) => v ?? 'date'
-  })
+  readonly value = input<number | Date | null>(null)
+
+  readonly mode = input<'date' | 'time' | 'dateAndTime' | null>('date')
 
   readonly change = outputFromObservable(this.nativeEvent<NativeValueEvent>('change'))
 }
@@ -733,13 +1177,18 @@ export class DatePicker extends NativeVisual {
  */
 @Directive({ selector: 'NavigationBar' })
 export class NavigationBar extends NativeVisual {
-  readonly title = input<string | null, string | null>(null, {
-    transform: (value) => value ?? ''
-  })
+  constructor() {
+    super()
+    this.push({
+      title: this.title,
+      showsBack: this.showsBack,
+      backTitle: this.backTitle
+    })
+  }
 
-  readonly showsBack = input<boolean | null, boolean | null>(null, {
-    transform: (value) => value ?? false
-  })
+  readonly title = input<string | null>('')
+
+  readonly showsBack = input<boolean | null>(false)
 
   /**
    * Rótulo del botón de atrás. Solo en iOS: en Android la barra de
@@ -760,13 +1209,18 @@ export class NavigationBar extends NativeVisual {
  */
 @Directive({ selector: 'TextEditor' })
 export class TextEditor extends NativeVisual {
-  readonly value = input<string | null, string | null>(null, {
-    transform: (v) => v ?? ''
-  })
+  constructor() {
+    super()
+    this.push({
+      value: this.value,
+      editable: this.editable,
+      color: this.color
+    })
+  }
 
-  readonly editable = input<boolean | null, boolean | null>(null, {
-    transform: (v) => v ?? true
-  })
+  readonly value = input<string | null>('')
+
+  readonly editable = input<boolean | null>(true)
 
   readonly color = input<string | null>(null)
 
@@ -781,6 +1235,14 @@ export class TextEditor extends NativeVisual {
  */
 @Directive({ selector: 'WebView' })
 export class WebView extends NativeVisual {
+  constructor() {
+    super()
+    this.push({
+      url: this.url,
+      html: this.html
+    })
+  }
+
   readonly url = input<string | null>(null)
 
   readonly html = input<string | null>(null)
@@ -797,13 +1259,19 @@ export class WebView extends NativeVisual {
  */
 @Directive({ selector: 'MapView' })
 export class MapView extends NativeVisual {
-  readonly latitude = input<number | null, number | null>(null, {
-    transform: (value) => value ?? 0
-  })
+  constructor() {
+    super()
+    this.push({
+      latitude: this.latitude,
+      longitude: this.longitude,
+      zoom: this.zoom,
+      showsUser: this.showsUser
+    })
+  }
 
-  readonly longitude = input<number | null, number | null>(null, {
-    transform: (value) => value ?? 0
-  })
+  readonly latitude = input<number | null>(0)
+
+  readonly longitude = input<number | null>(0)
 
   /**
    * Nivel de zoom al estilo de las teselas: 0 es el mundo entero y cada nivel
@@ -811,14 +1279,10 @@ export class MapView extends NativeVisual {
    * ven— y la conversión la hace el host, para que la misma cifra signifique
    * lo mismo en las dos plataformas.
    */
-  readonly zoom = input<number | null, number | null>(null, {
-    transform: (value) => value ?? 12
-  })
+  readonly zoom = input<number | null>(12)
 
   /** El punto de dónde estás. Solo en iOS: el mapa de Android no lo sabe. */
-  readonly showsUser = input<boolean | null, boolean | null>(null, {
-    transform: (value) => value ?? false
-  })
+  readonly showsUser = input<boolean | null>(false)
 }
 
 /**
@@ -830,16 +1294,21 @@ export class MapView extends NativeVisual {
  */
 @Directive({ selector: 'VideoView' })
 export class VideoView extends NativeVisual {
+  constructor() {
+    super()
+    this.push({
+      url: this.url,
+      playing: this.playing,
+      muted: this.muted
+    })
+  }
+
   readonly url = input<string | null>(null)
 
-  readonly playing = input<boolean | null, boolean | null>(null, {
-    transform: (value) => value ?? false
-  })
+  readonly playing = input<boolean | null>(false)
 
   /** Solo en iOS: `VideoView` no entrega el reproductor de dentro. */
-  readonly muted = input<boolean | null, boolean | null>(null, {
-    transform: (value) => value ?? false
-  })
+  readonly muted = input<boolean | null>(false)
 }
 
 /**
@@ -861,13 +1330,17 @@ export class VideoView extends NativeVisual {
 export class Icon extends NativeVisual {
   constructor() {
     super()
-    // El tamaño no viaja como los demás porque no es una propiedad, son tres:
-    // la del símbolo, y el ancho y el alto de la vista. Y corre aunque nadie
-    // ponga `[size]`, o un `<Icon>` pelado se quedaría sin tamaño de símbolo
-    // —el layout sí le da 24x24 por su cuenta, pero el dibujo de dentro no—.
+    this.push({
+      name: this.name,
+      iconSize: this.size,
+      iconWeight: this.weight,
+      color: this.color
+    })
+    // El tamaño es además el de la caja. Va aparte del empujón porque no es
+    // una prop: son dos estilos, y el layout tiene que saberlos para que un
+    // `<Icon>` sin medidas no quede invisible.
     effect(() => {
-      const points = this.size() ?? 24
-      this.set('iconSize', points)
+      const points = this.size()
       this.renderer.setStyle(this.node, 'width', points)
       this.renderer.setStyle(this.node, 'height', points)
     })
@@ -879,8 +1352,12 @@ export class Icon extends NativeVisual {
    * Puntos. Además de fijar el tamaño de la vista, elige el trazo del
    * símbolo: en iOS un icono grande no es el pequeño escalado, es otro
    * dibujo.
+   *
+   * Los 24 son los de por defecto y llegan siempre, incluso sin `[size]`: una
+   * entrada de señal se lee aunque nadie la escriba, que es justo lo que un
+   * `set` sin enlazar no hacía.
    */
-  readonly size = input<number | null>(null)
+  readonly size = input(24)
 
   /** Grosor del trazo, en la escala de la tipografía: 100..900. */
   readonly weight = input<number | null>(null)
@@ -900,9 +1377,15 @@ export class Icon extends NativeVisual {
  */
 @Directive({ selector: 'Modal' })
 export class Modal extends NativeVisual {
-  readonly visible = input<boolean | null, boolean | null>(null, {
-    transform: (value) => value ?? false
-  })
+  constructor() {
+    super()
+    this.push({
+      visible: this.visible,
+      presentation: this.presentation
+    })
+  }
+
+  readonly visible = input<boolean | null>(false)
 
   /**
    * `fullScreen` cubre la pantalla; `sheet` entra desde abajo con el tirador
@@ -930,6 +1413,17 @@ export class Modal extends NativeVisual {
  */
 @Directive({ selector: 'Alert' })
 export class Alert extends NativeVisual {
+  constructor() {
+    super()
+    this.push({
+      sheet: this.sheet,
+      visible: this.visible,
+      title: this.title,
+      message: this.message,
+      buttons: () => JSON.stringify(this.buttons() ?? [])
+    })
+  }
+
   /**
    * Hoja de acciones en vez de diálogo centrado.
    *
@@ -937,26 +1431,16 @@ export class Alert extends NativeVisual {
    * el diálogo centrado es para confirmar o avisar. En iOS sale desde abajo,
    * en Android es una lista.
    */
-  readonly sheet = input<boolean | null, boolean | null>(null, {
-    transform: (value) => value ?? false
-  })
+  readonly sheet = input<boolean | null>(false)
 
-  readonly visible = input<boolean | null, boolean | null>(null, {
-    transform: (value) => value ?? false
-  })
+  readonly visible = input<boolean | null>(false)
 
-  readonly title = input<string | null, string | null>(null, {
-    transform: (value) => value ?? ''
-  })
+  readonly title = input<string | null>('')
 
-  readonly message = input<string | null, string | null>(null, {
-    transform: (value) => value ?? ''
-  })
+  readonly message = input<string | null>('')
 
   /** Títulos de los botones, en orden. Sin ninguno, sale un «OK». */
-  readonly buttons = input<string | null, readonly string[] | null>(null, {
-    transform: (value) => JSON.stringify(value ?? [])
-  })
+  readonly buttons = input<readonly string[] | null>(null)
 
   /** Índice del botón pulsado. */
   readonly select = outputFromObservable(

@@ -1,4 +1,6 @@
 export type {
+  AndroidButtonProps,
+  IosButtonProps,
   NativeImageLoadEvent,
   NativeLayoutEvent,
   NativeSafeAreaInsets,
@@ -35,6 +37,7 @@ export {
   Switch,
   TabBar,
   NATIVE_PRIMITIVES,
+  NativeControl,
   NativeVisual,
   ScrollView,
   StackView,
