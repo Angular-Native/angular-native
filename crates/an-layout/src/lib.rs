@@ -7,4 +7,4 @@ pub mod style;
 
 pub use engine::{LayoutEngine, Rect};
 pub use measure::{FontSpec, MeasureCtx, NaiveMeasurer, TextMeasurer};
-pub use style::{Keyword, LayoutStyle, StyleKey, StyleValue};
+pub use style::{camelize, Keyword, LayoutStyle, StyleKey, StyleValue};

@@ -5,6 +5,10 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+echo "== listas duplicadas"
+"$ROOT/scripts/check-styles.sh"
+
+echo
 echo "== núcleo Rust"
 cargo test --quiet 2>&1 | tail -1
 

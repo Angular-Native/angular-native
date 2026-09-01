@@ -120,6 +120,7 @@ cargo test                    # solo el núcleo Rust
 ./scripts/check-gestures.sh   # gestos, transformaciones y animación
 ./scripts/check-pickers.sh    # segmentos, desplegable, pasos, búsqueda y fecha
 ./scripts/check-web.sh        # cabecera, texto multilínea, navegador, hoja
+./scripts/check-styles.sh     # que las dos listas de nombres de estilo no se separen
 cargo run -p an-bridge --example headless -- build/bundle/hello-angular/main.js 6
 ```
 
@@ -194,12 +195,6 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
 
 ## Lo que no está hecho
 
-- **Un nombre de estilo que nadie reconoce no avisa.** `[style.loQueSea]` cae
-  como prop al host, el host no la usa, y no pasa nada. Ha mordido cuatro veces
-  en un día: `[style.fontSize]` llegaba con guion, el hueco del área segura se
-  quedaba en un envoltorio, el icono sin `[size]` no se dibujaba y `flex` no
-  existía como propiedad. Los cuatro casos están arreglados; el que no avise
-  sigue ahí, y es el que los hace caros de encontrar.
 - **No hay *fast refresh*.** La recarga conserva el estado —la ruta, el scroll,
   lo que se declare con `hotState`— pero recrea los componentes. El de React
   Native conserva los propios componentes, y para eso hace falta cargar los

@@ -139,17 +139,30 @@ fn destruir_baja_el_subarbol_de_hijos_a_padres() {
     assert!(frame.ops.iter().any(|op| matches!(op, MountOp::Remove { parent: 1, child: 3 })));
 }
 
+/// Un estilo que no es de layout viaja como prop de host, y **en camello**.
+///
+/// Angular pasa los nombres de estilo a guiones antes de entregarlos, así que
+/// `[style.fontSize]` llega aquí como `font-size`. Mandarlo tal cual al host,
+/// que busca `fontSize`, era pedirle algo que nunca iba a reconocer: no
+/// fallaba nada, el texto simplemente se medía con una letra y se dibujaba con
+/// otra.
 #[test]
-fn estilo_no_reconocido_viaja_como_prop_de_host() {
+fn estilo_no_reconocido_viaja_como_prop_de_host_en_camello() {
     let mut tree = ShadowTree::new();
     tree.create_node(1, NodeKind::View).unwrap();
     tree.set_style(1, "background-color", "#ff0000").unwrap();
+    tree.set_style(1, "font-size", "18").unwrap();
     tree.set_root(1).unwrap();
 
     let frame = tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
     assert!(frame.ops.iter().any(|op| matches!(
         op,
         MountOp::SetProp { id: 1, key, value: PropValue::Str(v) }
-            if key == "background-color" && v == "#ff0000"
+            if key == "backgroundColor" && v == "#ff0000"
+    )));
+    assert!(frame.ops.iter().any(|op| matches!(
+        op,
+        MountOp::SetProp { id: 1, key, value: PropValue::Str(v) }
+            if key == "fontSize" && v == "18"
     )));
 }

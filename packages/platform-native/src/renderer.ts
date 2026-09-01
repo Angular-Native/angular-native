@@ -11,6 +11,7 @@ import {
   materialize,
   NativeNode
 } from './native-node'
+import { KNOWN_STYLES } from './style-names'
 
 /**
  * `Renderer2` sobre primitivas nativas.
@@ -55,6 +56,32 @@ const TEXT_PROPS = new Map<string, string>(
     ] as [string, string][]
   })
 )
+
+/**
+ * Avisa una vez por nombre de estilo que nadie va a mirar.
+ *
+ * Angular deja escribir `[style.loQueSea]` sin rechistar, y hasta aquí eso
+ * viajaba al host como una prop cualquiera: el host no la usaba y no pasaba
+ * nada. Sin error y sin traza, que es lo que hace caros estos fallos —han
+ * caído cuatro en un día, y los cuatro se veían como "esto no hace nada".
+ *
+ * Se avisa una vez por nombre: el mismo estilo se escribe en cada detección de
+ * cambios, y avisar en todas llenaría el registro sin decir nada nuevo.
+ */
+const warned = new Set<string>()
+
+function warnUnknownStyle(name: string): void {
+  // El núcleo acepta las dos grafías, así que aquí también: si no, cada estilo
+  // escrito en camello —que Angular entrega con guiones— daría un aviso falso.
+  const camel = name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())
+  if (KNOWN_STYLES.has(camel) || TEXT_PROPS.has(camel) || warned.has(camel)) return
+  warned.add(camel)
+  console.warn(
+    `[angular-native] nadie reconoce el estilo "${name}", así que no hará nada. ` +
+      'Si es una propiedad del control —color, título, valor— va como entrada ' +
+      'tipada, no como estilo.'
+  )
+}
 
 export class NativeRenderer extends Renderer2 {
   /** Clases acumuladas por nodo, para poder mandarlas juntas al core. */
@@ -167,6 +194,7 @@ export class NativeRenderer extends Renderer2 {
 
   setStyle(el: NativeNode, style: string, value: unknown, flags?: RendererStyleFlags2): void {
     if (!this.writable(el)) return
+    warnUnknownStyle(style)
     // `!important` no significa nada sin cascada: se ignora la bandera y se
     // aplica el valor, que es el único comportamiento posible aquí.
     void flags

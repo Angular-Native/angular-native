@@ -66,23 +66,33 @@ pub enum StyleKey {
     ColumnGap,
 }
 
+/// `flex-direction` a `flexDirection`.
+///
+/// Angular pasa los nombres de estilo a guiones antes de entregarlos, así que
+/// todo lo que llega por esa vía viene así aunque en la plantilla se escriba
+/// en camello.
+pub fn camelize(name: &str) -> String {
+    let mut camel = String::with_capacity(name.len());
+    let mut upper_next = false;
+    for ch in name.chars() {
+        if ch == '-' || ch == '_' {
+            upper_next = true;
+        } else if upper_next {
+            camel.extend(ch.to_uppercase());
+            upper_next = false;
+        } else {
+            camel.push(ch);
+        }
+    }
+    camel
+}
+
 impl StyleKey {
     /// Acepta `flexDirection` y `flex-direction` indistintamente.
     /// Devuelve `None` para props que no afectan al layout (color, fondo...);
     /// esas viajan como props de host, no como estilo.
     pub fn from_name(name: &str) -> Option<Self> {
-        let mut camel = String::with_capacity(name.len());
-        let mut upper_next = false;
-        for ch in name.chars() {
-            if ch == '-' || ch == '_' {
-                upper_next = true;
-            } else if upper_next {
-                camel.extend(ch.to_uppercase());
-                upper_next = false;
-            } else {
-                camel.push(ch);
-            }
-        }
+        let camel = camelize(name);
         use StyleKey::*;
         Some(match camel.as_str() {
             "display" => Display,

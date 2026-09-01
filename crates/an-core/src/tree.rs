@@ -289,7 +289,15 @@ impl ShadowTree {
     pub fn set_style(&mut self, id: NodeId, name: &str, value: &str) -> Result<(), Error> {
         let Some(key) = StyleKey::from_name(name) else {
             // No es layout: viaja como prop de host (color, backgroundColor...).
-            return self.set_prop(id, name, PropValue::Str(value.to_owned()));
+            //
+            // Y con el nombre en camello, no como llegó. Angular pasa los
+            // nombres de estilo a guiones, así que `[style.fontSize]` llega
+            // aquí como `font-size`; mandarlo tal cual al host, que busca
+            // `fontSize`, era pedirle algo que nunca iba a reconocer. No
+            // fallaba: simplemente el texto se medía con una letra y se
+            // dibujaba con otra.
+            let camel = an_layout::camelize(name);
+            return self.set_prop(id, &camel, PropValue::Str(value.to_owned()));
         };
         let parsed = StyleValue::parse(value);
         let node = self.node_mut(id)?;
