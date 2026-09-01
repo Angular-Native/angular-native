@@ -52,6 +52,9 @@ check 'Button#[0-9]+ .*android:allCaps=false android:rippleColor=#ffffff55' 'y l
 check 'Switch#[0-9]+ .*android:trackColor=#334155 color=#6ee7b7 .*thumbColor=#0b1020' 'el interruptor tiñe pulgar y vía por separado'
 check 'Slider#[0-9]+ .*maximumTrackColor=#1e2a4a .*minimumTrackColor=#6ee7b7' 'el deslizador tiñe los dos tramos'
 check 'Slider#[0-9]+ .*android:stepSize=5 .*ios:continuous=true' 'y cada plataforma pide lo suyo: pasos allí, avisar al arrastrar aquí'
+check 'Text#[0-9]+ .*android:selectable=true .*textDecoration=underline' 'el texto se subraya, y en Android además se puede copiar'
+check 'ScrollView#[0-9]+ .*ios:keyboardDismissMode=onDrag .*scrollEnabled=true' 'el desplazamiento se puede quitar, y el teclado se va al arrastrar en iOS'
+check 'TabBar#[0-9]+ .*ios:translucent=true .*unselectedColor=#6b7a99' 'las pestañas apagadas tienen su color, y la barra deja ver por detrás en iOS'
 # Los iconos: que midan lo suyo. El 24 es el de por defecto, sin `[size]`; los
 # otros vienen del tamaño pedido, que además elige el trazo del símbolo.
 check 'Icon#[0-9]+ \[[0-9]+,[0-9]+ 24x24\]' 'un icono sin medidas mide 24'

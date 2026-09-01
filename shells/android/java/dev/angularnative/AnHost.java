@@ -1569,6 +1569,31 @@ public final class AnHost {
                     ((EditText) view).setCursorVisible(!"false".equals(value));
                 }
                 break;
+            case "textDecoration":
+                if (view instanceof TextView) {
+                    android.graphics.Paint paint = ((TextView) view).getPaint();
+                    paint.setUnderlineText("underline".equals(value));
+                    paint.setStrikeThruText("lineThrough".equals(value));
+                    view.invalidate();
+                }
+                break;
+            case "android:selectable":
+                if (view instanceof TextView) {
+                    ((TextView) view).setTextIsSelectable("true".equals(value));
+                }
+                break;
+            case "unselectedColor": {
+                Integer inactive = parseColor(value);
+                if (inactive != null && view instanceof AnTabBar) {
+                    ((AnTabBar) view).setInactiveColor(inactive);
+                }
+                break;
+            }
+            case "scrollEnabled":
+                if (view instanceof AnScrollView) {
+                    ((AnScrollView) view).setScrollEnabled(!"false".equals(value));
+                }
+                break;
             case "showsScrollIndicator":
                 if (view instanceof ScrollView) {
                     boolean shown = !"false".equals(value);

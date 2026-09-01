@@ -36,6 +36,9 @@ public final class AnTabBar extends BottomNavigationView {
     private String[] icons = new String[0];
     /** Para no avisar de la pestaña que se acaba de fijar desde la plantilla. */
     private boolean fijando;
+    /** Los dos colores de la barra, que llegan en props distintas. */
+    private Integer activeColor;
+    private Integer inactiveColor;
 
     public AnTabBar(Context context) {
         super(context);
@@ -72,22 +75,40 @@ public final class AnTabBar extends BottomNavigationView {
     }
 
     public void setActiveColor(int color) {
-        // El mismo color para la pestaña elegida y ese color rebajado para las
-        // demás.
-        //
-        // Antes el de las inactivas salía del tinte que ya tuviera el icono, y
-        // eso las dejaba en blanco sobre el fondo claro de la barra: los
-        // rótulos estaban ahí, del color del fondo.
+        this.activeColor = color;
+        applyColors();
+    }
+
+    /** Color de las pestañas que no están elegidas. */
+    public void setInactiveColor(int color) {
+        this.inactiveColor = color;
+        applyColors();
+    }
+
+    /**
+     * El color de la pestaña elegida y el de las demás, que llegan sueltos.
+     *
+     * Sin decir nada, el de las inactivas es el activo rebajado. Antes salía
+     * del tinte que ya tuviera el icono, y eso las dejaba en blanco sobre el
+     * fondo claro de la barra: los rótulos estaban ahí, del color del fondo.
+     */
+    private void applyColors() {
+        if (activeColor == null && inactiveColor == null) {
+            return;
+        }
+        int activo = activeColor == null ? inactiveColor : activeColor;
         int apagado =
-                android.graphics.Color.argb(
-                        150,
-                        android.graphics.Color.red(color),
-                        android.graphics.Color.green(color),
-                        android.graphics.Color.blue(color));
+                inactiveColor != null
+                        ? inactiveColor
+                        : android.graphics.Color.argb(
+                                150,
+                                android.graphics.Color.red(activo),
+                                android.graphics.Color.green(activo),
+                                android.graphics.Color.blue(activo));
         android.content.res.ColorStateList lista =
                 new android.content.res.ColorStateList(
                         new int[][] {new int[] {android.R.attr.state_checked}, new int[] {}},
-                        new int[] {color, apagado});
+                        new int[] {activo, apagado});
         setItemIconTintList(lista);
         setItemTextColor(lista);
     }

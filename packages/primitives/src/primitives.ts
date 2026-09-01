@@ -395,10 +395,44 @@ export class StackView extends NativeVisual {
   readonly back = outputFromObservable(this.nativeEvent<void>('back'))
 }
 
+/** Lo que el `UIScrollView` tiene y el de Android no. */
+export type IosScrollViewProps = {
+  /**
+   * El desplazamiento se para en múltiplos del tamaño de la vista.
+   * `UIScrollView.isPagingEnabled`. Android no lo trae: lo suyo es
+   * `ViewPager2`, que es otra vista con su adaptador, no una prop.
+   */
+  pagingEnabled?: boolean
+  /**
+   * Qué hace el teclado al desplazarse. `keyboardDismissMode`. En Android el
+   * teclado no se esconde al desplazar y no hay nada que pedirle.
+   */
+  keyboardDismissMode?: 'none' | 'onDrag' | 'interactive'
+}
+
+const SCROLL_VIEW_IOS = platformKeys('ScrollView', 'ios', [
+  'pagingEnabled',
+  'keyboardDismissMode'
+])
+
 @Directive({ selector: 'ScrollView' })
 export class ScrollView extends NativeVisual {
   @Input() set showsScrollIndicator(value: boolean | null) {
     this.set('showsScrollIndicator', value)
+  }
+
+  /**
+   * Si el dedo mueve el contenido.
+   *
+   * Apagado, la vista sigue recortando y el contenido sigue pudiendo
+   * desplazarse desde el código: lo que se quita es el gesto.
+   */
+  @Input() set scrollEnabled(value: boolean | null) {
+    this.set('scrollEnabled', value ?? true)
+  }
+
+  @Input() set ios(value: IosScrollViewProps | null) {
+    this.platform(SCROLL_VIEW_IOS, value)
   }
 
   /** El rebote de iOS al llegar al final. */
@@ -480,6 +514,19 @@ export class Image extends NativeVisual {
   readonly load = outputFromObservable(this.nativeEvent<NativeImageLoadEvent>('load'))
 }
 
+/** Lo que el `TextView` de Android tiene y el `UILabel` de iOS no. */
+export type AndroidTextProps = {
+  /**
+   * Deja seleccionar y copiar el texto.
+   *
+   * `UILabel` no lo hace: en iOS un texto seleccionable es un `UITextView`
+   * apagado, que es otra vista y otra medición, así que aquí no se imita.
+   */
+  selectable?: boolean
+}
+
+const TEXT_ANDROID = platformKeys('Text', 'android', ['selectable'])
+
 @Directive({ selector: 'Text' })
 export class Text extends NativeVisual {
   @Input() set color(value: string | null) {
@@ -518,6 +565,15 @@ export class Text extends NativeVisual {
   /** 0 o nulo = sin límite. */
   @Input() set numberOfLines(value: number | null) {
     this.set('numberOfLines', value)
+  }
+
+  /** Subrayado o tachado. Una raya sencilla, que es lo que se pide siempre. */
+  @Input() set textDecoration(value: 'none' | 'underline' | 'lineThrough' | null) {
+    this.set('textDecoration', value ?? 'none')
+  }
+
+  @Input() set android(value: AndroidTextProps | null) {
+    this.platform(TEXT_ANDROID, value)
   }
 }
 
@@ -666,6 +722,17 @@ export interface NativeTabSelectEvent {
  * hereda su tipografía, su fondo translúcido y su comportamiento con el texto
  * grande de accesibilidad.
  */
+/** Lo que la barra de iOS tiene y la de Material no. */
+export type IosTabBarProps = {
+  /**
+   * Si se ve lo que pasa por detrás. `UITabBar.isTranslucent`. La barra de
+   * Material es opaca por diseño y no tiene un interruptor para esto.
+   */
+  translucent?: boolean
+}
+
+const TAB_BAR_IOS = platformKeys('TabBar', 'ios', ['translucent'])
+
 @Directive({ selector: 'TabBar' })
 export class TabBar extends NativeVisual {
   /** Títulos, en orden. */
@@ -693,6 +760,20 @@ export class TabBar extends NativeVisual {
   /** Color de la pestaña activa. */
   @Input() set color(value: string | null) {
     this.set('color', value)
+  }
+
+  /**
+   * Color de las demás.
+   *
+   * Sin esto salía el activo rebajado, que en una barra clara puede acabar
+   * siendo casi el color del fondo: los rótulos están ahí y no se leen.
+   */
+  @Input() set unselectedColor(value: string | null) {
+    this.set('unselectedColor', value)
+  }
+
+  @Input() set ios(value: IosTabBarProps | null) {
+    this.platform(TAB_BAR_IOS, value)
   }
 
   readonly select = outputFromObservable(

@@ -20,6 +20,12 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
       [backgroundColor]="'#0b1020'">
 
       <SafeArea [edges]="['top']">
+      <ScrollView
+        [style.flexGrow]="'1'"
+        [style.overflow]="'scroll'"
+        [scrollEnabled]="true"
+        [showsScrollIndicator]="false"
+        [ios]="{ pagingEnabled: false, keyboardDismissMode: 'onDrag' }">
       <View [style.flexGrow]="'1'" [style.padding]="'16'" [style.gap]="'18'">
         <Text
           [fontSize]="24"
@@ -91,8 +97,13 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
             (press)="alert.set(true)"></Button>
         </View>
 
-        <Text [fontSize]="13" [color]="'#6b7a99'">{{ answer() }}</Text>
+        <Text
+          [fontSize]="13"
+          [color]="'#6b7a99'"
+          [textDecoration]="'underline'"
+          [android]="{ selectable: true }">{{ answer() }}</Text>
       </View>
+      </ScrollView>
       </SafeArea>
 
       <View [style.flexDirection]="'row'" [style.gap]="'18'" [style.alignItems]="'center'">
@@ -109,6 +120,8 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
         [icons]="tabIcons"
         [selectedIndex]="tab()"
         [color]="'#6ee7b7'"
+        [unselectedColor]="'#6b7a99'"
+        [ios]="{ translucent: true }"
         (select)="tab.set($event)" />
 
       <Alert

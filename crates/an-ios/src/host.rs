@@ -367,6 +367,9 @@ pub struct UikitHost {
     /// El delegado de cada barra. Un delegado no se retiene, así que si no se
     /// guarda aquí muere y las pestañas dejan de avisar.
     tab_delegates: HashMap<NodeId, Retained<crate::events::TabDelegate>>,
+    /// Subrayado o tachado de cada rótulo. Va aparte del `FontSpec` porque el
+    /// núcleo no lo necesita: no cambia lo que mide el texto.
+    decorations: HashMap<NodeId, String>,
     /// Texto y color del hueco de ayuda de cada campo. Van juntos porque
     /// `UITextField` no tiene un color de placeholder: hay que dárselo
     /// atribuido, y para eso hace falta también el texto.
@@ -452,6 +455,7 @@ impl UikitHost {
             tab_controllers: HashMap::new(),
             tab_delegates: HashMap::new(),
             menus: HashMap::new(),
+            decorations: HashMap::new(),
             placeholders: HashMap::new(),
             placeholder_colors: HashMap::new(),
             button_titles: HashMap::new(),
@@ -581,12 +585,13 @@ impl UikitHost {
         let spec = self.fonts.get(&id);
         let kern = spec.map(|s| s.letter_spacing).unwrap_or(0.0);
         let line_height = spec.and_then(|s| s.line_height);
+        let decoration = self.decorations.get(&id).map(String::as_str).unwrap_or("none");
         let text = unsafe { label.text() }.map(|t| t.to_string()).unwrap_or_default();
         if text.is_empty() {
             return;
         }
         let string = NSString::from_str(&text);
-        if kern == 0.0 && line_height.is_none() {
+        if kern == 0.0 && line_height.is_none() && decoration == "none" {
             // Sin nada que añadir se vuelve a texto llano: si no, quitar el
             // espaciado dejaría puesto el de antes.
             unsafe { label.setAttributedText(None) };
@@ -623,6 +628,22 @@ impl UikitHost {
             unsafe {
                 attributed.addAttribute_value_range(
                     objc2_ui_kit::NSParagraphStyleAttributeName,
+                    &style,
+                    range,
+                )
+            };
+        }
+        if decoration != "none" {
+            // El 1 es `NSUnderlineStyle.single`: una raya sencilla, que es la
+            // única que se pide desde una plantilla.
+            let style = objc2_foundation::NSNumber::new_isize(1);
+            unsafe {
+                attributed.addAttribute_value_range(
+                    if decoration == "lineThrough" {
+                        objc2_ui_kit::NSStrikethroughStyleAttributeName
+                    } else {
+                        objc2_ui_kit::NSUnderlineStyleAttributeName
+                    },
                     &style,
                     range,
                 )
@@ -1108,6 +1129,7 @@ impl HostRenderer for UikitHost {
         self.button_icons.remove(&id);
         self.placeholders.remove(&id);
         self.placeholder_colors.remove(&id);
+        self.decorations.remove(&id);
         self.navs.remove(&id);
         self.nav_backs.remove(&id);
         self.nav_targets.remove(&id);
@@ -1704,6 +1726,10 @@ impl HostRenderer for UikitHost {
                 self.font_mut(id).family = text.clone();
                 self.apply_font(id);
             }
+            "textDecoration" | "text-decoration" => {
+                self.decorations.insert(id, text.clone().unwrap_or_else(|| "none".to_owned()));
+                self.apply_text_attributes(id);
+            }
             "letterSpacing" | "letter-spacing" => {
                 self.font_mut(id).letter_spacing = number.unwrap_or(0.0);
                 self.apply_text_attributes(id);
@@ -1963,6 +1989,48 @@ impl HostRenderer for UikitHost {
             "bounces" => {
                 if let HostView::Scroll(scroll) = view {
                     scroll.setBounces(!matches!(value, PropValue::Bool(false)));
+                }
+            }
+            "scrollEnabled" => {
+                if let HostView::Scroll(scroll) = view {
+                    scroll.setScrollEnabled(!matches!(value, PropValue::Bool(false)));
+                }
+            }
+            "ios:pagingEnabled" => {
+                if let HostView::Scroll(scroll) = view {
+                    scroll.setPagingEnabled(matches!(value, PropValue::Bool(true)));
+                }
+            }
+            "ios:keyboardDismissMode" => {
+                if let HostView::Scroll(scroll) = view {
+                    scroll.setKeyboardDismissMode(match text.as_deref() {
+                        Some("onDrag") => {
+                            objc2_ui_kit::UIScrollViewKeyboardDismissMode::OnDrag
+                        }
+                        Some("interactive") => {
+                            objc2_ui_kit::UIScrollViewKeyboardDismissMode::Interactive
+                        }
+                        _ => objc2_ui_kit::UIScrollViewKeyboardDismissMode::None,
+                    });
+                }
+            }
+            // --- barra de pestañas
+            "unselectedColor" => {
+                let (HostView::TabsHost(_), Some(controller)) =
+                    (view, self.tab_controllers.get(&id))
+                else {
+                    return;
+                };
+                let color = text.as_deref().and_then(crate::color::to_uicolor);
+                unsafe { controller.tabBar().setUnselectedItemTintColor(color.as_deref()) };
+            }
+            "ios:translucent" => {
+                if let Some(controller) = self.tab_controllers.get(&id) {
+                    // Con la barra opaca, lo que hay debajo deja de verse a
+                    // través: sirve cuando el contenido se lee mal detrás.
+                    unsafe {
+                        controller.tabBar().setTranslucent(!matches!(value, PropValue::Bool(false)))
+                    };
                 }
             }
             "numberOfLines" => {
