@@ -31,7 +31,11 @@ primitivas nativas:
     <View [style.gap]="'16'" [backgroundColor]="'#0b1020'">
       <Text [fontSize]="28" [color]="'#f4f7ff'">angular-native</Text>
       <Switch [on]="alertas()" (onChange)="alertas.set($event)" />
-      <View [backgroundColor]="'#1e2a4a'" (press)="onPress($event)"></View>
+      <View
+        [backgroundColor]="'#1e2a4a'"
+        [animate]="200"
+        [translateX]="x()"
+        (pan)="onPan($event)"></View>
       @if (seconds() >= 3) {
         <Text [fontSize]="14">han pasado {{ seconds() }} segundos</Text>
       }
@@ -41,7 +45,8 @@ primitivas nativas:
 export class AppComponent {
   readonly seconds = signal(0)
   readonly alertas = signal(true)
-  onPress(event: NativePressEvent) { /* ... */ }
+  readonly x = signal(0)
+  onPan(event: NativePanEvent) { this.x.set(event.translationX) }
 }
 ```
 
@@ -69,18 +74,35 @@ que se puede leer entero.
 ## Qué hay
 
 **Primitivas** — `View`, `Text`, `Image`, `ScrollView`, `TextInput`,
-`StackView`, `Modal`, `Alert`.
+`TextEditor`, `StackView`, `WebView`, `Modal`, `Alert`.
 
 **Controles del sistema** — `TabBar`, `Switch`, `Slider`, `ActivityIndicator`,
-`ProgressBar`, `Button`. No los dibuja el framework: en iOS son `UITabBar`,
-`UISwitch`, `UISlider`, `UIActivityIndicatorView`, `UIProgressView` y
-`UIButton`, con el aspecto que tengan en esa versión del sistema.
+`ProgressBar`, `Button`, `SegmentedControl`, `Stepper`, `SearchBar`, `Picker`,
+`DatePicker`, `NavigationBar`, `Icon`. No los dibuja el framework: en iOS son
+`UITabBar`, `UISwitch`, `UISlider`, `UISegmentedControl`, `UIStepper`,
+`UISearchBar`, `UIDatePicker`, `UINavigationBar` y compañía, con el aspecto que
+tengan en esa versión del sistema. Los tres que Android no trae en la
+plataforma —barra de pestañas, control segmentado y control de pasos— se
+dibujan con vistas del sistema, y se dice cuál es cuál.
+
+**Iconos** — SF Symbols en iOS y Material Symbols en Android, por nombre. No se
+empaqueta ningún juego en iOS; en Android sí, porque el que trae la plataforma
+lleva congelado desde 2011 y no es el de Material 3.
 
 **Compuestos** — `VirtualList` (lista con reciclado de vistas), `SafeArea`,
 `NativeStack` (navegación con pila y gesto de atrás).
 
-**Eventos** — `press`, `doublePress`, `layout`, `safeArea`, `scroll`,
-`refresh`, `change`, `focus`, `blur`, `submit`, `select`, `load`, `back`.
+**Gestos** — `press`, `doublePress`, `longPress`, `pan`, `pinch`, `rotation`,
+`swipeLeft`/`Right`/`Up`/`Down`. Los reconocedores son los del sistema, así que
+los umbrales de cuándo un gesto cuenta son los de cada plataforma.
+
+**Transformaciones y animación** — `translateX`, `translateY`, `scale`,
+`rotate`, y `[animate]="ms"` para que los cambios de esa vista dejen de ser un
+salto. Las hace la plataforma en su hilo de dibujo, sin volver a pasar por
+JavaScript en cada frame.
+
+**Otros eventos** — `layout`, `safeArea`, `scroll`, `refresh`, `change`,
+`focus`, `blur`, `submit`, `select`, `load`, `back`, `dismiss`.
 
 **Angular** — plantillas AOT, señales, `@if`, `@for`, router con parámetros,
 módulos nativos tipados, y recarga en caliente que conserva el estado.
@@ -88,20 +110,23 @@ módulos nativos tipados, y recarga en caliente que conserva el estado.
 ## Verificación sin dispositivo
 
 ```bash
-./scripts/check-all.sh        # todo: tests, las cuatro apps y las dos compilaciones cruzadas
+./scripts/check-all.sh        # todo: tests, las siete apps y las dos compilaciones cruzadas
 
 cargo test                    # solo el núcleo Rust
 ./scripts/check-angular.sh    # la cadena entera: ngc, esbuild, QuickJS, taffy
 ./scripts/check-list.sh       # ScrollView, TextInput, reciclado, módulo nativo
 ./scripts/check-router.sh     # navegación, parámetros y vuelta atrás
 ./scripts/check-controls.sh   # los controles del sistema y sus tamaños
+./scripts/check-gestures.sh   # gestos, transformaciones y animación
+./scripts/check-pickers.sh    # segmentos, desplegable, pasos, búsqueda y fecha
+./scripts/check-web.sh        # cabecera, texto multilínea, navegador, hoja
 cargo run -p an-bridge --example headless -- build/bundle/hello-angular/main.js 6
 ```
 
 `headless` monta el pipeline entero salvo la plataforma: evalúa un bundle,
-avanza frames con un reloj falso, simula un toque, un desplazamiento y una
-vuelta atrás, e imprime el árbol resuelto. Es la forma rápida de depurar sin
-simulador, y es lo que usan los cuatro scripts.
+avanza frames con un reloj falso, simula un toque, un arrastre, un
+desplazamiento y una vuelta atrás, e imprime el árbol resuelto. Es la forma
+rápida de depurar sin simulador, y es lo que usan todos los scripts.
 
 ## Crates
 
@@ -169,20 +194,28 @@ simulador, y es lo que usan los cuatro scripts.
 
 ## Lo que no está hecho
 
+- **Un nombre de estilo que nadie reconoce no avisa.** `[style.loQueSea]` cae
+  como prop al host, el host no la usa, y no pasa nada. Ha mordido cuatro veces
+  en un día: `[style.fontSize]` llegaba con guion, el hueco del área segura se
+  quedaba en un envoltorio, el icono sin `[size]` no se dibujaba y `flex` no
+  existía como propiedad. Los cuatro casos están arreglados; el que no avise
+  sigue ahí, y es el que los hace caros de encontrar.
 - **No hay *fast refresh*.** La recarga conserva el estado —la ruta, el scroll,
   lo que se declare con `hotState`— pero recrea los componentes. El de React
   Native conserva los propios componentes, y para eso hace falta cargar los
   módulos por separado y sustituir con `ɵɵreplaceMetadata` los que cambiaron.
-- **`Modal` no presenta un controlador.** Es una vista sobre la raíz. En iOS lo
-  canónico sería `presentViewController:`, pero aquí no hay uno por pantalla.
-- **La barra de pestañas de Android no es del sistema.** Android no trae una:
-  `BottomNavigationView` vive en Material. Se dibuja con vistas del sistema
-  respetando su alto y su tipografía.
+- **En iPad se ven dos barras de pestañas.** Desde iOS 26, una `UITabBar` suelta
+  —fuera de un `UITabBarController`— adopta sola la presentación flotante del
+  iPad y se dibuja arriba además de en el marco que le da el layout. Fijarle una
+  apariencia no la convence. En iPhone sale una sola y en su sitio.
+- **Tres controles de Android no son del sistema.** La barra de pestañas, el
+  control segmentado y el de pasos no están en la plataforma —viven en la
+  librería de Material, que este build no usa— y se dibujan con vistas del
+  sistema. Los botones de Material 3 tampoco están: la píldora se dibuja sobre
+  un `Button` de verdad.
 - **`VirtualList` exige altura de fila fija.** Sin ella no se puede saber qué
   hay en un desplazamiento sin haber medido todo lo anterior.
-- **Sin gestos más allá del toque.** No hay arrastrar, pellizcar ni rotar.
-- **Sin animaciones declarativas.** Las de la pila las hace el host; una app no
-  puede animar una prop desde la plantilla.
+- **Faltan mapa y vídeo.** Y un selector de fecha que no sea el compacto.
 
 ## Desarrollo
 
