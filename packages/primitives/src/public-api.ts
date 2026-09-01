@@ -2,7 +2,11 @@ export type {
   NativeImageLoadEvent,
   NativeLayoutEvent,
   NativeSafeAreaInsets,
+  NativeGestureState,
+  NativePanEvent,
+  NativePinchEvent,
   NativePressEvent,
+  NativeRotateEvent,
   NativeScrollEvent,
   NativeTabSelectEvent
 } from './primitives'

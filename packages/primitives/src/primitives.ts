@@ -12,6 +12,47 @@ export interface NativePressEvent {
   y: number
 }
 
+/**
+ * En qué punto del gesto llega el evento.
+ *
+ * `cancel` no es un fallo: el sistema se lleva el gesto cuando otro gana —al
+ * arrastrar dentro de una lista que empieza a desplazarse, por ejemplo—. Quien
+ * mueve algo con el dedo tiene que devolverlo a su sitio, no dejarlo a medias.
+ */
+export type NativeGestureState = 'begin' | 'move' | 'end' | 'cancel'
+
+/**
+ * Arrastre.
+ *
+ * `translation` va desde donde empezó el dedo, no desde el evento anterior:
+ * así basta con sumarlo a la posición inicial, sin acumular nada ni arrastrar
+ * el error de redondeo de cada paso.
+ */
+export interface NativePanEvent {
+  x: number
+  y: number
+  translationX: number
+  translationY: number
+  /** Puntos por segundo. Sirve para seguir por inercia al soltar. */
+  velocityX: number
+  velocityY: number
+  state: NativeGestureState
+}
+
+/** Pellizco. `scale` es relativa al principio del gesto, no absoluta. */
+export interface NativePinchEvent {
+  scale: number
+  velocity: number
+  state: NativeGestureState
+}
+
+/** Giro con dos dedos, en radianes desde que empezó el gesto. */
+export interface NativeRotateEvent {
+  rotation: number
+  velocity: number
+  state: NativeGestureState
+}
+
 /** Marco resuelto de una vista, relativo a su padre y en puntos. */
 export interface NativeLayoutEvent {
   x: number
@@ -77,6 +118,32 @@ export abstract class NativeVisual {
   readonly doublePress = outputFromObservable(this.nativeEvent<NativePressEvent>('doublePress'))
 
   /**
+   * Mantener pulsado. Solo llega una vez, cuando el sistema decide que el
+   * gesto cuenta: cada plataforma tiene su umbral de tiempo, y respetarlo es
+   * lo que hace que la app se sienta de esa plataforma.
+   */
+  readonly longPress = outputFromObservable(this.nativeEvent<NativePressEvent>('longPress'))
+
+  readonly pan = outputFromObservable(this.nativeEvent<NativePanEvent>('pan'))
+  readonly pinch = outputFromObservable(this.nativeEvent<NativePinchEvent>('pinch'))
+  /**
+   * Girar con dos dedos.
+   *
+   * Se llama `rotation` y no `rotate` porque `[rotate]` ya es la
+   * transformación, y una clase no puede tener dos miembros con el mismo
+   * nombre. Queda además más claro cuál es cuál: `[rotate]` manda, `(rotation)`
+   * cuenta.
+   */
+  readonly rotation = outputFromObservable(this.nativeEvent<NativeRotateEvent>('rotate'))
+
+  // Deslizar. Cada dirección es su propia salida porque cada una engancha su
+  // reconocedor: escuchar solo `swipeLeft` no cuesta los otros tres.
+  readonly swipeLeft = outputFromObservable(this.nativeEvent<NativePressEvent>('swipeLeft'))
+  readonly swipeRight = outputFromObservable(this.nativeEvent<NativePressEvent>('swipeRight'))
+  readonly swipeUp = outputFromObservable(this.nativeEvent<NativePressEvent>('swipeUp'))
+  readonly swipeDown = outputFromObservable(this.nativeEvent<NativePressEvent>('swipeDown'))
+
+  /**
    * El marco que le asignó el layout, cada vez que cambia.
    *
    * No lo produce ninguna plataforma: lo emite el core al terminar el commit,
@@ -92,6 +159,40 @@ export abstract class NativeVisual {
 
   @Input() set backgroundColor(value: string | null) {
     this.set('backgroundColor', value)
+  }
+
+  /**
+   * Desplazar, escalar y girar.
+   *
+   * No entran en el layout a propósito: una vista movida o escalada sigue
+   * ocupando el mismo sitio que ocupaba. Por eso son baratas —no hay nada que
+   * recalcular— y por eso son las que hay que usar para seguir a un dedo.
+   * Para mover algo *y* que lo de al lado se aparte, hay que cambiar el
+   * layout, no esto.
+   */
+  @Input() set translateX(value: number | null) {
+    this.set('translateX', value)
+  }
+
+  @Input() set translateY(value: number | null) {
+    this.set('translateY', value)
+  }
+
+  @Input() set scale(value: number | null) {
+    this.set('scale', value)
+  }
+
+  @Input() set scaleX(value: number | null) {
+    this.set('scaleX', value)
+  }
+
+  @Input() set scaleY(value: number | null) {
+    this.set('scaleY', value)
+  }
+
+  /** En radianes, como lo que manda el gesto de girar. */
+  @Input() set rotate(value: number | null) {
+    this.set('rotate', value)
   }
 
   @Input() set borderRadius(value: number | null) {

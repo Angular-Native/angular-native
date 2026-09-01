@@ -155,12 +155,23 @@ fn measure_leaf(
 
     match ctx {
         MeasureCtx::Text { text, font } => {
-            let max_width = known.width.or(match available.width {
-                AvailableSpace::Definite(w) => Some(w),
-                AvailableSpace::MinContent => Some(0.0),
-                AvailableSpace::MaxContent => None,
-            });
-            let (w, h) = measurer.measure_text(text, font, max_width);
+            // El mínimo intrínseco tiene su propia pregunta. Pedirlo como
+            // "ancho disponible cero" parece equivalente y no lo es: las dos
+            // plataformas contestan cero a eso, y entonces el texto se encoge
+            // a nada en cuanto nadie le impone un ancho.
+            let (w, h) = match (known.width, available.width) {
+                (None, AvailableSpace::MinContent) => {
+                    measurer.measure_text_min_content(text, font)
+                }
+                _ => {
+                    let max_width = known.width.or(match available.width {
+                        AvailableSpace::Definite(w) => Some(w),
+                        AvailableSpace::MinContent => Some(0.0),
+                        AvailableSpace::MaxContent => None,
+                    });
+                    measurer.measure_text(text, font, max_width)
+                }
+            };
             taffy::Size { width: known.width.unwrap_or(w), height: known.height.unwrap_or(h) }
         }
         MeasureCtx::Control { name } => {

@@ -20,6 +20,42 @@ import {
  * plantilla Angular funciona sin tocarla — lo único que cambia es que los
  * elementos son `<View>` y `<Text>` en vez de `<div>` y `<span>`.
  */
+/**
+ * Props de texto que en CSS serían estilos y aquí no lo son.
+ *
+ * El tamaño y el peso de la letra no son estilo de caja: el layout los
+ * necesita para medir y el host para dibujar, y los dos los leen de las props.
+ * Sin esto, escribir `[style.fontSize]` en una plantilla —que Angular acepta
+ * sin rechistar— no hacía nada: la letra se medía con la de por defecto y se
+ * dibujaba con la de UIKit, que no es la misma, y el texto se salía de su
+ * caja y lo recortaba el padre. Se veía como texto que desaparece.
+ *
+ * La forma recomendada sigue siendo la entrada tipada, `[fontSize]`, que el
+ * compilador comprueba. Esto es para que la otra no mienta.
+ */
+const TEXT_PROPS = new Map<string, string>(
+  [
+    'fontSize',
+    'fontWeight',
+    'fontStyle',
+    'fontFamily',
+    'lineHeight',
+    'letterSpacing',
+    'color',
+    'textAlign',
+    'numberOfLines'
+    // Angular normaliza los nombres de estilo a guiones antes de llegar aquí,
+    // así que las dos grafías tienen que reconocerse: la que se escribe en la
+    // plantilla y la que llega.
+  ].flatMap((name) => {
+    const dashed = name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
+    return [
+      [name, name],
+      [dashed, name]
+    ] as [string, string][]
+  })
+)
+
 export class NativeRenderer extends Renderer2 {
   /** Clases acumuladas por nodo, para poder mandarlas juntas al core. */
   private readonly classes = new WeakMap<NativeNode, Set<string>>()
@@ -134,11 +170,21 @@ export class NativeRenderer extends Renderer2 {
     // `!important` no significa nada sin cascada: se ignora la bandera y se
     // aplica el valor, que es el único comportamiento posible aquí.
     void flags
+    const prop = TEXT_PROPS.get(style)
+    if (prop) {
+      dom.setProp(el.id, prop, value as never)
+      return
+    }
     dom.setStyle(el.id, style, value === null || value === undefined ? '' : String(value))
   }
 
   removeStyle(el: NativeNode, style: string): void {
     if (!this.writable(el)) return
+    const prop = TEXT_PROPS.get(style)
+    if (prop) {
+      dom.setProp(el.id, prop, null as never)
+      return
+    }
     dom.setStyle(el.id, style, '')
   }
 

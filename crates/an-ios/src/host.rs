@@ -8,7 +8,7 @@ use an_core::{NodeId, NodeKind, PropValue, Rect};
 use an_host::{EventQueue, HostRenderer};
 use objc2::rc::Retained;
 use objc2::{MainThreadMarker, Message};
-use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+use objc2_core_foundation::{CGAffineTransform, CGPoint, CGRect, CGSize};
 use objc2_foundation::NSString;
 use block2::RcBlock;
 use objc2_quartz_core::CAShapeLayer;
@@ -176,6 +176,68 @@ impl HostView {
     }
 }
 
+/// Las partes de una transformación, sin componer.
+///
+/// La escala arranca en 1 y no en 0: una vista sin `scale` tiene que verse
+/// igual que antes de que existiera la prop, no desaparecer.
+#[derive(Clone, Copy)]
+struct Transform {
+    translate_x: f64,
+    translate_y: f64,
+    scale_x: f64,
+    scale_y: f64,
+    rotate: f64,
+}
+
+impl Default for Transform {
+    fn default() -> Self {
+        Self { translate_x: 0.0, translate_y: 0.0, scale_x: 1.0, scale_y: 1.0, rotate: 0.0 }
+    }
+}
+
+impl Transform {
+    /// El orden es escalar, girar y luego desplazar.
+    ///
+    /// Al revés no sale lo mismo: si el desplazamiento entra antes que el
+    /// giro, girar también gira el desplazamiento, y arrastrar algo inclinado
+    /// se va en diagonal en vez de seguir al dedo.
+    fn matrix(&self) -> CGAffineTransform {
+        let scale = CGAffineTransform {
+            a: self.scale_x,
+            b: 0.0,
+            c: 0.0,
+            d: self.scale_y,
+            tx: 0.0,
+            ty: 0.0,
+        };
+        let (sin, cos) = self.rotate.sin_cos();
+        let rotate = CGAffineTransform { a: cos, b: sin, c: -sin, d: cos, tx: 0.0, ty: 0.0 };
+        let translate = CGAffineTransform {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            tx: self.translate_x,
+            ty: self.translate_y,
+        };
+        concat(concat(scale, rotate), translate)
+    }
+}
+
+/// Primero `a`, luego `b`. `CGAffineTransformConcat` no está en los enlaces, y
+/// multiplicar dos matrices afines de 3x2 son seis productos: sale más barato
+/// hacerlo aquí que enlazar con Core Graphics por esto.
+fn concat(a: CGAffineTransform, b: CGAffineTransform) -> CGAffineTransform {
+    CGAffineTransform {
+        a: a.a * b.a + a.b * b.c,
+        b: a.a * b.b + a.b * b.d,
+        c: a.c * b.a + a.d * b.c,
+        d: a.c * b.b + a.d * b.d,
+        tx: a.tx * b.a + a.ty * b.c + b.tx,
+        ty: a.tx * b.b + a.ty * b.d + b.ty,
+    }
+}
+
 pub struct UikitHost {
     mtm: MainThreadMarker,
     /// Vista que da el shell de Xcode. La raíz del árbol cuelga de aquí.
@@ -192,6 +254,10 @@ pub struct UikitHost {
     /// y `maximumValue` llegan en props sueltas y en cualquier orden: fijar el
     /// valor antes que el máximo lo recorta contra el rango viejo.
     slider_values: HashMap<NodeId, f32>,
+    /// Transformación de cada vista. Igual que con el deslizador, las partes
+    /// llegan en props sueltas: hay que guardarlas para poder recomponer la
+    /// matriz entera cada vez que cambia una.
+    transforms: HashMap<NodeId, Transform>,
     /// Sentido de la próxima transición de cada pila: `push`, `pop` o nada.
     /// Lo decide Angular, que es quien sabe si se avanza o se retrocede.
     transitions: HashMap<NodeId, String>,
@@ -232,6 +298,7 @@ impl UikitHost {
             fonts: HashMap::new(),
             corners: HashMap::new(),
             slider_values: HashMap::new(),
+            transforms: HashMap::new(),
             transitions: HashMap::new(),
             entering: Vec::new(),
             leaving: Vec::new(),
@@ -456,6 +523,14 @@ impl HostRenderer for UikitHost {
                 // El alto lo decide el layout, no el auto-ajuste de UIKit.
                 label.setNumberOfLines(0);
                 label.setLineBreakMode(NSLineBreakMode::ByWordWrapping);
+                // La fuente por defecto tiene que ser la misma con la que el
+                // layout midió. Un `UILabel` recién hecho usa 17 puntos y el
+                // núcleo mide con 14: la caja salía un 20% estrecha, el texto
+                // saltaba de línea y el recorte del padre se comía la
+                // segunda. Se veía como texto que desaparece, sin ningún
+                // error por ningún lado.
+                let default_size = an_layout::FontSpec::default().size as f64;
+                unsafe { label.setFont(Some(&UIFont::systemFontOfSize(default_size))) };
                 HostView::Label(label)
             }
             NodeKind::Image => HostView::Image(UIImageView::new(mtm)),
@@ -510,6 +585,7 @@ impl HostRenderer for UikitHost {
         self.safe_area.remove(&id);
         self.alerts.remove(&id);
         self.slider_values.remove(&id);
+        self.transforms.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
     }
 
@@ -561,6 +637,26 @@ impl HostRenderer for UikitHost {
                 if let Some(v) = number {
                     native.setAlpha(v as f64);
                 }
+            }
+            // Transformaciones. No pasan por el layout a propósito: mover o
+            // escalar una vista no cambia el sitio que ocupa, así que no hay
+            // que recalcular nada. Es lo que permite seguir al dedo a 120 Hz.
+            "translateX" | "translateY" | "scale" | "scaleX" | "scaleY" | "rotate" => {
+                let entry = self.transforms.entry(id).or_default();
+                let v = number.unwrap_or(0.0) as f64;
+                match key {
+                    "translateX" => entry.translate_x = v,
+                    "translateY" => entry.translate_y = v,
+                    "scale" => {
+                        entry.scale_x = if number.is_some() { v } else { 1.0 };
+                        entry.scale_y = entry.scale_x;
+                    }
+                    "scaleX" => entry.scale_x = if number.is_some() { v } else { 1.0 },
+                    "scaleY" => entry.scale_y = if number.is_some() { v } else { 1.0 },
+                    _ => entry.rotate = v,
+                }
+                let transform = entry.matrix();
+                native.setTransform(transform);
             }
             "borderRadius" | "border-radius" => {
                 if let Some(v) = number {
@@ -836,8 +932,6 @@ impl HostRenderer for UikitHost {
                 self.report_safe_area(id);
             } else {
                 self.safe_area.remove(&id);
-        self.alerts.remove(&id);
-        self.slider_values.remove(&id);
             }
             return;
         }

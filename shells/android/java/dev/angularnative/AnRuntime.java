@@ -47,6 +47,15 @@ public final class AnRuntime {
         nativeDispatchValueEvent(handle, target, name, value);
     }
 
+    /**
+     * Gestos. Llevan más de dos cifras y un estado, así que no caben en
+     * {@link #dispatchEvent}: los nombres de los campos viajan al lado de los
+     * valores para que las dos plataformas manden exactamente lo mismo.
+     */
+    public void dispatchGesture(int target, String name, String state, String keys, float[] values) {
+        nativeDispatchGesture(handle, target, name, state, keys, values);
+    }
+
     /** Eventos que llevan un índice: la pestaña elegida, por ejemplo. */
     public void dispatchIndexEvent(int target, String name, int index) {
         nativeDispatchIndexEvent(handle, target, name, index);
@@ -74,6 +83,9 @@ public final class AnRuntime {
 
     private static native void nativeDispatchValueEvent(
             long handle, int target, String name, String value);
+
+    private static native void nativeDispatchGesture(
+            long handle, int target, String name, String state, String keys, float[] values);
 
     private static native void nativeDispatchIndexEvent(
             long handle, int target, String name, int index);

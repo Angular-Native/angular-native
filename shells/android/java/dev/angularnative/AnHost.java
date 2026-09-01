@@ -89,8 +89,14 @@ public final class AnHost {
 
     private AnRuntime runtime;
     /** Última posición tocada, en puntos y relativa a la vista tocada. */
-    private float lastTouchX;
-    private float lastTouchY;
+    /**
+     * Tamaño de letra por defecto, en dp. Tiene que ser el mismo que el de
+     * `FontSpec::default()` en el núcleo: es con el que se mide.
+     */
+    private static final float DEFAULT_FONT_SIZE = 14f;
+
+    /** Los gestos activos de cada vista, uno por vista que tenga alguno. */
+    private final java.util.HashMap<Integer, Gestures> gestures = new java.util.HashMap<>();
 
     public AnHost(Context context, AnViewGroup container) {
         this.context = context;
@@ -115,6 +121,12 @@ public final class AnHost {
                 TextView text = new TextView(context);
                 text.setIncludeFontPadding(false);
                 text.setPadding(0, 0, 0, 0);
+                // La misma medida con la que el núcleo midió. El tamaño por
+                // defecto de un TextView depende del tema, y si no coincide
+                // con el del layout el texto se sale de su caja y lo recorta
+                // el padre, sin error ninguno.
+                text.setTextSize(
+                        android.util.TypedValue.COMPLEX_UNIT_DIP, DEFAULT_FONT_SIZE);
                 view = text;
                 break;
             }
@@ -604,6 +616,30 @@ public final class AnHost {
             case "opacity":
                 view.setAlpha(parseFloat(value) == null ? 1f : parseFloat(value));
                 break;
+            // Transformaciones. No pasan por el layout: mover o escalar una
+            // vista no cambia el sitio que ocupa, así que no hay que
+            // recalcular nada y se puede seguir al dedo sin coste.
+            case "translateX":
+                view.setTranslationX(number(value, 0f) * density);
+                break;
+            case "translateY":
+                view.setTranslationY(number(value, 0f) * density);
+                break;
+            case "scale":
+                view.setScaleX(number(value, 1f));
+                view.setScaleY(number(value, 1f));
+                break;
+            case "scaleX":
+                view.setScaleX(number(value, 1f));
+                break;
+            case "scaleY":
+                view.setScaleY(number(value, 1f));
+                break;
+            case "rotate":
+                // La API va en radianes, como el gesto de girar; Android
+                // quiere grados.
+                view.setRotation((float) Math.toDegrees(number(value, 0f)));
+                break;
             // --- controles del sistema
             case "on":
                 if (view instanceof android.widget.Switch) {
@@ -1027,51 +1063,386 @@ public final class AnHost {
             }
             return;
         }
-        if ("doublePress".equals(event)) {
-            if (!enabled) {
-                view.setOnTouchListener(null);
-                return;
-            }
-            android.view.GestureDetector detector =
-                    new android.view.GestureDetector(
-                            context,
-                            new android.view.GestureDetector.SimpleOnGestureListener() {
-                                @Override
-                                public boolean onDoubleTap(android.view.MotionEvent e) {
-                                    if (runtime != null) {
-                                        runtime.dispatchEvent(
-                                                id, "doublePress", e.getX() / density, e.getY() / density);
-                                    }
-                                    return true;
-                                }
-                            });
-            view.setOnTouchListener((v, touch) -> detector.onTouchEvent(touch));
-            view.setClickable(true);
-            return;
+        Gestures gestures = gestureFor(id, view, event, enabled);
+        if (gestures != null) {
+            gestures.set(event, enabled);
         }
-        if ("press".equals(event) || "click".equals(event) || "tap".equals(event)) {
-            if (!enabled) {
+    }
+
+    /** Un número de una prop, con su valor por defecto si no llegó ninguno. */
+    private float number(String value, float fallback) {
+        Float parsed = parseFloat(value);
+        return parsed == null ? fallback : parsed;
+    }
+
+    // --------------------------------------------------------------- gestos
+
+    /**
+     * Los gestos de una vista, todos juntos.
+     *
+     * <p>Una vista de Android solo admite un {@code OnTouchListener}, así que
+     * no vale poner uno por gesto: el último machaca a los anteriores. Aquí
+     * hay un objeto por vista que reparte el mismo flujo de toques entre los
+     * detectores que hagan falta.
+     */
+    private final class Gestures implements android.view.View.OnTouchListener {
+        private final int id;
+        private final android.view.View view;
+
+        private boolean press;
+        private boolean doublePress;
+        private boolean longPress;
+        private boolean pan;
+        private boolean pinch;
+        private boolean rotate;
+        private boolean swipeLeft;
+        private boolean swipeRight;
+        private boolean swipeUp;
+        private boolean swipeDown;
+
+        private android.view.GestureDetector detector;
+        private android.view.ScaleGestureDetector scaler;
+        private android.view.VelocityTracker velocity;
+
+        private float startX;
+        private float startY;
+        private float lastX;
+        private float lastY;
+        private boolean panning;
+
+        private float rotationStart;
+        private float rotationLast;
+        private boolean rotating;
+
+        Gestures(int id, android.view.View view) {
+            this.id = id;
+            this.view = view;
+        }
+
+        void set(String event, boolean enabled) {
+            switch (event) {
+                case "press":
+                case "click":
+                case "tap":
+                    press = enabled;
+                    break;
+                case "doublePress":
+                    doublePress = enabled;
+                    break;
+                case "longPress":
+                    longPress = enabled;
+                    break;
+                case "pan":
+                    pan = enabled;
+                    break;
+                case "pinch":
+                    pinch = enabled;
+                    break;
+                case "rotate":
+                    rotate = enabled;
+                    break;
+                case "swipeLeft":
+                    swipeLeft = enabled;
+                    break;
+                case "swipeRight":
+                    swipeRight = enabled;
+                    break;
+                case "swipeUp":
+                    swipeUp = enabled;
+                    break;
+                case "swipeDown":
+                    swipeDown = enabled;
+                    break;
+                default:
+                    return;
+            }
+            rebuild();
+        }
+
+        /** ¿Queda algún gesto activo? Si no, la vista vuelve a estar limpia. */
+        private boolean any() {
+            return press
+                    || doublePress
+                    || longPress
+                    || pan
+                    || pinch
+                    || rotate
+                    || swipeLeft
+                    || swipeRight
+                    || swipeUp
+                    || swipeDown;
+        }
+
+        /**
+         * Un gesto continuo se queda el toque: mientras el dedo se mueve nadie
+         * más debe verlo. Con solo toques sueltos se devuelve el evento para
+         * que el {@code OnClickListener} siga funcionando, que es lo que hace
+         * la vista accesible.
+         */
+        private boolean consuming() {
+            return pan || pinch || rotate;
+        }
+
+        private void rebuild() {
+            boolean swipes = swipeLeft || swipeRight || swipeUp || swipeDown;
+            boolean needsDetector = doublePress || longPress || swipes || (press && consuming());
+            detector = needsDetector ? new android.view.GestureDetector(context, listener) : null;
+            scaler = pinch ? new android.view.ScaleGestureDetector(context, scaleListener) : null;
+
+            if (!any()) {
+                view.setOnTouchListener(null);
                 view.setOnClickListener(null);
-                view.setOnTouchListener(null);
                 view.setClickable(false);
+                gestures.remove(Integer.valueOf(id));
                 return;
             }
-            // `OnClickListener` no dice dónde se tocó, y iOS sí lo manda: se
-            // apunta la posición al pasar el dedo y se usa al soltar. El
-            // click se mantiene porque es lo que hace la vista accesible.
-            view.setOnTouchListener(
-                    (v, touch) -> {
-                        lastTouchX = touch.getX() / density;
-                        lastTouchY = touch.getY() / density;
-                        return false;
-                    });
-            view.setOnClickListener(
-                    v -> {
-                        if (runtime != null) {
-                            runtime.dispatchEvent(id, "press", lastTouchX, lastTouchY);
-                        }
-                    });
+            view.setOnTouchListener(this);
+
+            // El click nativo solo cuando nadie se queda el toque; si no, el
+            // toque suelto lo reconoce el detector.
+            if (press && !consuming()) {
+                view.setOnClickListener(v -> dispatch("press", lastX, lastY));
+                view.setClickable(true);
+            } else {
+                view.setOnClickListener(null);
+                view.setClickable(consuming());
+            }
         }
+
+        @Override
+        public boolean onTouch(android.view.View v, android.view.MotionEvent ev) {
+            lastX = ev.getX() / density;
+            lastY = ev.getY() / density;
+            boolean handled = false;
+            if (detector != null) {
+                handled = detector.onTouchEvent(ev);
+            }
+            if (scaler != null) {
+                scaler.onTouchEvent(ev);
+            }
+            if (rotate) {
+                trackRotation(ev);
+            }
+            if (pan) {
+                trackPan(ev);
+            }
+            return consuming() || handled;
+        }
+
+        /**
+         * Arrastre. Se manda el desplazamiento desde donde empezó el dedo, no
+         * el de este movimiento: es lo que quiere quien mueve algo con el
+         * dedo, y coincide con lo que manda iOS.
+         */
+        private void trackPan(android.view.MotionEvent ev) {
+            switch (ev.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    startX = ev.getX();
+                    startY = ev.getY();
+                    panning = true;
+                    velocity = android.view.VelocityTracker.obtain();
+                    velocity.addMovement(ev);
+                    emitPan("begin", 0f, 0f);
+                    break;
+                case android.view.MotionEvent.ACTION_MOVE:
+                    if (!panning) {
+                        break;
+                    }
+                    if (velocity != null) {
+                        velocity.addMovement(ev);
+                    }
+                    emitPan("move", ev.getX() - startX, ev.getY() - startY);
+                    break;
+                case android.view.MotionEvent.ACTION_UP:
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    if (!panning) {
+                        break;
+                    }
+                    panning = false;
+                    boolean cancelled =
+                            ev.getActionMasked() == android.view.MotionEvent.ACTION_CANCEL;
+                    emitPan(cancelled ? "cancel" : "end", ev.getX() - startX, ev.getY() - startY);
+                    if (velocity != null) {
+                        velocity.recycle();
+                        velocity = null;
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+
+        private void emitPan(String state, float dx, float dy) {
+            float vx = 0f;
+            float vy = 0f;
+            if (velocity != null) {
+                // Píxeles por segundo, como los da iOS.
+                velocity.computeCurrentVelocity(1000);
+                vx = velocity.getXVelocity() / density;
+                vy = velocity.getYVelocity() / density;
+            }
+            dispatchGesture(
+                    "pan",
+                    state,
+                    "x,y,translationX,translationY,velocityX,velocityY",
+                    new float[] {lastX, lastY, dx / density, dy / density, vx, vy});
+        }
+
+        /**
+         * Girar con dos dedos. Android no trae detector para esto —hay
+         * {@code ScaleGestureDetector} para el pellizco, pero nada para el
+         * giro—, así que se saca el ángulo entre los dos dedos a mano.
+         */
+        private void trackRotation(android.view.MotionEvent ev) {
+            if (ev.getPointerCount() < 2) {
+                if (rotating) {
+                    rotating = false;
+                    emitRotation("end");
+                }
+                return;
+            }
+            float angle = angleBetween(ev);
+            if (!rotating) {
+                rotating = true;
+                rotationStart = angle;
+                rotationLast = angle;
+                emitRotation("begin");
+                return;
+            }
+            rotationLast = angle;
+            emitRotation("move");
+        }
+
+        private float angleBetween(android.view.MotionEvent ev) {
+            return (float)
+                    Math.atan2(ev.getY(1) - ev.getY(0), ev.getX(1) - ev.getX(0));
+        }
+
+        private void emitRotation(String state) {
+            dispatchGesture(
+                    "rotate",
+                    state,
+                    "rotation,velocity",
+                    new float[] {rotationLast - rotationStart, 0f});
+        }
+
+        private void dispatch(String name, float x, float y) {
+            if (runtime != null) {
+                runtime.dispatchEvent(id, name, x, y);
+            }
+        }
+
+        private void dispatchGesture(String name, String state, String keys, float[] values) {
+            if (runtime != null) {
+                runtime.dispatchGesture(id, name, state, keys, values);
+            }
+        }
+
+        private final android.view.GestureDetector.SimpleOnGestureListener listener =
+                new android.view.GestureDetector.SimpleOnGestureListener() {
+                    @Override
+                    public boolean onDown(android.view.MotionEvent e) {
+                        // Sin esto el detector descarta el resto del gesto.
+                        return true;
+                    }
+
+                    @Override
+                    public boolean onSingleTapUp(android.view.MotionEvent e) {
+                        if (press && consuming()) {
+                            dispatch("press", e.getX() / density, e.getY() / density);
+                            return true;
+                        }
+                        return false;
+                    }
+
+                    @Override
+                    public boolean onDoubleTap(android.view.MotionEvent e) {
+                        if (!doublePress) {
+                            return false;
+                        }
+                        dispatch("doublePress", e.getX() / density, e.getY() / density);
+                        return true;
+                    }
+
+                    @Override
+                    public void onLongPress(android.view.MotionEvent e) {
+                        if (longPress) {
+                            dispatch("longPress", e.getX() / density, e.getY() / density);
+                        }
+                    }
+
+                    @Override
+                    public boolean onFling(
+                            android.view.MotionEvent down,
+                            android.view.MotionEvent up,
+                            float vx,
+                            float vy) {
+                        // Gana el eje que más se ha movido; en diagonal, el
+                        // más rápido. Es lo mismo que decide UIKit.
+                        String direction;
+                        if (Math.abs(vx) > Math.abs(vy)) {
+                            direction = vx > 0 ? "swipeRight" : "swipeLeft";
+                        } else {
+                            direction = vy > 0 ? "swipeDown" : "swipeUp";
+                        }
+                        boolean wanted =
+                                ("swipeRight".equals(direction) && swipeRight)
+                                        || ("swipeLeft".equals(direction) && swipeLeft)
+                                        || ("swipeDown".equals(direction) && swipeDown)
+                                        || ("swipeUp".equals(direction) && swipeUp);
+                        if (!wanted) {
+                            return false;
+                        }
+                        dispatch(direction, up.getX() / density, up.getY() / density);
+                        return true;
+                    }
+                };
+
+        private final android.view.ScaleGestureDetector.SimpleOnScaleGestureListener
+                scaleListener =
+                        new android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                            @Override
+                            public boolean onScaleBegin(
+                                    android.view.ScaleGestureDetector d) {
+                                emitScale(d, "begin");
+                                return true;
+                            }
+
+                            @Override
+                            public boolean onScale(android.view.ScaleGestureDetector d) {
+                                emitScale(d, "move");
+                                return true;
+                            }
+
+                            @Override
+                            public void onScaleEnd(android.view.ScaleGestureDetector d) {
+                                emitScale(d, "end");
+                            }
+
+                            private void emitScale(
+                                    android.view.ScaleGestureDetector d, String state) {
+                                dispatchGesture(
+                                        "pinch",
+                                        state,
+                                        "scale,velocity",
+                                        new float[] {d.getScaleFactor(), 0f});
+                            }
+                        };
+    }
+
+    /** Los gestos de esta vista, creándolos si es el primero que se activa. */
+    private Gestures gestureFor(int id, android.view.View view, String event, boolean enabled) {
+        Gestures existing = gestures.get(Integer.valueOf(id));
+        if (existing != null) {
+            return existing;
+        }
+        if (!enabled) {
+            // Quitar un gesto de una vista que no tiene ninguno: nada que hacer.
+            return null;
+        }
+        Gestures created = new Gestures(id, view);
+        gestures.put(Integer.valueOf(id), created);
+        return created;
     }
 
     // --------------------------------------------------------------- consola

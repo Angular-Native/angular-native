@@ -23,7 +23,12 @@ struct TreeRecorder {
     texts: HashMap<NodeId, String>,
     content: HashMap<NodeId, (f32, f32)>,
     root: Option<NodeId>,
+    /// Transformaciones aplicadas a cada vista. Solo estas: son las únicas
+    /// props que no se ven en el árbol —no cambian marco ni contenido— y por
+    /// tanto las únicas que hay que apuntar para poder comprobarlas.
+    transforms: HashMap<NodeId, HashMap<String, f32>>,
     pressable: Vec<NodeId>,
+    pannable: Vec<NodeId>,
     scrollable: Vec<NodeId>,
     backable: Vec<NodeId>,
     /// Para poder afirmar que desplazarse no crea vistas.
@@ -42,12 +47,20 @@ impl HostRenderer for TreeRecorder {
         self.parents.remove(&id);
         self.frames.remove(&id);
         self.texts.remove(&id);
+        self.transforms.remove(&id);
         for children in self.order.values_mut() {
             children.retain(|child| *child != id);
         }
     }
     fn insert(&mut self, parent: NodeId, child: NodeId, index: u32) {
-        self.parents.insert(child, parent);
+        // Mover un nodo no lleva un `remove` delante: en las dos plataformas
+        // meter una vista en otro padre ya la saca de donde estaba. Aquí hay
+        // que hacerlo a mano o el nodo sale dos veces en el árbol.
+        if let Some(previous) = self.parents.insert(child, parent) {
+            if let Some(siblings) = self.order.get_mut(&previous) {
+                siblings.retain(|current| *current != child);
+            }
+        }
         let children = self.order.entry(parent).or_default();
         let at = (index as usize).min(children.len());
         children.insert(at, child);
@@ -58,13 +71,20 @@ impl HostRenderer for TreeRecorder {
             children.retain(|current| *current != child);
         }
     }
-    fn set_prop(&mut self, _id: NodeId, _key: &str, _value: &PropValue) {}
+    fn set_prop(&mut self, id: NodeId, key: &str, value: &PropValue) {
+        if matches!(key, "translateX" | "translateY" | "scale" | "rotate") {
+            if let Some(number) = value.as_f32() {
+                self.transforms.entry(id).or_default().insert(key.to_owned(), number);
+            }
+        }
+    }
     fn set_text(&mut self, id: NodeId, text: &str) {
         self.texts.insert(id, text.to_owned());
     }
     fn set_listener(&mut self, id: NodeId, event: &str, enabled: bool) {
         let list = match event {
             "press" => &mut self.pressable,
+            "pan" => &mut self.pannable,
             "scroll" => &mut self.scrollable,
             "back" => &mut self.backable,
             _ => return,
@@ -137,6 +157,7 @@ fn main() {
     let mut tapped = false;
     let mut scrolled = false;
     let mut went_back = false;
+    let mut panned = false;
     let mut before_back = (0usize, 0usize);
     // Recuento en el momento justo antes de desplazar, para poder decir
     // cuántas vistas costó el desplazamiento.
@@ -185,6 +206,41 @@ fn main() {
                 }])
                 .expect("despacho de eventos");
                 scrolled = true;
+            }
+        }
+
+        // Un arrastre entero: empezar, mover y soltar. Los tres estados
+        // importan: quien mueve algo con el dedo actualiza en `move` y fija en
+        // `end`, y si solo llegase uno de los dos parecería que funciona hasta
+        // el segundo arrastre.
+        if !panned && frame >= frames / 2 {
+            let target = renderer.host().pannable.first().copied();
+            if let Some(target) = target {
+                println!("-- arrastre simulado en #{target}");
+                for (state, dx, dy) in
+                    [("begin", 0.0, 0.0), ("move", 60.0, 25.0), ("end", 60.0, 25.0)]
+                {
+                    js.dispatch_events(&[HostEvent {
+                        target,
+                        name: "pan".to_owned(),
+                        payload: vec![
+                            ("x".to_owned(), PropValue::Number(10.0)),
+                            ("y".to_owned(), PropValue::Number(10.0)),
+                            ("translationX".to_owned(), PropValue::Number(dx)),
+                            ("translationY".to_owned(), PropValue::Number(dy)),
+                            ("velocityX".to_owned(), PropValue::Number(120.0)),
+                            ("velocityY".to_owned(), PropValue::Number(0.0)),
+                            ("state".to_owned(), PropValue::Str(state.to_owned())),
+                        ],
+                    }])
+                    .expect("despacho de eventos");
+                    // Cada estado en su propio turno, y aplicando lo que salga:
+                    // en el dispositivo tampoco llegan los tres en el mismo
+                    // frame, y quien arrastra actualiza en cada uno.
+                    let commands = js.tick(now).expect("turno de arrastre");
+                    apply(&commands, &mut renderer).expect("búfer del arrastre");
+                }
+                panned = true;
             }
         }
 
@@ -255,8 +311,21 @@ fn print_node(host: &TreeRecorder, id: NodeId, depth: usize) {
         .get(&id)
         .map(|(w, h)| format!("  contenido {w:.0}x{h:.0}"))
         .unwrap_or_default();
+    // Las transformaciones se imprimen ordenadas: son un mapa, y sin ordenar
+    // la salida cambiaría de una ejecución a otra y no se podría comprobar.
+    let transform = host
+        .transforms
+        .get(&id)
+        .filter(|values| !values.is_empty())
+        .map(|values| {
+            let mut parts: Vec<String> =
+                values.iter().map(|(key, value)| format!("{key}={value:.2}")).collect();
+            parts.sort();
+            format!("  transform {}", parts.join(" "))
+        })
+        .unwrap_or_default();
     println!(
-        "{:indent$}{kind}#{id} [{:.0},{:.0} {:.0}x{:.0}]{content}{text}",
+        "{:indent$}{kind}#{id} [{:.0},{:.0} {:.0}x{:.0}]{content}{transform}{text}",
         "",
         rect.x,
         rect.y,

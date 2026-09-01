@@ -39,6 +39,8 @@ objc2-ui-kit = { version = "0.3", default-features = false, features = [
   "UITabBar", "UITabBarItem", "UIBarItem", "UIImage",
   "UIAlertController", "UIAlert", "UIViewController", "UIWindow", "UIRefreshControl",
   "UIGestureRecognizer", "UITapGestureRecognizer", "UITextInputTraits", "UIDevice",
+  "UILongPressGestureRecognizer", "UISwipeGestureRecognizer", "UIPinchGestureRecognizer",
+  "UIRotationGestureRecognizer",
   "UIBezierPath", "UIScreenEdgePanGestureRecognizer", "UIPanGestureRecognizer",
   "UIGeometry", "block2",
   "NSStringDrawing", "NSParagraphStyle", "NSText", "NSAttributedString",

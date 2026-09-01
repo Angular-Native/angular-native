@@ -52,6 +52,32 @@ pub trait TextMeasurer {
     /// Devuelve (ancho, alto) en puntos lógicos.
     fn measure_text(&self, text: &str, font: &FontSpec, max_width: Option<f32>) -> (f32, f32);
 
+    /// El mínimo intrínseco de un texto: lo más estrecho que puede quedarse
+    /// sin partir palabras por la mitad, o sea el ancho de la palabra más
+    /// larga.
+    ///
+    /// Hay que preguntarlo aparte y no colarlo como "ancho disponible cero":
+    /// medir con ancho cero devuelve cero en UIKit y en Android, y un texto de
+    /// mínimo cero se encoge a nada en cuanto su contenedor no le impone un
+    /// ancho —dentro de un `alignItems: center`, por ejemplo—. El texto
+    /// desaparecía de la pantalla sin que fallara nada.
+    fn measure_text_min_content(&self, text: &str, font: &FontSpec) -> (f32, f32) {
+        let widest = text
+            .split_whitespace()
+            .map(|word| self.measure_text(word, font, None).0)
+            .fold(0.0_f32, f32::max);
+        if widest <= 0.0 {
+            // Un texto sin espacios —o vacío— no tiene nada que partir: su
+            // mínimo es su tamaño entero.
+            return self.measure_text(text, font, None);
+        }
+        // El alto es el de ese texto partido a ese ancho, que es más de una
+        // línea: el mínimo intrínseco es ancho *y* alto, y quedarse con el
+        // alto de una sola línea recortaría el texto.
+        let (_, height) = self.measure_text(text, font, Some(widest));
+        (widest, height)
+    }
+
     /// Tamaño natural de un control del sistema.
     ///
     /// La implementación por defecto devuelve medidas razonables para que el
@@ -121,5 +147,36 @@ impl TextMeasurer for NaiveMeasurer {
             _ => lines,
         };
         (widest.min(limit), lines.max(1) as f32 * line_height)
+    }
+}
+
+#[cfg(test)]
+mod min_content_tests {
+    use super::*;
+
+    /// El mínimo de un texto es su palabra más larga, no cero.
+    ///
+    /// Este es el caso que hacía desaparecer texto en el dispositivo: un
+    /// `<Text>` dentro de un contenedor centrado no tiene ancho impuesto, así
+    /// que el layout se queda con el mínimo, y con el mínimo a cero el texto
+    /// se quedaba en una caja de ancho cero.
+    #[test]
+    fn el_minimo_es_la_palabra_mas_larga() {
+        let font = FontSpec { size: 10.0, ..Default::default() };
+        let (width, height) = NaiveMeasurer.measure_text_min_content("hola mundo enorme", &font);
+        let (solo, _) = NaiveMeasurer.measure_text("enorme", &font, None);
+        assert_eq!(width, solo);
+        assert!(width > 0.0);
+        // Partido a ese ancho caben tres líneas: el alto no es el de una.
+        let (_, una_linea) = NaiveMeasurer.measure_text("enorme", &font, None);
+        assert!(height > una_linea);
+    }
+
+    /// Una sola palabra no se parte: su mínimo es ella entera.
+    #[test]
+    fn una_palabra_suelta_no_se_parte() {
+        let font = FontSpec { size: 10.0, ..Default::default() };
+        let entera = NaiveMeasurer.measure_text("indivisible", &font, None);
+        assert_eq!(NaiveMeasurer.measure_text_min_content("indivisible", &font), entera);
     }
 }

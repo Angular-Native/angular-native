@@ -10,7 +10,7 @@ use std::time::Duration;
 use an_bridge::{QuickJsRuntime, Request, RuntimeWorker};
 use an_core::PropValue;
 use an_host::{drain_events, new_event_queue, EventQueue, HostEvent, MountSide, ShadowSide};
-use jni::objects::{JClass, JObject, JString};
+use jni::objects::{JClass, JFloatArray, JObject, JString};
 use jni::sys::{jfloat, jint, jlong};
 use jni::JNIEnv;
 
@@ -229,6 +229,53 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchEvent(
             ],
         },
     );
+}
+
+/// Gestos: arrastrar, pellizcar, girar, mantener pulsado, deslizar.
+///
+/// Los nombres de los campos vienen del lado de Java en vez de estar fijados
+/// aquí por posición. Cuesta separar una cadena por comas, pero si un día uno
+/// de los dos lados añade un campo, el otro no empieza a leer números
+/// corridos de sitio.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchGesture(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    target: jint,
+    name: JString,
+    state: JString,
+    keys: JString,
+    values: JFloatArray,
+) {
+    let Some(runtime) = (unsafe { runtime(handle) }) else { return };
+    let (Ok(name), Ok(state), Ok(keys)) = (
+        env.get_string(&name),
+        env.get_string(&state),
+        env.get_string(&keys),
+    ) else {
+        return;
+    };
+    let name: String = name.into();
+    let state: String = state.into();
+    let keys: String = keys.into();
+
+    let Ok(length) = env.get_array_length(&values) else { return };
+    let mut numbers = vec![0f32; length as usize];
+    if env.get_float_array_region(&values, 0, &mut numbers).is_err() {
+        return;
+    }
+
+    let mut payload: Vec<(String, PropValue)> = keys
+        .split(',')
+        .zip(numbers.iter())
+        .map(|(key, value)| (key.to_owned(), PropValue::Number(*value as f64)))
+        .collect();
+    if !state.is_empty() {
+        payload.push(("state".to_owned(), PropValue::Str(state)));
+    }
+
+    an_host::push_event(&runtime.events, HostEvent { target: target as u32, name, payload });
 }
 
 /// Eventos que llevan un índice: la pestaña elegida, por ejemplo.

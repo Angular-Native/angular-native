@@ -15,10 +15,12 @@ use objc2::runtime::{ProtocolObject, Sel};
 use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
 use objc2_foundation::NSObjectProtocol;
 use objc2_ui_kit::{
-    UIControl, UIControlEvents, UIGestureRecognizer, UIGestureRecognizerState, UIRectEdge,
-    UIRefreshControl, UIScreenEdgePanGestureRecognizer, UIScrollView, UIScrollViewDelegate,
-    UISlider, UISwitch, UITabBar, UITabBarDelegate, UITabBarItem, UITapGestureRecognizer,
-    UITextField, UIView,
+    UIControl, UIControlEvents, UIGestureRecognizer, UIGestureRecognizerState,
+    UILongPressGestureRecognizer, UIPanGestureRecognizer, UIPinchGestureRecognizer, UIRectEdge,
+    UIRefreshControl, UIRotationGestureRecognizer, UIScreenEdgePanGestureRecognizer, UIScrollView,
+    UIScrollViewDelegate, UISlider, UISwipeGestureRecognizer,
+    UISwipeGestureRecognizerDirection, UISwitch, UITabBar, UITabBarDelegate, UITabBarItem,
+    UITapGestureRecognizer, UITextField, UIView,
 };
 
 fn emit(queue: &EventQueue, target: NodeId, name: &str, payload: Vec<(String, PropValue)>) {
@@ -53,6 +55,98 @@ define_class!(
             emit(&ivars.queue, ivars.node, ivars.name, Vec::new());
         }
 
+        /// Arrastrar. Lleva el desplazamiento acumulado y la velocidad, que
+        /// es lo que hace falta para mover algo con el dedo y para decidir si
+        /// al soltar sigue por inercia.
+        #[unsafe(method(handlePan:))]
+        fn handle_pan(&self, recognizer: &UIPanGestureRecognizer) {
+            let ivars = self.ivars();
+            let view = recognizer.view();
+            let translation = recognizer.translationInView(view.as_deref());
+            let velocity = recognizer.velocityInView(view.as_deref());
+            let point = recognizer.locationInView(view.as_deref());
+            emit(
+                &ivars.queue,
+                ivars.node,
+                ivars.name,
+                vec![
+                    ("x".to_owned(), PropValue::Number(point.x)),
+                    ("y".to_owned(), PropValue::Number(point.y)),
+                    ("translationX".to_owned(), PropValue::Number(translation.x)),
+                    ("translationY".to_owned(), PropValue::Number(translation.y)),
+                    ("velocityX".to_owned(), PropValue::Number(velocity.x)),
+                    ("velocityY".to_owned(), PropValue::Number(velocity.y)),
+                    ("state".to_owned(), PropValue::Str(state_name(recognizer.state()))),
+                ],
+            );
+        }
+
+        /// Mantener pulsado. Solo se avisa al empezar: el sistema ya decidió
+        /// que el gesto cuenta, y avisar también al soltar solo daría un
+        /// segundo evento que nadie espera.
+        #[unsafe(method(handleLongPress:))]
+        fn handle_long_press(&self, recognizer: &UIGestureRecognizer) {
+            if recognizer.state() != UIGestureRecognizerState::Began {
+                return;
+            }
+            let ivars = self.ivars();
+            let point = recognizer.locationInView(recognizer.view().as_deref());
+            emit(
+                &ivars.queue,
+                ivars.node,
+                ivars.name,
+                vec![
+                    ("x".to_owned(), PropValue::Number(point.x)),
+                    ("y".to_owned(), PropValue::Number(point.y)),
+                ],
+            );
+        }
+
+        #[unsafe(method(handleSwipe:))]
+        fn handle_swipe(&self, recognizer: &UIGestureRecognizer) {
+            let ivars = self.ivars();
+            let point = recognizer.locationInView(recognizer.view().as_deref());
+            emit(
+                &ivars.queue,
+                ivars.node,
+                ivars.name,
+                vec![
+                    ("x".to_owned(), PropValue::Number(point.x)),
+                    ("y".to_owned(), PropValue::Number(point.y)),
+                ],
+            );
+        }
+
+        #[unsafe(method(handlePinch:))]
+        fn handle_pinch(&self, recognizer: &UIPinchGestureRecognizer) {
+            let ivars = self.ivars();
+            emit(
+                &ivars.queue,
+                ivars.node,
+                ivars.name,
+                vec![
+                    ("scale".to_owned(), PropValue::Number(recognizer.scale())),
+                    ("velocity".to_owned(), PropValue::Number(recognizer.velocity())),
+                    ("state".to_owned(), PropValue::Str(state_name(recognizer.state()))),
+                ],
+            );
+        }
+
+        #[unsafe(method(handleRotate:))]
+        fn handle_rotate(&self, recognizer: &UIRotationGestureRecognizer) {
+            let ivars = self.ivars();
+            emit(
+                &ivars.queue,
+                ivars.node,
+                ivars.name,
+                vec![
+                    ("rotation".to_owned(), PropValue::Number(recognizer.rotation())),
+                    ("velocity".to_owned(), PropValue::Number(recognizer.velocity())),
+                    ("state".to_owned(), PropValue::Str(state_name(recognizer.state()))),
+                ],
+            );
+        }
+
         #[unsafe(method(handleGesture:))]
         fn handle_gesture(&self, recognizer: &UIGestureRecognizer) {
             let ivars = self.ivars();
@@ -83,6 +177,18 @@ impl GestureTarget {
     fn edge_action() -> Sel {
         sel!(handleEdgePan:)
     }
+}
+
+/// Nombre del estado, tal cual lo verá la plantilla.
+fn state_name(state: UIGestureRecognizerState) -> String {
+    match state {
+        UIGestureRecognizerState::Began => "begin",
+        UIGestureRecognizerState::Changed => "move",
+        UIGestureRecognizerState::Ended => "end",
+        UIGestureRecognizerState::Cancelled | UIGestureRecognizerState::Failed => "cancel",
+        _ => "possible",
+    }
+    .to_owned()
 }
 
 /// Destino de las acciones de un `UIControl`: escribir, entrar y salir de un
@@ -319,6 +425,90 @@ impl AttachedListener {
     }
 }
 
+/// Construye el reconocedor de un gesto continuo o de dirección, si el nombre
+/// es de uno.
+fn continuous_gesture(
+    mtm: objc2::MainThreadMarker,
+    event: &str,
+    node: NodeId,
+    queue: &EventQueue,
+) -> Option<(Retained<UIGestureRecognizer>, Retained<GestureTarget>)> {
+    let (action, name): (Sel, &'static str) = match event {
+        "pan" => (sel!(handlePan:), "pan"),
+        "longPress" => (sel!(handleLongPress:), "longPress"),
+        "pinch" => (sel!(handlePinch:), "pinch"),
+        "rotate" => (sel!(handleRotate:), "rotate"),
+        "swipeLeft" | "swipeRight" | "swipeUp" | "swipeDown" => (sel!(handleSwipe:), "swipe"),
+        _ => return None,
+    };
+    let _ = name;
+    let target = GestureTarget::new(mtm, node, leak_event_name(event), queue.clone());
+
+    let recognizer: Retained<UIGestureRecognizer> = match event {
+        "pan" => Retained::into_super(unsafe {
+            UIPanGestureRecognizer::initWithTarget_action(
+                UIPanGestureRecognizer::alloc(mtm),
+                Some(&target),
+                Some(action),
+            )
+        }),
+        "longPress" => Retained::into_super(unsafe {
+            UILongPressGestureRecognizer::initWithTarget_action(
+                UILongPressGestureRecognizer::alloc(mtm),
+                Some(&target),
+                Some(action),
+            )
+        }),
+        "pinch" => Retained::into_super(unsafe {
+            UIPinchGestureRecognizer::initWithTarget_action(
+                UIPinchGestureRecognizer::alloc(mtm),
+                Some(&target),
+                Some(action),
+            )
+        }),
+        "rotate" => Retained::into_super(unsafe {
+            UIRotationGestureRecognizer::initWithTarget_action(
+                UIRotationGestureRecognizer::alloc(mtm),
+                Some(&target),
+                Some(action),
+            )
+        }),
+        _ => {
+            let swipe = unsafe {
+                UISwipeGestureRecognizer::initWithTarget_action(
+                    UISwipeGestureRecognizer::alloc(mtm),
+                    Some(&target),
+                    Some(action),
+                )
+            };
+            swipe.setDirection(match event {
+                "swipeRight" => UISwipeGestureRecognizerDirection::Right,
+                "swipeUp" => UISwipeGestureRecognizerDirection::Up,
+                "swipeDown" => UISwipeGestureRecognizerDirection::Down,
+                _ => UISwipeGestureRecognizerDirection::Left,
+            });
+            Retained::into_super(swipe)
+        }
+    };
+    Some((recognizer, target))
+}
+
+/// El nombre del evento tiene que vivir tanto como el destino del gesto, y los
+/// nombres son un conjunto cerrado y conocido.
+fn leak_event_name(event: &str) -> &'static str {
+    match event {
+        "pan" => "pan",
+        "longPress" => "longPress",
+        "pinch" => "pinch",
+        "rotate" => "rotate",
+        "swipeLeft" => "swipeLeft",
+        "swipeRight" => "swipeRight",
+        "swipeUp" => "swipeUp",
+        "swipeDown" => "swipeDown",
+        _ => "gesture",
+    }
+}
+
 /// Nombres de evento que esta plataforma sabe reconocer. El resto se ignoran
 /// en silencio: una plantilla puede traer `(click)` heredado de web y no es
 /// motivo para reventar la app.
@@ -417,6 +607,15 @@ pub fn attach(
             recognizer: Retained::into_super(Retained::into_super(recognizer)),
             _target: target,
         });
+    }
+
+    // Gestos continuos y de dirección. Cada uno lleva su reconocedor: UIKit
+    // ya resuelve entre ellos quién gana cuando compiten.
+    if let Some(recognizer) = continuous_gesture(mtm, event, node, &queue) {
+        let (recognizer, target) = recognizer;
+        view.setUserInteractionEnabled(true);
+        view.addGestureRecognizer(&recognizer);
+        return Some(AttachedListener::Gesture { recognizer, _target: target });
     }
 
     let (name, taps): (&'static str, usize) = match event {
