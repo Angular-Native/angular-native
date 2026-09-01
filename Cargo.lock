@@ -48,6 +48,7 @@ dependencies = [
  "axum",
  "clap",
  "notify",
+ "serde_json",
  "tokio",
 ]
 

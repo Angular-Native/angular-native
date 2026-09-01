@@ -123,12 +123,19 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
         bail!("el simulador {device} no llegó a arrancar");
     }
 
-    // Cerrar antes de instalar. Instalar sobre una app en marcha deja la copia
-    // vieja corriendo y el bundle nuevo sin cargar: la app parece no haber
-    // cambiado. Falla con "no such process" si no estaba corriendo, que es lo
-    // normal, así que se descarta la salida.
+    // Cerrar y desinstalar antes de instalar.
+    //
+    // `simctl install` sobre una app que ya está instalada no reemplaza el
+    // bundle de forma fiable: la app arranca con el código viejo y parece que
+    // el cambio no ha llegado. Desinstalar borra también los datos de la app,
+    // lo cual en un ciclo de desarrollo es lo que uno espera de todas formas.
+    // Los dos comandos fallan si no había nada, que es lo normal la primera
+    // vez, así que se descarta su salida.
     let _ = Command::new("xcrun")
         .args(["simctl", "terminate", &udid, BUNDLE_ID])
+        .output();
+    let _ = Command::new("xcrun")
+        .args(["simctl", "uninstall", &udid, BUNDLE_ID])
         .output();
     let install = Command::new("xcrun")
         .args(["simctl", "install", &udid])
@@ -138,6 +145,7 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
     if !install.success() {
         bail!("la instalación en el simulador falló");
     }
+
     let launch = Command::new("xcrun")
         .args(["simctl", "launch", &udid, BUNDLE_ID])
         .status()
@@ -148,19 +156,39 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
     Ok(())
 }
 
+/// Busca un simulador por nombre y devuelve su udid.
+///
+/// Se parsea el JSON de verdad. Buscar el nombre a pelo y leer el `udid`
+/// siguiente no vale: `simctl` pone el `udid` *antes* que el `name`, así que
+/// eso devuelve el del dispositivo de después y se acaba instalando en un
+/// simulador que no es, sin que nada falle.
 fn find_device(name: &str) -> Result<String> {
     let json = capture("xcrun", &["simctl", "list", "devices", "available", "-j"])?;
-    // Sin dependencia de JSON: se busca el nombre exacto y se lee el udid que
-    // aparece en el mismo objeto, unas líneas más abajo.
-    let needle = format!("\"name\" : \"{name}\"");
-    let at = json
-        .find(&needle)
-        .with_context(|| format!("no hay ningún simulador llamado {name:?}"))?;
-    let tail = &json[at..];
-    let udid_at = tail.find("\"udid\" : \"").context("el simulador no trae udid")?;
-    let rest = &tail[udid_at + 10..];
-    let end = rest.find('"').context("udid mal formado")?;
-    Ok(rest[..end].to_owned())
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json).context("simctl devolvió un JSON que no se entiende")?;
+    let runtimes = parsed
+        .get("devices")
+        .and_then(serde_json::Value::as_object)
+        .context("el JSON de simctl no trae dispositivos")?;
+
+    // Se prefiere uno ya arrancado: si hay varios con el mismo nombre en
+    // distintas versiones de iOS, el que el usuario está mirando es ese.
+    let mut fallback = None;
+    for devices in runtimes.values() {
+        for device in devices.as_array().into_iter().flatten() {
+            if device.get("name").and_then(serde_json::Value::as_str) != Some(name) {
+                continue;
+            }
+            let Some(udid) = device.get("udid").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            if device.get("state").and_then(serde_json::Value::as_str) == Some("Booted") {
+                return Ok(udid.to_owned());
+            }
+            fallback.get_or_insert_with(|| udid.to_owned());
+        }
+    }
+    fallback.with_context(|| format!("no hay ningún simulador llamado {name:?}"))
 }
 
 fn capture(program: &str, args: &[&str]) -> Result<String> {

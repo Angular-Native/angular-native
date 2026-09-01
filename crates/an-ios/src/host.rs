@@ -188,6 +188,10 @@ pub struct UikitHost {
     /// UIKit solo sabe de un radio único, así que cuando difieren hay que
     /// dibujar la forma a mano y usarla como máscara.
     corners: HashMap<NodeId, [f64; 4]>,
+    /// Valor pedido a cada deslizador. Se guarda porque `value`, `minimumValue`
+    /// y `maximumValue` llegan en props sueltas y en cualquier orden: fijar el
+    /// valor antes que el máximo lo recorta contra el rango viejo.
+    slider_values: HashMap<NodeId, f32>,
     /// Sentido de la próxima transición de cada pila: `push`, `pop` o nada.
     /// Lo decide Angular, que es quien sabe si se avanza o se retrocede.
     transitions: HashMap<NodeId, String>,
@@ -227,6 +231,7 @@ impl UikitHost {
             views: HashMap::new(),
             fonts: HashMap::new(),
             corners: HashMap::new(),
+            slider_values: HashMap::new(),
             transitions: HashMap::new(),
             entering: Vec::new(),
             leaving: Vec::new(),
@@ -504,6 +509,7 @@ impl HostRenderer for UikitHost {
         self.corners.remove(&id);
         self.safe_area.remove(&id);
         self.alerts.remove(&id);
+        self.slider_values.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
     }
 
@@ -677,6 +683,7 @@ impl HostRenderer for UikitHost {
             // --- campos de texto
             "value" => {
                 if let (HostView::Slide(slider), Some(v)) = (view, number) {
+                    self.slider_values.insert(id, v);
                     // Solo si difiere: escribirlo mientras se arrastra pelearía
                     // con el dedo del usuario.
                     if (slider.value() - v).abs() > f32::EPSILON {
@@ -716,14 +723,17 @@ impl HostRenderer for UikitHost {
                     toggle.setOn(matches!(value, PropValue::Bool(true)));
                 }
             }
-            "minimumValue" => {
-                if let (HostView::Slide(slider), Some(v)) = (view, number) {
+            "minimumValue" | "maximumValue" => {
+                let (HostView::Slide(slider), Some(v)) = (view, number) else { return };
+                if key == "minimumValue" {
                     slider.setMinimumValue(v);
-                }
-            }
-            "maximumValue" => {
-                if let (HostView::Slide(slider), Some(v)) = (view, number) {
+                } else {
                     slider.setMaximumValue(v);
+                }
+                // El rango cambió: hay que volver a aplicar el valor, que
+                // pudo llegar antes y quedarse recortado.
+                if let Some(wanted) = self.slider_values.get(&id).copied() {
+                    slider.setValue(wanted);
                 }
             }
             "animating" => {
@@ -827,6 +837,7 @@ impl HostRenderer for UikitHost {
             } else {
                 self.safe_area.remove(&id);
         self.alerts.remove(&id);
+        self.slider_values.remove(&id);
             }
             return;
         }
