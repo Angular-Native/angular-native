@@ -33,9 +33,18 @@ interface Row {
         <TextInput
           [style.height]="'40'"
           [placeholder]="'filtrar…'"
+          [placeholderColor]="'#6b7a99'"
           [value]="query()"
           [color]="'#f4f7ff'"
           [fontSize]="16"
+          [fontWeight]="'500'"
+          [keyboardType]="'default'"
+          [returnKeyType]="'search'"
+          [autoCapitalize]="'none'"
+          [autoCorrect]="false"
+          [textAlign]="'left'"
+          [ios]="{ clearButtonMode: 'whileEditing' }"
+          [android]="{ selectAllOnFocus: true }"
           [backgroundColor]="'#1e2a4a'"
           [borderRadius]="8"
           (valueChange)="query.set($event)" />

@@ -78,6 +78,23 @@ public final class AnHost {
      */
     private final SparseArray<FontState> fontState = new SparseArray<>();
 
+    /**
+     * Lo que se sabe del teclado de cada campo.
+     *
+     * En Android el teclado, las mayúsculas, el corrector y la contraseña son
+     * banderas del mismo `inputType`, así que aplicar una sola borra las
+     * demás: hay que guardarlas y componerlo entero cada vez.
+     */
+    private final SparseArray<InputState> inputState = new SparseArray<>();
+
+    /** Las banderas del teclado de un campo, según van llegando. */
+    private static final class InputState {
+        String keyboard = "default";
+        String capitalize = "sentences";
+        boolean correct = true;
+        boolean secure;
+    }
+
     /** Lo que se sabe de la letra de un nodo, según va llegando. */
     private static final class FontState {
         String family;
@@ -425,6 +442,7 @@ public final class AnHost {
         backListeners.remove(Integer.valueOf(id));
         corners.remove(id);
         fontState.remove(id);
+        inputState.remove(id);
         borderWidths.remove(id);
         borderColors.remove(id);
         sliderRanges.remove(id);
@@ -1371,18 +1389,70 @@ public final class AnHost {
                 }
                 break;
             case "secureTextEntry":
+            case "keyboardType":
+            case "autoCapitalize":
+            case "autoCorrect":
                 if (view instanceof EditText) {
-                    EditText secret = (EditText) view;
-                    secret.setInputType(
-                            android.text.InputType.TYPE_CLASS_TEXT
-                                    | ("true".equals(value)
-                                            ? android.text.InputType
-                                                    .TYPE_TEXT_VARIATION_PASSWORD
-                                            : android.text.InputType
-                                                    .TYPE_TEXT_VARIATION_NORMAL));
-                    // Un campo de contraseña se dibuja en monoespaciada salvo
-                    // que se le devuelva la suya después de cambiarle el tipo.
-                    applyTypeface(id, secret);
+                    InputState state = inputStateOf(id);
+                    switch (key) {
+                        case "secureTextEntry":
+                            state.secure = "true".equals(value);
+                            break;
+                        case "keyboardType":
+                            state.keyboard = value == null ? "default" : value;
+                            break;
+                        case "autoCapitalize":
+                            state.capitalize = value == null ? "sentences" : value;
+                            break;
+                        default:
+                            state.correct = !"false".equals(value);
+                            break;
+                    }
+                    applyInputType(id, (EditText) view);
+                }
+                break;
+            case "returnKeyType":
+                if (view instanceof EditText) {
+                    int action;
+                    switch (value == null ? "default" : value) {
+                        case "done":
+                            action = android.view.inputmethod.EditorInfo.IME_ACTION_DONE;
+                            break;
+                        case "go":
+                            action = android.view.inputmethod.EditorInfo.IME_ACTION_GO;
+                            break;
+                        case "next":
+                            action = android.view.inputmethod.EditorInfo.IME_ACTION_NEXT;
+                            break;
+                        case "search":
+                            action = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH;
+                            break;
+                        case "send":
+                            action = android.view.inputmethod.EditorInfo.IME_ACTION_SEND;
+                            break;
+                        default:
+                            action = android.view.inputmethod.EditorInfo.IME_ACTION_UNSPECIFIED;
+                            break;
+                    }
+                    ((EditText) view).setImeOptions(action);
+                }
+                break;
+            case "placeholderColor":
+                if (view instanceof TextView) {
+                    Integer hint = parseColor(value);
+                    if (hint != null) {
+                        ((TextView) view).setHintTextColor(hint);
+                    }
+                }
+                break;
+            case "android:selectAllOnFocus":
+                if (view instanceof EditText) {
+                    ((EditText) view).setSelectAllOnFocus("true".equals(value));
+                }
+                break;
+            case "android:cursorVisible":
+                if (view instanceof EditText) {
+                    ((EditText) view).setCursorVisible(!"false".equals(value));
                 }
                 break;
             case "showsScrollIndicator":
@@ -1502,6 +1572,83 @@ public final class AnHost {
                 setEnabledDeep(group.getChildAt(i), enabled);
             }
         }
+    }
+
+    private InputState inputStateOf(int id) {
+        InputState state = inputState.get(id);
+        if (state == null) {
+            state = new InputState();
+            inputState.put(id, state);
+        }
+        return state;
+    }
+
+    /**
+     * Compone el `inputType` entero con lo que se sabe del campo.
+     *
+     * El teclado que sale, las mayúsculas automáticas, el corrector y si el
+     * texto se ve o se tapa son banderas del mismo entero: aplicar una sola
+     * borraría las otras tres.
+     */
+    private void applyInputType(int id, EditText input) {
+        InputState state = inputStateOf(id);
+        int type;
+        switch (state.keyboard) {
+            case "numeric":
+                type = android.text.InputType.TYPE_CLASS_NUMBER;
+                break;
+            case "decimal":
+                type = android.text.InputType.TYPE_CLASS_NUMBER
+                        | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL;
+                break;
+            case "phone":
+                type = android.text.InputType.TYPE_CLASS_PHONE;
+                break;
+            case "email":
+                type = android.text.InputType.TYPE_CLASS_TEXT
+                        | android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS;
+                break;
+            case "url":
+                type = android.text.InputType.TYPE_CLASS_TEXT
+                        | android.text.InputType.TYPE_TEXT_VARIATION_URI;
+                break;
+            default:
+                type = android.text.InputType.TYPE_CLASS_TEXT;
+                break;
+        }
+        boolean numeric = (type & android.text.InputType.TYPE_CLASS_NUMBER) != 0;
+        if (state.secure) {
+            // La contraseña manda sobre la variante: un campo tapado con
+            // teclado de correo enseñaría el texto.
+            type = numeric
+                    ? android.text.InputType.TYPE_CLASS_NUMBER
+                            | android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                    : android.text.InputType.TYPE_CLASS_TEXT
+                            | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD;
+        } else if (!numeric) {
+            // Las mayúsculas y el corrector solo existen en el teclado de
+            // texto; en el numérico no hay nada que capitalizar.
+            switch (state.capitalize) {
+                case "none":
+                    break;
+                case "words":
+                    type |= android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS;
+                    break;
+                case "characters":
+                    type |= android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS;
+                    break;
+                default:
+                    type |= android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;
+                    break;
+            }
+            if (!state.correct) {
+                type |= android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+            }
+        }
+        input.setInputType(type);
+        // Cambiar el tipo devuelve el campo a la monoespaciada de las
+        // contraseñas: hay que volver a ponerle la suya.
+        applyTypeface(id, input);
     }
 
     private FontState fontStateOf(int id) {

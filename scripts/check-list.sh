@@ -21,6 +21,15 @@ check() {
 
 echo "== kitchen"
 check 'TextInput#[0-9]+ \[16,70 361x40\]' 'el campo de texto se midió y se colocó'
+# El campo configurable. El teclado que sale no es un adorno: uno de correo
+# con el teclado de texto obliga a buscar la arroba, y en Android las cuatro
+# props son banderas del mismo entero, así que o llegan todas o no llega
+# ninguna.
+check 'TextInput#[0-9]+ .*autoCapitalize=none autoCorrect=false' 'el campo pide el teclado sin mayúsculas ni corrector'
+check 'TextInput#[0-9]+ .*keyboardType=default .*returnKeyType=search' 'y la tecla de retorno dice «buscar»'
+check 'TextInput#[0-9]+ .*placeholderColor=#6b7a99' 'el texto de ayuda lleva su propio color'
+check 'TextInput#[0-9]+ .*ios:clearButtonMode=whileEditing' 'la equis de borrar viaja marcada como de iOS'
+check 'TextInput#[0-9]+ .*android:selectAllOnFocus=true' 'y seleccionar al enfocar, como de Android'
 check '"headless 0.0 . es-ES"' 'el módulo nativo contestó y la promesa resolvió'
 check 'ScrollView#[0-9]+ \[0,0 393x666\]' 'el ScrollView llena el hueco, no crece con su contenido'
 check 'contenido 393x312000' 'el contentSize suma fila a fila: 4000 de 56 y 1000 de 88'

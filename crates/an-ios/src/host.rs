@@ -47,6 +47,50 @@ fn parse_string_list(raw: &str) -> Vec<String> {
     out
 }
 
+/// Las manías del teclado de un campo o de un editor.
+///
+/// Va genérica y no sobre un objeto de traits porque los métodos del protocolo
+/// piden `Sized`: son mensajes que se envían a un tipo concreto. Da igual, la
+/// lista es la misma para los dos controles.
+fn apply_text_traits<T: UITextInputTraits + objc2::Message>(
+    traits: &T,
+    key: &str,
+    text: Option<&str>,
+    value: &PropValue,
+) {
+    unsafe {
+        match key {
+            "keyboardType" => traits.setKeyboardType(match text {
+                Some("numeric") => objc2_ui_kit::UIKeyboardType::NumberPad,
+                Some("decimal") => objc2_ui_kit::UIKeyboardType::DecimalPad,
+                Some("email") => objc2_ui_kit::UIKeyboardType::EmailAddress,
+                Some("phone") => objc2_ui_kit::UIKeyboardType::PhonePad,
+                Some("url") => objc2_ui_kit::UIKeyboardType::URL,
+                _ => objc2_ui_kit::UIKeyboardType::Default,
+            }),
+            "returnKeyType" => traits.setReturnKeyType(match text {
+                Some("done") => objc2_ui_kit::UIReturnKeyType::Done,
+                Some("go") => objc2_ui_kit::UIReturnKeyType::Go,
+                Some("next") => objc2_ui_kit::UIReturnKeyType::Next,
+                Some("search") => objc2_ui_kit::UIReturnKeyType::Search,
+                Some("send") => objc2_ui_kit::UIReturnKeyType::Send,
+                _ => objc2_ui_kit::UIReturnKeyType::Default,
+            }),
+            "autoCapitalize" => traits.setAutocapitalizationType(match text {
+                Some("none") => objc2_ui_kit::UITextAutocapitalizationType::None,
+                Some("words") => objc2_ui_kit::UITextAutocapitalizationType::Words,
+                Some("characters") => objc2_ui_kit::UITextAutocapitalizationType::AllCharacters,
+                _ => objc2_ui_kit::UITextAutocapitalizationType::Sentences,
+            }),
+            _ => traits.setAutocorrectionType(if matches!(value, PropValue::Bool(false)) {
+                objc2_ui_kit::UITextAutocorrectionType::No
+            } else {
+                objc2_ui_kit::UITextAutocorrectionType::Yes
+            }),
+        }
+    }
+}
+
 /// La vista que hay justo debajo de otra dentro de un contenedor.
 fn previous_sibling(parent: &UIView, view: &UIView) -> Option<Retained<UIView>> {
     let subviews = parent.subviews().to_vec();
@@ -323,6 +367,11 @@ pub struct UikitHost {
     /// El delegado de cada barra. Un delegado no se retiene, así que si no se
     /// guarda aquí muere y las pestañas dejan de avisar.
     tab_delegates: HashMap<NodeId, Retained<crate::events::TabDelegate>>,
+    /// Texto y color del hueco de ayuda de cada campo. Van juntos porque
+    /// `UITextField` no tiene un color de placeholder: hay que dárselo
+    /// atribuido, y para eso hace falta también el texto.
+    placeholders: HashMap<NodeId, String>,
+    placeholder_colors: HashMap<NodeId, String>,
     /// Opciones de cada desplegable, para poder poner el título del elegido.
     menus: HashMap<NodeId, Vec<String>>,
     /// Título y color de cada botón. Cambiar la variante rehace la
@@ -403,6 +452,8 @@ impl UikitHost {
             tab_controllers: HashMap::new(),
             tab_delegates: HashMap::new(),
             menus: HashMap::new(),
+            placeholders: HashMap::new(),
+            placeholder_colors: HashMap::new(),
             button_titles: HashMap::new(),
             button_colors: HashMap::new(),
             button_variants: HashMap::new(),
@@ -459,6 +510,36 @@ impl UikitHost {
             _ => 0.6,
         };
         UIFont::systemFontOfSize_weight(size, weight)
+    }
+
+    /// Vuelve a poner el texto de ayuda con su color.
+    ///
+    /// Sin color se pone llano y no atribuido: el atribuido sin atributos se
+    /// dibuja distinto del que pone UIKit por su cuenta.
+    fn apply_placeholder(&self, id: NodeId) {
+        let Some(HostView::Field(field)) = self.views.get(&id) else { return };
+        let Some(placeholder) = self.placeholders.get(&id) else { return };
+        let string = NSString::from_str(placeholder);
+        let Some(color) =
+            self.placeholder_colors.get(&id).and_then(|raw| crate::color::to_uicolor(raw))
+        else {
+            field.setPlaceholder(Some(&string));
+            return;
+        };
+        let attributed = unsafe {
+            objc2_foundation::NSMutableAttributedString::initWithString(
+                self.mtm.alloc::<objc2_foundation::NSMutableAttributedString>(),
+                &string,
+            )
+        };
+        unsafe {
+            attributed.addAttribute_value_range(
+                objc2_ui_kit::NSForegroundColorAttributeName,
+                &color,
+                objc2_foundation::NSRange { location: 0, length: string.len() },
+            );
+            field.setAttributedPlaceholder(Some(&attributed));
+        }
     }
 
     fn apply_font(&mut self, id: NodeId) {
@@ -1025,6 +1106,8 @@ impl HostRenderer for UikitHost {
         self.button_variants.remove(&id);
         self.button_subtitles.remove(&id);
         self.button_icons.remove(&id);
+        self.placeholders.remove(&id);
+        self.placeholder_colors.remove(&id);
         self.navs.remove(&id);
         self.nav_backs.remove(&id);
         self.nav_targets.remove(&id);
@@ -1581,13 +1664,20 @@ impl HostRenderer for UikitHost {
                 }
             }
             "textAlign" | "text-align" => {
-                if let (Some(label), Some(t)) = (view.as_label(), &text) {
-                    label.setTextAlignment(match t.as_str() {
-                        "center" => NSTextAlignment::Center,
-                        "right" => NSTextAlignment::Right,
-                        "justify" => NSTextAlignment::Justified,
-                        _ => NSTextAlignment::Left,
-                    });
+                let Some(t) = &text else { return };
+                let alignment = match t.as_str() {
+                    "center" => NSTextAlignment::Center,
+                    "right" => NSTextAlignment::Right,
+                    "justify" => NSTextAlignment::Justified,
+                    _ => NSTextAlignment::Left,
+                };
+                match view {
+                    HostView::Label(label) => label.setTextAlignment(alignment),
+                    // El campo y el editor también alinean, y hasta ahora se
+                    // quedaban con lo suyo.
+                    HostView::Field(field) => unsafe { field.setTextAlignment(alignment) },
+                    HostView::Area(area) => unsafe { area.setTextAlignment(alignment) },
+                    _ => {}
                 }
             }
             "fontSize" => {
@@ -1644,9 +1734,49 @@ impl HostRenderer for UikitHost {
                 }
             }
             "placeholder" => {
+                if let HostView::Field(_) = view {
+                    self.placeholders.insert(id, text.clone().unwrap_or_default());
+                    self.apply_placeholder(id);
+                }
+            }
+            // El texto de ayuda no tiene por qué ir del color del texto, y
+            // `UITextField` no tiene una prop para él: hay que dárselo
+            // atribuido, así que el color y el texto se guardan juntos.
+            "placeholderColor" => {
+                match &text {
+                    Some(color) => self.placeholder_colors.insert(id, color.clone()),
+                    None => self.placeholder_colors.remove(&id),
+                };
+                self.apply_placeholder(id);
+            }
+            // Cómo se comporta el teclado. Son las `UITextInputTraits`, que
+            // están en el protocolo y valen igual para el campo y el editor.
+            "keyboardType" | "returnKeyType" | "autoCapitalize" | "autoCorrect" => match view {
+                HostView::Field(field) => apply_text_traits(&**field, key, text.as_deref(), value),
+                HostView::Area(area) => apply_text_traits(&**area, key, text.as_deref(), value),
+                _ => {}
+            },
+            "ios:clearButtonMode" => {
                 if let HostView::Field(field) = view {
-                    let placeholder = text.as_deref().map(NSString::from_str);
-                    field.setPlaceholder(placeholder.as_deref());
+                    unsafe {
+                        field.setClearButtonMode(match text.as_deref() {
+                            Some("whileEditing") => objc2_ui_kit::UITextFieldViewMode::WhileEditing,
+                            Some("always") => objc2_ui_kit::UITextFieldViewMode::Always,
+                            _ => objc2_ui_kit::UITextFieldViewMode::Never,
+                        })
+                    };
+                }
+            }
+            "ios:borderStyle" => {
+                if let HostView::Field(field) = view {
+                    unsafe {
+                        field.setBorderStyle(match text.as_deref() {
+                            Some("line") => objc2_ui_kit::UITextBorderStyle::Line,
+                            Some("bezel") => objc2_ui_kit::UITextBorderStyle::Bezel,
+                            Some("roundedRect") => objc2_ui_kit::UITextBorderStyle::RoundedRect,
+                            _ => objc2_ui_kit::UITextBorderStyle::None,
+                        })
+                    };
                 }
             }
             "secureTextEntry" => {

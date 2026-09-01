@@ -521,6 +521,35 @@ export class Text extends NativeVisual {
   }
 }
 
+/** Lo que el campo de UIKit tiene y el de Android no. */
+export type IosTextInputProps = {
+  /**
+   * La equis para vaciar el campo. `UITextField.clearButtonMode`. Android no
+   * la tiene: ahí la convención es borrar con el teclado.
+   */
+  clearButtonMode?: 'never' | 'whileEditing' | 'always'
+  /**
+   * El marco que dibuja UIKit alrededor del campo.
+   * `UITextField.borderStyle`. En Android el fondo de un `EditText` lo pone el
+   * tema, y aquí se quita a propósito para que el marco lo ponga la plantilla.
+   */
+  borderStyle?: 'none' | 'line' | 'bezel' | 'roundedRect'
+}
+
+/** Lo que el campo de Android tiene y el de UIKit no. */
+export type AndroidTextInputProps = {
+  /** Al recibir el foco, todo el texto queda seleccionado. */
+  selectAllOnFocus?: boolean
+  /** Esconde el cursor. `EditText.setCursorVisible`. */
+  cursorVisible?: boolean
+}
+
+const TEXT_INPUT_IOS = platformKeys('TextInput', 'ios', ['clearButtonMode', 'borderStyle'])
+const TEXT_INPUT_ANDROID = platformKeys('TextInput', 'android', [
+  'selectAllOnFocus',
+  'cursorVisible'
+])
+
 @Directive({ selector: 'TextInput' })
 export class TextInput extends NativeVisual {
   @Input() set placeholder(value: string | null) {
@@ -549,6 +578,67 @@ export class TextInput extends NativeVisual {
 
   @Input() set fontSize(value: number | null) {
     this.set('fontSize', value)
+  }
+
+  /** `'bold'`, `'normal'` o la escala numérica de CSS (100..900). */
+  @Input() set fontWeight(value: string | number | null) {
+    this.set('fontWeight', value)
+  }
+
+  @Input() set fontFamily(value: string | null) {
+    this.set('fontFamily', value)
+  }
+
+  @Input() set textAlign(value: 'left' | 'center' | 'right' | null) {
+    this.set('textAlign', value)
+  }
+
+  /**
+   * Qué teclado sale.
+   *
+   * No es un adorno: un campo de correo con el teclado de texto obliga a
+   * buscar la arroba, y uno de teléfono con letras deja escribir cosas que no
+   * son un teléfono. En iOS es `keyboardType`; en Android, el `inputType`, que
+   * además cambia lo que el campo acepta.
+   */
+  @Input() set keyboardType(
+    value: 'default' | 'numeric' | 'decimal' | 'email' | 'phone' | 'url' | null
+  ) {
+    this.set('keyboardType', value ?? 'default')
+  }
+
+  /**
+   * Qué pone la tecla de retorno. Cambia el rótulo y, con él, lo que la
+   * persona espera que pase al pulsarla.
+   */
+  @Input() set returnKeyType(
+    value: 'default' | 'done' | 'go' | 'next' | 'search' | 'send' | null
+  ) {
+    this.set('returnKeyType', value ?? 'default')
+  }
+
+  @Input() set autoCapitalize(
+    value: 'none' | 'sentences' | 'words' | 'characters' | null
+  ) {
+    this.set('autoCapitalize', value ?? 'sentences')
+  }
+
+  /** El corrector del sistema. Apagarlo es lo normal en un usuario o un código. */
+  @Input() set autoCorrect(value: boolean | null) {
+    this.set('autoCorrect', value ?? true)
+  }
+
+  /** Color del texto de ayuda, que no tiene por qué ser el del texto. */
+  @Input() set placeholderColor(value: string | null) {
+    this.set('placeholderColor', value)
+  }
+
+  @Input() set ios(value: IosTextInputProps | null) {
+    this.platform(TEXT_INPUT_IOS, value)
+  }
+
+  @Input() set android(value: AndroidTextInputProps | null) {
+    this.platform(TEXT_INPUT_ANDROID, value)
   }
 
   /** Emparejado con `value`, habilita `[(value)]` en la plantilla. */
