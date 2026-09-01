@@ -120,16 +120,16 @@ function indexAt(metrics: Metrics, offset: number): number {
  * o una función por fila.
  *
  * ```html
- * <VirtualList [items]="rows()" [itemHeight]="64" [style.flexGrow]="'1'">
- * <VirtualList [items]="rows()" [itemHeight]="alto" [style.flexGrow]="'1'">
+ * <an-virtual-list [items]="rows()" [itemHeight]="64" [style.flexGrow]="'1'">
+ * <an-virtual-list [items]="rows()" [itemHeight]="alto" [style.flexGrow]="'1'">
  *   <ng-template let-row let-i="index">
- *     <Text>{{ i }}: {{ row.name }}</Text>
+ *     <an-text>{{ i }}: {{ row.name }}</an-text>
  *   </ng-template>
- * </VirtualList>
+ * </an-virtual-list>
  * ```
  */
 @Component({
-  selector: 'VirtualList',
+  selector: 'an-virtual-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ScrollView, View, NgTemplateOutlet],
   // El host tampoco puede dimensionarse por el contenido, o se lleva por
@@ -141,16 +141,16 @@ function indexAt(metrics: Metrics, offset: number): number {
     '[style.overflow]': "'hidden'"
   },
   template: `
-    <ScrollView
+    <an-scroll-view
       [style.flexGrow]="'1'"
       [style.overflow]="'scroll'"
       [refreshing]="refreshing()"
       (refresh)="refresh.emit()"
       (layout)="onLayout($event)"
       (scroll)="onScroll($event)">
-      <View [style.height]="totalHeight()" [style.position]="'relative'">
+      <an-view [style.height]="totalHeight()" [style.position]="'relative'">
         @for (slot of slots(); track slot.key) {
-          <View
+          <an-view
             [style.position]="'absolute'"
             [style.top]="slot.top"
             [style.left]="'0'"
@@ -162,10 +162,10 @@ function indexAt(metrics: Metrics, offset: number): number {
                 [ngTemplateOutlet]="template()!"
                 [ngTemplateOutletContext]="slot.context" />
             }
-          </View>
+          </an-view>
         }
-      </View>
-    </ScrollView>
+      </an-view>
+    </an-scroll-view>
   `
 })
 export class VirtualList<T> {

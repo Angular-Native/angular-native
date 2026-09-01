@@ -7,6 +7,7 @@ cd "$ROOT"
 
 echo "== listas duplicadas"
 "$ROOT/scripts/check-styles.sh"
+"$ROOT/scripts/check-kinds.sh"
 
 echo
 "$ROOT/scripts/check-signals.sh"

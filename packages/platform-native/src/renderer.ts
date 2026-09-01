@@ -19,7 +19,7 @@ import { KNOWN_STYLES } from './style-names'
  * Esta clase es toda la costura entre Angular y el core: las plantillas
  * compiladas por AOT emiten instrucciones que acaban aquí, así que una
  * plantilla Angular funciona sin tocarla — lo único que cambia es que los
- * elementos son `<View>` y `<Text>` en vez de `<div>` y `<span>`.
+ * elementos son `<an-view>` y `<an-text>` en vez de `<div>` y `<span>`.
  */
 /**
  * Props de texto que en CSS serían estilos y aquí no lo son.

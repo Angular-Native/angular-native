@@ -14,33 +14,33 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NATIVE_PRIMITIVES, SafeArea],
   template: `
-    <View [style.width]="'100%'" [style.height]="'100%'" [backgroundColor]="'#0b1020'">
-      <SafeArea [style.flex]="1" [padding]="16" [style.gap]="'12'">
-        <Text [fontSize]="26" [fontWeight]="700" [color]="'#f8fafc'">mapa y vídeo</Text>
+    <an-view [style.width]="'100%'" [style.height]="'100%'" [backgroundColor]="'#0b1020'">
+      <an-safe-area [style.flex]="1" [padding]="16" [style.gap]="'12'">
+        <an-text [fontSize]="26" [fontWeight]="700" [color]="'#f8fafc'">mapa y vídeo</an-text>
 
-        <MapView
+        <an-map-view
           [style.flex]="1"
           [borderRadius]="14"
           [latitude]="lat()"
           [longitude]="lon()"
           [zoom]="zoom()" />
 
-        <View [style.flexDirection]="'row'" [style.gap]="'10'" [style.height]="44">
-          <Button
+        <an-view [style.flexDirection]="'row'" [style.gap]="'10'" [style.height]="44">
+          <an-button
             [style.flexGrow]="'1'"
             [title]="'Mallorca'"
             [variant]="'tonal'"
             [color]="'#6ee7b7'"
-            (press)="ir(39.5696, 2.6502, 11)"></Button>
-          <Button
+            (press)="ir(39.5696, 2.6502, 11)"></an-button>
+          <an-button
             [style.flexGrow]="'1'"
             [title]="'Acercar'"
             [variant]="'tonal'"
             [color]="'#6ee7b7'"
-            (press)="zoom.set(zoom() + 1)"></Button>
-        </View>
+            (press)="zoom.set(zoom() + 1)"></an-button>
+        </an-view>
 
-        <VideoView
+        <an-video-view
           [style.height]="200"
           [borderRadius]="14"
           [backgroundColor]="'#000000'"
@@ -48,14 +48,14 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
           [playing]="reproduciendo()"
           [muted]="true" />
 
-        <Button
+        <an-button
           [style.height]="44"
           [title]="reproduciendo() ? 'Pausa' : 'Reproducir'"
           [variant]="'filled'"
           [color]="'#6ee7b7'"
-          (press)="reproduciendo.set(!reproduciendo())"></Button>
-      </SafeArea>
-    </View>
+          (press)="reproduciendo.set(!reproduciendo())"></an-button>
+      </an-safe-area>
+    </an-view>
   `
 })
 export class AppComponent {

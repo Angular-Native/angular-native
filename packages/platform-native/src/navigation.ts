@@ -122,7 +122,7 @@ function keyOf(route: ActivatedRouteSnapshot): string {
  * ```
  */
 @Component({
-  selector: 'NativeStack',
+  selector: 'an-native-stack',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [StackView, RouterOutlet],
   host: {
@@ -130,9 +130,9 @@ function keyOf(route: ActivatedRouteSnapshot): string {
     '[style.minHeight]': "'0'"
   },
   template: `
-    <StackView [style.flexGrow]="'1'" [transition]="direction()" (back)="onBack()">
+    <an-stack-view [style.flexGrow]="'1'" [transition]="direction()" (back)="onBack()">
       <router-outlet />
-    </StackView>
+    </an-stack-view>
   `
 })
 export class NativeStack {

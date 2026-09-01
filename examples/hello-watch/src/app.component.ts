@@ -23,55 +23,55 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
       principal la base gana al alto. Con \`height\` a secas el ScrollView mide
       cero y no se ve nada.
     -->
-    <ScrollView [style.width]="'100%'" [style.flexGrow]="'1'" [backgroundColor]="'#0b1020'">
-      <View
+    <an-scroll-view [style.width]="'100%'" [style.flexGrow]="'1'" [backgroundColor]="'#0b1020'">
+      <an-view
         [style.paddingTop]="'44'"
         [style.paddingHorizontal]="'10'"
         [style.paddingBottom]="'16'"
         [style.gap]="'8'"
         [style.width]="'100%'">
 
-        <Text [fontSize]="18" [fontWeight]="'bold'" [color]="'#f4f7ff'">angular-native</Text>
+        <an-text [fontSize]="18" [fontWeight]="'bold'" [color]="'#f4f7ff'">angular-native</an-text>
 
-        <Text [fontSize]="13" [color]="'#9fb0d4'">
+        <an-text [fontSize]="13" [color]="'#9fb0d4'">
           Angular con señales, en QuickJS, con el layout de taffy. Aquí lo pinta
           SwiftUI porque el reloj no tiene UIView.
-        </Text>
+        </an-text>
 
-        <View
+        <an-view
           [style.height]="'44'"
           [style.width]="'100%'"
           [borderRadius]="10"
           [backgroundColor]="'#1e2a4a'"
           (press)="toca()">
-          <Text
+          <an-text
             [style.width]="'100%'"
             [style.height]="'44'"
             [fontSize]="15"
             [textAlign]="'center'"
-            [color]="'#6ee7b7'">{{ etiqueta() }}</Text>
-        </View>
+            [color]="'#6ee7b7'">{{ etiqueta() }}</an-text>
+        </an-view>
 
-        <Button
+        <an-button
           [title]="'poner a cero'"
           [color]="'#f59e0b'"
           [backgroundColor]="'#2b1e4a'"
           [borderRadius]="10"
-          (press)="toques.set(0)"></Button>
+          (press)="toques.set(0)"></an-button>
 
         <!-- Para que haya algo que desplazar y se vea que la corona funciona. -->
         @for (fila of filas; track fila) {
-          <View [style.height]="'26'" [borderRadius]="6" [backgroundColor]="'#152036'">
-            <Text
+          <an-view [style.height]="'26'" [borderRadius]="6" [backgroundColor]="'#152036'">
+            <an-text
               [style.width]="'100%'"
               [style.height]="'26'"
               [fontSize]="12"
               [textAlign]="'center'"
-              [color]="'#9fb0d4'">{{ fila }}</Text>
-          </View>
+              [color]="'#9fb0d4'">{{ fila }}</an-text>
+          </an-view>
         }
-      </View>
-    </ScrollView>
+      </an-view>
+    </an-scroll-view>
   `
 })
 export class AppComponent {

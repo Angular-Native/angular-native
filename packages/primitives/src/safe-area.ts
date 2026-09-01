@@ -11,9 +11,9 @@ import { type NativeSafeAreaInsets } from './primitives'
  * vez que cambian.
  *
  * ```html
- * <SafeArea [edges]="['top', 'bottom']" [padding]="20" [style.gap]="'12'">
- *   <Text>ya no queda debajo del notch</Text>
- * </SafeArea>
+ * <an-safe-area [edges]="['top', 'bottom']" [padding]="20" [style.gap]="'12'">
+ *   <an-text>ya no queda debajo del notch</an-text>
+ * </an-safe-area>
  * ```
  *
  * No hay una vista dentro: el área segura *es* su vista, así que lo que se le
@@ -28,7 +28,7 @@ import { type NativeSafeAreaInsets } from './primitives'
  * pasaría a reservar cero, volvería a su sitio, y así sin parar.
  */
 @Component({
-  selector: 'SafeArea',
+  selector: 'an-safe-area',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[style.flexGrow]': "'1'",

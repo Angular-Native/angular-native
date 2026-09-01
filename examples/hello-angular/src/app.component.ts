@@ -11,37 +11,37 @@ import { NATIVE_PRIMITIVES, type NativePressEvent } from '@angular-native/primit
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NATIVE_PRIMITIVES],
   template: `
-    <View [style.paddingTop]="'64'" [style.paddingHorizontal]="'16'" [style.gap]="'16'"
+    <an-view [style.paddingTop]="'64'" [style.paddingHorizontal]="'16'" [style.gap]="'16'"
           [backgroundColor]="'#0b1020'" [style.width]="'100%'" [style.height]="'100%'">
 
-      <Text [fontSize]="28" [fontWeight]="'bold'" [color]="'#f4f7ff'">angular-native</Text>
+      <an-text [fontSize]="28" [fontWeight]="'bold'" [color]="'#f4f7ff'">angular-native</an-text>
 
-      <View [style.flexDirection]="'row'" [style.gap]="'12'">
+      <an-view [style.flexDirection]="'row'" [style.gap]="'12'">
         @for (card of cards; track card.color) {
-          <View [style.flexGrow]="card.grow" [style.height]="'88'"
+          <an-view [style.flexGrow]="card.grow" [style.height]="'88'"
                 [backgroundColor]="card.color"
                 [borderTopLeftRadius]="card.corners[0]"
                 [borderTopRightRadius]="card.corners[1]"
                 [borderBottomRightRadius]="card.corners[2]"
                 [borderBottomLeftRadius]="card.corners[3]"
                 (press)="onPress($event)"
-                (doublePress)="taps.set(0)"></View>
+                (doublePress)="taps.set(0)"></an-view>
         }
-      </View>
+      </an-view>
 
-      <Text [fontSize]="16" [color]="'#f4f7ff'">{{ tapLabel() }}</Text>
+      <an-text [fontSize]="16" [color]="'#f4f7ff'">{{ tapLabel() }}</an-text>
 
-      <Text [fontSize]="16" [color]="'#9fb0d4'">
+      <an-text [fontSize]="16" [color]="'#9fb0d4'">
         Esto es una plantilla de Angular con señales, corriendo en QuickJS.
         Cada elemento es una vista nativa: UIView en iOS, View en Android.
-      </Text>
+      </an-text>
 
-      <Text [fontSize]="16" [color]="'#6ee7b7'">{{ label() }}</Text>
+      <an-text [fontSize]="16" [color]="'#6ee7b7'">{{ label() }}</an-text>
 
       @if (seconds() >= 3) {
-        <Text [fontSize]="14" [color]="'#f59e0b'">El &#64;if entró a los 3 segundos.</Text>
+        <an-text [fontSize]="14" [color]="'#f59e0b'">El &#64;if entró a los 3 segundos.</an-text>
       }
-    </View>
+    </an-view>
   `
 })
 export class AppComponent {

@@ -12,13 +12,13 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NATIVE_PRIMITIVES, NativeStack],
   template: `
-    <View
+    <an-view
       [style.width]="'100%'"
       [style.height]="'100%'"
       [style.paddingTop]="'64'"
       [backgroundColor]="'#0b1020'">
-      <NativeStack />
-    </View>
+      <an-native-stack />
+    </an-view>
   `
 })
 export class AppComponent {}

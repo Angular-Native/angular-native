@@ -224,6 +224,17 @@
     SET_ROOT: 0x0c
   }
 
+  // Nombre de cada primitiva y el código con el que viaja. El código es el
+  // contrato con Rust; el nombre solo lo usa este lado.
+  //
+  // Dos no se llaman aquí como allí: la etiqueta `<an-select>` traduce a
+  // `Select` y `<an-textarea>` a `Textarea`, mientras que el núcleo los sigue
+  // llamando `Picker` y `TextEditor` —nombres que se eligieron cuando la
+  // etiqueta no podía llamarse `Select` ni `TextArea` porque Angular no
+  // auto-cierra lo que se llame como un elemento de HTML, y que ya no se
+  // pueden cambiar sin tocar el enum de Rust y los tres hosts—. Este es el
+  // único sitio donde los dos vocabularios se encuentran, y `check-kinds.sh`
+  // comprueba que no se separen más.
   const KIND = {
     View: 0,
     Text: 1,
@@ -244,10 +255,10 @@
     SegmentedControl: 16,
     Stepper: 17,
     SearchBar: 18,
-    Picker: 19,
+    Select: 19,
     DatePicker: 20,
     NavigationBar: 21,
-    TextEditor: 22,
+    Textarea: 22,
     WebView: 23,
     MapView: 24,
     VideoView: 25

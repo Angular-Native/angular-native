@@ -17,20 +17,20 @@ interface Row {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NATIVE_PRIMITIVES, VirtualList],
   template: `
-    <View
+    <an-view
       [style.width]="'100%'"
       [style.height]="'100%'"
       [style.paddingTop]="'64'"
       [backgroundColor]="'#0b1020'">
 
-      <View [style.paddingHorizontal]="'16'" [style.gap]="'12'" [style.paddingBottom]="'12'">
-        <Text [fontSize]="24" [fontWeight]="'bold'" [color]="'#f4f7ff'">
+      <an-view [style.paddingHorizontal]="'16'" [style.gap]="'12'" [style.paddingBottom]="'12'">
+        <an-text [fontSize]="24" [fontWeight]="'bold'" [color]="'#f4f7ff'">
           {{ visible().length }} de {{ rows.length }}
-        </Text>
+        </an-text>
 
-        <Text [fontSize]="13" [color]="'#6ee7b7'">{{ deviceLabel() }}</Text>
+        <an-text [fontSize]="13" [color]="'#6ee7b7'">{{ deviceLabel() }}</an-text>
 
-        <TextInput
+        <an-text-input
           [style.height]="'40'"
           [placeholder]="'filtrar…'"
           [placeholderColor]="'#6b7a99'"
@@ -48,25 +48,25 @@ interface Row {
           [backgroundColor]="'#1e2a4a'"
           [borderRadius]="8"
           (valueChange)="query.set($event)" />
-      </View>
+      </an-view>
 
-      <VirtualList
+      <an-virtual-list
         [items]="visible()"
         [itemHeight]="rowHeight"
         [style.flexGrow]="'1'"
         [refreshing]="reloading()"
         (refresh)="reload()">
         <ng-template let-row let-index="index">
-          <View
+          <an-view
             [style.height]="rowHeight(row)"
             [style.paddingHorizontal]="'16'"
             [style.justifyContent]="'center'"
             [backgroundColor]="index % 2 === 0 ? '#141c33' : '#0b1020'">
-            <Text [fontSize]="16" [color]="'#9fb0d4'">{{ row.name }}</Text>
-          </View>
+            <an-text [fontSize]="16" [color]="'#9fb0d4'">{{ row.name }}</an-text>
+          </an-view>
         </ng-template>
-      </VirtualList>
-    </View>
+      </an-virtual-list>
+    </an-view>
   `
 })
 export class AppComponent {

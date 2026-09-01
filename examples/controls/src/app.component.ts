@@ -14,41 +14,41 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NATIVE_PRIMITIVES, SafeArea],
   template: `
-    <View
+    <an-view
       [style.width]="'100%'"
       [style.height]="'100%'"
       [backgroundColor]="'#0b1020'">
 
-      <SafeArea [edges]="['top']">
-      <ScrollView
+      <an-safe-area [edges]="['top']">
+      <an-scroll-view
         [style.flexGrow]="'1'"
         [style.overflow]="'scroll'"
         [scrollEnabled]="true"
         [showsScrollIndicator]="false"
         [ios]="{ pagingEnabled: false, keyboardDismissMode: 'onDrag' }">
-      <View [style.flexGrow]="'1'" [style.padding]="'16'" [style.gap]="'18'">
-        <Text
+      <an-view [style.flexGrow]="'1'" [style.padding]="'16'" [style.gap]="'18'">
+        <an-text
           [fontSize]="24"
           [fontWeight]="'bold'"
           [letterSpacing]="2"
           [lineHeight]="34"
           [color]="'#f4f7ff'">
           {{ tabTitles[tab()] }}
-        </Text>
+        </an-text>
 
-        <View [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'12'">
-          <Text [fontSize]="16" [color]="'#9fb0d4'" [style.flexGrow]="'1'">Notificaciones</Text>
-          <Switch
+        <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'12'">
+          <an-text [fontSize]="16" [color]="'#9fb0d4'" [style.flexGrow]="'1'">Notificaciones</an-text>
+          <an-switch
             [on]="notify()"
             [color]="'#6ee7b7'"
             [thumbColor]="'#0b1020'"
             [android]="{ trackColor: '#334155' }"
             (onChange)="notify.set($event)" />
-        </View>
+        </an-view>
 
-        <View [style.gap]="'6'">
-          <Text [fontSize]="16" [color]="'#9fb0d4'">Volumen: {{ volumeLabel() }}</Text>
-          <Slider
+        <an-view [style.gap]="'6'">
+          <an-text [fontSize]="16" [color]="'#9fb0d4'">Volumen: {{ volumeLabel() }}</an-text>
+          <an-slider
             [style.width]="'100%'"
             [value]="volume()"
             [minimumValue]="0"
@@ -60,30 +60,30 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
             [ios]="{ continuous: true }"
             [android]="{ stepSize: 5 }"
             (valueChange)="volume.set($event)" />
-        </View>
+        </an-view>
 
-        <View [style.gap]="'6'">
-          <Text [fontSize]="16" [color]="'#9fb0d4'">Descarga</Text>
-          <ProgressBar [style.width]="'100%'" [progress]="volume() / 100" [color]="'#6ee7b7'" />
-        </View>
+        <an-view [style.gap]="'6'">
+          <an-text [fontSize]="16" [color]="'#9fb0d4'">Descarga</an-text>
+          <an-progress-bar [style.width]="'100%'" [progress]="volume() / 100" [color]="'#6ee7b7'" />
+        </an-view>
 
-        <View [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'12'">
-          <ActivityIndicator [animating]="notify()" [color]="'#f4f7ff'" />
-          <Text [fontSize]="14" [color]="'#6b7a99'">
+        <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'12'">
+          <an-activity-indicator [animating]="notify()" [color]="'#f4f7ff'" />
+          <an-text [fontSize]="14" [color]="'#6b7a99'">
             {{ notify() ? 'trabajando…' : 'en reposo' }}
-          </Text>
-        </View>
+          </an-text>
+        </an-view>
 
         <!--
           El botón del subtítulo lleva alto propio: el tamaño natural de un
           control se pregunta una vez al arrancar, con uno de muestra, y ese no
           sabe que este va a llevar dos líneas.
         -->
-        <View
+        <an-view
           [style.flexDirection]="'row'"
           [style.alignItems]="'flex-start'"
           [style.gap]="'12'">
-          <Button
+          <an-button
             [style.flexGrow]="'1'"
             [style.height]="'58'"
             [title]="'Modal'"
@@ -94,8 +94,8 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
             [color]="'#6ee7b7'"
             [ios]="{ subtitle: 'a pantalla completa' }"
             [android]="{ rippleColor: '#ffffff55', allCaps: false }"
-            (press)="modal.set(true)"></Button>
-          <Button
+            (press)="modal.set(true)"></an-button>
+          <an-button
             [style.flexGrow]="'1'"
             [title]="'Diálogo'"
             [variant]="'outlined'"
@@ -103,27 +103,27 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
             [iconPosition]="'trailing'"
             [enabled]="notify()"
             [color]="'#6ee7b7'"
-            (press)="alert.set(true)"></Button>
-        </View>
+            (press)="alert.set(true)"></an-button>
+        </an-view>
 
-        <Text
+        <an-text
           [fontSize]="13"
           [color]="'#6b7a99'"
           [textDecoration]="'underline'"
-          [android]="{ selectable: true }">{{ answer() }}</Text>
-      </View>
-      </ScrollView>
-      </SafeArea>
+          [android]="{ selectable: true }">{{ answer() }}</an-text>
+      </an-view>
+      </an-scroll-view>
+      </an-safe-area>
 
-      <View [style.flexDirection]="'row'" [style.gap]="'18'" [style.alignItems]="'center'">
-        <Icon [name]="'home'" [color]="'#6ee7b7'" />
-        <Icon [name]="'search'" [size]="32" [color]="'#9fb0d4'" />
-        <Icon [name]="'settings'" [size]="40" [color]="'#f4f7ff'" />
-        <Icon [name]="'star'" [size]="28" [color]="'#fbbf24'" />
-        <Icon [name]="'share'" [size]="28" [color]="'#60a5fa'" />
-      </View>
+      <an-view [style.flexDirection]="'row'" [style.gap]="'18'" [style.alignItems]="'center'">
+        <an-icon [name]="'home'" [color]="'#6ee7b7'" />
+        <an-icon [name]="'search'" [size]="32" [color]="'#9fb0d4'" />
+        <an-icon [name]="'settings'" [size]="40" [color]="'#f4f7ff'" />
+        <an-icon [name]="'star'" [size]="28" [color]="'#fbbf24'" />
+        <an-icon [name]="'share'" [size]="28" [color]="'#60a5fa'" />
+      </an-view>
 
-      <TabBar
+      <an-tab-bar
         [style.width]="'100%'"
         [items]="tabTitles"
         [icons]="tabIcons"
@@ -133,14 +133,14 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
         [ios]="{ translucent: true }"
         (select)="tab.set($event)" />
 
-      <Alert
+      <an-alert
         [visible]="alert()"
         [title]="'Confirmar'"
         [message]="'Esto lo presenta el sistema, no el framework.'"
         [buttons]="['Aceptar', 'Cancelar']"
         (select)="onAnswer($event)" />
 
-      <Modal
+      <an-modal
         [visible]="modal()"
         [presentation]="'fullScreen'"
         (dismiss)="modal.set(false)"
@@ -152,21 +152,21 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
         [style.justifyContent]="'center'"
         [style.alignItems]="'center'"
         [backgroundColor]="'#000000cc'">
-        <View
+        <an-view
           [style.padding]="'24'"
           [style.gap]="'16'"
           [style.width]="'80%'"
           [backgroundColor]="'#141c33'"
           [borderRadius]="16">
-          <Text [fontSize]="18" [fontWeight]="'bold'" [color]="'#f4f7ff'">Presentado</Text>
-          <Text [fontSize]="15" [color]="'#9fb0d4'">
+          <an-text [fontSize]="18" [fontWeight]="'bold'" [color]="'#f4f7ff'">Presentado</an-text>
+          <an-text [fontSize]="15" [color]="'#9fb0d4'">
             Un UIViewController en iOS y un Dialog en Android, no una vista
             puesta encima.
-          </Text>
-          <Button [title]="'Cerrar'" [color]="'#6ee7b7'" (press)="modal.set(false)"></Button>
-        </View>
-      </Modal>
-    </View>
+          </an-text>
+          <an-button [title]="'Cerrar'" [color]="'#6ee7b7'" (press)="modal.set(false)"></an-button>
+        </an-view>
+      </an-modal>
+    </an-view>
   `
 })
 export class AppComponent {

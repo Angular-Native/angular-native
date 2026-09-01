@@ -8,7 +8,7 @@
  * mantiene la topología, y solo manda mutaciones.
  *
  * Es también donde se decide qué nodos existen de verdad. El host de un
- * componente Angular —`<app-root>`, `<VirtualList>`, `<page-home>`— no es una
+ * componente Angular —`<app-root>`, `<an-virtual-list>`, `<page-home>`— no es una
  * vista: es un envoltorio. Si nadie le pone estilo, prop ni oyente, no se crea
  * en el core y sus hijos cuelgan del abuelo. Fabric hace lo mismo en una pasada
  * posterior y lo llama *view flattening*; aquí sale gratis porque este lado ve
@@ -27,61 +27,71 @@ declare const __an_dom: {
   listen(id: number, event: string, handler: (payload: unknown) => void): () => void
 }
 
-export type NativeKind =
-  | 'View'
-  | 'Text'
-  | 'RawText'
-  | 'Image'
-  | 'ScrollView'
-  | 'TextInput'
-  | 'StackView'
-  | 'TabBar'
-  | 'Switch'
-  | 'Slider'
-  | 'ActivityIndicator'
-  | 'ProgressBar'
-  | 'Button'
-  | 'Modal'
-  | 'Alert'
-  | 'Icon'
-  | 'SegmentedControl'
-  | 'Stepper'
-  | 'SearchBar'
-  | 'Picker'
-  | 'DatePicker'
-  | 'NavigationBar'
-  | 'TextEditor'
-  | 'WebView'
-  | 'MapView'
-  | 'VideoView'
+/**
+ * Vocabulario del núcleo: las primitivas que sabe montar.
+ *
+ * Es una lista y no un mapa de etiqueta a primitiva porque la etiqueta se
+ * traduce con una regla, no con una tabla: `an-text-input` es `TextInput` y
+ * `an-view` es `View`. Añadir una primitiva es escribir su nombre aquí y su
+ * directiva en `packages/primitives`; no hay una tercera lista que se pueda
+ * quedar atrás sin que nadie se entere, y lo que queda lo vigila
+ * `scripts/check-kinds.sh`.
+ *
+ * `RawText` no está: no tiene etiqueta porque no se escribe en ninguna
+ * plantilla, lo crea `Renderer2.createText()`.
+ */
+const NATIVE_KINDS = [
+  'View',
+  'Text',
+  'Image',
+  'ScrollView',
+  'TextInput',
+  'StackView',
+  'TabBar',
+  'Switch',
+  'Slider',
+  'ActivityIndicator',
+  'ProgressBar',
+  'Button',
+  'Modal',
+  'Alert',
+  'Icon',
+  'SegmentedControl',
+  'Stepper',
+  'SearchBar',
+  'Select',
+  'DatePicker',
+  'NavigationBar',
+  'Textarea',
+  'WebView',
+  'MapView',
+  'VideoView'
+] as const
 
-/** Primitivas que el core sabe montar. El resto son hosts de componentes. */
-const KINDS: Record<string, NativeKind> = {
-  View: 'View',
-  Text: 'Text',
-  Image: 'Image',
-  ScrollView: 'ScrollView',
-  TextInput: 'TextInput',
-  StackView: 'StackView',
-  TabBar: 'TabBar',
-  Switch: 'Switch',
-  Slider: 'Slider',
-  ActivityIndicator: 'ActivityIndicator',
-  ProgressBar: 'ProgressBar',
-  Button: 'Button',
-  Modal: 'Modal',
-  Alert: 'Alert',
-  Icon: 'Icon',
-  SegmentedControl: 'SegmentedControl',
-  Stepper: 'Stepper',
-  SearchBar: 'SearchBar',
-  Picker: 'Picker',
-  DatePicker: 'DatePicker',
-  NavigationBar: 'NavigationBar',
-  TextEditor: 'TextEditor',
-  WebView: 'WebView',
-  MapView: 'MapView',
-  VideoView: 'VideoView'
+export type NativeKind = (typeof NATIVE_KINDS)[number] | 'RawText'
+
+const MOUNTABLE = new Set<string>(NATIVE_KINDS)
+
+/** Prefijo de todas las etiquetas del framework, al estilo de Ionic. */
+const PREFIX = 'an-'
+
+/**
+ * De la etiqueta al nombre de la primitiva: quitar `an-` y juntar los trozos
+ * en PascalCase.
+ *
+ * Es una regla y no una tabla a propósito. El prefijo también es lo que
+ * distingue una primitiva del host de un componente: `<app-root>` y
+ * `<page-home>` no lo llevan y por eso no se buscan aquí. Un `an-` mal
+ * escrito no se cuela —Angular rechaza en tiempo de compilación cualquier
+ * etiqueta que no case con una directiva— así que aquí basta con no
+ * reconocerlo y tratarlo como envoltorio.
+ */
+function kindFromTag(tag: string): NativeKind | null {
+  if (!tag.startsWith(PREFIX)) return null
+  const kind = tag
+    .slice(PREFIX.length)
+    .replace(/(^|-)([a-z])/g, (_, __, letter: string) => letter.toUpperCase())
+  return MOUNTABLE.has(kind) ? (kind as NativeKind) : null
 }
 
 export class NativeNode {
@@ -163,7 +173,7 @@ function mountIndex(node: NativeNode): number {
 }
 
 export function createElementNode(name: string): NativeNode {
-  const kind = KINDS[name]
+  const kind = kindFromTag(name)
   if (kind) {
     const node = new NativeNode(kind, true)
     node.id = __an_dom.createNode(kind)

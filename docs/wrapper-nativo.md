@@ -34,9 +34,9 @@ las props de cada nodo.
 
 Las props son entradas de señal —`input()`—, no `@Input() set`. Una entrada de
 señal no tiene un momento en el que "se asigna": se lee, y quien la lee decide
-cuándo. Aquí la lee un efecto por directiva, no uno por prop: un `<Text>`
+cuándo. Aquí la lee un efecto por directiva, no uno por prop: un `<an-text>`
 declara once props y casi ninguna plantilla usa más de tres, así que un efecto
-por prop haría que cada `<Text>` de una lista de cinco mil filas cargase con
+por prop haría que cada `<an-text>` de una lista de cinco mil filas cargase con
 once nodos reactivos que nadie va a despertar. Leer once señales cuando cambia
 una sale más barato.
 
@@ -44,7 +44,7 @@ Del efecto solo sale lo que cambió, y en la primera pasada se callan además
 los nulos: es lo que vale una entrada que nadie ha puesto, y mandarlos sería
 pedirle al host que borre algo que nunca escribió.
 
-Un efecto de más sale gratis en un sitio: `<Icon>` sin `[size]` ya no se queda
+Un efecto de más sale gratis en un sitio: `<an-icon>` sin `[size]` ya no se queda
 sin tamaño. Un `set` que nadie enlaza no corre nunca —y por eso el constructor
 tenía que llamarlo a mano—, mientras que una señal se lee aunque nadie la
 escriba.
@@ -65,7 +65,7 @@ era una prop común y no debería llevar prefijo.
 Leyenda: **hoy** = lo que ya existía; **nuevo** = lo que añade este trabajo;
 **fuera** = lo que se decidió no hacer, con el motivo.
 
-### Button — `UIButton` · `MaterialButton`
+### an-button — `UIButton` · `MaterialButton`
 
 | Prop | iOS | Android | Estado |
 |---|---|---|---|
@@ -118,7 +118,7 @@ principal y el medidor vive en el del motor—, así que ese botón de muestra n
 puede saber que este va a llevar subtítulo. Al ponerlo hay que darle alto en
 la plantilla; si no, el rótulo se recorta y el subtítulo se queda solo.
 
-### TextInput — `UITextField` · `EditText`
+### an-text-input — `UITextField` · `EditText`
 
 | Prop | iOS | Android | Estado |
 |---|---|---|---|
@@ -144,7 +144,7 @@ meter un delegado propio en un control que hoy solo lleva acciones. Se puede
 hacer, pero no cabe en esta tanda y a medias no vale: un `maxLength` que solo
 funciona en Android es peor que no tenerlo.
 
-### Text — `UILabel` · `TextView`
+### an-text — `UILabel` · `TextView`
 
 | Prop | iOS | Android | Estado |
 |---|---|---|---|
@@ -161,7 +161,7 @@ deja fuera es que el núcleo mide el texto por su cuenta para el layout y no
 sabe encoger, así que la caja seguiría siendo la del tamaño grande. Hacerlo
 bien es tocar la medición, no el host.
 
-### Switch — `UISwitch` · `MaterialSwitch`
+### an-switch — `UISwitch` · `MaterialSwitch`
 
 | Prop | iOS | Android | Estado |
 |---|---|---|---|
@@ -176,7 +176,7 @@ control del sistema para que se le vea el fondo por detrás, que se rompe en
 cuanto Apple cambia el alto del control. Eso es exactamente el hack feo que no
 se hace: en iOS se queda con el color del sistema.
 
-### Slider — `UISlider` · `Material Slider`
+### an-slider — `UISlider` · `Material Slider`
 
 | Prop | iOS | Android | Estado |
 |---|---|---|---|
@@ -194,7 +194,7 @@ sitio y el valor por otro, y el control deja de dar la respuesta táctil que da
 el de Android, que sí se engancha a los pasos. Prometer «pasos» y dar dos
 comportamientos distintos es peor que decir que solo Android los tiene.
 
-### ScrollView — `UIScrollView` · `AnScrollView`
+### an-scroll-view — `UIScrollView` · `AnScrollView`
 
 | Prop | iOS | Android | Estado |
 |---|---|---|---|
@@ -209,7 +209,7 @@ comportamientos distintos es peor que decir que solo Android los tiene.
 calcula el `contentSize` suponiendo que se desborda hacia abajo, y darle la
 vuelta es trabajo de `an-core`, no del envoltorio.
 
-### TabBar — `UITabBarController` · `AnTabBar`
+### an-tab-bar — `UITabBarController` · `AnTabBar`
 
 | Prop | iOS | Android | Estado |
 |---|---|---|---|
@@ -222,7 +222,7 @@ Android la barra es nuestra —la plataforma no trae ninguna— así que habría
 dibujar el globo a mano, y un globo dibujado a mano al lado de uno del sistema
 no se parecen. Queda apuntado como trabajo de `AnTabBar`, no del envoltorio.
 
-### Picker — `UIButton` + `UIMenu` · `Spinner`
+### an-select — `UIButton` + `UIMenu` · `Spinner`
 
 | Prop | iOS | Android | Estado |
 |---|---|---|---|
@@ -236,13 +236,14 @@ vista al vuelo, que es justo lo que el árbol evita.
 
 ### Los demás controles
 
-`SegmentedControl`, `Stepper`, `SearchBar` y `DatePicker` reciben `enabled`,
-igual que el botón, el interruptor, el deslizador y el desplegable: los ocho
-heredan de `NativeControl`. `ActivityIndicator` y `ProgressBar` no lo reciben
-porque no se tocan, y los campos de texto tampoco porque ya tienen `editable`,
-que es la misma idea con el nombre que usa un campo.
+`an-segmented-control`, `an-stepper`, `an-search-bar` y `an-date-picker`
+reciben `enabled`, igual que el botón, el interruptor, el deslizador y el
+desplegable: los ocho heredan de `NativeControl`. `an-activity-indicator` y
+`an-progress-bar` no lo reciben porque no se tocan, y los campos de texto
+tampoco porque ya tienen `editable`, que es la misma idea con el nombre que usa
+un campo.
 
-`NavigationBar`, `Image`, `TextEditor`, `WebView`, `MapView` y `VideoView` se
+`an-navigation-bar`, `an-image`, `an-textarea`, `an-web-view`, `an-map-view` y `an-video-view` se
 quedan con las props que ya tenían. Cada uno da para su propia tanda —el
 editor comparte casi todas las del campo de una línea, la imagen tiene el
 recorte y la carga diferida, el navegador tiene JavaScript, cookies y zoom— y

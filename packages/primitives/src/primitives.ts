@@ -160,9 +160,9 @@ export abstract class NativeVisual {
    * Una entrada de señal no tiene un momento en el que "se asigna": se lee, y
    * quien la lee decide cuándo. Aquí la lee un efecto.
    *
-   * Uno por directiva y no uno por entrada. Un `<Text>` declara once props y
+   * Uno por directiva y no uno por entrada. Un `<an-text>` declara once props y
    * casi ninguna plantilla usa más de tres: con un efecto por prop, cada
-   * `<Text>` de una lista de cinco mil filas cargaría con once nodos
+   * `<an-text>` de una lista de cinco mil filas cargaría con once nodos
    * reactivos que nadie va a despertar. Leer once señales cuando cambia una
    * es más barato que tener once efectos esperando.
    *
@@ -377,7 +377,7 @@ export abstract class NativeVisual {
   readonly testID = input<string | null>(null)
 }
 
-@Directive({ selector: 'View' })
+@Directive({ selector: 'an-view' })
 export class View extends NativeVisual {}
 
 /**
@@ -410,7 +410,7 @@ export abstract class NativeControl extends NativeVisual {
  * y el host anima la entrada y la salida según `transition`. Rara vez se usa
  * a pelo: lo normal es `NativeStack`, que la conecta con el router.
  */
-@Directive({ selector: 'StackView' })
+@Directive({ selector: 'an-stack-view' })
 export class StackView extends NativeVisual {
   constructor() {
     super()
@@ -444,12 +444,12 @@ export type IosScrollViewProps = {
   keyboardDismissMode?: 'none' | 'onDrag' | 'interactive'
 }
 
-const SCROLL_VIEW_IOS = platformKeys('ScrollView', 'ios', [
+const SCROLL_VIEW_IOS = platformKeys('an-scroll-view', 'ios', [
   'pagingEnabled',
   'keyboardDismissMode'
 ])
 
-@Directive({ selector: 'ScrollView' })
+@Directive({ selector: 'an-scroll-view' })
 export class ScrollView extends NativeVisual {
   constructor() {
     super()
@@ -506,7 +506,7 @@ export interface NativeImageLoadEvent {
   height: number
 }
 
-@Directive({ selector: 'Image' })
+@Directive({ selector: 'an-image' })
 export class Image extends NativeVisual {
   constructor() {
     super()
@@ -558,9 +558,9 @@ export type AndroidTextProps = {
   selectable?: boolean
 }
 
-const TEXT_ANDROID = platformKeys('Text', 'android', ['selectable'])
+const TEXT_ANDROID = platformKeys('an-text', 'android', ['selectable'])
 
-@Directive({ selector: 'Text' })
+@Directive({ selector: 'an-text' })
 export class Text extends NativeVisual {
   constructor() {
     super()
@@ -628,13 +628,13 @@ export type AndroidTextInputProps = {
   cursorVisible?: boolean
 }
 
-const TEXT_INPUT_IOS = platformKeys('TextInput', 'ios', ['clearButtonMode', 'borderStyle'])
-const TEXT_INPUT_ANDROID = platformKeys('TextInput', 'android', [
+const TEXT_INPUT_IOS = platformKeys('an-text-input', 'ios', ['clearButtonMode', 'borderStyle'])
+const TEXT_INPUT_ANDROID = platformKeys('an-text-input', 'android', [
   'selectAllOnFocus',
   'cursorVisible'
 ])
 
-@Directive({ selector: 'TextInput' })
+@Directive({ selector: 'an-text-input' })
 export class TextInput extends NativeVisual {
   constructor() {
     super()
@@ -743,9 +743,9 @@ export type IosTabBarProps = {
   translucent?: boolean
 }
 
-const TAB_BAR_IOS = platformKeys('TabBar', 'ios', ['translucent'])
+const TAB_BAR_IOS = platformKeys('an-tab-bar', 'ios', ['translucent'])
 
-@Directive({ selector: 'TabBar' })
+@Directive({ selector: 'an-tab-bar' })
 export class TabBar extends NativeVisual {
   constructor() {
     super()
@@ -767,7 +767,7 @@ export class TabBar extends NativeVisual {
   /**
    * Iconos, en el mismo orden que los títulos.
    *
-   * Los nombres son los de `<Icon>`, así que valen los comunes —`home`,
+   * Los nombres son los de `<an-icon>`, así que valen los comunes —`home`,
    * `search`, `settings`— y también los nativos de cada plataforma. Una barra
    * de pestañas sin iconos es legal, pero no es lo que espera nadie.
    */
@@ -806,10 +806,10 @@ export type AndroidSwitchProps = {
   trackColor?: string
 }
 
-const SWITCH_ANDROID = platformKeys('Switch', 'android', ['trackColor'])
+const SWITCH_ANDROID = platformKeys('an-switch', 'android', ['trackColor'])
 
 /** Interruptor del sistema. */
-@Directive({ selector: 'Switch' })
+@Directive({ selector: 'an-switch' })
 export class Switch extends NativeControl {
   constructor() {
     super()
@@ -863,11 +863,11 @@ export type AndroidSliderProps = {
   stepSize?: number
 }
 
-const SLIDER_IOS = platformKeys('Slider', 'ios', ['continuous'])
-const SLIDER_ANDROID = platformKeys('Slider', 'android', ['stepSize'])
+const SLIDER_IOS = platformKeys('an-slider', 'ios', ['continuous'])
+const SLIDER_ANDROID = platformKeys('an-slider', 'android', ['stepSize'])
 
 /** Deslizador del sistema. */
-@Directive({ selector: 'Slider' })
+@Directive({ selector: 'an-slider' })
 export class Slider extends NativeControl {
   constructor() {
     super()
@@ -910,7 +910,7 @@ export class Slider extends NativeControl {
 }
 
 /** Ruedecilla de carga. Se esconde sola cuando se para. */
-@Directive({ selector: 'ActivityIndicator' })
+@Directive({ selector: 'an-activity-indicator' })
 export class ActivityIndicator extends NativeVisual {
   constructor() {
     super()
@@ -926,7 +926,7 @@ export class ActivityIndicator extends NativeVisual {
 }
 
 /** Barra de progreso determinada. `progress` va de 0 a 1. */
-@Directive({ selector: 'ProgressBar' })
+@Directive({ selector: 'an-progress-bar' })
 export class ProgressBar extends NativeVisual {
   constructor() {
     super()
@@ -970,11 +970,11 @@ export type AndroidButtonProps = {
   allCaps?: boolean
 }
 
-const BUTTON_IOS = platformKeys('Button', 'ios', ['subtitle'])
-const BUTTON_ANDROID = platformKeys('Button', 'android', ['rippleColor', 'allCaps'])
+const BUTTON_IOS = platformKeys('an-button', 'ios', ['subtitle'])
+const BUTTON_ANDROID = platformKeys('an-button', 'android', ['rippleColor', 'allCaps'])
 
 /** Botón del sistema, con su tipografía y su respuesta al toque. */
-@Directive({ selector: 'Button' })
+@Directive({ selector: 'an-button' })
 export class Button extends NativeControl {
   constructor() {
     super()
@@ -1011,7 +1011,7 @@ export class Button extends NativeControl {
   readonly variant = input<'text' | 'filled' | 'tonal' | 'outlined' | null>('text')
 
   /**
-   * Icono a un lado del rótulo, por nombre, igual que `<Icon>`.
+   * Icono a un lado del rótulo, por nombre, igual que `<an-icon>`.
    *
    * Un SF Symbol en iOS y un Material Symbol en Android, así que la misma
    * plantilla da el icono que le toca a cada plataforma.
@@ -1038,7 +1038,7 @@ export class Button extends NativeControl {
  * —el de Material vive en una librería aparte—, así que se dibuja con vistas
  * del sistema, como la barra de pestañas.
  */
-@Directive({ selector: 'SegmentedControl' })
+@Directive({ selector: 'an-segmented-control' })
 export class SegmentedControl extends NativeControl {
   constructor() {
     super()
@@ -1064,7 +1064,7 @@ export class SegmentedControl extends NativeControl {
  * `UIStepper` en iOS. En Android no hay equivalente en la plataforma y se arma
  * con dos botones del sistema.
  */
-@Directive({ selector: 'Stepper' })
+@Directive({ selector: 'an-stepper' })
 export class Stepper extends NativeControl {
   constructor() {
     super()
@@ -1091,11 +1091,11 @@ export class Stepper extends NativeControl {
 /**
  * Campo de búsqueda del sistema, con su lupa y su botón de borrar.
  *
- * Es un control aparte y no un `<TextInput>` con un icono al lado: el sistema
+ * Es un control aparte y no un `<an-text-input>` con un icono al lado: el sistema
  * le da el teclado con la tecla de buscar, el comportamiento de cancelar y el
  * aspecto que la gente reconoce como "aquí se busca".
  */
-@Directive({ selector: 'SearchBar' })
+@Directive({ selector: 'an-search-bar' })
 export class SearchBar extends NativeControl {
   constructor() {
     super()
@@ -1120,8 +1120,8 @@ export class SearchBar extends NativeControl {
  * `UIPickerView` es la rueda a pantalla completa, que es otra cosa y ya no es
  * lo que usa el sistema para una lista corta. En Android es un `Spinner`.
  */
-@Directive({ selector: 'Picker' })
-export class Picker extends NativeControl {
+@Directive({ selector: 'an-select' })
+export class Select extends NativeControl {
   constructor() {
     super()
     this.push({
@@ -1144,7 +1144,7 @@ export class Picker extends NativeControl {
  * porque una fecha formateada depende del idioma y de la zona horaria del
  * dispositivo, y eso lo resuelve cada plataforma.
  */
-@Directive({ selector: 'DatePicker' })
+@Directive({ selector: 'an-date-picker' })
 export class DatePicker extends NativeControl {
   constructor() {
     super()
@@ -1175,7 +1175,7 @@ export class DatePicker extends NativeControl {
  * uno con el mismo símbolo y en el mismo sitio; navegar sigue siendo cosa del
  * router, que es quien sabe a dónde se vuelve.
  */
-@Directive({ selector: 'NavigationBar' })
+@Directive({ selector: 'an-navigation-bar' })
 export class NavigationBar extends NativeVisual {
   constructor() {
     super()
@@ -1203,12 +1203,12 @@ export class NavigationBar extends NativeVisual {
 /**
  * Campo de texto de varias líneas.
  *
- * Es una primitiva aparte y no una prop de `<TextInput>` porque en iOS son dos
+ * Es una primitiva aparte y no una prop de `<an-text-input>` porque en iOS son dos
  * controles distintos —`UITextField` y `UITextView`— y cambiar de uno a otro
  * con la vista ya montada no es posible.
  */
-@Directive({ selector: 'TextEditor' })
-export class TextEditor extends NativeVisual {
+@Directive({ selector: 'an-textarea' })
+export class TextArea extends NativeVisual {
   constructor() {
     super()
     this.push({
@@ -1233,7 +1233,7 @@ export class TextEditor extends NativeVisual {
  * Se le da una dirección o un HTML suelto. Es una vista más del árbol: ocupa
  * el sitio que le dé el layout y se puede poner al lado de cualquier otra.
  */
-@Directive({ selector: 'WebView' })
+@Directive({ selector: 'an-web-view' })
 export class WebView extends NativeVisual {
   constructor() {
     super()
@@ -1257,7 +1257,7 @@ export class WebView extends NativeVisual {
  * de OpenStreetMap sobre un `Canvas`: es una vista nativa, pero no es el mapa
  * del sistema y no trae rutas ni búsqueda.
  */
-@Directive({ selector: 'MapView' })
+@Directive({ selector: 'an-map-view' })
 export class MapView extends NativeVisual {
   constructor() {
     super()
@@ -1292,7 +1292,7 @@ export class MapView extends NativeVisual {
  * —`AVPlayerLayer`— que se cuelga de cualquier vista, así que el host la
  * cuelga y le ajusta el marco. Una capa no se estira con su vista.
  */
-@Directive({ selector: 'VideoView' })
+@Directive({ selector: 'an-video-view' })
 export class VideoView extends NativeVisual {
   constructor() {
     super()
@@ -1326,7 +1326,7 @@ export class VideoView extends NativeVisual {
  * específico se escribe el nombre nativo directamente: cualquier SF Symbol
  * (`square.and.arrow.up`) o cualquier drawable de Android.
  */
-@Directive({ selector: 'Icon' })
+@Directive({ selector: 'an-icon' })
 export class Icon extends NativeVisual {
   constructor() {
     super()
@@ -1338,7 +1338,7 @@ export class Icon extends NativeVisual {
     })
     // El tamaño es además el de la caja. Va aparte del empujón porque no es
     // una prop: son dos estilos, y el layout tiene que saberlos para que un
-    // `<Icon>` sin medidas no quede invisible.
+    // `<an-icon>` sin medidas no quede invisible.
     effect(() => {
       const points = this.size()
       this.renderer.setStyle(this.node, 'width', points)
@@ -1375,7 +1375,7 @@ export class Icon extends NativeVisual {
  * Android lo cierra, y no compite en orden de dibujo con los diálogos del
  * sistema.
  */
-@Directive({ selector: 'Modal' })
+@Directive({ selector: 'an-modal' })
 export class Modal extends NativeVisual {
   constructor() {
     super()
@@ -1411,7 +1411,7 @@ export class Modal extends NativeVisual {
  * `AlertDialog` de verdad, con su aspecto, su animación y su comportamiento
  * con VoiceOver y TalkBack. No ocupa sitio en el layout.
  */
-@Directive({ selector: 'Alert' })
+@Directive({ selector: 'an-alert' })
 export class Alert extends NativeVisual {
   constructor() {
     super()
@@ -1467,12 +1467,12 @@ export const NATIVE_PRIMITIVES = [
   Modal,
   MapView,
   NavigationBar,
-  TextEditor,
+  TextArea,
   VideoView,
   WebView,
   SearchBar,
   SegmentedControl,
-  Picker,
+  Select,
   Stepper,
   Alert
 ] as const

@@ -22,29 +22,29 @@ import type {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NATIVE_PRIMITIVES, SafeArea],
   template: `
-    <View
+    <an-view
       [style.width]="'100%'"
       [style.height]="'100%'"
       [backgroundColor]="'#0b1020'">
-      <SafeArea
+      <an-safe-area
         [style.flex]="1"
         [padding]="20"
         [style.gap]="14">
-        <Text [fontSize]="26" [fontWeight]="700" [color]="'#f8fafc'">
+        <an-text [fontSize]="26" [fontWeight]="700" [color]="'#f8fafc'">
           gestos
-        </Text>
+        </an-text>
 
-        <Text [color]="'#94a3b8'" [fontSize]="15">
+        <an-text [color]="'#94a3b8'" [fontSize]="15">
           {{ status() }}
-        </Text>
+        </an-text>
 
-        <View
+        <an-view
           [style.height]="320"
           [backgroundColor]="'#111a33'"
           [borderRadius]="16"
           [style.alignItems]="'center'"
           [style.justifyContent]="'center'">
-          <View
+          <an-view
             [style.width]="140"
             [style.height]="140"
             [backgroundColor]="'#6366f1'"
@@ -60,11 +60,11 @@ import type {
             (rotation)="onRotate($event)"
             (doublePress)="reset()"
             (longPress)="onLongPress()">
-            <Text [color]="'#ffffff'" [fontWeight]="600">
+            <an-text [color]="'#ffffff'" [fontWeight]="600">
               {{ label() }}
-            </Text>
-          </View>
-        </View>
+            </an-text>
+          </an-view>
+        </an-view>
 
         <!--
           El panel crece y se destiñe animándose. Nada de esto vuelve a pasar
@@ -72,7 +72,7 @@ import type {
           ahí en adelante los cambios los interpola la plataforma en su hilo
           de dibujo.
         -->
-        <View
+        <an-view
           [animate]="260"
           [style.height]="abierto() ? 160 : 72"
           [style.opacity]="abierto() ? 1 : 0.55"
@@ -91,11 +91,11 @@ import type {
             comprueba; esto está aquí para que el otro camino —el que Angular
             deja escribir siempre— no se quede en nada sin avisar.
           -->
-          <Text [color]="'#cbd5f5'" [style.fontSize]="18">desliza aquí: {{ swipe() }}</Text>
-          <Text [color]="'#64748b'">{{ abierto() ? 'toca para cerrar' : 'toca para abrir' }}</Text>
-        </View>
-      </SafeArea>
-    </View>
+          <an-text [color]="'#cbd5f5'" [style.fontSize]="18">desliza aquí: {{ swipe() }}</an-text>
+          <an-text [color]="'#64748b'">{{ abierto() ? 'toca para cerrar' : 'toca para abrir' }}</an-text>
+        </an-view>
+      </an-safe-area>
+    </an-view>
   `
 })
 export class AppComponent {

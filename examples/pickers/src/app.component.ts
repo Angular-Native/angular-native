@@ -19,77 +19,77 @@ import type {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NATIVE_PRIMITIVES, SafeArea],
   template: `
-    <View [style.width]="'100%'" [style.height]="'100%'" [backgroundColor]="'#0b1020'">
-      <SafeArea [style.flex]="1" [padding]="20" [style.gap]="18">
-        <Text [fontSize]="26" [fontWeight]="700" [color]="'#f8fafc'">elegir</Text>
+    <an-view [style.width]="'100%'" [style.height]="'100%'" [backgroundColor]="'#0b1020'">
+      <an-safe-area [style.flex]="1" [padding]="20" [style.gap]="18">
+        <an-text [fontSize]="26" [fontWeight]="700" [color]="'#f8fafc'">elegir</an-text>
 
-        <SearchBar
+        <an-search-bar
           [style.height]="52"
           [placeholder]="'Buscar…'"
           (input)="onSearch($event)" />
-        <Text [color]="'#94a3b8'" [fontSize]="14">{{ busqueda() || 'sin buscar nada' }}</Text>
+        <an-text [color]="'#94a3b8'" [fontSize]="14">{{ busqueda() || 'sin buscar nada' }}</an-text>
 
-        <SegmentedControl
+        <an-segmented-control
           [style.height]="36"
           [items]="vistas"
           [selectedIndex]="vista()"
           [color]="'#6ee7b7'"
           (change)="onVista($event)" />
-        <Text [color]="'#94a3b8'" [fontSize]="14">vista: {{ vistas[vista()] }}</Text>
+        <an-text [color]="'#94a3b8'" [fontSize]="14">vista: {{ vistas[vista()] }}</an-text>
 
-        <View [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'16'">
-          <Text [color]="'#cbd5f5'" [style.flexGrow]="'1'">Prioridad</Text>
-          <Picker
+        <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'16'">
+          <an-text [color]="'#cbd5f5'" [style.flexGrow]="'1'">Prioridad</an-text>
+          <an-select
             [style.width]="150"
             [style.height]="40"
             [items]="prioridades"
             [selectedIndex]="prioridad()"
             (change)="prioridad.set($event.index)" />
-        </View>
+        </an-view>
 
-        <View [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'16'">
-          <Text [color]="'#cbd5f5'" [style.flexGrow]="'1'">Cantidad: {{ cantidad() }}</Text>
-          <Stepper
+        <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'16'">
+          <an-text [color]="'#cbd5f5'" [style.flexGrow]="'1'">Cantidad: {{ cantidad() }}</an-text>
+          <an-stepper
             [style.width]="140"
             [style.height]="40"
             [value]="cantidad()"
             [minimumValue]="0"
             [maximumValue]="10"
             (change)="cantidad.set($event.value)" />
-        </View>
+        </an-view>
 
-        <View [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'16'">
-          <Text [color]="'#cbd5f5'" [style.flexGrow]="'1'">Fecha</Text>
-          <DatePicker
+        <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'16'">
+          <an-text [color]="'#cbd5f5'" [style.flexGrow]="'1'">Fecha</an-text>
+          <an-date-picker
             [style.width]="180"
             [style.height]="40"
             [value]="fecha()"
             (change)="fecha.set($event.value)" />
-        </View>
+        </an-view>
 
         <!-- Las tres variantes de botón, que es lo que las separa de un texto. -->
-        <View [style.flexDirection]="'row'" [style.gap]="'12'" [style.height]="48">
-          <Button
+        <an-view [style.flexDirection]="'row'" [style.gap]="'12'" [style.height]="48">
+          <an-button
             [style.flexGrow]="'1'"
             [title]="'Texto'"
             [color]="'#6ee7b7'"
-            (press)="pulsado.set('texto')"></Button>
-          <Button
+            (press)="pulsado.set('texto')"></an-button>
+          <an-button
             [style.flexGrow]="'1'"
             [title]="'Tonal'"
             [variant]="'tonal'"
             [color]="'#6ee7b7'"
-            (press)="pulsado.set('tonal')"></Button>
-          <Button
+            (press)="pulsado.set('tonal')"></an-button>
+          <an-button
             [style.flexGrow]="'1'"
             [title]="'Relleno'"
             [variant]="'filled'"
             [color]="'#6ee7b7'"
-            (press)="pulsado.set('relleno')"></Button>
-        </View>
-        <Text [color]="'#94a3b8'" [fontSize]="14">último botón: {{ pulsado() }}</Text>
-      </SafeArea>
-    </View>
+            (press)="pulsado.set('relleno')"></an-button>
+        </an-view>
+        <an-text [color]="'#94a3b8'" [fontSize]="14">último botón: {{ pulsado() }}</an-text>
+      </an-safe-area>
+    </an-view>
   `
 })
 export class AppComponent {

@@ -22,7 +22,7 @@ import { dom, NativeNode } from './native-node'
 import { NativeRendererFactory } from './renderer'
 
 /**
- * Raíz del árbol nativo. Se crea una sola vez por app: es el `<View>` del que
+ * Raíz del árbol nativo. Se crea una sola vez por app: es el `<an-view>` del que
  * cuelga todo y el que el core monta sobre la vista que da la plataforma.
  */
 function createRootNode(): NativeNode {
