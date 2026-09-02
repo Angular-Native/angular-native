@@ -4,6 +4,7 @@ export type {
   NativeCursor,
   NativeHoverEvent,
   NativeImageLoadEvent,
+  NativeCrownEvent,
   NativeLayoutEvent,
   NativeSafeAreaInsets,
   NativeGestureState,

@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core'
-import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
+import { NATIVE_PRIMITIVES, type NativeCrownEvent } from '@angular-native/primitives'
 
 /**
  * Lo que el reloj sabe pintar, en tres pantallas.
@@ -156,15 +156,9 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
               <an-text [fontSize]="17" [fontWeight]="'bold'" [color]="'#f4f7ff'">corona</an-text>
 
               <!--
-                (crown) no lo declara ninguna directiva: es un oyente que
-                Angular pasa tal cual al renderer, y el host del reloj lo
-                convierte en digitalCrownRotation. Funciona, pero por eso hace
-                falta el $any: sin una salida declarada en NativeVisual,
-                Angular tipa el $event como Event a secas. Cuando la salida
-                exista, el $any se cae solo.
-
-                El (swipeLeft) y el (longPress) van sobre la misma caja para
-                que se vea que conviven con la corona.
+                El (swipeLeft) y el (longPress) van sobre la misma caja que la
+                corona para que se vea que conviven: la corona va a la vista
+                que tiene el foco y los gestos al dedo, y no se estorban.
               -->
               <an-view
                 [style.width]="'100%'"
@@ -173,7 +167,7 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
                 [style.justifyContent]="'center'"
                 [borderRadius]="12"
                 [backgroundColor]="'#152036'"
-                (crown)="gira($any($event))"
+                (crown)="gira($event)"
                 (longPress)="aCero()"
                 (swipeLeft)="ir(1)">
                 <an-text [fontSize]="26" [fontWeight]="'bold'" [color]="'#f59e0b'">{{ pasos() }}</an-text>
@@ -302,7 +296,7 @@ export class AppComponent {
    * acumulado, que es lo que casi siempre se quiere: sumar el paso a lo que ya
    * había sin tener que acordarse de dónde estaba.
    */
-  gira(evento: { delta: number; offset: number; velocity: number }): void {
+  gira(evento: NativeCrownEvent): void {
     this.giro = Math.max(0, this.giro + evento.delta)
     this.pasos.set(Math.round(this.giro))
     this.velocidad.set(evento.velocity)
