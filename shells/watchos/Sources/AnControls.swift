@@ -48,6 +48,14 @@ final class AnControls {
     /// cierra, pero `[visible]` sigue valiendo `true` hasta que JS reacciona al
     /// `(select)`, y el frame de en medio lo volvería a presentar.
     private var cerrados: Set<UInt32> = []
+    /// Lo que lleva girado la corona sobre cada nodo.
+    ///
+    /// Va aparte de `locals` y no compartiendo sitio con el valor de los
+    /// controles porque un mismo nodo puede ser las dos cosas: un `an-slider`
+    /// con un `(crown)` encima existe, y con un solo diccionario el valor del
+    /// deslizador se llevaría por delante el acumulado del giro en cuanto la
+    /// app lo cambiase.
+    private var giros: [UInt32: Double] = [:]
 
     /// Por dónde salen los cambios hacia JS.
     @ObservationIgnored var dispatch: (UInt32, String, [String: Any]) -> Void = { _, _, _ in }
@@ -65,6 +73,7 @@ final class AnControls {
         locals = locals.filter { vivos.contains($0.key) }
         mirrored = mirrored.filter { vivos.contains($0.key) }
         cerrados = cerrados.filter { vivos.contains($0) }
+        giros = giros.filter { vivos.contains($0.key) }
     }
 
     private func walk(_ node: AnNode, _ vivos: inout Set<UInt32>) {
@@ -204,11 +213,8 @@ final class AnControls {
     /// arrastraría el valor de vuelta al que tenía.
     func crown(_ id: UInt32) -> Binding<Double> {
         Binding(
-            get: {
-                if case .number(let value)? = self.locals[id] { return value }
-                return 0
-            },
-            set: { self.locals[id] = .number($0) }
+            get: { self.giros[id] ?? 0 },
+            set: { self.giros[id] = $0 }
         )
     }
 }

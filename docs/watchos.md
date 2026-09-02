@@ -312,8 +312,11 @@ frame es un registro ilegible—:
   lo que corresponde es que `an-ios` use la del núcleo y se borre la suya.
 - **No hay forma de meter un recurso en el `.app`.** `an watchos` copia el
   `Info.plist` y el `main.js`, y nada más, así que un `an-image` con `[source]`
-  sin esquema no encuentra el fichero. Con una URL `http` sí funciona. El sitio
-  donde se arregla es `watchos.rs::assemble`, y le pasa lo mismo a iOS.
+  sin esquema no encuentra el fichero y lo dice por el registro. Con una URL
+  `http` sí funciona —comprobado en el simulador, con un PNG servido desde el
+  Mac—, y por eso `examples/watch-controls` no lleva ninguna imagen: no se le
+  puede pedir a un ejemplo del repo que dependa de una URL. El sitio donde se
+  arregla es `watchos.rs::assemble`, y le pasa lo mismo a iOS.
 - **Animación y transformaciones.** `[animate]`, `translateX`, `scale`,
   `rotate`. En SwiftUI son `withAnimation` y `.offset`/`.scaleEffect`, pero hay
   que decidir dónde vive el estado de la animación: el modelo se reconstruye
