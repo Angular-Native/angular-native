@@ -14,10 +14,10 @@
 //! la plataforma que se está compilando detiene el build. Nunca sale una app
 //! con un método que se traga la llamada.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
 use crate::workspace::Workspace;
@@ -59,6 +59,48 @@ pub struct Native {
     pub sources: PathBuf,
     /// El tipo que implementa `AnPlugin`. En Android, con su paquete delante.
     pub register: String,
+    /// Lo que aporta al manifiesto de su plataforma.
+    pub contributes: Contributions,
+}
+
+/// Lo que un plugin aporta al manifiesto de la plataforma.
+///
+/// No comparten forma porque no son la misma cosa: una clave del `Info.plist`
+/// tiene valor y no tiene nombre de elemento, y un `<uses-permission>` es al
+/// revés. Un tipo común obligaría a inventar una traducción entre los dos, y
+/// esa traducción sería mentira en las dos direcciones.
+pub enum Contributions {
+    /// `angularNative.ios.plist`: clave del `Info.plist` a valor.
+    Plist(BTreeMap<String, Value>),
+    /// `angularNative.android.manifest`.
+    Manifest(ManifestEntries),
+}
+
+/// Los elementos que un plugin mete en el `AndroidManifest.xml`.
+#[derive(Default)]
+pub struct ManifestEntries {
+    /// `<uses-permission android:name="…"/>`. Es un conjunto: pedir dos veces
+    /// el mismo permiso es pedirlo una.
+    pub permissions: BTreeSet<String>,
+    /// `<uses-feature android:name="…" android:required="…"/>`, del nombre al
+    /// `required`. Aquí sí puede haber choque: dos plugins que pidan la misma
+    /// característica, uno obligatoria y otro no, no dicen lo mismo.
+    pub features: BTreeMap<String, bool>,
+}
+
+impl ManifestEntries {
+    pub fn is_empty(&self) -> bool {
+        self.permissions.is_empty() && self.features.is_empty()
+    }
+}
+
+/// Una entrada del manifiesto con el paquete que la pidió.
+///
+/// El dueño no es un adorno: cuando dos plugins piden lo mismo con valores
+/// distintos, lo único que sirve para arreglarlo es saber cuáles son.
+pub struct Contributed {
+    pub value: Value,
+    pub package: String,
 }
 
 pub struct Plugin {
@@ -123,7 +165,9 @@ pub fn discover(workspace: &Workspace, app: &Path) -> Result<Vec<Plugin>> {
             // dirá `ngc`. Solo nos interesan las que existen y son plugins.
             continue;
         };
-        let Some(plugin) = read_manifest(name, &dir)? else { continue };
+        let Some(plugin) = read_manifest(name, &dir)? else {
+            continue;
+        };
         if let Some(previo) = por_modulo.insert(plugin.module.clone(), plugin) {
             let module = previo.module;
             bail!(
@@ -166,9 +210,14 @@ fn read_manifest(package: &str, dir: &Path) -> Result<Option<Plugin>> {
         .with_context(|| format!("no se pudo leer {}", manifest.display()))?;
     let parsed: Value = serde_json::from_str(&text)
         .with_context(|| format!("{} no es JSON válido", manifest.display()))?;
-    let Some(declared) = parsed.get("angularNative") else { return Ok(None) };
+    let Some(declared) = parsed.get("angularNative") else {
+        return Ok(None);
+    };
     let declared = declared.as_object().with_context(|| {
-        format!("{}: angularNative tiene que ser un objeto", manifest.display())
+        format!(
+            "{}: angularNative tiene que ser un objeto",
+            manifest.display()
+        )
     })?;
 
     let module = declared
@@ -210,7 +259,9 @@ fn check_module_name(module: &str, manifest: &Path) -> Result<()> {
         .chars()
         .next()
         .is_some_and(|first| first.is_ascii_lowercase())
-        && module.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+        && module
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-');
     if !valido {
         bail!(
             "{}: angularNative.module es {module:?}; tiene que empezar por minúscula \
@@ -227,16 +278,36 @@ fn read_native(
     platform: Platform,
     manifest: &Path,
 ) -> Result<Option<Native>> {
-    let Some(declared) = declared else { return Ok(None) };
+    let Some(declared) = declared else {
+        return Ok(None);
+    };
     let declared = declared.as_object().with_context(|| {
-        format!("{}: angularNative.{} tiene que ser un objeto", manifest.display(), platform.key())
+        format!(
+            "{}: angularNative.{} tiene que ser un objeto",
+            manifest.display(),
+            platform.key()
+        )
     })?;
-    let sources = declared.get("sources").and_then(Value::as_str).with_context(|| {
-        format!("{}: falta angularNative.{}.sources", manifest.display(), platform.key())
-    })?;
-    let register = declared.get("register").and_then(Value::as_str).with_context(|| {
-        format!("{}: falta angularNative.{}.register", manifest.display(), platform.key())
-    })?;
+    let sources = declared
+        .get("sources")
+        .and_then(Value::as_str)
+        .with_context(|| {
+            format!(
+                "{}: falta angularNative.{}.sources",
+                manifest.display(),
+                platform.key()
+            )
+        })?;
+    let register = declared
+        .get("register")
+        .and_then(Value::as_str)
+        .with_context(|| {
+            format!(
+                "{}: falta angularNative.{}.register",
+                manifest.display(),
+                platform.key()
+            )
+        })?;
     let sources = dir.join(sources);
     if !sources.is_dir() {
         bail!(
@@ -246,7 +317,125 @@ fn read_native(
             sources.display()
         );
     }
-    Ok(Some(Native { sources, register: register.to_owned() }))
+    let contributes = match platform {
+        Platform::Ios => Contributions::Plist(read_plist(declared.get("plist"), manifest)?),
+        Platform::Android => {
+            Contributions::Manifest(read_manifest_entries(declared.get("manifest"), manifest)?)
+        }
+    };
+    Ok(Some(Native {
+        sources,
+        register: register.to_owned(),
+        contributes,
+    }))
+}
+
+/// `angularNative.ios.plist`: las claves que este plugin necesita en el
+/// `Info.plist`.
+///
+/// Sin esto, un plugin de Face ID compila, se instala y mata la app la primera
+/// vez que se autentica: iOS exige `NSFaceIDUsageDescription` y sin ella no
+/// avisa, cierra. Que el plugin declare aquí lo que necesita es lo que impide
+/// que el que lo instala tenga que saberlo.
+fn read_plist(declared: Option<&Value>, manifest: &Path) -> Result<BTreeMap<String, Value>> {
+    let Some(declared) = declared else {
+        return Ok(BTreeMap::new());
+    };
+    let declared = declared.as_object().with_context(|| {
+        format!(
+            "{}: angularNative.ios.plist tiene que ser un objeto",
+            manifest.display()
+        )
+    })?;
+    let mut entries = BTreeMap::new();
+    for (key, value) in declared {
+        // La clave viaja a `plutil -replace`, que trata el punto como
+        // separador de camino: `a.b` no sería una clave llamada «a.b» sino la
+        // «b» de dentro de la «a». Ninguna clave del sistema lleva punto, así
+        // que se para aquí en vez de escribir en un sitio que nadie pidió.
+        if key.is_empty() || key.contains('.') {
+            bail!(
+                "{}: angularNative.ios.plist tiene la clave {key:?};                  solo se admiten claves de primer nivel y sin puntos",
+                manifest.display()
+            );
+        }
+        if !plist_value_ok(value) {
+            bail!(
+                "{}: angularNative.ios.plist[{key:?}] es {value};                  solo se admiten cadenas, booleanos, números y listas de cadenas.                  Un diccionario anidado todavía no se funde. Ver docs/plugins.md.",
+                manifest.display()
+            );
+        }
+        entries.insert(key.clone(), value.clone());
+    }
+    Ok(entries)
+}
+
+/// Lo que se sabe escribir en el plist con `plutil -replace … -json`, y nada
+/// más. Aceptar un diccionario aquí y fundirlo mal más tarde sería peor que
+/// no aceptarlo.
+fn plist_value_ok(value: &Value) -> bool {
+    match value {
+        Value::String(_) | Value::Bool(_) | Value::Number(_) => true,
+        Value::Array(items) => items.iter().all(Value::is_string),
+        _ => false,
+    }
+}
+
+/// `angularNative.android.manifest`: permisos y características.
+fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<ManifestEntries> {
+    let Some(declared) = declared else {
+        return Ok(ManifestEntries::default());
+    };
+    let declared = declared.as_object().with_context(|| {
+        format!(
+            "{}: angularNative.android.manifest tiene que ser un objeto",
+            manifest.display()
+        )
+    })?;
+    let mut entries = ManifestEntries::default();
+    for (clave, valor) in declared {
+        match clave.as_str() {
+            "uses-permission" => {
+                let lista = valor.as_array().with_context(|| {
+                    format!(
+                        "{}: angularNative.android.manifest[\"uses-permission\"]                          tiene que ser una lista de nombres",
+                        manifest.display()
+                    )
+                })?;
+                for nombre in lista {
+                    let nombre = nombre.as_str().with_context(|| {
+                        format!(
+                            "{}: los permisos son cadenas, y hay un {nombre}",
+                            manifest.display()
+                        )
+                    })?;
+                    entries.permissions.insert(nombre.to_owned());
+                }
+            }
+            "uses-feature" => {
+                let objeto = valor.as_object().with_context(|| {
+                    format!(
+                        "{}: angularNative.android.manifest[\"uses-feature\"] tiene que ser                          un objeto de nombre a si es obligatoria",
+                        manifest.display()
+                    )
+                })?;
+                for (nombre, required) in objeto {
+                    let required = required.as_bool().with_context(|| {
+                        format!(
+                            "{}: uses-feature[{nombre:?}] tiene que ser true o false,                              que es lo que vale android:required",
+                            manifest.display()
+                        )
+                    })?;
+                    entries.features.insert(nombre.clone(), required);
+                }
+            }
+            otro => bail!(
+                "{}: angularNative.android.manifest no sabe de {otro:?};                  de momento solo se aportan \"uses-permission\" y \"uses-feature\".                  Ver docs/plugins.md.",
+                manifest.display()
+            ),
+        }
+    }
+    Ok(entries)
 }
 
 /// Exige que todos los plugins cubran la plataforma que se va a compilar.
@@ -255,9 +444,22 @@ fn read_native(
 /// no puede acabar en un método que devuelve `undefined` y una pantalla que no
 /// hace nada: se para el build y se dice qué falta y en qué paquete.
 pub fn require(plugins: &[Plugin], platform: Platform) -> Result<()> {
-    let faltan: Vec<&Plugin> =
-        plugins.iter().filter(|plugin| plugin.native(platform).is_none()).collect();
+    let faltan: Vec<&Plugin> = plugins
+        .iter()
+        .filter(|plugin| plugin.native(platform).is_none())
+        .collect();
     if faltan.is_empty() {
+        // Lo que aportan al manifiesto se funde aquí y no al escribirlo: así
+        // un choque entre dos plugins sale en `an plugins --platform ios`, sin
+        // gastar medio minuto de `swiftc` para acabar diciendo lo mismo.
+        match platform {
+            Platform::Ios => {
+                plist_entries(plugins)?;
+            }
+            Platform::Android => {
+                manifest_entries(plugins)?;
+            }
+        }
         return Ok(());
     }
     let mut message = format!(
@@ -283,11 +485,112 @@ pub fn require(plugins: &[Plugin], platform: Platform) -> Result<()> {
     bail!(message)
 }
 
+/// Funde las claves del `Info.plist` que piden todos los plugins.
+///
+/// Dos plugins que piden la misma clave con el **mismo** valor no son un
+/// problema: dicen lo mismo, y se escribe una vez. Con valores distintos no
+/// hay forma honrada de elegir —quedarse con el primero por orden alfabético
+/// o por orden de dependencia sería decidir en silencio qué texto le sale al
+/// usuario en el diálogo del sistema—, así que se para el build.
+pub fn plist_entries(plugins: &[Plugin]) -> Result<BTreeMap<String, Contributed>> {
+    let mut merged: BTreeMap<String, Contributed> = BTreeMap::new();
+    for plugin in plugins {
+        let Some(native) = plugin.ios.as_ref() else {
+            continue;
+        };
+        let Contributions::Plist(entries) = &native.contributes else {
+            continue;
+        };
+        for (key, value) in entries {
+            if let Some(previo) = merged.get(key) {
+                if &previo.value != value {
+                    bail!(choque(
+                        &format!("la clave {key:?} del Info.plist"),
+                        &previo.package,
+                        &previo.value.to_string(),
+                        &plugin.package,
+                        &value.to_string(),
+                    ));
+                }
+                continue;
+            }
+            merged.insert(
+                key.clone(),
+                Contributed {
+                    value: value.clone(),
+                    package: plugin.package.clone(),
+                },
+            );
+        }
+    }
+    Ok(merged)
+}
+
+/// Lo mismo para el `AndroidManifest.xml`.
+///
+/// Los permisos son un conjunto y no pueden chocar: `USE_BIOMETRIC` pedido dos
+/// veces es `USE_BIOMETRIC`. Las características sí, porque llevan valor:
+/// obligatoria y opcional no son la misma petición, y la diferencia decide si
+/// Google Play enseña la app en un aparato sin ese sensor.
+pub fn manifest_entries(plugins: &[Plugin]) -> Result<ManifestEntries> {
+    let mut merged = ManifestEntries::default();
+    let mut duenos: BTreeMap<String, String> = BTreeMap::new();
+    for plugin in plugins {
+        let Some(native) = plugin.android.as_ref() else {
+            continue;
+        };
+        let Contributions::Manifest(entries) = &native.contributes else {
+            continue;
+        };
+        for permiso in &entries.permissions {
+            merged.permissions.insert(permiso.clone());
+        }
+        for (nombre, required) in &entries.features {
+            if let Some(previo) = merged.features.get(nombre) {
+                if previo != required {
+                    let dueno = duenos
+                        .get(nombre)
+                        .map(String::as_str)
+                        .unwrap_or("otro plugin");
+                    bail!(choque(
+                        &format!("la característica {nombre:?} del AndroidManifest.xml"),
+                        dueno,
+                        &format!("android:required=\"{previo}\""),
+                        &plugin.package,
+                        &format!("android:required=\"{required}\""),
+                    ));
+                }
+                continue;
+            }
+            merged.features.insert(nombre.clone(), *required);
+            duenos.insert(nombre.clone(), plugin.package.clone());
+        }
+    }
+    Ok(merged)
+}
+
+/// El mensaje de dos plugins que piden lo mismo con valores distintos.
+///
+/// Dice los dos paquetes y los dos valores porque es lo único con lo que se
+/// puede arreglar: quien lo lee no escribió ninguno de los dos.
+fn choque(que: &str, uno: &str, valor_uno: &str, otro: &str, valor_otro: &str) -> String {
+    format!(
+        "dos plugins piden {que} con valores distintos:\n\
+         \x20 · {uno}\n\
+         \x20     {valor_uno}\n\
+         \x20 · {otro}\n\
+         \x20     {valor_otro}\n\n\
+         Solo puede quedar uno, y elegirlo por orden sería decidir en silencio \
+         algo que se ve en pantalla.\n\
+         O los dos plugins se ponen de acuerdo, o la app se queda con uno de los dos."
+    )
+}
+
 /// Las fuentes nativas de un plugin para una plataforma, en orden estable.
 pub fn sources(plugin: &Plugin, platform: Platform) -> Result<Vec<String>> {
-    let native = plugin.native(platform).with_context(|| {
-        format!("{} no cubre {}", plugin.package, platform.label())
-    })?;
+    let native = plugin
+        .native(platform)
+        .with_context(|| format!("{} no cubre {}", plugin.package, platform.label()))?;
     let mut found: Vec<PathBuf> = Vec::new();
     let mut kotlin: Vec<PathBuf> = Vec::new();
     for path in walk(&native.sources) {
@@ -317,7 +620,10 @@ pub fn sources(plugin: &Plugin, platform: Platform) -> Result<Vec<String>> {
         );
     }
     found.sort();
-    Ok(found.into_iter().map(|path| path.to_string_lossy().into_owned()).collect())
+    Ok(found
+        .into_iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect())
 }
 
 /// El registro que enlaza los plugins con el shell de iOS.
@@ -336,7 +642,9 @@ pub fn generate_ios(plugins: &[Plugin], out: &Path) -> Result<PathBuf> {
         code.push_str("        // Esta app no depende de ningún plugin.\n");
     }
     for plugin in plugins {
-        let native = plugin.native(Platform::Ios).expect("require() ya lo comprobó");
+        let native = plugin
+            .native(Platform::Ios)
+            .expect("require() ya lo comprobó");
         code.push_str(&format!(
             "        AnPluginRegistry.register({:?}, {}())\n",
             plugin.module, native.register
@@ -366,7 +674,9 @@ pub fn generate_android(plugins: &[Plugin], out: &Path) -> Result<PathBuf> {
         code.push_str("        // Esta app no depende de ningún plugin.\n");
     }
     for plugin in plugins {
-        let native = plugin.native(Platform::Android).expect("require() ya lo comprobó");
+        let native = plugin
+            .native(Platform::Android)
+            .expect("require() ya lo comprobó");
         code.push_str(&format!(
             "        AnPluginRegistry.register({:?}, new {}());\n",
             plugin.module, native.register
@@ -433,7 +743,9 @@ pub fn list(workspace: &Workspace, plugins: &[Plugin]) {
 
 fn walk(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(dir) else { return out };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return out;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {

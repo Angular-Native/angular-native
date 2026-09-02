@@ -9,7 +9,7 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 
-use crate::build::run;
+use crate::build::{run, run_in};
 use crate::plugins::{self, Platform, Plugin};
 use crate::workspace::Workspace;
 
@@ -124,7 +124,7 @@ pub fn assemble(
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     run(workspace, "xcrun", &borrowed, "el enlazado del shell falló")?;
 
-    std::fs::copy(&plist, app_dir.join("Info.plist"))?;
+    escribir_plist(&plist, &app_dir.join("Info.plist"), plugins)?;
     std::fs::copy(bundle, app_dir.join("main.js"))?;
     match dev_server {
         Some(url) => std::fs::write(app_dir.join("dev-server.txt"), url)?,
@@ -134,6 +134,69 @@ pub fn assemble(
     }
 
     Ok(Package { dir: app_dir, bundle_id })
+}
+
+/// Escribe el `Info.plist` del `.app`: el del proyecto más lo que piden los
+/// plugins.
+///
+/// Un plugin no puede pedir la cámara, Face ID ni el micrófono sin una clave
+/// de uso: iOS no avisa ni devuelve un error, mata el proceso en cuanto se
+/// evalúa el permiso, y desde fuera parece que la app se cerró sola. Que la
+/// clave venga con el plugin es lo que evita que quien lo instala tenga que
+/// saberse esa lista.
+///
+/// La app manda sobre el plugin. Su `Info.plist` es suyo —lo escribe `an add
+/// ios` y a partir de ahí no se toca—, así que si ya declara la clave se queda
+/// la suya; pero no en silencio: se dice cuál se ignoró y de quién era.
+fn escribir_plist(base: &Path, destino: &Path, plugins: &[Plugin]) -> Result<()> {
+    let aportadas = plugins::plist_entries(plugins)?;
+    std::fs::copy(base, destino)?;
+    if aportadas.is_empty() {
+        return Ok(());
+    }
+    let ya_estaban = claves_del_plist(base)?;
+    for (clave, aportada) in &aportadas {
+        if let Some(actual) = ya_estaban.get(clave) {
+            if actual != &aportada.value {
+                eprintln!(
+                    "==> Info.plist: {clave} ya la declara la app ({actual}); \
+                     se ignora la de {} ({})",
+                    aportada.package, aportada.value
+                );
+            }
+            continue;
+        }
+        eprintln!("==> Info.plist: {clave} (de {})", aportada.package);
+        run_in(
+            destino.parent().unwrap_or(destino),
+            "plutil",
+            &[
+                "-replace",
+                clave,
+                "-json",
+                &aportada.value.to_string(),
+                &destino.to_string_lossy(),
+            ],
+            "no se pudo escribir en el Info.plist la clave que pide un plugin",
+        )?;
+    }
+    Ok(())
+}
+
+/// Las claves de primer nivel de un `Info.plist`, leídas de verdad.
+///
+/// Se convierte a JSON con `plutil` en vez de buscar `<key>` en el XML: un
+/// plist puede venir en binario, y buscar texto dentro de un binario no
+/// encuentra nada y haría creer que la app no declara ninguna clave.
+fn claves_del_plist(plist: &Path) -> Result<serde_json::Map<String, serde_json::Value>> {
+    let json = capture("plutil", &["-convert", "json", "-o", "-", &plist.to_string_lossy()])
+        .with_context(|| format!("{}: no se pudo leer", plist.display()))?;
+    let parsed: serde_json::Value = serde_json::from_str(&json)
+        .with_context(|| format!("{}: plutil devolvió algo que no es JSON", plist.display()))?;
+    match parsed {
+        serde_json::Value::Object(map) => Ok(map),
+        _ => bail!("{}: la raíz de un Info.plist tiene que ser un diccionario", plist.display()),
+    }
 }
 
 /// Que el `Info.plist` diga lo mismo que el proyecto.
