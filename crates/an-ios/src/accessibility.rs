@@ -1,37 +1,38 @@
-//! Las seis props de accesibilidad del contrato, sobre UIKit.
+//! The six accessibility props of the contract, on UIKit.
 //!
-//! Vale para las tres familias que montan este host: el teléfono, la tele y el
-//! visor. No hay nada que separar por familia —`UIAccessibility` es la misma
-//! categoría sobre `NSObject` en las tres— así que aquí no hay ningún `cfg`.
+//! It serves the three families that mount this host: the phone, the TV and
+//! the headset. There is nothing to split by family —`UIAccessibility` is the
+//! same category on `NSObject` in all three— so there is not a single `cfg`
+//! here.
 //!
-//! **El rol es una máscara de bits, no un valor.** Eso es lo que hace este
-//! fichero distinto del de AppKit. `accessibilityTraits` es un `u64` donde
-//! cada trait es un bit, y ahí dentro conviven cosas de tres clases: lo que la
-//! vista *es* —botón, encabezado, imagen—, lo que la vista *está* —apagada,
-//! seleccionada— y lo que la vista *hace* —suena, pasa página—. El contrato
-//! los separa en `accessibilityRole` y `accessibilityState`, así que aquí hay
-//! que volver a juntarlos, y hay que hacerlo entero cada vez: escribir un bit
-//! suelto exige leer los otros sesenta y tres.
+//! **The role is a bit mask, not a value.** That is what makes this file
+//! different from the AppKit one. `accessibilityTraits` is a `u64` where every
+//! trait is a bit, and three kinds of thing share that word: what the view
+//! *is* —button, header, image—, what the view *is like* right now —not
+//! enabled, selected— and what the view *does* —plays sound, turns pages—. The
+//! contract splits them into `accessibilityRole` and `accessibilityState`, so
+//! here they have to be put back together, and it has to be done whole every
+//! time: writing one bit means knowing the other sixty-three.
 //!
-//! Por eso el rol y el estado se guardan y la máscara se recompone:
+//! That is why role and state are kept and the mask is rebuilt:
 //!
 //! ```text
-//!   traits = base_o_rol  |  bits del estado
+//!   traits = base_or_role  |  state bits
 //! ```
 //!
-//! **Y qué es `base`.** Un `UIButton` ya viene con `.button` puesto de fábrica,
-//! y un `UISwitch` con lo suyo. Si la plantilla no dice nada de rol, ese es el
-//! que manda: la regla de la casa es que solo se pisa lo que la plantilla haya
-//! puesto de verdad. Así que la primera vez que se toca una vista se guarda lo
-//! que traía, y eso es lo que vuelve cuando la plantilla pone `none` o retira
-//! la prop. Cuando sí hay rol, el rol manda y sustituye: una plantilla que
-//! escribe `accessibilityRole="link"` sobre un `an-button` está diciendo que
-//! eso se lee como un enlace, no como «enlace, botón».
+//! **And what `base` is.** A `UIButton` already ships with `.button` on it,
+//! and a `UISwitch` with its own. If the template says nothing about a role,
+//! that one wins: the house rule is that only what the template really set
+//! gets overwritten. So the first time a view is touched, whatever it carried
+//! is saved, and that is what comes back when the template says `none` or
+//! drops the prop. When a role *is* given, the role wins and replaces: a
+//! template writing `accessibilityRole="link"` on an `an-button` is saying
+//! this reads as a link, not as "link, button".
 //!
-//! **Lo que UIKit no tiene se dice.** El vocabulario del contrato es más largo
-//! que el juego de traits en tres sitios —`radio`, `expanded` y `busy`— y en
-//! ninguno de los tres se redondea al trait de al lado: sale por el registro
-//! la primera vez, con el nombre de lo que se pidió.
+//! **What UIKit does not have is said out loud.** The contract's vocabulary is
+//! longer than the trait set in three places —`radio`, `expanded` and `busy`—
+//! and none of the three is rounded to the trait next door: it goes out
+//! through the log the first time, with the name of what was asked for.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -50,8 +51,8 @@ use objc2_ui_kit::{
     UIView,
 };
 
-/// Las seis props del contrato. El host pregunta antes de entrar aquí para no
-/// repartir el nombre de cada una por dos ficheros.
+/// The six props of the contract. The host asks before coming in here, so the
+/// name of each one does not end up spread across two files.
 pub fn handles(key: &str) -> bool {
     matches!(
         key,
@@ -64,22 +65,22 @@ pub fn handles(key: &str) -> bool {
     )
 }
 
-/// Lo que hay que recordar de cada vista para poder recomponer su máscara.
+/// What has to be remembered per view in order to rebuild its mask.
 #[derive(Default)]
 pub struct Accessibility {
-    /// Los traits que la vista traía del sistema, leídos la primera vez que se
-    /// le toca el rol y no antes: leerlos al crear la vista sería leerlos
-    /// antes de que UIKit haya terminado de configurarla.
+    /// The traits the view carried from the system, read the first time its
+    /// role is touched and not before: reading them when the view is created
+    /// would read them before UIKit has finished configuring it.
     base: HashMap<NodeId, UIAccessibilityTraits>,
     role: HashMap<NodeId, Role>,
     state: HashMap<NodeId, State>,
-    /// Nodos cuyo `accessibilityValue` lo escribió la plantilla.
+    /// Nodes whose `accessibilityValue` was written by the template.
     ///
-    /// Hace falta porque `checked` también acaba en el valor —es la convención
-    /// de UIKit, la misma que usa un `UISwitch`— y sin esto no habría forma de
-    /// saber si el valor que hay es el que pidió la plantilla o uno que
-    /// pusimos nosotros por el estado. Con esto, lo que escribió la plantilla
-    /// nunca se pisa.
+    /// Needed because `checked` also ends up in the value —that is UIKit's own
+    /// convention, the one a `UISwitch` uses— and without this there would be
+    /// no way to tell whether the value sitting there is the one the template
+    /// asked for or one we put there for the state. With it, what the template
+    /// wrote is never overwritten.
     explicit_value: HashSet<NodeId>,
 }
 
@@ -88,8 +89,8 @@ impl Accessibility {
         Self::default()
     }
 
-    /// Un nodo que se destruyó. Sin esto, un id reciclado heredaría el rol del
-    /// anterior.
+    /// A node that was destroyed. Without this, a recycled id would inherit
+    /// the previous one's role.
     pub fn forget(&mut self, id: NodeId) {
         self.base.remove(&id);
         self.role.remove(&id);
@@ -97,8 +98,8 @@ impl Accessibility {
         self.explicit_value.remove(&id);
     }
 
-    /// Aplica una de las seis. `kind` solo se usa para poder decir en qué
-    /// primitiva estaba lo que no se pudo aplicar.
+    /// Applies one of the six. `kind` is only used so a warning can say which
+    /// primitive the thing that could not be applied was on.
     pub fn apply(
         &mut self,
         mtm: MainThreadMarker,
@@ -110,10 +111,11 @@ impl Accessibility {
     ) {
         let text = value.as_str().filter(|s| !s.is_empty());
         match key {
-            // Una cadena vacía o un nulo no escriben una etiqueta vacía: la
-            // quitan. Y quitarla en UIKit devuelve la que trae el control —la
-            // de un `UIButton` es su título—, que es exactamente lo que hay
-            // que hacer cuando la plantilla deja de decir nada.
+            // An empty string or a null does not write an empty label: it
+            // removes ours. And removing it in UIKit brings back the one the
+            // control ships with —a `UIButton`'s is its title— which is
+            // exactly what has to happen when the template stops saying
+            // anything.
             "accessibilityLabel" => {
                 view.setAccessibilityLabel(text.map(NSString::from_str).as_deref(), mtm);
             }
@@ -128,8 +130,8 @@ impl Accessibility {
                     }
                     None => {
                         self.explicit_value.remove(&id);
-                        // Se quita el de la plantilla y vuelve el que saliera
-                        // del estado, si hay estado.
+                        // The template's one goes away and whatever came out
+                        // of the state comes back, if there is a state.
                         view.setAccessibilityValue(None, mtm);
                         self.write_state_value(mtm, id, view);
                     }
@@ -142,14 +144,14 @@ impl Accessibility {
                             self.role.insert(id, role);
                         }
                         None => {
-                            // Una errata en la plantilla. No se aplica nada:
-                            // aplicar `none` la escondería debajo de algo que
-                            // parece funcionar.
+                            // A typo in the template. Nothing is applied:
+                            // applying `none` would hide it under something
+                            // that looks like it works.
                             warn_once(
                                 &format!("role:{raw}"),
                                 &format!(
-                                    "`[accessibilityRole]=\"{raw}\"` en <{kind}> no es ninguno de \
-                                     los roles del contrato; el rol se queda como estaba"
+                                    "`[accessibilityRole]=\"{raw}\"` on <{kind}> is none of the \
+                                     roles in the contract; the role stays as it was"
                                 ),
                             );
                             return;
@@ -168,8 +170,8 @@ impl Accessibility {
                     warn_once(
                         &format!("state:{}", entry.key),
                         &format!(
-                            "`[accessibilityState]` en <{kind}> trae `{}: {}`, que no está en el \
-                             contrato; esa clave no se aplicó",
+                            "`[accessibilityState]` on <{kind}> carries `{}: {}`, which is not in \
+                             the contract; that key was not applied",
                             entry.key, entry.value
                         ),
                     );
@@ -183,11 +185,11 @@ impl Accessibility {
                 self.write_state_value(mtm, id, view);
                 self.warn_unrepresentable(id, kind);
             }
-            // `true` convierte la vista en **una** parada del lector, con lo
-            // que tenga dentro leído de una vez. `false` la esconde a ella y a
-            // los suyos, que es lo que hace falta para lo decorativo: sin
-            // `accessibilityElementsHidden` los hijos seguirían siendo
-            // paradas, y esconder solo el padre no esconde nada.
+            // `true` turns the view into **one** stop for the reader, with
+            // whatever is inside read in one go. `false` hides it and its own,
+            // which is what decorative content needs: without
+            // `accessibilityElementsHidden` the children would still be stops,
+            // and hiding only the parent hides nothing.
             "accessible" => match flag(value) {
                 Some(true) => {
                     view.setIsAccessibilityElement(true, mtm);
@@ -205,8 +207,8 @@ impl Accessibility {
         }
     }
 
-    /// Recompone la máscara entera. Es la única forma de escribir un trait sin
-    /// llevarse por delante los demás.
+    /// Rebuilds the whole mask. It is the only way to write one trait without
+    /// taking the others down with it.
     fn write_traits(
         &mut self,
         mtm: MainThreadMarker,
@@ -217,18 +219,17 @@ impl Accessibility {
         let base = *self.base.entry(id).or_insert_with(|| view.accessibilityTraits(mtm));
 
         let mut traits = match self.role.get(&id).copied() {
-            // `none` y «la plantilla no dijo nada» son la misma orden para la
-            // máscara: devolver la vista a los traits que le dio el sistema.
+            // `none` and "the template said nothing" are the same order for
+            // the mask: hand the view back the traits the system gave it.
             None | Some(Role::None) => base,
             Some(role) => match trait_of(role) {
                 Some(bit) => bit,
                 None => {
                     warn_once(
-                        &format!("role-sin-trait:{}", role.name()),
+                        &format!("role-without-trait:{}", role.name()),
                         &format!(
-                            "`[accessibilityRole]=\"{}\"` en <{kind}>: UIKit no tiene ningún trait \
-                             para eso, así que el rol no se aplica. Se queda el que le dio el \
-                             sistema",
+                            "`[accessibilityRole]=\"{}\"` on <{kind}>: UIKit has no trait for \
+                             that, so the role is not applied. The one the system gave it stays",
                             role.name()
                         ),
                     );
@@ -238,9 +239,9 @@ impl Accessibility {
         };
 
         if let Some(state) = self.state.get(&id) {
-            // Los dos estados del contrato que en UIKit son traits, y no otra
-            // cosa: `disabled` y `selected`. Van con `|` y no sustituyen,
-            // porque un botón apagado sigue siendo un botón.
+            // The two states of the contract that in UIKit are traits and not
+            // something else: `disabled` and `selected`. They go in with `|`
+            // and do not replace, because a disabled button is still a button.
             traits = with_bit(traits, unsafe { UIAccessibilityTraitNotEnabled }, state.disabled);
             traits = with_bit(traits, unsafe { UIAccessibilityTraitSelected }, state.selected);
         }
@@ -248,15 +249,15 @@ impl Accessibility {
         view.setAccessibilityTraits(traits, mtm);
     }
 
-    /// `checked` en la única forma que UIKit sabe leerlo: el valor.
+    /// `checked` in the only shape UIKit knows how to read it: the value.
     ///
-    /// No hay ningún trait de «marcado». Lo que hay es la convención que usa
-    /// el propio `UISwitch` —valor `"1"` o `"0"`, y VoiceOver dice «activado»
-    /// o «desactivado» en el idioma del sistema—, así que se usa esa y no una
-    /// cadena nuestra: una etiqueta escrita aquí saldría en castellano en un
-    /// teléfono en japonés.
+    /// There is no "checked" trait. What there is, is the convention
+    /// `UISwitch` itself uses —value `"1"` or `"0"`, and VoiceOver says "on"
+    /// or "off" in the system's language— so that one is used and not a string
+    /// of ours: a label written here would come out in English on a phone set
+    /// to Japanese.
     ///
-    /// Solo se escribe si la plantilla no puso valor. El suyo manda siempre.
+    /// Only written if the template set no value. Theirs always wins.
     fn write_state_value(&self, mtm: MainThreadMarker, id: NodeId, view: &Retained<UIView>) {
         if self.explicit_value.contains(&id) {
             return;
@@ -265,52 +266,52 @@ impl Accessibility {
         let value = match checked {
             Some(Checked::Yes) => Some("1"),
             Some(Checked::No) => Some("0"),
-            // El intermedio no tiene forma en UIKit. Se avisa en
-            // `warn_unrepresentable` y aquí no se escribe nada, que es mejor
-            // que decir que está marcado o que no lo está.
+            // The halfway one has no shape in UIKit. It is reported in
+            // `warn_unrepresentable`, and nothing is written here, which beats
+            // claiming it is checked or that it is not.
             Some(Checked::Mixed) | None => None,
         };
         view.setAccessibilityValue(value.map(NSString::from_str).as_deref(), mtm);
     }
 
-    /// Lo del estado que en UIKit no se puede decir. Se dice una vez.
+    /// What in the state UIKit cannot say. Said once.
     fn warn_unrepresentable(&self, id: NodeId, kind: &str) {
         let Some(state) = self.state.get(&id) else { return };
         if state.checked == Some(Checked::Mixed) {
             warn_once(
-                "state-sin-forma:checked-mixed",
+                "state-without-shape:checked-mixed",
                 &format!(
-                    "`[accessibilityState]` en <{kind}> pide `checked: \"mixed\"`: UIKit solo sabe \
-                     de marcado y sin marcar, así que el valor se queda vacío en vez de \
-                     redondearse a uno de los dos"
+                    "`[accessibilityState]` on <{kind}> asks for `checked: \"mixed\"`: UIKit only \
+                     knows checked and unchecked, so the value is left empty instead of being \
+                     rounded to one of the two"
                 ),
             );
         }
         if state.expanded.is_some() {
             warn_once(
-                "state-sin-forma:expanded",
+                "state-without-shape:expanded",
                 &format!(
-                    "`[accessibilityState]` en <{kind}> pide `expanded`: UIKit no tiene trait ni \
-                     propiedad para eso, así que no se aplica"
+                    "`[accessibilityState]` on <{kind}> asks for `expanded`: UIKit has neither a \
+                     trait nor a property for that, so it is not applied"
                 ),
             );
         }
         if state.busy.is_some() {
             warn_once(
-                "state-sin-forma:busy",
+                "state-without-shape:busy",
                 &format!(
-                    "`[accessibilityState]` en <{kind}> pide `busy`: UIKit no tiene trait ni \
-                     propiedad para eso, así que no se aplica"
+                    "`[accessibilityState]` on <{kind}> asks for `busy`: UIKit has neither a \
+                     trait nor a property for that, so it is not applied"
                 ),
             );
         }
     }
 }
 
-/// El trait que le toca a cada rol, o nada si UIKit no tiene ninguno.
+/// The trait each role gets, or nothing if UIKit has none.
 ///
-/// `Role::None` no está: no es un trait, es la orden de volver al que traía la
-/// vista, y eso lo resuelve `write_traits`.
+/// `Role::None` is not here: it is not a trait, it is the order to go back to
+/// the ones the view carried, and `write_traits` resolves that.
 fn trait_of(role: Role) -> Option<UIAccessibilityTraits> {
     unsafe {
         Some(match role {
@@ -319,27 +320,27 @@ fn trait_of(role: Role) -> Option<UIAccessibilityTraits> {
             Role::Header => UIAccessibilityTraitHeader,
             Role::Image => UIAccessibilityTraitImage,
             Role::Text => UIAccessibilityTraitStaticText,
-            // UIKit no distingue una casilla de un interruptor. Su trait es
-            // «botón que se enciende y se apaga», y esa es la descripción de
-            // los dos: el que los separa es el dibujo, y el dibujo no se lee.
+            // UIKit does not tell a checkbox from a switch. Its trait is
+            // "button that turns on and off", and that describes both: what
+            // separates them is the drawing, and the drawing is not read out.
             Role::Checkbox | Role::Switch => UIAccessibilityTraitToggleButton,
-            // Un deslizador es lo que VoiceOver llama ajustable: se sube y se
-            // baja con el gesto de rueda, y eso es el trait.
+            // A slider is what VoiceOver calls adjustable: it goes up and down
+            // with the rotor gesture, and that is the trait.
             Role::Slider => UIAccessibilityTraitAdjustable,
             Role::Search => UIAccessibilityTraitSearchField,
             Role::Summary => UIAccessibilityTraitSummaryElement,
-            // UIKit **no tiene** trait de radio. No hay ninguno cerca: el
-            // botón de radio de una lista se anuncia por su valor y por su
-            // posición en el grupo, y eso no es un trait sino una estructura
-            // entera. Se dice y no se inventa.
+            // UIKit **has no** radio trait. There is nothing near it either: a
+            // radio button in a list is announced by its value and by its
+            // position in the group, and that is not a trait but a whole
+            // structure. It is said, not invented.
             Role::Radio => return None,
             Role::None => return None,
         })
     }
 }
 
-/// Pone o quita un bit según lo que diga la plantilla. `None` es «no dijo
-/// nada», y entonces el bit se queda como estaba.
+/// Sets or clears a bit according to what the template said. `None` is "said
+/// nothing", and then the bit stays as it was.
 fn with_bit(
     traits: UIAccessibilityTraits,
     bit: UIAccessibilityTraits,
@@ -352,7 +353,7 @@ fn with_bit(
     }
 }
 
-/// `accessible` puede llegar como booleano o como la cadena de un `[attr.]`.
+/// `accessible` can arrive as a boolean or as the string of an `[attr.]`.
 fn flag(value: &PropValue) -> Option<bool> {
     match value {
         PropValue::Bool(b) => Some(*b),
@@ -363,13 +364,14 @@ fn flag(value: &PropValue) -> Option<bool> {
 }
 
 thread_local! {
-    /// Lo ya dicho. Un aviso por frame a 60 Hz es un registro que no se lee.
-    static DICHO: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+    /// What has already been said. One warning per frame at 60 Hz is a log
+    /// nobody reads.
+    static SAID: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
 }
 
 fn warn_once(key: &str, message: &str) {
-    DICHO.with(|dicho| {
-        if dicho.borrow_mut().insert(key.to_owned()) {
+    SAID.with(|said| {
+        if said.borrow_mut().insert(key.to_owned()) {
             eprintln!("angular-native: {message}");
         }
     });

@@ -1,23 +1,24 @@
-//! El vocabulario de accesibilidad del contrato, entendido una sola vez.
+//! The accessibility vocabulary of the contract, understood once.
 //!
-//! Vive en el núcleo por lo mismo que `icons.rs`: hay cuatro hosts de Apple
-//! —UIKit para el teléfono, la tele y el visor, AppKit para el escritorio y
-//! SwiftUI para el reloj— y si cada uno leyera el JSON por su cuenta habría
-//! cuatro sitios donde `checked: "mixed"` podría dejar de significar lo mismo.
+//! It lives in the core for the same reason `icons.rs` does: there are four
+//! Apple hosts —UIKit for the phone, the TV and the headset, AppKit for the
+//! desktop, SwiftUI for the watch— and if each read the JSON on its own there
+//! would be four places where `checked: "mixed"` could stop meaning the same
+//! thing.
 //!
-//! Lo que **no** vive aquí es la traducción a cada plataforma. Un rol no tiene
-//! una traducción común: en UIKit es un bit de una máscara, en AppKit una
-//! cadena de rol, y en SwiftUI un `AccessibilityTraits`. Los tres juegos no se
-//! parecen ni en el número, así que la tabla la pone cada host y ahí se ve —y
-//! ahí se dice lo que no tiene equivalente—.
+//! What does **not** live here is the translation to each platform. A role has
+//! no common translation: in UIKit it is one bit of a mask, in AppKit a role
+//! string, in SwiftUI an `AccessibilityTraits`. The three sets agree on
+//! neither the names nor the count, so each host carries its own table — and
+//! that is also where it says what has no equivalent.
 //!
-//! El estado viaja como JSON y no como cinco props sueltas porque así es como
-//! lo declara el contrato, `NativeAccessibilityState`, y porque el protocolo
-//! del puente no sabe de objetos: `PropValue` es nulo, booleano, número,
-//! cadena o color, y nada más.
+//! The state travels as JSON and not as five separate props because that is
+//! how the contract declares it, `NativeAccessibilityState`, and because the
+//! bridge protocol knows nothing about objects: `PropValue` is null, bool,
+//! number, string or color, and nothing else.
 
-/// Qué es esto para quien no lo ve. Es el `NativeRole` de las primitivas,
-/// palabra por palabra.
+/// What this is for someone who cannot see it. The contract's `NativeRole`,
+/// word for word.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Role {
     Button,
@@ -31,18 +32,18 @@ pub enum Role {
     Slider,
     Search,
     Summary,
-    /// «Esta vista no reclama ningún rol». No es lo mismo que no mandar la
-    /// prop: es una orden de soltar el que se hubiera puesto antes y devolver
-    /// la vista al que le dio el sistema.
+    /// "This view claims no role." Not the same as not sending the prop: it is
+    /// an order to drop whatever was set before and hand the view back the
+    /// role the system gave it.
     None,
 }
 
 impl Role {
-    /// El rol que nombra esa cadena, o nada si no es ninguno de los doce.
+    /// The role that string names, or nothing if it is none of the twelve.
     ///
-    /// Devuelve `Option` y no un valor por defecto a propósito: una errata en
-    /// la plantilla —`"heading"` por `"header"`— tiene que poder decirse, y
-    /// con un `unwrap_or(Role::None)` se convertiría en un rol que se aplica.
+    /// It returns an `Option` and not a default on purpose: a typo in the
+    /// template —`"heading"` for `"header"`— has to be sayable, and an
+    /// `unwrap_or(Role::None)` would turn it into a role that gets applied.
     pub fn parse(raw: &str) -> Option<Role> {
         Some(match raw {
             "button" => Role::Button,
@@ -61,7 +62,7 @@ impl Role {
         })
     }
 
-    /// El nombre con el que viajó, para poder decirlo en un aviso.
+    /// The name it travelled under, so a warning can say it.
     pub fn name(self) -> &'static str {
         match self {
             Role::Button => "button",
@@ -79,8 +80,8 @@ impl Role {
         }
     }
 
-    /// Los doce, en el orden del contrato. Lo usan las comprobaciones para
-    /// recorrer el vocabulario entero sin copiarlo.
+    /// All twelve, in the contract's order. The checks walk the whole
+    /// vocabulary through this instead of copying it.
     pub const ALL: &'static [Role] = &[
         Role::Button,
         Role::Link,
@@ -97,11 +98,11 @@ impl Role {
     ];
 }
 
-/// Marcado, sin marcar, o a medias.
+/// Checked, unchecked, or halfway.
 ///
-/// El tercero existe porque lo tiene el contrato y porque AppKit lo sabe
-/// expresar; UIKit no, y el host de iOS lo dice en vez de redondearlo a uno de
-/// los otros dos.
+/// The third exists because the contract has it and because AppKit can express
+/// it; UIKit cannot, and the iOS host says so rather than rounding it to one
+/// of the other two.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Checked {
     Yes,
@@ -109,11 +110,12 @@ pub enum Checked {
     Mixed,
 }
 
-/// Cómo está, para quien no lo ve. Es el `NativeAccessibilityState`.
+/// How it is right now, for someone who cannot see it. The contract's
+/// `NativeAccessibilityState`.
 ///
-/// Cada campo es un `Option` y no un `bool`: «la plantilla no dijo nada» y «la
-/// plantilla dijo que no» son cosas distintas. La primera deja el estado que
-/// tuviera la vista del sistema; la segunda lo quita.
+/// Every field is an `Option` and not a `bool`: "the template said nothing"
+/// and "the template said no" are different things. The first leaves whatever
+/// state the system view had; the second clears it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct State {
     pub disabled: Option<bool>,
@@ -124,36 +126,36 @@ pub struct State {
 }
 
 impl State {
-    /// Si no pide nada. Un `{}` que llega no es un error, pero tampoco hay que
-    /// tocar la vista por él.
+    /// Whether it asks for nothing. An incoming `{}` is not an error, but
+    /// there is nothing to touch on the view either.
     pub fn is_empty(&self) -> bool {
         *self == State::default()
     }
 }
 
-/// Lo que el JSON traía y el contrato no tiene.
+/// Something the JSON carried that the contract does not have.
 ///
-/// Sale por separado en vez de abortar el análisis entero: una clave de más no
-/// puede invalidar las cuatro que sí estaban bien, pero tampoco puede pasar
-/// callando. Quien llama la dice una vez y sigue.
+/// It comes back separately instead of aborting the whole parse: one stray key
+/// cannot invalidate the four that were fine, but it cannot pass in silence
+/// either. The caller says it once and carries on.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Unknown {
     pub key: String,
-    /// El valor tal y como venía, para que el aviso enseñe lo que se escribió.
+    /// The value exactly as it arrived, so the warning can show what was
+    /// written.
     pub value: String,
 }
 
-/// Lee el `accessibilityState` del JSON con el que viaja.
+/// Reads the `accessibilityState` out of the JSON it travels in.
 ///
-/// No se trae un analizador de JSON entero para esto, igual que
-/// `parse_string_list` en los hosts y por lo mismo: lo único que hay que
-/// entender es lo que genera el lado JS a partir de un objeto plano de cinco
-/// claves, todas con valor `true`, `false` o `"mixed"`.
+/// It does not pull in a whole JSON parser for this, same as
+/// `parse_string_list` in the hosts and for the same reason: the only thing to
+/// understand is what the JS side generates out of a flat object of five keys,
+/// each one `true`, `false` or `"mixed"`.
 ///
-/// Devuelve además lo que no supo leer. Un `{"cheked": true}` con errata
-/// entraría aquí como desconocido y saldría por el registro del host, que es
-/// la única forma de que una errata en una plantilla no se convierta en una
-/// prop que no hace nada.
+/// It also returns what it could not read. A `{"cheked": true}` typo lands
+/// here as unknown and leaves through the host's log, which is the only way a
+/// template typo does not become a prop that does nothing.
 pub fn parse_state(raw: &str) -> (State, Vec<Unknown>) {
     let mut state = State::default();
     let mut unknown = Vec::new();
@@ -197,16 +199,17 @@ pub fn parse_state(raw: &str) -> (State, Vec<Unknown>) {
     (state, unknown)
 }
 
-/// Parejas `clave: valor` de un objeto plano, sin anidamiento ni escapes raros.
+/// `key: value` pairs of a flat object, with no nesting and no odd escapes.
 ///
-/// El valor sale sin recortar comillas para que el aviso pueda enseñar
-/// exactamente lo que venía: `"mixed"` con comillas es un valor legítimo y
-/// `mixed` sin ellas no lo es, y quien lee el aviso tiene que poder verlo.
+/// The value comes out with its quotes still on so the warning can show
+/// exactly what arrived: `"mixed"` with quotes is a legitimate value and
+/// `mixed` without them is not, and whoever reads the warning has to be able
+/// to tell them apart.
 fn entries(raw: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut chars = raw.chars().peekable();
     loop {
-        // La clave: la siguiente cadena entre comillas.
+        // The key: the next quoted string.
         let mut key = String::new();
         loop {
             match chars.next() {
@@ -227,7 +230,7 @@ fn entries(raw: &str) -> Vec<(String, String)> {
                 None => return out,
             }
         }
-        // Los dos puntos. Si no están, esto no era una clave.
+        // The colon. Without it, that was not a key.
         loop {
             match chars.peek() {
                 Some(':') => {
@@ -240,7 +243,7 @@ fn entries(raw: &str) -> Vec<(String, String)> {
                 _ => return out,
             }
         }
-        // El valor: hasta la coma o el cierre, comillas incluidas.
+        // The value: up to the comma or the closing brace, quotes included.
         let mut value = String::new();
         let mut in_string = false;
         loop {
@@ -270,8 +273,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lee_las_cinco_claves_del_contrato() {
-        let json = r#"{"disabled":true,"selected":false,"checked":"mixed","expanded":true,"busy":false}"#;
+    fn reads_the_five_keys_of_the_contract() {
+        let json =
+            r#"{"disabled":true,"selected":false,"checked":"mixed","expanded":true,"busy":false}"#;
         let (state, unknown) = parse_state(json);
         assert_eq!(state.disabled, Some(true));
         assert_eq!(state.selected, Some(false));
@@ -282,14 +286,14 @@ mod tests {
     }
 
     #[test]
-    fn checked_booleano_no_es_lo_mismo_que_mixto() {
+    fn a_boolean_checked_is_not_the_mixed_one() {
         assert_eq!(parse_state(r#"{"checked":true}"#).0.checked, Some(Checked::Yes));
         assert_eq!(parse_state(r#"{"checked":false}"#).0.checked, Some(Checked::No));
     }
 
     #[test]
-    fn lo_que_no_esta_en_el_contrato_sale_por_separado() {
-        // Cazaría: que una errata en la plantilla se tragara sin decir nada.
+    fn what_is_not_in_the_contract_comes_back_apart() {
+        // Would catch: a typo in the template swallowed without a word.
         let (state, unknown) = parse_state(r#"{"cheked":true,"selected":true}"#);
         assert_eq!(state.selected, Some(true));
         assert_eq!(state.checked, None);
@@ -298,23 +302,23 @@ mod tests {
     }
 
     #[test]
-    fn un_valor_que_el_contrato_no_admite_tampoco_pasa() {
-        // `expanded` existe, pero no vale `"sí"`.
-        let (state, unknown) = parse_state(r#"{"expanded":"si"}"#);
+    fn a_value_the_contract_does_not_admit_does_not_pass_either() {
+        // `expanded` exists, but `"yes"` is not one of its values.
+        let (state, unknown) = parse_state(r#"{"expanded":"yes"}"#);
         assert_eq!(state.expanded, None);
         assert_eq!(unknown.len(), 1);
-        assert_eq!(unknown[0].value, "\"si\"");
+        assert_eq!(unknown[0].value, "\"yes\"");
     }
 
     #[test]
-    fn el_objeto_vacio_no_pide_nada() {
+    fn the_empty_object_asks_for_nothing() {
         let (state, unknown) = parse_state("{}");
         assert!(state.is_empty());
         assert!(unknown.is_empty());
     }
 
     #[test]
-    fn los_espacios_del_json_no_cambian_nada() {
+    fn whitespace_in_the_json_changes_nothing() {
         let (state, unknown) = parse_state("{ \"disabled\" : true , \"busy\" : true }");
         assert_eq!(state.disabled, Some(true));
         assert_eq!(state.busy, Some(true));
@@ -322,15 +326,15 @@ mod tests {
     }
 
     #[test]
-    fn los_doce_roles_del_contrato_se_reconocen() {
+    fn the_twelve_roles_of_the_contract_are_recognised() {
         for role in Role::ALL {
             assert_eq!(Role::parse(role.name()), Some(*role));
         }
     }
 
     #[test]
-    fn un_rol_inventado_no_se_reconoce() {
-        // Cazaría: que `"heading"` por `"header"` se aplicara como si tal cosa.
+    fn an_invented_role_is_not_recognised() {
+        // Would catch: `"heading"` for `"header"` applied as if nothing.
         assert_eq!(Role::parse("heading"), None);
         assert_eq!(Role::parse(""), None);
     }

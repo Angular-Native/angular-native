@@ -35,11 +35,11 @@ struct AnNodeView: View {
         content
             .frame(width: node.width, height: node.height)
             .position(x: node.x + node.width / 2, y: node.y + node.height / 2)
-            // La accesibilidad va aquí y no en cada `case` de `content` por lo
-            // mismo que el marco: es de todo nodo, no de un tipo. Un `Toggle`
-            // ya trae su etiqueta y su rasgo del sistema, y lo que hay dentro
-            // solo se pone encima si la plantilla lo puso de verdad; de eso se
-            // encarga `AnAccessibility`.
+            // Accessibility goes here and not in every `case` of `content`
+            // for the same reason the frame does: it belongs to every node,
+            // not to a type. A `Toggle` already ships with the system's label
+            // and trait, and what is here only goes on top of that if the
+            // template really set it; `AnAccessibility` takes care of that.
             .anAccessibility(node)
     }
 

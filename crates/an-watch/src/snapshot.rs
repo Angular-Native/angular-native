@@ -70,30 +70,31 @@ pub struct Node {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub test_id: Option<String>,
 
-    // ------------------------------------------------------- accesibilidad
+    // -------------------------------------------------------- accessibility
     //
-    // Las seis props del contrato, ya traducidas al vocabulario de SwiftUI.
-    // La traducción se hace aquí y no en el shell por lo mismo que la de los
-    // iconos: es donde está la decisión y donde se puede decir lo que no tiene
-    // equivalente. El shell solo pone el modificador.
+    // The six props of the contract, already translated into SwiftUI's
+    // vocabulary. The translation happens here and not in the shell for the
+    // same reason the icon one does: this is where the decision lives and
+    // where what has no equivalent can be said. The shell only attaches the
+    // modifier.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accessibility_label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accessibility_hint: Option<String>,
-    /// Lo que dice el lector del valor. Sale ya resuelto: o el que puso la
-    /// plantilla, o el `"1"`/`"0"` que le corresponde a un `checked`.
+    /// What the reader says the value is. It arrives already resolved: either
+    /// the one the template set, or the `"1"`/`"0"` a `checked` maps to.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accessibility_value: Option<String>,
-    /// Los `AccessibilityTraits` que hay que sumar, por nombre.
+    /// The `AccessibilityTraits` to add, by name.
     ///
-    /// Viaja como lista de nombres y no como campos sueltos por lo mismo que
-    /// `listens`: el rol y el estado acaban los dos aquí —`isButton` sale del
-    /// rol, `isSelected` del estado— y añadir uno nuevo es añadir una cadena,
-    /// no un campo en tres sitios.
+    /// It travels as a list of names and not as separate fields for the same
+    /// reason `listens` does: role and state both end up here —`isButton`
+    /// comes from the role, `isSelected` from the state— and adding a new one
+    /// is adding a string, not a field in three places.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub accessibility_traits: Vec<&'static str>,
-    /// Si esto es **un** elemento para el lector o un contenedor. `false`
-    /// esconde la rama entera.
+    /// Whether this is **one** element for the reader or a container. `false`
+    /// hides the whole branch.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accessible: Option<bool>,
 
@@ -481,15 +482,15 @@ fn font_weight_of(host: &WatchHost, id: NodeId) -> Option<u16> {
     }
 }
 
-/// El rol y el estado del contrato, en los `AccessibilityTraits` de SwiftUI.
+/// The contract's role and state, as SwiftUI `AccessibilityTraits`.
 ///
-/// El reloj es el único host declarativo de los cuatro de Apple: aquí no hay
-/// setter al que llamar cuando llega la prop, hay una vista que se construye
-/// con sus modificadores. Por eso la traducción vive en la foto y no en un
-/// `set_prop`: cuando el shell pinta, ya la tiene hecha.
+/// The watch is the only declarative host of Apple's four: there is no setter
+/// to call when the prop arrives, there is a view built out of every snapshot.
+/// So the translation lives in the snapshot and not in a `set_prop`: by the
+/// time the shell draws, it is already done.
 ///
-/// El juego de SwiftUI es más corto que el del contrato en dos sitios —`radio`
-/// y `slider`— y eso se dice, no se acerca al de al lado.
+/// SwiftUI's set is shorter than the contract's in two places —`radio` and
+/// `slider`— and that gets said, not nudged towards the one next door.
 fn accessibility_traits_of(host: &WatchHost, id: NodeId, kind: &'static str) -> Vec<&'static str> {
     let mut traits = Vec::new();
 
@@ -499,8 +500,8 @@ fn accessibility_traits_of(host: &WatchHost, id: NodeId, kind: &'static str) -> 
                 kind,
                 "accessibilityRole",
                 &format!(
-                    "<{kind}> pide [accessibilityRole]=\"{raw}\", que no es ninguno de los roles \
-                     del contrato; el rol no se aplica"
+                    "<{kind}> asks for [accessibilityRole]=\"{raw}\", which is none of the roles \
+                     in the contract; the role is not applied"
                 ),
             ),
             Some(Role::None) => {}
@@ -510,8 +511,8 @@ fn accessibility_traits_of(host: &WatchHost, id: NodeId, kind: &'static str) -> 
                     kind,
                     "accessibilityRole",
                     &format!(
-                        "<{kind}> pide [accessibilityRole]=\"{}\": SwiftUI no tiene ningún \
-                         AccessibilityTraits para eso, así que el rol no se aplica",
+                        "<{kind}> asks for [accessibilityRole]=\"{}\": SwiftUI has no \
+                         AccessibilityTraits for that, so the role is not applied",
                         role.name()
                     ),
                 ),
@@ -526,8 +527,8 @@ fn accessibility_traits_of(host: &WatchHost, id: NodeId, kind: &'static str) -> 
             kind,
             "accessibilityState",
             &format!(
-                "<{kind}> trae [accessibilityState] con `{}: {}`, que no está en el contrato; \
-                 esa clave no se aplicó",
+                "<{kind}> carries [accessibilityState] with `{}: {}`, which is not in the \
+                 contract; that key was not applied",
                 entry.key, entry.value
             ),
         );
@@ -535,18 +536,18 @@ fn accessibility_traits_of(host: &WatchHost, id: NodeId, kind: &'static str) -> 
     if state.selected == Some(true) {
         traits.push("isSelected");
     }
-    // Lo que SwiftUI no sabe decir de un estado. `disabled` no está en
-    // `AccessibilityTraits`: la forma de SwiftUI es `.disabled(true)`, que
-    // además deja de aceptar toques, y apagar un control de verdad para poder
-    // anunciarlo apagado sería cambiar lo que la vista hace, no lo que se lee
-    // de ella.
+    // What SwiftUI cannot say about a state. `disabled` is not in
+    // `AccessibilityTraits`: SwiftUI's way is `.disabled(true)`, which also
+    // stops taking taps, and really turning a control off just to announce it
+    // off would change what the view does, not what is read out of it.
     if state.disabled.is_some() {
         warn_once(
             kind,
             "accessibilityState.disabled",
             &format!(
-                "<{kind}> pide `disabled` en [accessibilityState]: SwiftUI no tiene ese trait, y \
-                 `.disabled()` apagaría también el toque. Para apagar un control está [enabled]"
+                "<{kind}> asks for `disabled` in [accessibilityState]: SwiftUI has no such trait, \
+                 and `.disabled()` would switch off the tap as well. To switch a control off \
+                 there is [enabled]"
             ),
         );
     }
@@ -554,24 +555,24 @@ fn accessibility_traits_of(host: &WatchHost, id: NodeId, kind: &'static str) -> 
         warn_once(
             kind,
             "accessibilityState.expanded",
-            &format!("<{kind}> pide `expanded` en [accessibilityState]: SwiftUI no lo tiene"),
+            &format!("<{kind}> asks for `expanded` in [accessibilityState]: SwiftUI has no such trait"),
         );
     }
     if state.busy.is_some() {
         warn_once(
             kind,
             "accessibilityState.busy",
-            &format!("<{kind}> pide `busy` en [accessibilityState]: SwiftUI no lo tiene"),
+            &format!("<{kind}> asks for `busy` in [accessibilityState]: SwiftUI has no such trait"),
         );
     }
     traits
 }
 
-/// El `AccessibilityTraits` que le toca a cada rol, por nombre.
+/// The `AccessibilityTraits` each role gets, by name.
 ///
-/// Devuelve el nombre y no una constante porque las constantes están en Swift:
-/// el shell tiene la tabla de nombre a `AccessibilityTraits` en un solo sitio,
-/// y un nombre que no reconozca sale por el registro en vez de perderse.
+/// It returns the name and not a constant because the constants are in Swift:
+/// the shell keeps the name-to-`AccessibilityTraits` table in one place, and a
+/// name it does not recognise leaves through the log instead of getting lost.
 fn swiftui_trait(role: Role) -> Option<&'static str> {
     Some(match role {
         Role::Button => "isButton",
@@ -579,26 +580,26 @@ fn swiftui_trait(role: Role) -> Option<&'static str> {
         Role::Header => "isHeader",
         Role::Image => "isImage",
         Role::Text => "isStaticText",
-        // Igual que en UIKit: el trait de SwiftUI es «esto se enciende y se
-        // apaga», y esa es la descripción de una casilla y de un interruptor.
+        // Same as UIKit: SwiftUI's trait is "this turns on and off", and that
+        // describes both a checkbox and a switch.
         Role::Checkbox | Role::Switch => "isToggle",
         Role::Search => "isSearchField",
         Role::Summary => "isSummaryElement",
-        // SwiftUI **no tiene** trait de radio ni de deslizador. Lo ajustable
-        // en SwiftUI no es un trait sino una acción,
-        // `accessibilityAdjustableAction`, y colgar una que no hiciera nada
-        // sería justo la imitación que aquí no se hace.
+        // SwiftUI **has no** radio and no slider trait. Adjustable in SwiftUI
+        // is not a trait but an action, `accessibilityAdjustableAction`, and
+        // hanging one that did nothing would be exactly the imitation this
+        // project does not do.
         Role::Radio | Role::Slider => return None,
         Role::None => return None,
     })
 }
 
-/// El valor que anuncia el lector: el de la plantilla, o el que sale de
-/// `checked`.
+/// The value the reader announces: the template's, or the one `checked` maps
+/// to.
 ///
-/// El `"1"`/`"0"` es la convención de la propia plataforma —es lo que publica
-/// un `Toggle`— y por eso aquí no se escribe ninguna palabra: una etiqueta
-/// nuestra saldría en castellano en un reloj configurado en japonés.
+/// The `"1"`/`"0"` is the platform's own convention —it is what a `Toggle`
+/// publishes— which is why no word is written here: a label of ours would come
+/// out in English on a watch set to Japanese.
 fn accessibility_value_of(host: &WatchHost, id: NodeId, kind: &'static str) -> Option<String> {
     if let Some(value) = string_of(host, id, "accessibilityValue").filter(|v| !v.is_empty()) {
         return Some(value);
@@ -612,8 +613,8 @@ fn accessibility_value_of(host: &WatchHost, id: NodeId, kind: &'static str) -> O
                 kind,
                 "accessibilityState.checked",
                 &format!(
-                    "<{kind}> pide `checked: \"mixed\"`: en SwiftUI el valor de accesibilidad \
-                     solo sabe de marcado y sin marcar, así que se deja vacío"
+                    "<{kind}> asks for `checked: \"mixed\"`: in SwiftUI the accessibility value \
+                     only knows checked and unchecked, so it is left empty"
                 ),
             );
             None
@@ -690,10 +691,10 @@ fn reads(kind: NodeKind, key: &str) -> bool {
     if matches!(key, "backgroundColor" | "borderRadius" | "opacity" | "testID" | "enabled") {
         return true;
     }
-    // Las seis de accesibilidad valen sobre cualquier nodo: el contrato las
-    // pone en la base, no en un control. Lo que de ellas no se puede aplicar
-    // en el reloj ya lo dice `accessibility_traits_of` con el motivo, así que
-    // avisar aquí además sería avisar dos veces de lo mismo.
+    // The six accessibility ones hold on any node: the contract puts them on
+    // the base, not on a control. Whatever of them cannot be applied on the
+    // watch is already said, with the reason, by `accessibility_traits_of`, so
+    // warning here as well would be saying the same thing twice.
     if matches!(
         key,
         "accessibilityLabel"

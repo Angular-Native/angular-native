@@ -1,28 +1,28 @@
-//! Las seis props de accesibilidad del contrato, sobre AppKit.
+//! The six accessibility props of the contract, on AppKit.
 //!
-//! **Los roles de AppKit son otro juego.** No es el de UIKit con otros
-//! nombres: en UIKit un rol es un bit de una máscara y varias cosas conviven
-//! —«botón» y «seleccionado» a la vez—; aquí un rol es *una* cadena, la vista
-//! tiene exactamente uno, y lo que en UIKit son traits de estado aquí son
-//! propiedades aparte del protocolo `NSAccessibility`:
-//! `setAccessibilityEnabled:`, `setAccessibilitySelected:`,
-//! `setAccessibilityExpanded:`. Por eso este fichero no recompone ninguna
-//! máscara y el de iOS sí.
+//! **AppKit's roles are a different set.** Not UIKit's with other names: in
+//! UIKit a role is one bit of a mask and several things coexist —"button" and
+//! "selected" at once—; here a role is *one* string, a view has exactly one,
+//! and what in UIKit are state traits are separate properties of the
+//! `NSAccessibility` protocol: `setAccessibilityEnabled:`,
+//! `setAccessibilitySelected:`, `setAccessibilityExpanded:`. That is why this
+//! file rebuilds no mask and the iOS one does.
 //!
-//! Lo que sí comparte con iOS es la regla de no pisar lo que ya está bien. Un
-//! `NSButton` viene con rol `AXButton` y con su título de etiqueta puestos por
-//! AppKit; un `NSSwitch`, con `AXCheckBox` y subrol `AXSwitch`. Escribir
-//! encima sin mirar empeoraría lo que había. Así que:
+//! What it does share with iOS is the rule of not overwriting what is already
+//! right. An `NSButton` arrives with role `AXButton` and with its title as
+//! label, both put there by AppKit; an `NSSwitch`, with `AXCheckBox` and
+//! subrole `AXSwitch`. Writing over that without looking would make what was
+//! there worse. So:
 //!
-//! - una etiqueta vacía **quita** la nuestra en vez de escribir una vacía, y
-//!   entonces vuelve la del sistema;
-//! - el rol del sistema se lee y se guarda la primera vez que hace falta
-//!   pisarlo, y vuelve cuando la plantilla pone `none` o retira la prop.
+//! - an empty label **removes** ours instead of writing an empty one, and then
+//!   the system's comes back;
+//! - the system role is read and kept the first time it has to be overwritten,
+//!   and comes back when the template says `none` or drops the prop.
 //!
-//! **Y lo que AppKit no tiene se dice.** `summary` no tiene rol —es una idea
-//! de VoiceOver en iOS, la del elemento que resume una pantalla— y `busy` no
-//! tiene propiedad: el protocolo `NSAccessibility` no la lleva. Ninguna de las
-//! dos se redondea a la de al lado.
+//! **And what AppKit does not have is said out loud.** `summary` has no role
+//! —it is a VoiceOver-on-iOS idea, the element that sums a screen up— and
+//! `busy` has no property: the `NSAccessibility` protocol does not carry one.
+//! Neither is rounded to the one next door.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -39,7 +39,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSArray, NSNumber, NSString};
 
-/// Las seis props del contrato.
+/// The six props of the contract.
 pub fn handles(key: &str) -> bool {
     matches!(
         key,
@@ -54,10 +54,11 @@ pub fn handles(key: &str) -> bool {
 
 #[derive(Default)]
 pub struct Accessibility {
-    /// El rol que AppKit le puso a la vista, guardado la primera vez que se le
-    /// va a escribir uno encima. Es lo que vuelve con `none`.
+    /// The role AppKit gave the view, saved the first time one is about to be
+    /// written over it. It is what comes back with `none`.
     base: HashMap<NodeId, Option<Retained<NSAccessibilityRole>>>,
-    /// Nodos cuyo valor lo escribió la plantilla: `checked` no lo pisa.
+    /// Nodes whose value was written by the template: `checked` does not
+    /// overwrite it.
     explicit_value: HashSet<NodeId>,
     state: HashMap<NodeId, State>,
 }
@@ -86,10 +87,10 @@ impl Accessibility {
             "accessibilityLabel" => {
                 view.setAccessibilityLabel(text.map(NSString::from_str).as_deref());
             }
-            // La pista de iOS es la ayuda de macOS: las dos son lo que se lee
-            // *después* del nombre y solo cuando el nombre no basta. AppKit no
-            // tiene ninguna otra: `AXHelp` es la que enseña el globo de ayuda
-            // y la que VoiceOver anuncia al final.
+            // The hint on iOS is the help on macOS: both are what is read
+            // *after* the name and only when the name is not enough. AppKit
+            // has no other: `AXHelp` is the one the help tag shows and the one
+            // VoiceOver announces last.
             "accessibilityHint" => {
                 view.setAccessibilityHelp(text.map(NSString::from_str).as_deref());
             }
@@ -113,8 +114,8 @@ impl Accessibility {
                             warn_once(
                                 &format!("role:{raw}"),
                                 &format!(
-                                    "`[accessibilityRole]=\"{raw}\"` en <{kind}> no es ninguno de \
-                                     los roles del contrato; el rol se queda como estaba"
+                                    "`[accessibilityRole]=\"{raw}\"` on <{kind}> is none of the \
+                                     roles in the contract; the role stays as it was"
                                 ),
                             );
                             return;
@@ -131,8 +132,8 @@ impl Accessibility {
                     warn_once(
                         &format!("state:{}", entry.key),
                         &format!(
-                            "`[accessibilityState]` en <{kind}> trae `{}: {}`, que no está en el \
-                             contrato; esa clave no se aplicó",
+                            "`[accessibilityState]` on <{kind}> carries `{}: {}`, which is not in \
+                             the contract; that key was not applied",
                             entry.key, entry.value
                         ),
                     );
@@ -148,11 +149,11 @@ impl Accessibility {
             "accessible" => match flag(value) {
                 Some(true) => view.setAccessibilityElement(true),
                 Some(false) => {
-                    // Quitar el elemento no esconde a los suyos: AppKit sigue
-                    // publicando los hijos, y una vista decorativa con tres
-                    // rótulos dentro seguirían siendo tres paradas. Vaciar la
-                    // lista de hijos es lo que corta la rama entera, que es lo
-                    // que pide el contrato.
+                    // Dropping the element does not hide its own: AppKit keeps
+                    // publishing the children, and a decorative view with
+                    // three labels inside would still be three stops. Emptying
+                    // the children list is what cuts the whole branch, which
+                    // is what the contract asks for.
                     view.setAccessibilityElement(false);
                     unsafe { view.setAccessibilityChildren(Some(&NSArray::new())) };
                 }
@@ -162,22 +163,13 @@ impl Accessibility {
         }
     }
 
-    /// Escribe el rol, guardando antes el que tenía la vista.
-    fn write_role(
-        &mut self,
-        id: NodeId,
-        view: &Retained<NSView>,
-        kind: &str,
-        role: Option<Role>,
-    ) {
-        let base = self
-            .base
-            .entry(id)
-            .or_insert_with(|| view.accessibilityRole())
-            .clone();
+    /// Writes the role, saving first the one the view had.
+    fn write_role(&mut self, id: NodeId, view: &Retained<NSView>, kind: &str, role: Option<Role>) {
+        let base =
+            self.base.entry(id).or_insert_with(|| view.accessibilityRole()).clone();
 
-        // `none` y «no dijo nada» son lo mismo: devolver a la vista el rol que
-        // le dio AppKit.
+        // `none` and "said nothing" are the same thing: hand the view back the
+        // role AppKit gave it.
         let Some(role) = role.filter(|r| *r != Role::None) else {
             view.setAccessibilityRole(base.as_deref());
             view.setAccessibilitySubrole(None);
@@ -186,10 +178,10 @@ impl Accessibility {
 
         let Some((role_name, subrole)) = role_of(role) else {
             warn_once(
-                &format!("role-sin-rol:{}", role.name()),
+                &format!("role-without-role:{}", role.name()),
                 &format!(
-                    "`[accessibilityRole]=\"{}\"` en <{kind}>: AppKit no tiene ningún rol para \
-                     eso, así que no se aplica. Se queda el que le dio el sistema",
+                    "`[accessibilityRole]=\"{}\"` on <{kind}>: AppKit has no role for that, so it \
+                     is not applied. The one the system gave it stays",
                     role.name()
                 ),
             );
@@ -200,7 +192,7 @@ impl Accessibility {
         view.setAccessibilitySubrole(subrole);
     }
 
-    /// Los cuatro estados que AppKit sabe decir, cada uno con su propiedad.
+    /// The three states AppKit knows how to say, each with its own property.
     fn write_state(&self, view: &Retained<NSView>, kind: &str, state: &State) {
         if let Some(disabled) = state.disabled {
             view.setAccessibilityEnabled(!disabled);
@@ -212,25 +204,27 @@ impl Accessibility {
             view.setAccessibilityExpanded(expanded);
         }
         if state.busy.is_some() {
-            // AppKit no lo lleva. El protocolo `NSAccessibility` no tiene
-            // ninguna propiedad de «ocupado»: lo más cerca es el rol
-            // `AXBusyIndicator`, que es *una rueda que gira*, no un estado de
-            // otra vista. Poner ese rol convertiría un botón en una rueda.
+            // AppKit does not carry it. The `NSAccessibility` protocol has no
+            // "busy" property at all: the closest thing is the
+            // `AXBusyIndicator` role, which is *a spinner*, not a state of
+            // some other view. Setting that role would turn a button into a
+            // spinner.
             warn_once(
-                "state-sin-forma:busy",
+                "state-without-shape:busy",
                 &format!(
-                    "`[accessibilityState]` en <{kind}> pide `busy`: el protocolo NSAccessibility \
-                     no tiene ninguna propiedad para eso, así que no se aplica"
+                    "`[accessibilityState]` on <{kind}> asks for `busy`: the NSAccessibility \
+                     protocol has no property for that, so it is not applied"
                 ),
             );
         }
     }
 
-    /// `checked` en la forma de AppKit: el valor, como número.
+    /// `checked` in AppKit's shape: the value, as a number.
     ///
-    /// Es lo que hace una casilla de macOS —`NSButton` de tipo `switch`
-    /// publica `AXValue` 0, 1 o 2— y por eso el intermedio sí cabe aquí y en
-    /// UIKit no. Solo se escribe si la plantilla no puso valor.
+    /// It is what a macOS checkbox does —an `NSButton` of switch type
+    /// publishes `AXValue` 0, 1 or 2— and that is why the halfway one fits
+    /// here and does not fit in UIKit. Only written if the template set no
+    /// value.
     fn write_state_value(&self, id: NodeId, view: &Retained<NSView>) {
         if self.explicit_value.contains(&id) {
             return;
@@ -245,14 +239,16 @@ impl Accessibility {
     }
 }
 
-/// El rol —y el subrol, cuando hace falta— que le toca a cada uno.
+/// The role —and the subrole, where one is needed— that each one gets.
 ///
-/// El subrol no es un adorno: en AppKit un campo de búsqueda *es* un
-/// `AXTextField`, y lo que lo distingue de cualquier otro campo es el subrol
-/// `AXSearchField`. Lo mismo el interruptor, que es un `AXCheckBox` con subrol
-/// `AXSwitch`. Poner solo el rol dejaría los dos indistinguibles de lo que no
-/// son.
-fn role_of(role: Role) -> Option<(&'static NSAccessibilityRole, Option<&'static NSAccessibilitySubrole>)> {
+/// The subrole is not decoration: in AppKit a search field *is* an
+/// `AXTextField`, and what tells it apart from any other field is the
+/// `AXSearchField` subrole. Same for the switch, which is an `AXCheckBox` with
+/// subrole `AXSwitch`. Setting only the role would leave both
+/// indistinguishable from what they are not.
+fn role_of(
+    role: Role,
+) -> Option<(&'static NSAccessibilityRole, Option<&'static NSAccessibilitySubrole>)> {
     unsafe {
         Some(match role {
             Role::Button => (NSAccessibilityButtonRole, None),
@@ -264,19 +260,21 @@ fn role_of(role: Role) -> Option<(&'static NSAccessibilityRole, Option<&'static 
             Role::Radio => (NSAccessibilityRadioButtonRole, None),
             Role::Switch => (NSAccessibilityCheckBoxRole, Some(NSAccessibilitySwitchSubrole)),
             Role::Slider => (NSAccessibilitySliderRole, None),
-            Role::Search => (NSAccessibilityTextFieldRole, Some(NSAccessibilitySearchFieldSubrole)),
-            // AppKit **no tiene** nada para esto. `summary` es una idea de
-            // VoiceOver en iOS: el elemento que se lee solo al entrar en una
-            // pantalla, para resumirla. En un Mac no hay ese momento —no se
-            // «entra» en una ventana— y no hay ni rol ni subrol que se le
-            // parezca. Se dice y no se inventa.
+            Role::Search => {
+                (NSAccessibilityTextFieldRole, Some(NSAccessibilitySearchFieldSubrole))
+            }
+            // AppKit **has nothing** for this. `summary` is a VoiceOver-on-iOS
+            // idea: the element read on its own when you enter a screen, to
+            // sum it up. On a Mac there is no such moment —you do not "enter"
+            // a window— and there is neither a role nor a subrole like it. It
+            // is said, not invented.
             Role::Summary => return None,
             Role::None => return None,
         })
     }
 }
 
-/// `accessible` puede llegar como booleano o como la cadena de un `[attr.]`.
+/// `accessible` can arrive as a boolean or as the string of an `[attr.]`.
 fn flag(value: &PropValue) -> Option<bool> {
     match value {
         PropValue::Bool(b) => Some(*b),
@@ -287,12 +285,12 @@ fn flag(value: &PropValue) -> Option<bool> {
 }
 
 thread_local! {
-    static DICHO: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+    static SAID: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
 }
 
 fn warn_once(key: &str, message: &str) {
-    DICHO.with(|dicho| {
-        if dicho.borrow_mut().insert(key.to_owned()) {
+    SAID.with(|said| {
+        if said.borrow_mut().insert(key.to_owned()) {
             eprintln!("angular-native: {message}");
         }
     });

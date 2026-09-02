@@ -1,71 +1,71 @@
 import SwiftUI
 
-/// Las seis props de accesibilidad del contrato, sobre SwiftUI.
+/// The six accessibility props of the contract, on SwiftUI.
 ///
-/// Este host es el único de los cuatro de Apple que es declarativo, y eso
-/// cambia el sitio donde se aplican. En UIKit y en AppKit hay una vista viva y
-/// un setter al que llamar cuando llega la prop; aquí hay una vista que se
-/// construye entera en cada foto, así que la accesibilidad no se «pone»: se
-/// declara al construirla, y por eso está en un `ViewModifier` que cuelga de
-/// `AnNodeView.body` y no en ningún equivalente de `set_prop`.
+/// This host is the only declarative one of Apple's four, and that changes
+/// where they are applied. In UIKit and in AppKit there is a live view and a
+/// setter to call when the prop arrives; here there is a view built whole out
+/// of every snapshot, so accessibility is not "set": it is declared while
+/// building it, which is why this is a `ViewModifier` hanging off
+/// `AnNodeView.body` and not any equivalent of `set_prop`.
 ///
-/// **La decisión no está aquí.** Qué rol es qué trait, y qué parte del
-/// contrato no tiene forma en SwiftUI, lo resuelve Rust en
-/// `snapshot::accessibility_traits_of`, que es además quien lo dice por el
-/// registro. Lo que llega aquí ya viene traducido: una lista de nombres de
-/// trait y tres cadenas. Así la tabla vive en un sitio y no en dos, igual que
-/// pasa con los iconos.
+/// **The decision is not here.** Which role is which trait, and which part of
+/// the contract has no shape in SwiftUI, is settled by Rust in
+/// `snapshot::accessibility_traits_of`, which is also what says it through the
+/// log. What arrives here is already translated: a list of trait names and
+/// three strings. That way the table lives in one place and not in two, same
+/// as with the icons.
 ///
-/// Lo único que este fichero decide es cómo se escribe cada cosa en SwiftUI, y
-/// un nombre de trait que no reconozca sale por el registro en vez de
-/// perderse: es la única forma de que un cambio en Rust que aquí no se hubiera
-/// seguido se vea, en vez de dejar una vista muda.
+/// The only thing this file decides is how each piece is written in SwiftUI,
+/// and a trait name it does not recognise leaves through the log instead of
+/// getting lost: that is the only way a change in Rust that was not followed
+/// here shows up, rather than leaving a mute view.
 struct AnAccessibility: ViewModifier {
     let node: AnNode
 
     func body(content: Content) -> some View {
         content
-            // Primero, si esto es **un** elemento o un contenedor. Va antes que
-            // el resto porque es lo que decide sobre qué se pega la etiqueta:
-            // con `.combine`, la fila entera es una sola parada y la etiqueta
-            // es la de la fila.
-            .modifier(Agrupado(accessible: node.accessible))
-            .modifier(Cadena(texto: node.accessibilityLabel, cual: .etiqueta))
-            .modifier(Cadena(texto: node.accessibilityHint, cual: .pista))
-            .modifier(Cadena(texto: node.accessibilityValue, cual: .valor))
-            // Un juego vacío de traits no hace nada, así que este sí se puede
-            // poner siempre: cuando no hay rol no cambia la vista.
+            // First, whether this is **one** element or a container. It goes
+            // before the rest because it decides what the label sticks to:
+            // with `.combine` the whole row is a single stop and the label is
+            // the row's.
+            .modifier(Grouped(accessible: node.accessible))
+            .modifier(Phrase(text: node.accessibilityLabel, which: .label))
+            .modifier(Phrase(text: node.accessibilityHint, which: .hint))
+            .modifier(Phrase(text: node.accessibilityValue, which: .value))
+            // An empty trait set does nothing, so this one can always be
+            // attached: with no role it does not change the view.
             .accessibilityAddTraits(traits)
-            // Y esconder la rama, que es lo contrario de agrupar: `false` en el
-            // contrato es «esto es decorativo, no lo leas ni a mí ni a los
-            // míos».
+            // And hiding the branch, which is the opposite of grouping:
+            // `false` in the contract means "this is decorative, do not read
+            // me or mine".
             .accessibilityHidden(node.accessible == false)
     }
 
-    /// Los traits que pidió Rust, ya sumados.
+    /// The traits Rust asked for, already unioned.
     private var traits: AccessibilityTraits {
-        var suma = AccessibilityTraits()
-        for nombre in node.accessibilityTraits ?? [] {
-            guard let trait = Self.trait(nombre) else {
-                AnAccessibility.avisar(
-                    "trait:\(nombre)",
-                    "angular-native: Rust mandó el AccessibilityTraits «\(nombre)» y el shell "
-                        + "del reloj no lo conoce; ese rasgo no se aplicó"
+        var all = AccessibilityTraits()
+        for name in node.accessibilityTraits ?? [] {
+            guard let trait = Self.trait(name) else {
+                AnAccessibility.warnOnce(
+                    "trait:\(name)",
+                    "angular-native: Rust sent the AccessibilityTraits \"\(name)\" and the watch "
+                        + "shell does not know it; that trait was not applied"
                 )
                 continue
             }
-            suma.formUnion(trait)
+            all.formUnion(trait)
         }
-        return suma
+        return all
     }
 
-    /// El `AccessibilityTraits` que se llama así.
+    /// The `AccessibilityTraits` that goes by that name.
     ///
-    /// Es la única tabla de este lado, y es a propósito una traducción tonta:
-    /// los nombres son los de SwiftUI tal cual, así que quien lea
-    /// `swiftui_trait()` en Rust está leyendo ya el nombre de la constante.
-    private static func trait(_ nombre: String) -> AccessibilityTraits? {
-        switch nombre {
+    /// It is the only table on this side, and it is deliberately a dumb
+    /// translation: the names are SwiftUI's as they stand, so whoever reads
+    /// `swiftui_trait()` in Rust is already reading the constant's name.
+    private static func trait(_ name: String) -> AccessibilityTraits? {
+        switch name {
         case "isButton": return .isButton
         case "isLink": return .isLink
         case "isHeader": return .isHeader
@@ -79,22 +79,22 @@ struct AnAccessibility: ViewModifier {
         }
     }
 
-    /// Convierte la vista en una sola parada del lector, o la deja como el
-    /// contenedor que era.
+    /// Turns the view into a single stop for the reader, or leaves it as the
+    /// container it was.
     ///
-    /// Va en un `ViewModifier` suyo, y no en un `if` dentro del de arriba, para
-    /// que el tipo de lo que sale de `AnAccessibility` no dependa de si la
-    /// plantilla puso `[accessible]`: con la rama encerrada aquí, `body` tiene
-    /// un tipo y no dos.
-    private struct Agrupado: ViewModifier {
+    /// It sits in a `ViewModifier` of its own, and not in an `if` inside the
+    /// one above, so that the type coming out of `AnAccessibility` does not
+    /// depend on whether the template set `[accessible]`: with the branch
+    /// boxed in here, `body` has one type and not two.
+    private struct Grouped: ViewModifier {
         let accessible: Bool?
 
         @ViewBuilder
         func body(content: Content) -> some View {
             if accessible == true {
-                // `.combine` y no `.ignore`: lo que hace falta es que la fila
-                // —icono, título y subtítulo— se lea de una vez, no que se
-                // quede muda.
+                // `.combine` and not `.ignore`: what is needed is for the row
+                // —icon, title and subtitle— to be read in one go, not for it
+                // to go mute.
                 content.accessibilityElement(children: .combine)
             } else {
                 content
@@ -102,31 +102,31 @@ struct AnAccessibility: ViewModifier {
         }
     }
 
-    /// Una de las tres cadenas, puesta solo si vino.
+    /// One of the three strings, attached only if it came.
     ///
-    /// Las tres tienen el mismo problema y por eso comparten modificador:
-    /// SwiftUI no tiene un valor que signifique «no pongas ninguna».
-    /// `.accessibilityLabel("")` no es no poner etiqueta, es poner una vacía, y
-    /// encima de un `Toggle` —que trae la suya del sistema— eso deja el control
-    /// sin nombre. Vacías no llegan nunca: Rust las filtra antes de meterlas en
-    /// la foto.
-    private struct Cadena: ViewModifier {
-        enum Cual {
-            case etiqueta
-            case pista
-            case valor
+    /// All three share a modifier because they share a problem: SwiftUI has no
+    /// value meaning "do not set one". `.accessibilityLabel("")` is not
+    /// leaving the label alone, it is setting an empty one, and on top of a
+    /// `Toggle` —which ships with the system's— that leaves the control
+    /// nameless. Empty ones never arrive: Rust filters them out before they go
+    /// into the snapshot.
+    private struct Phrase: ViewModifier {
+        enum Which {
+            case label
+            case hint
+            case value
         }
 
-        let texto: String?
-        let cual: Cual
+        let text: String?
+        let which: Which
 
         @ViewBuilder
         func body(content: Content) -> some View {
-            if let texto {
-                switch cual {
-                case .etiqueta: content.accessibilityLabel(Text(verbatim: texto))
-                case .pista: content.accessibilityHint(Text(verbatim: texto))
-                case .valor: content.accessibilityValue(Text(verbatim: texto))
+            if let text {
+                switch which {
+                case .label: content.accessibilityLabel(Text(verbatim: text))
+                case .hint: content.accessibilityHint(Text(verbatim: text))
+                case .value: content.accessibilityValue(Text(verbatim: text))
                 }
             } else {
                 content
@@ -134,17 +134,18 @@ struct AnAccessibility: ViewModifier {
         }
     }
 
-    /// Lo ya dicho. Igual que en Rust: un aviso por frame a 30 Hz no se lee.
+    /// What has already been said. Same as in Rust: one warning per frame at
+    /// 30 Hz is a log nobody reads.
     ///
-    /// `@MainActor` porque SwiftUI construye las vistas ahí y porque un estado
-    /// mutable global sin dueño no compila en Swift 6.
-    @MainActor private static var dicho = Set<String>()
+    /// `@MainActor` because SwiftUI builds views there, and because global
+    /// mutable state with no owner does not compile under Swift 6.
+    @MainActor private static var said = Set<String>()
 
     @MainActor
-    private static func avisar(_ clave: String, _ mensaje: String) {
-        guard !dicho.contains(clave) else { return }
-        dicho.insert(clave)
-        NSLog("%@", mensaje)
+    private static func warnOnce(_ key: String, _ message: String) {
+        guard !said.contains(key) else { return }
+        said.insert(key)
+        NSLog("%@", message)
     }
 }
 

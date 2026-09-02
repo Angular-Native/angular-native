@@ -490,10 +490,10 @@ pub struct UikitHost {
     /// que poder quitarlas: un `@if` que desmonta su rama destruye la vista,
     /// pero un `(press)` que deja de estar bindeado no.
     listeners: HashMap<(NodeId, String), crate::events::AttachedListener>,
-    /// Rol y estado de accesibilidad de cada nodo, y los traits que la vista
-    /// traía del sistema. Van juntos porque `accessibilityTraits` es una
-    /// máscara: escribir un bit obliga a saber los demás. Ver
-    /// `accessibility.rs`.
+    /// Accessibility role and state per node, plus the traits the view
+    /// carried from the system. They go together because
+    /// `accessibilityTraits` is a mask: writing one bit means knowing the
+    /// others. See `accessibility.rs`.
     accessibility: crate::accessibility::Accessibility,
     events: EventQueue,
 }
@@ -1833,10 +1833,10 @@ impl HostRenderer for UikitHost {
                     native.setAccessibilityIdentifier(Some(&NSString::from_str(t)));
                 }
             }
-            // Las seis del contrato. Van todas juntas a `accessibility.rs`
-            // porque no son seis props independientes: el rol y el estado
-            // acaban en la misma máscara de bits, y `checked` acaba en el
-            // valor solo si la plantilla no puso uno.
+            // The six of the contract. They all go together to
+            // `accessibility.rs` because they are not six independent props:
+            // role and state end up in the same bit mask, and `checked` ends
+            // up in the value only if the template set none.
             _ if crate::accessibility::handles(key) => {
                 let kind = format!("{:?}", view.kind());
                 let native = native.retain();

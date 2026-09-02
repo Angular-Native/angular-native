@@ -333,8 +333,8 @@ pub struct AppKitHost {
         ),
     >,
     listeners: HashMap<(NodeId, String), crate::events::AttachedListener>,
-    /// El rol que AppKit le dio a cada vista y el estado que pidió la
-    /// plantilla. Ver `accessibility.rs`.
+    /// The role AppKit gave each view and the state the template asked for.
+    /// See `accessibility.rs`.
     accessibility: crate::accessibility::Accessibility,
     /// Lo que ya se avisó, para no repetirlo sesenta veces por segundo.
     warned: HashSet<String>,
@@ -1055,10 +1055,10 @@ impl HostRenderer for AppKitHost {
                     unsafe { native.setIdentifier(Some(&NSString::from_str(t))) };
                 }
             }
-            // Las seis del contrato, todas juntas en `accessibility.rs`: el
-            // rol y el estado se escriben con propiedades distintas del
-            // protocolo NSAccessibility, pero `checked` acaba en el valor y
-            // eso obliga a saber si la plantilla puso uno.
+            // The six of the contract, all together in `accessibility.rs`:
+            // role and state are written through different properties of the
+            // NSAccessibility protocol, but `checked` ends up in the value,
+            // and that means knowing whether the template set one.
             _ if crate::accessibility::handles(key) => {
                 let kind_name = format!("{kind:?}");
                 self.accessibility.apply(id, &native, &kind_name, key, value);
