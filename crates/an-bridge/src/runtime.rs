@@ -1,13 +1,13 @@
-//! Contrato del motor JS. Nada por encima de esta capa sabe si debajo hay
-//! QuickJS, V8 o JavaScriptCore.
+//! The JS engine's contract. Nothing above this layer knows whether QuickJS,
+//! V8 or JavaScriptCore is underneath.
 
 use an_host::HostEvent;
 
 #[derive(Debug)]
 pub enum JsError {
-    /// Excepción de JS, con su traza si la había.
+    /// A JS exception, with its stack trace if there was one.
     Exception(String),
-    /// Fallo del propio motor (memoria, módulo no encontrado...).
+    /// A failure of the engine itself (memory, module not found...).
     Engine(String),
 }
 
@@ -22,12 +22,13 @@ impl std::fmt::Display for JsError {
 
 impl std::error::Error for JsError {}
 
-/// A dónde va `console.*`. En iOS acaba en `NSLog`; en tests, a un `Vec`.
+/// Where `console.*` ends up. On iOS it lands in `NSLog`; in tests, in a
+/// `Vec`.
 pub trait LogSink: 'static {
     fn log(&self, level: u8, message: &str);
 }
 
-/// Sumidero por defecto: escribe en stderr con el nivel delante.
+/// The default sink: writes to stderr with the level up front.
 pub struct StderrLog;
 
 impl LogSink for StderrLog {
@@ -43,26 +44,27 @@ impl LogSink for StderrLog {
 }
 
 pub trait JsRuntime {
-    /// Evalúa un fichero. `name` solo se usa en las trazas.
+    /// Evaluates a file. `name` is only ever used in stack traces.
     fn eval(&mut self, name: &str, code: &str) -> Result<(), JsError>;
 
-    /// Entrega eventos nativos a sus manejadores. Se llama antes de los timers
-    /// para que lo que tocó el usuario se vea en este mismo frame.
+    /// Delivers native events to their handlers. It is called before the timers
+    /// so that what the user touched shows up in this very frame.
     fn dispatch_events(&mut self, events: &[HostEvent]) -> Result<(), JsError>;
 
-    /// Un frame de JS: timers vencidos, microtareas hasta agotarlas, y el
-    /// búfer de comandos que haya salido de todo ello.
+    /// One JS frame: timers that came due, microtasks until there are none
+    /// left, and whatever command buffer came out of all that.
     fn tick(&mut self, now_ms: f64) -> Result<Vec<u8>, JsError>;
 
-    /// Evalúa un bundle nuevo encima del que ya está corriendo. Devuelve si la
-    /// app pudo coserse en caliente; si no, hay que recargar entero.
+    /// Evaluates a new bundle on top of the one already running. Says whether
+    /// the app could be stitched back together hot; if not, it all has to be
+    /// reloaded.
     fn eval_hot(&mut self, name: &str, code: &str) -> Result<bool, JsError>;
 
-    /// Estado que la app quiere conservar si la recargan. Se pide justo antes
-    /// de tirar el motor.
+    /// The state the app wants kept if it gets reloaded. It is asked for right
+    /// before the engine is thrown away.
     fn take_hot_state(&mut self) -> String;
 
-    /// Se lo devuelve al motor nuevo, antes de evaluar el bundle: los
-    /// componentes lo leen mientras se construyen.
+    /// Hands it back to the new engine, before the bundle is evaluated: the
+    /// components read it while they are being built.
     fn restore_hot_state(&mut self, state: &str) -> Result<(), JsError>;
 }

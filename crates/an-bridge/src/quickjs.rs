@@ -1,10 +1,10 @@
-//! Backend QuickJS. Sin JIT, que en iOS está prohibido de todas formas fuera
-//! de WKWebView, y con un arranque de milisegundos en vez de decenas.
+//! The QuickJS backend. No JIT, which on iOS is forbidden outside WKWebView
+//! anyway, and a startup measured in milliseconds instead of tens of them.
 //!
-//! El bucle de eventos no es propio: JS no tiene hilo, tiene un turno por
-//! frame. El `CADisplayLink` llama a `tick()`, y ahí dentro se ejecutan
-//! temporizadores y microtareas hasta agotarlas. Nada queda pendiente entre
-//! frames sin que el core lo sepa.
+//! The event loop is not its own: JS has no thread, it has a turn per frame.
+//! The `CADisplayLink` calls `tick()`, and inside that timers and microtasks
+//! run until there are none left. Nothing is left pending between frames
+//! without the core knowing about it.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -17,16 +17,16 @@ use rquickjs::{CatchResultExt, Context, Ctx, Function, Object, Runtime, TypedArr
 use crate::modules::{ModuleRegistry, NativeModule};
 use crate::runtime::{JsError, JsRuntime, LogSink, StderrLog};
 
-/// El prelude que convierte un intérprete pelado en algo utilizable.
+/// The prelude that turns a bare interpreter into something usable.
 const RUNTIME_JS: &str = include_str!("../../../packages/runtime/runtime.js");
 
 pub struct QuickJsRuntime {
-    // El orden importa: el contexto tiene que morir antes que el runtime.
+    // Order matters: the context has to die before the runtime does.
     context: Context,
     runtime: Runtime,
     commands: Rc<RefCell<Vec<u8>>>,
     log: Rc<dyn LogSink>,
-    /// Rechazos vistos en este turno que todavía no tienen manejador.
+    /// Rejections seen this turn that still have no handler.
     pending_rejections: Rc<RefCell<Vec<String>>>,
     modules: Rc<RefCell<ModuleRegistry>>,
 }
@@ -36,19 +36,19 @@ impl QuickJsRuntime {
         Self::with_log(Rc::new(StderrLog))
     }
 
-    /// Límite de pila del motor.
+    /// The engine's stack limit.
     ///
-    /// El de fábrica de QuickJS se queda corto para Angular: una cadena de
-    /// doce operadores de RxJS ya lo agota, y el desbordamiento no lanza nada
-    /// visible — la suscripción simplemente no entrega valores. El router,
-    /// que encadena diecisiete, no llegaba a navegar nunca.
+    /// QuickJS's factory setting falls short for Angular: a chain of twelve RxJS
+    /// operators exhausts it, and the overflow throws nothing you can see — the
+    /// subscription simply stops delivering values. The router, which chains
+    /// seventeen, never managed to navigate at all.
     ///
-    /// El techo real no lo pone esto sino el hilo: el principal de iOS tiene
-    /// 1 MB y no se puede cambiar. Mover el motor a un hilo propio con pila
-    /// grande —lo que hace React Native— es la solución de verdad, y arrastra
-    /// mover con él el árbol y el layout.
-    /// Medido: el router de Angular necesita algo más de 3 MB para completar
-    /// una navegación. Con 2 MB la transición avanza siete eventos y se para.
+    /// The real ceiling is not set here but by the thread: iOS's main one has
+    /// 1 MB and it cannot be changed. Moving the engine onto a thread of its own
+    /// with a big stack —what React Native does— is the real fix, and it drags
+    /// the tree and the layout along with it.
+    /// Measured: Angular's router needs a bit over 3 MB to complete one
+    /// navigation. With 2 MB the transition gets seven events in and stops.
     pub const DEFAULT_STACK_SIZE: usize = 8 * 1024 * 1024;
 
     pub fn with_log(log: Rc<dyn LogSink>) -> Result<Self, JsError> {
@@ -88,9 +88,9 @@ impl QuickJsRuntime {
                 native
                     .set(
                         "flush",
-                        // Los parámetros van sin tipo y se fijan dentro: es la
-                        // forma de que rquickjs infiera la vida `'js` de la
-                        // vista sobre el búfer de JS.
+                        // The parameters go untyped and are pinned down inside:
+                        // it is how rquickjs infers the `'js` lifetime of the
+                        // view over the JS buffer.
                         Func::from(move |data, length| {
                             struct Args<'js>(TypedArray<'js, u8>, usize);
                             let Args(data, length) = Args(data, length);
@@ -105,8 +105,8 @@ impl QuickJsRuntime {
                 native
                     .set(
                         "invoke",
-                        // Devuelve el identificador de la llamada, no el
-                        // resultado: JS no bloquea nunca esperando a nativo.
+                        // It returns the call's identifier, not the result: JS
+                        // never blocks waiting on native.
                         Func::from(move |module: String, method: String, args: String| {
                             let parsed = serde_json::from_str(&args).unwrap_or(serde_json::Value::Null);
                             registry.borrow_mut().invoke(&module, &method, parsed) as f64
@@ -121,21 +121,21 @@ impl QuickJsRuntime {
             })
             .map_err(|e| e)?;
 
-        // Una promesa rechazada sin `catch` desaparece sin dejar rastro en
-        // QuickJS. En un framework eso es inaceptable: media pila de Angular
-        // son promesas, y un fallo silencioso se manifiesta como una pantalla
-        // en blanco sin ninguna pista.
+        // A promise rejected with no `catch` vanishes without a trace in
+        // QuickJS. In a framework that is unacceptable: half of Angular's stack
+        // is promises, and a silent failure shows up as a blank screen with no
+        // hint of anything.
         //
-        // El motor avisa en cuanto se rechaza, no al final del turno, y el
-        // `catch` puede engancharse después: Angular usa rechazos como control
-        // de flujo interno. Así que se apuntan y se reportan al cerrar el tick,
-        // descontando los que acabaron manejados.
+        // The engine reports it the moment it is rejected, not at the end of the
+        // turn, and the `catch` may be hooked up afterwards: Angular uses
+        // rejections as internal flow control. So they are written down and
+        // reported as the tick closes, minus the ones that ended up handled.
         let pending: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
         let tracked = pending.clone();
         runtime.set_host_promise_rejection_tracker(Some(Box::new(
             move |ctx, _promise, reason, is_handled| {
                 if is_handled {
-                    // Alguien le puso un `catch`: deja de ser un problema.
+                    // Somebody put a `catch` on it: it stops being a problem.
                     tracked.borrow_mut().pop();
                     return;
                 }
@@ -165,12 +165,13 @@ impl QuickJsRuntime {
         Ok(this)
     }
 
-    /// Da de alta un módulo nativo. Tiene que hacerse antes de evaluar la app.
+    /// Registers a native module. It has to be done before the app is
+    /// evaluated.
     pub fn register_module(&mut self, module: Box<dyn NativeModule>) {
         self.modules.borrow_mut().register(module);
     }
 
-    /// Entrega a JS las respuestas de módulos que ya estén listas.
+    /// Hands JS the module answers that are already in.
     fn settle_module_calls(&mut self) -> Result<(), JsError> {
         let answers = self.modules.borrow_mut().drain();
         if answers.is_empty() {
@@ -194,16 +195,17 @@ impl QuickJsRuntime {
         })
     }
 
-    /// Vacía la cola de microtareas. Una promesa resuelta durante el frame
-    /// entra en este mismo frame, no en el siguiente.
+    /// Empties the microtask queue. A promise resolved during the frame lands
+    /// in that very frame, not the next one.
     fn drain_microtasks(&mut self) -> Result<(), JsError> {
         loop {
             match self.runtime.execute_pending_job() {
                 Ok(true) => continue,
                 Ok(false) => return Ok(()),
                 Err(job) => {
-                    // La excepción se quedó en el contexto del trabajo: hay
-                    // que sacarla de ahí o solo se sabe que "algo falló".
+                    // The exception stayed behind in the job's context: it has
+                    // to be pulled out of there or all anyone knows is that
+                    // "something failed".
                     let message = job.0.with(|ctx| {
                         let value = ctx.catch();
                         match value.as_exception() {
@@ -257,9 +259,9 @@ impl JsRuntime for QuickJsRuntime {
 
     fn eval_hot(&mut self, name: &str, code: &str) -> Result<bool, JsError> {
         self.context.with(|ctx| {
-            // La marca se pone a `false` antes de evaluar: si el bundle nuevo
-            // revienta a medias, lo que quedara en el global no puede hacer
-            // creer que salió bien.
+            // The flag is set to `false` before evaluating: if the new bundle
+            // blows up halfway through, whatever was left in the global must not
+            // make anyone believe it went well.
             ctx.globals()
                 .set("__anHotOk", false)
                 .map_err(|e| JsError::Engine(format!("{name}: {e}")))?;
@@ -333,8 +335,8 @@ impl JsRuntime for QuickJsRuntime {
             tick.call::<_, ()>((now_ms,)).map_err(|e| exception_message(&ctx, e))
         })?;
 
-        // Las respuestas de módulos entran antes de vaciar microtareas, para
-        // que lo que dependa de ellas se resuelva en este mismo frame.
+        // Module answers go in before the microtasks are drained, so that
+        // whatever depends on them resolves in this very frame.
         self.settle_module_calls()?;
         self.drain_microtasks()?;
 

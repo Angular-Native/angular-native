@@ -1,12 +1,12 @@
-//! Protocolo binario entre JS y el core.
+//! The binary protocol between JS and the core.
 //!
-//! JS no llama a Rust una vez por mutación: escribe comandos en un búfer y lo
-//! entrega entero al final del tick. Un `*ngFor` de 200 filas son ~1.200
-//! mutaciones; con llamadas sueltas son 1.200 cruces de frontera, y con búfer
-//! es uno.
+//! JS does not call into Rust once per mutation: it writes commands into a
+//! buffer and hands the whole thing over at the end of the tick. An `*ngFor`
+//! over 200 rows is ~1,200 mutations; with individual calls that is 1,200
+//! border crossings, and with a buffer it is one.
 //!
-//! Todo little-endian. Las cadenas van con longitud en `u32` y bytes UTF-8, sin
-//! alineación: el decodificador lee byte a byte y no le hace falta.
+//! All little-endian. Strings carry a `u32` length and UTF-8 bytes, with no
+//! alignment: the decoder reads byte by byte and does not need any.
 
 use an_core::{NodeKind, PropValue, ShadowTree};
 
@@ -27,14 +27,14 @@ pub mod op {
 
 #[derive(Debug, PartialEq)]
 pub enum ProtocolError {
-    /// El búfer se acabó en mitad de un comando.
+    /// The buffer ran out halfway through a command.
     Truncated { offset: usize },
     UnknownOpcode { opcode: u8, offset: usize },
     UnknownKind { kind: u8, offset: usize },
     InvalidUtf8 { offset: usize },
-    /// El core rechazó la mutación (nodo inexistente, id duplicado...).
-    /// Lleva el opcode para que el fallo diga *qué* comando falló, no solo que
-    /// alguno lo hizo.
+    /// The core turned the mutation down (no such node, duplicate id...).
+    /// It carries the opcode so the failure says *which* command failed, not
+    /// merely that one of them did.
     Tree { opcode: u8, offset: usize, error: an_core::tree::Error },
 }
 
@@ -149,11 +149,13 @@ impl<'a> Reader<'a> {
     }
 }
 
-/// Decodifica el búfer y aplica cada comando al árbol. Devuelve cuántos aplicó.
+/// Decodes the buffer and applies every command to the tree. Returns how many
+/// it applied.
 ///
-/// Un error deja el árbol con lo aplicado hasta ese punto: no hay rollback. Es
-/// deliberado — un búfer mal formado es un bug del lado JS, no una condición
-/// esperada, y dejarlo a medias hace el fallo visible en pantalla.
+/// An error leaves the tree with everything applied up to that point: there is
+/// no rollback. That is deliberate — a malformed buffer is a bug on the JS
+/// side, not an expected condition, and leaving it half-done puts the failure
+/// on the screen where it can be seen.
 pub fn apply(bytes: &[u8], tree: &mut ShadowTree) -> Result<usize, ProtocolError> {
     let mut reader = Reader { bytes, offset: 0 };
     let mut applied = 0_usize;
@@ -227,9 +229,9 @@ pub fn apply(bytes: &[u8], tree: &mut ShadowTree) -> Result<usize, ProtocolError
     Ok(applied)
 }
 
-/// Codificador del mismo formato, en Rust. No lo usa el runtime — existe para
-/// poder probar el decodificador sin arrancar un motor JS, y para que cualquier
-/// cambio de formato rompa los tests de las dos puntas a la vez.
+/// An encoder for the same format, in Rust. The runtime does not use it — it
+/// exists so the decoder can be tested without starting a JS engine, and so any
+/// change to the format breaks the tests at both ends at once.
 #[derive(Default)]
 pub struct Encoder {
     bytes: Vec<u8>,
@@ -313,8 +315,8 @@ impl Encoder {
         self
     }
 
-    /// `null` es "vuelve a tu valor de fábrica", no "no mandes nada": el host
-    /// tiene que enterarse de que le han quitado algo que sí escribió.
+    /// `null` means "go back to your factory value", not "send nothing": the
+    /// host has to find out that something it did write has been taken away.
     pub fn set_prop_null(&mut self, id: u32, key: &str) -> &mut Self {
         self.bytes.push(op::SET_PROP_NULL);
         self.u32(id);

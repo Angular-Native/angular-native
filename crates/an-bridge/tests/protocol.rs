@@ -1,18 +1,17 @@
-//! El protocolo binario, mirado como lo que es: un decodificador de bytes que
-//! recibe lo que escribe otro lenguaje.
+//! The binary protocol, looked at as what it is: a byte decoder fed by what
+//! another language writes.
 //!
-//! Aquí se comprueban tres cosas distintas, y conviene no mezclarlas:
+//! Three different things are checked here, and they are worth keeping apart:
 //!
-//! 1. **El formato está fijado.** Los bytes exactos de cada comando y el código
-//!    de cada primitiva. Si alguien los cambia en Rust, el prelude de JS sigue
-//!    escribiendo los de antes y lo que se monta es otra cosa —o nada— sin que
-//!    salte ningún error.
-//! 2. **Ningún búfer hace panic.** Un panic dentro de `apply` se lleva el hilo
-//!    del motor por delante y la pantalla se queda congelada sin decir por qué.
-//!    Lo correcto ante basura es un `Err` que diga qué comando y en qué
-//!    posición.
-//! 3. **El error nombra el comando.** Que falle "algo" no sirve de nada cuando
-//!    en un frame van mil doscientas mutaciones.
+//! 1. **The format is pinned down.** The exact bytes of every command and the
+//!    code of every primitive. If somebody changes them in Rust, the JS prelude
+//!    goes on writing the old ones and what gets mounted is something else —or
+//!    nothing— with no error raised anywhere.
+//! 2. **No buffer panics.** A panic inside `apply` takes the engine thread with
+//!    it and the screen freezes without saying why. The right answer to garbage
+//!    is an `Err` saying which command and at what offset.
+//! 3. **The error names the command.** "Something" failing is worth nothing when
+//!    a frame carries twelve hundred mutations.
 
 use an_bridge::protocol::{kind_from_byte, kind_to_byte, op};
 use an_bridge::{apply, Encoder, ProtocolError};
@@ -21,9 +20,9 @@ use an_core::{MountOp, NaiveMeasurer, NodeKind, PropValue, ShadowTree};
 
 const VIEWPORT: (f32, f32) = (393.0, 852.0);
 
-/// Las 26 clases de nodo, en el orden del enum. Es la tabla que hay que tocar
-/// al añadir una primitiva.
-const TODAS: [NodeKind; 26] = [
+/// All 26 node kinds, in the enum's order. It is the table to edit when a
+/// primitive is added.
+const ALL: [NodeKind; 26] = [
     NodeKind::View,
     NodeKind::Text,
     NodeKind::RawText,
@@ -52,43 +51,44 @@ const TODAS: [NodeKind; 26] = [
     NodeKind::VideoView,
 ];
 
-fn ops_de(bytes: &[u8]) -> Vec<MountOp> {
+fn ops_from(bytes: &[u8]) -> Vec<MountOp> {
     let mut tree = ShadowTree::new();
-    apply(bytes, &mut tree).expect("el búfer tenía que ser válido");
+    apply(bytes, &mut tree).expect("the buffer was supposed to be valid");
     tree.commit(VIEWPORT, &NaiveMeasurer).expect("commit").ops
 }
 
-// ---------------------------------------------------------------- el formato
+// ------------------------------------------------------------------ the format
 
-/// Cazaría: una clase de nodo añadida a `kind_to_byte` y olvidada en
+/// Would catch: a node kind added to `kind_to_byte` and forgotten in
 /// `kind_from_byte`.
 ///
-/// El compilador obliga a completar `kind_to_byte` —es un `match` exhaustivo
-/// sobre el enum— pero no dice nada de la vuelta, que es un `match` sobre un
-/// `u8`. Una primitiva nueva viajaría con su código y el decodificador la
-/// rechazaría entera: la app no monta nada y el error habla de un byte.
+/// The compiler forces `kind_to_byte` to be complete —it is an exhaustive
+/// `match` over the enum— but says nothing about the way back, which is a
+/// `match` over a `u8`. A new primitive would travel with its code and the
+/// decoder would turn the whole thing down: the app mounts nothing and the error
+/// talks about a byte.
 #[test]
-fn toda_clase_de_nodo_sobrevive_a_la_ida_y_la_vuelta() {
-    for kind in TODAS {
+fn every_node_kind_survives_the_round_trip() {
+    for kind in ALL {
         let byte = kind_to_byte(kind);
         assert_eq!(
             kind_from_byte(byte),
             Some(kind),
-            "{kind:?} viaja como {byte} y a la vuelta no es la misma"
+            "{kind:?} travels as {byte} and comes back as something else"
         );
     }
 }
 
-/// Cazaría: renumerar las clases de nodo en Rust.
+/// Would catch: renumbering the node kinds in Rust.
 ///
-/// El código no es un detalle interno: es el contrato con `KIND` en
-/// `packages/runtime/runtime.js`. `check-kinds.sh` comprueba que las dos
-/// tablas coincidan, así que renumerar las dos a la vez pasaría su revisión;
-/// esta lista fija además el número, que es lo que hace que un bundle ya
-/// compilado siga significando lo mismo.
+/// The code is not an internal detail: it is the contract with `KIND` in
+/// `packages/runtime/runtime.js`. `check-kinds.sh` checks that the two tables
+/// agree, so renumbering both at once would pass its review; this list pins the
+/// number down as well, which is what keeps an already-compiled bundle meaning
+/// the same thing.
 #[test]
-fn el_codigo_de_cada_clase_esta_clavado() {
-    let esperado: [(NodeKind, u8); 26] = [
+fn the_code_of_every_kind_is_nailed_down() {
+    let expected: [(NodeKind, u8); 26] = [
         (NodeKind::View, 0),
         (NodeKind::Text, 1),
         (NodeKind::RawText, 2),
@@ -108,31 +108,31 @@ fn el_codigo_de_cada_clase_esta_clavado() {
         (NodeKind::SegmentedControl, 16),
         (NodeKind::Stepper, 17),
         (NodeKind::SearchBar, 18),
-        // `<an-select>` en la plantilla, `Picker` en el núcleo. El número es
-        // lo único que los dos vocabularios comparten.
+        // `<an-select>` in the template, `Picker` in the core. The number is
+        // the only thing the two vocabularies share.
         (NodeKind::Picker, 19),
         (NodeKind::DatePicker, 20),
         (NodeKind::NavigationBar, 21),
-        // Y `<an-textarea>` es `TextEditor`, por lo mismo.
+        // And `<an-textarea>` is `TextEditor`, for the same reason.
         (NodeKind::TextEditor, 22),
         (NodeKind::WebView, 23),
         (NodeKind::MapView, 24),
         (NodeKind::VideoView, 25),
     ];
-    for (kind, byte) in esperado {
-        assert_eq!(kind_to_byte(kind), byte, "{kind:?} cambió de código");
+    for (kind, byte) in expected {
+        assert_eq!(kind_to_byte(kind), byte, "{kind:?} changed code");
     }
-    assert_eq!(kind_from_byte(26), None, "26 todavía no es de nadie");
+    assert_eq!(kind_from_byte(26), None, "26 does not belong to anybody yet");
 }
 
-/// Cazaría: cambiar el orden de los campos, el tamaño de un entero o el
-/// endianness de cualquier comando.
+/// Would catch: changing the order of the fields, the size of an integer or the
+/// endianness of any command.
 ///
-/// El prelude escribe estos bytes a mano —`writer.u32`, `writer.str`— y no
-/// comparte código con este lado. Los únicos que pueden avisar de que se han
-/// separado son los bytes.
+/// The prelude writes these bytes by hand —`writer.u32`, `writer.str`— and
+/// shares no code with this side. The only ones that can report the two drifting
+/// apart are the bytes.
 #[test]
-fn cada_comando_ocupa_exactamente_los_bytes_acordados() {
+fn every_command_takes_exactly_the_agreed_bytes() {
     let mut e = Encoder::new();
     e.create_node(1, NodeKind::Text);
     assert_eq!(e.into_bytes(), vec![op::CREATE_NODE, 1, 0, 0, 0, 1]);
@@ -152,8 +152,8 @@ fn cada_comando_ocupa_exactamente_los_bytes_acordados() {
     e.remove_child(1, 2);
     assert_eq!(e.into_bytes(), vec![op::REMOVE_CHILD, 1, 0, 0, 0, 2, 0, 0, 0]);
 
-    // Las cadenas van con longitud en bytes, no en caracteres: la eñe ocupa
-    // dos y el decodificador lee esos dos.
+    // Strings carry a length in bytes, not in characters: the ñ takes two and
+    // the decoder reads those two.
     let mut e = Encoder::new();
     e.set_text(1, "ñ");
     assert_eq!(e.into_bytes(), vec![op::SET_TEXT, 1, 0, 0, 0, 2, 0, 0, 0, 0xc3, 0xb1]);
@@ -185,9 +185,10 @@ fn cada_comando_ocupa_exactamente_los_bytes_acordados() {
     assert_eq!(e.into_bytes(), vec![op::SET_ROOT, 7, 0, 0, 0]);
 }
 
-/// Cazaría: un opcode reasignado. Son doce números y el prelude los repite.
+/// Would catch: an opcode reassigned. There are twelve numbers and the prelude
+/// repeats them.
 #[test]
-fn los_doce_opcodes_estan_clavados() {
+fn the_twelve_opcodes_are_nailed_down() {
     assert_eq!(
         [
             op::CREATE_NODE,
@@ -207,21 +208,21 @@ fn los_doce_opcodes_estan_clavados() {
     );
 }
 
-// ------------------------------------------------------- los doce, uno a uno
+// ------------------------------------------------------ the twelve, one by one
 
-/// Cazaría: un opcode que se decodifica pero cuyo efecto sobre el árbol se
-/// pierde por el camino —leer los campos en otro orden, por ejemplo—.
+/// Would catch: an opcode that decodes fine but whose effect on the tree gets
+/// lost on the way —reading the fields in another order, for instance—.
 #[test]
-fn los_cuatro_tipos_de_prop_llegan_con_su_tipo() {
+fn all_four_prop_types_arrive_with_their_type() {
     let mut e = Encoder::new();
     e.create_node(1, NodeKind::TextInput)
         .set_root(1)
-        .set_prop_str(1, "placeholder", "correo")
+        .set_prop_str(1, "placeholder", "email")
         .set_prop_num(1, "fontSize", 21.5)
         .set_prop_bool(1, "secureTextEntry", true)
         .set_prop_null(1, "value");
 
-    let ops = ops_de(&e.into_bytes());
+    let ops = ops_from(&e.into_bytes());
     let props: Vec<(&str, &PropValue)> = ops
         .iter()
         .filter_map(|op| match op {
@@ -230,35 +231,35 @@ fn los_cuatro_tipos_de_prop_llegan_con_su_tipo() {
         })
         .collect();
 
-    assert!(props.contains(&("placeholder", &PropValue::Str("correo".into()))));
+    assert!(props.contains(&("placeholder", &PropValue::Str("email".into()))));
     assert!(props.contains(&("fontSize", &PropValue::Number(21.5))));
     assert!(props.contains(&("secureTextEntry", &PropValue::Bool(true))));
     assert!(props.contains(&("value", &PropValue::Null)));
 }
 
-/// Cazaría: `SET_STYLE` decodificando nombre y valor al revés. Los dos son
-/// cadenas, así que no habría error de tipo en ninguna parte: la vista
-/// simplemente no cogería el ancho.
+/// Would catch: `SET_STYLE` decoding name and value the wrong way round. Both
+/// are strings, so there would be no type error anywhere: the view simply would
+/// not take the width.
 #[test]
-fn set_style_no_confunde_el_nombre_con_el_valor() {
+fn set_style_does_not_mix_up_the_name_with_the_value() {
     let mut e = Encoder::new();
     e.create_node(1, NodeKind::View).set_root(1).set_style(1, "width", "120");
 
-    let ops = ops_de(&e.into_bytes());
+    let ops = ops_from(&e.into_bytes());
     let frame = ops.iter().rev().find_map(|op| match op {
         MountOp::SetLayout { id: 1, frame } => Some(*frame),
         _ => None,
     });
-    assert_eq!(frame.expect("la raíz tiene marco").width, 120.0);
+    assert_eq!(frame.expect("the root has a frame").width, 120.0);
 }
 
-/// Cazaría: `SET_LISTENER` ignorando el byte de alta/baja, que es lo que
-/// distingue enganchar un gesto de soltarlo.
+/// Would catch: `SET_LISTENER` ignoring the on/off byte, which is what tells
+/// hooking a gesture up apart from letting it go.
 #[test]
-fn el_alta_y_la_baja_de_un_oyente_no_son_lo_mismo() {
+fn hooking_a_listener_up_and_dropping_it_are_not_the_same_thing() {
     let mut e = Encoder::new();
     e.create_node(1, NodeKind::View).set_root(1).set_listener(1, "press", true);
-    let ops = ops_de(&e.into_bytes());
+    let ops = ops_from(&e.into_bytes());
     assert!(ops.iter().any(|op| matches!(
         op,
         MountOp::SetListener { id: 1, event, enabled: true } if event == "press"
@@ -266,17 +267,17 @@ fn el_alta_y_la_baja_de_un_oyente_no_son_lo_mismo() {
 
     let mut e = Encoder::new();
     e.create_node(1, NodeKind::View).set_root(1).set_listener(1, "press", false);
-    let ops = ops_de(&e.into_bytes());
+    let ops = ops_from(&e.into_bytes());
     assert!(ops.iter().any(|op| matches!(
         op,
         MountOp::SetListener { id: 1, event, enabled: false } if event == "press"
     )));
 }
 
-/// Cazaría: `apply` mintiendo sobre cuántos comandos aplicó. Es el número que
-/// mira el runtime para saber si el frame trajo trabajo.
+/// Would catch: `apply` lying about how many commands it applied. It is the
+/// number the runtime looks at to know whether the frame brought any work.
 #[test]
-fn apply_cuenta_los_comandos_que_aplico() {
+fn apply_counts_the_commands_it_applied() {
     let mut e = Encoder::new();
     e.create_node(1, NodeKind::View)
         .create_node(2, NodeKind::View)
@@ -284,19 +285,20 @@ fn apply_cuenta_los_comandos_que_aplico() {
         .set_root(1);
     let mut tree = ShadowTree::new();
     assert_eq!(apply(&e.into_bytes(), &mut tree).unwrap(), 4);
-    assert_eq!(apply(&[], &mut tree).unwrap(), 0, "un búfer vacío no es un error");
+    assert_eq!(apply(&[], &mut tree).unwrap(), 0, "an empty buffer is not an error");
 }
 
-// ------------------------------------------------------------ búfer corrupto
+// --------------------------------------------------------- a corrupted buffer
 
-/// Cazaría: cualquier lectura que avance el cursor antes de comprobar que hay
-/// bytes. Un panic dentro de `apply` no es un error que se pueda enseñar:
-/// mata el hilo del motor y la pantalla se queda como estaba.
+/// Would catch: any read that moves the cursor before checking there are bytes
+/// left. A panic inside `apply` is not an error you can show anyone: it kills
+/// the engine thread and the screen stays exactly as it was.
 ///
-/// Se corta el búfer por todas partes, no por una: el fallo estaría en la
-/// lectura concreta que quede a medias, y cuál es depende de dónde se corte.
+/// The buffer is cut everywhere, not in one place: the failure would be in
+/// whichever particular read is left half-done, and which one that is depends on
+/// where the cut falls.
 #[test]
-fn cortar_el_buffer_por_cualquier_sitio_da_error_y_no_panico() {
+fn cutting_the_buffer_anywhere_gives_an_error_and_not_a_panic() {
     let mut e = Encoder::new();
     e.create_node(1, NodeKind::View)
         .set_root(1)
@@ -309,48 +311,49 @@ fn cortar_el_buffer_por_cualquier_sitio_da_error_y_no_panico() {
         .set_listener(2, "press", true)
         .insert_child(1, 2, 0)
         .create_node(3, NodeKind::RawText)
-        .set_text(3, "hola")
+        .set_text(3, "hello")
         .insert_child(2, 3, 0)
         .remove_child(2, 3)
         .destroy_node(3);
-    let completo = e.into_bytes();
+    let whole = e.into_bytes();
 
-    for corte in 0..completo.len() {
+    for cut in 0..whole.len() {
         let mut tree = ShadowTree::new();
-        // Lo único que se exige es que conteste. Un prefijo puede terminar
-        // justo en el límite de un comando y ser válido.
-        let _ = apply(&completo[..corte], &mut tree);
+        // The only thing demanded is that it answers. A prefix can end right on
+        // a command boundary and be perfectly valid.
+        let _ = apply(&whole[..cut], &mut tree);
     }
     let mut tree = ShadowTree::new();
-    assert!(apply(&completo, &mut tree).is_ok(), "el búfer entero sí es válido");
+    assert!(apply(&whole, &mut tree).is_ok(), "the whole buffer is valid");
 }
 
-/// Cazaría: `Reader::str` sumando la longitud declarada al desplazamiento sin
-/// comprobar antes que el búfer llegue hasta ahí. Con `u32::MAX` como longitud
-/// eso es un rango imposible, y en una versión menos cuidadosa un intento de
-/// reservar cuatro gigas.
+/// Would catch: `Reader::str` adding the declared length to the offset without
+/// first checking that the buffer reaches that far. With `u32::MAX` as the
+/// length that is an impossible range, and in a less careful version an attempt
+/// to reserve four gigabytes.
 #[test]
-fn una_cadena_de_longitud_imposible_no_revienta() {
+fn a_string_of_impossible_length_does_not_blow_up() {
     let mut bytes = vec![op::SET_TEXT];
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.extend_from_slice(&u32::MAX.to_le_bytes());
-    bytes.extend_from_slice(b"hola");
+    bytes.extend_from_slice(b"hello");
 
     let mut tree = ShadowTree::new();
     tree.create_node(1, NodeKind::RawText).unwrap();
     assert!(matches!(apply(&bytes, &mut tree), Err(ProtocolError::Truncated { .. })));
 }
 
-/// Cazaría: dar por buena una cadena sin validar UTF-8. `str::from_utf8` es lo
-/// que separa un error legible de un `unsafe` con basura dentro. Un sustituto
-/// suelto —el trozo de un emoji cortado por una `slice` en la app— llega
-/// exactamente así.
+/// Would catch: taking a string on trust without validating UTF-8.
+/// `str::from_utf8` is what separates a readable error from an `unsafe` with
+/// garbage inside it. A lone surrogate —half an emoji cut in two by a `slice` in
+/// the app— arrives looking exactly like this.
 #[test]
-fn bytes_que_no_son_utf8_dan_error_y_no_panico() {
+fn bytes_that_are_not_utf8_give_an_error_and_not_a_panic() {
     let mut bytes = vec![op::SET_TEXT];
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.extend_from_slice(&3_u32.to_le_bytes());
-    // El sustituto alto U+D800 codificado como si fuera un carácter normal.
+    // The high surrogate U+D800, encoded as though it were an ordinary
+    // character.
     bytes.extend_from_slice(&[0xed, 0xa0, 0x80]);
 
     let mut tree = ShadowTree::new();
@@ -358,16 +361,16 @@ fn bytes_que_no_son_utf8_dan_error_y_no_panico() {
     assert!(matches!(apply(&bytes, &mut tree), Err(ProtocolError::InvalidUtf8 { .. })));
 }
 
-/// Cazaría: un error que diga "el búfer está mal" y nada más. En un frame van
-/// mil doscientas mutaciones; sin el opcode y el desplazamiento, buscarlo es
-/// leer el búfer a mano.
+/// Would catch: an error that says "the buffer is wrong" and nothing else. A
+/// frame carries twelve hundred mutations; without the opcode and the offset,
+/// finding it means reading the buffer by hand.
 #[test]
-fn el_error_dice_que_comando_fallo_y_donde() {
+fn the_error_says_which_command_failed_and_where() {
     let mut e = Encoder::new();
     e.create_node(1, NodeKind::View);
-    let prefijo = e.into_bytes().len();
+    let prefix = e.into_bytes().len();
 
-    // Un opcode que no existe.
+    // An opcode that does not exist.
     let mut bytes = {
         let mut e = Encoder::new();
         e.create_node(1, NodeKind::View);
@@ -377,10 +380,10 @@ fn el_error_dice_que_comando_fallo_y_donde() {
     let mut tree = ShadowTree::new();
     assert_eq!(
         apply(&bytes, &mut tree),
-        Err(ProtocolError::UnknownOpcode { opcode: 0x7f, offset: prefijo })
+        Err(ProtocolError::UnknownOpcode { opcode: 0x7f, offset: prefix })
     );
 
-    // Una clase de nodo que no existe.
+    // A node kind that does not exist.
     let mut bytes = vec![op::CREATE_NODE];
     bytes.extend_from_slice(&9_u32.to_le_bytes());
     bytes.push(200);
@@ -390,8 +393,8 @@ fn el_error_dice_que_comando_fallo_y_donde() {
         Err(ProtocolError::UnknownKind { kind: 200, offset: 0 })
     );
 
-    // Y un comando bien formado que el árbol rechaza: el error lleva el
-    // opcode, que es lo que dice *qué* mutación era.
+    // And a well-formed command the tree turns down: the error carries the
+    // opcode, which is what says *which* mutation it was.
     let mut e = Encoder::new();
     e.create_node(1, NodeKind::View).insert_child(1, 99, 0);
     let bytes = e.into_bytes();
@@ -401,16 +404,16 @@ fn el_error_dice_que_comando_fallo_y_donde() {
             assert_eq!(opcode, op::INSERT_CHILD);
             assert_eq!(error, an_core::tree::Error::UnknownNode(99));
         }
-        otro => panic!("tenía que decir qué comando falló: {otro:?}"),
+        other => panic!("it had to say which command failed: {other:?}"),
     }
 }
 
-/// Cazaría: añadir un rollback. Está escrito que no lo hay —un búfer mal
-/// formado es un bug del lado JS y dejar el árbol a medias hace el fallo
-/// visible en pantalla— y conviene que siga siendo una decisión y no un
-/// accidente.
+/// Would catch: adding a rollback. It is written down that there is none —a
+/// malformed buffer is a bug on the JS side and leaving the tree half-done puts
+/// the failure on the screen— and it is worth keeping that a decision rather
+/// than an accident.
 #[test]
-fn un_error_a_mitad_deja_aplicado_lo_de_antes() {
+fn an_error_halfway_leaves_what_came_before_applied() {
     let mut e = Encoder::new();
     e.create_node(1, NodeKind::View).set_root(1);
     let mut bytes = e.into_bytes();
@@ -418,14 +421,14 @@ fn un_error_a_mitad_deja_aplicado_lo_de_antes() {
 
     let mut tree = ShadowTree::new();
     assert!(apply(&bytes, &mut tree).is_err());
-    assert_eq!(tree.root(), Some(1), "lo aplicado antes del error se queda");
+    assert_eq!(tree.root(), Some(1), "what was applied before the error stays");
 }
 
-// ------------------------------------------------------- basura, a montones
+// ------------------------------------------------------------ garbage, in bulk
 
-/// Generador determinista. No se usa `rand` ni `proptest` a propósito: veinte
-/// líneas dan las mismas mil pasadas por ejecución, y una semilla fija hace
-/// que un fallo se pueda repetir sin guardar un fichero de regresiones.
+/// A deterministic generator. Neither `rand` nor `proptest` is used, on purpose:
+/// twenty lines give the same thousand passes on every run, and a fixed seed
+/// makes a failure repeatable without keeping a regressions file around.
 struct Xorshift(u64);
 
 impl Xorshift {
@@ -445,12 +448,11 @@ impl Xorshift {
     }
 }
 
-/// Cazaría: cualquier camino del decodificador que haga panic con entrada
-/// arbitraria. Es la prueba que sí se puede hacer exhaustivamente sobre un
-/// decodificador de bytes: no se sabe qué debería salir, pero sí que tiene
-/// que salir algo.
+/// Would catch: any path through the decoder that panics on arbitrary input. It
+/// is the one test that can be done exhaustively on a byte decoder: there is no
+/// knowing what should come out, but there is knowing that something has to.
 #[test]
-fn ningun_reguero_de_bytes_hace_panic() {
+fn no_stream_of_bytes_makes_it_panic() {
     let mut rng = Xorshift(0x5eed_1234_abcd_0001);
     for _ in 0..4_000 {
         let len = rng.below(64);
@@ -460,15 +462,14 @@ fn ningun_reguero_de_bytes_hace_panic() {
     }
 }
 
-/// Cazaría lo mismo, pero llegando mucho más adentro.
+/// Would catch the same thing, but reaching a great deal further in.
 ///
-/// Bytes al azar mueren en el primer opcode desconocido y no prueban gran
-/// cosa. Volteando bits de un búfer que sí es válido, la mayoría de las
-/// mutaciones siguen siendo comandos reconocibles con un campo estropeado:
-/// una longitud de cadena enorme, un id que no existe, un índice desmesurado.
-/// Ahí es donde estaría el desbordamiento.
+/// Random bytes die on the first unknown opcode and prove very little. Flipping
+/// bits in a buffer that is valid, most of the mutations are still recognisable
+/// commands with one field broken: a huge string length, an id that does not
+/// exist, an index out of all proportion. That is where the overflow would be.
 #[test]
-fn un_buffer_valido_con_bits_volteados_tampoco_hace_panic() {
+fn a_valid_buffer_with_flipped_bits_does_not_panic_either() {
     let mut e = Encoder::new();
     e.create_node(1, NodeKind::View)
         .set_root(1)
@@ -491,53 +492,54 @@ fn un_buffer_valido_con_bits_volteados_tampoco_hace_panic() {
     let mut rng = Xorshift(0xfeed_face_0000_0007);
     for _ in 0..6_000 {
         let mut bytes = original.clone();
-        // Entre uno y tres bits, para no alejarse tanto del formato que todo
-        // muera en el primer byte.
+        // Between one and three bits, so as not to stray so far from the format
+        // that everything dies on the first byte.
         for _ in 0..=rng.below(3) {
             let at = rng.below(bytes.len());
             bytes[at] ^= 1 << (rng.below(8));
         }
         let mut tree = ShadowTree::new();
         if apply(&bytes, &mut tree).is_ok() {
-            // Si se aplicó, el árbol tiene que seguir siendo utilizable: el
-            // layout es lo que recorre lo que quedó montado.
+            // If it applied, the tree has to still be usable: layout is what
+            // walks whatever ended up mounted.
             let _ = tree.commit(VIEWPORT, &NaiveMeasurer);
         }
     }
 }
 
-/// Cazaría: `insert_child` dejando que un nodo cuelgue de sí mismo.
+/// Would catch: `insert_child` letting a node hang off itself.
 ///
-/// Lo encontró el fuzz de bits volteados, y de la peor manera posible: un bit
-/// en el id del hijo convierte `insert_child(2, 3, 0)` en `insert_child(2, 2,
-/// 0)`. El árbol lo aceptaba, y entonces el layout recorría hijos buscando un
-/// fondo que ya no existe. Ni pánico ni error: el proceso se quedaba dando
-/// vueltas para siempre, que en una app es una pantalla congelada.
+/// The flipped-bit fuzz found it, and in the worst possible way: one bit in the
+/// child's id turns `insert_child(2, 3, 0)` into `insert_child(2, 2, 0)`. The
+/// tree accepted it, and then layout walked children looking for a bottom that
+/// no longer exists. No panic and no error: the process went round and round for
+/// ever, which in an app is a frozen screen.
 #[test]
-fn un_nodo_no_puede_colgar_de_si_mismo() {
+fn a_node_cannot_hang_off_itself() {
     let mut tree = ShadowTree::new();
     tree.create_node(1, NodeKind::View).unwrap();
     tree.create_node(2, NodeKind::View).unwrap();
     tree.insert_child(1, 2, 0).unwrap();
 
     assert!(matches!(tree.insert_child(2, 2, 0), Err(Error::Cycle { .. })));
-    // Y tampoco de un descendiente suyo, que es el mismo ciclo con un salto
-    // más: 1 es el padre de 2, así que 1 no puede colgar de 2.
+    // Nor off one of its own descendants, which is the same cycle one hop
+    // longer: 1 is 2's parent, so 1 cannot hang off 2.
     assert!(matches!(tree.insert_child(2, 1, 0), Err(Error::Cycle { .. })));
 }
 
-/// Cazaría: `insert_child` fiándose del índice que llega. Angular no manda
-/// índices absurdos, pero el búfer viene de fuera del núcleo y un índice
-/// mayor que el número de hijos no puede salirse del vector.
+/// Would catch: `insert_child` taking the incoming index on trust. Angular does
+/// not send absurd indices, but the buffer comes from outside the core and an
+/// index larger than the number of children must not run off the end of the
+/// vector.
 #[test]
-fn un_indice_de_insercion_desmesurado_se_recorta() {
+fn an_out_of_all_proportion_insertion_index_gets_clamped() {
     let mut e = Encoder::new();
     e.create_node(1, NodeKind::View)
         .set_root(1)
         .create_node(2, NodeKind::View)
         .insert_child(1, 2, u32::MAX);
 
-    let ops = ops_de(&e.into_bytes());
+    let ops = ops_from(&e.into_bytes());
     assert!(ops.iter().any(|op| matches!(
         op,
         MountOp::Insert { parent: 1, child: 2, index: 0 }
