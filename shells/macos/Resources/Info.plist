@@ -28,6 +28,16 @@
     <false/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <!--
+      El texto que enseña el sistema al pedir la ubicación. Sin esta clave,
+      `<an-map-view [showsUser]="true">` no falla ni avisa: el permiso se
+      deniega solo y el punto azul no sale nunca. Con ella sale el diálogo del
+      sistema, que es lo que haría cualquier app de Mac.
+    -->
+    <key>NSLocationUsageDescription</key>
+    <string>Para enseñar dónde estás en el mapa.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Para enseñar dónde estás en el mapa.</string>
     <!-- El servidor de desarrollo habla HTTP plano contra localhost. -->
     <key>NSAppTransportSecurity</key>
     <dict>

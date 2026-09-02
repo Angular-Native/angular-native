@@ -35,6 +35,10 @@ const TARGET: &str = "aarch64-apple-darwin";
 /// y solo la vista lo sabe.
 const DEPLOYMENT: &str = "14.0";
 
+/// Frameworks de los que depende `an-macos` además de AppKit, que lo trae
+/// Swift solo. Ver por qué hay que nombrarlos en `assemble`.
+const FRAMEWORKS: &[&str] = &["WebKit", "MapKit", "AVFoundation", "AVKit"];
+
 pub struct Package {
     pub dir: PathBuf,
 }
@@ -123,6 +127,22 @@ pub fn assemble(
         "-o".into(),
         macos_dir.join(APP_NAME).to_string_lossy().into_owned(),
     ];
+    // Los frameworks que usa el host, nombrados aquí y no solo en el Rust.
+    //
+    // Un `staticlib` de Rust **no arrastra sus dependencias nativas**: el
+    // `#[link(name = "…", kind = "framework")]` de `an-macos` documenta de qué
+    // depende cada módulo, pero el `.a` que sale no lleva nada que se lo diga
+    // al enlazador. Quien enlaza de verdad es este `swiftc`, y si aquí no
+    // están, la app se arma, se firma y arranca sin una sola queja: revienta
+    // más tarde, al montar la primera vista de esa clase, con un «class
+    // AVPlayerView could not be found» que no señala a ningún sitio.
+    //
+    // La lista no se puede quedar atrás: `scripts/check-macos.py` la compara
+    // con los `#[link]` del crate.
+    for framework in FRAMEWORKS {
+        args.push("-framework".into());
+        args.push((*framework).into());
+    }
     if release {
         args.push("-O".into());
     }

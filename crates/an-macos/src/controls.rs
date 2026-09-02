@@ -63,6 +63,13 @@ pub fn measure_controls(mtm: MainThreadMarker) -> ControlSizes {
     let tabs = NSSegmentedControl::new(mtm);
     record("TabBar", &tabs);
 
+    // La cabecera de navegación no es un control de AppKit y aquí no ocupa
+    // nada: en un Mac la cabecera es la barra de título de la ventana, y el
+    // `[title]` acaba ahí (ver `support.rs`). Cero por cero es la decisión, y
+    // está escrita: sin esta línea saldría el mismo cero por no estar en la
+    // tabla, que es otra cosa y no se distingue mirando el resultado.
+    sizes.insert("NavigationBar".to_owned(), (0.0, 0.0));
+
     for (name, fallback) in [
         ("Slider", (200.0, 21.0)),
         ("ProgressBar", (200.0, 6.0)),

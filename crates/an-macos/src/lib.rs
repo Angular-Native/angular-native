@@ -12,8 +12,11 @@
 //!   veces por segundo mientras alguien arrastra una esquina. Ver
 //!   `ffi::an_runtime_set_viewport` y `AnRootView.layout()` en el shell.
 //! - **Hay ratón, no dedos.** Los gestos son los reconocedores de AppKit, que
-//!   no son los mismos que los de UIKit: falta el de deslizamiento. Lo que
-//!   falta se dice al suscribirse. Ver `support::unsupported_event`.
+//!   no son los mismos que los de UIKit, y el deslizamiento no es uno de
+//!   ellos: es un evento suelto que llega por la cadena de responder. Ver
+//!   `flipped.rs`. Lo que hay además de los dedos —el puntero por encima y su
+//!   forma— es `events::HoverTarget` y la prop `cursor`. Lo que aun así no se
+//!   puede entregar se dice al suscribirse; ver `support::unsupported_event`.
 //! - **El menú es del sistema y vive en la ventana, no en el árbol.** Lo pone
 //!   el shell y no se expone a Angular: no hay primitiva para ello, e
 //!   inventarla sería cambiar `packages/primitives`. Ver
@@ -47,7 +50,11 @@ mod icons;
 #[cfg(target_os = "macos")]
 mod images;
 #[cfg(target_os = "macos")]
+mod map;
+#[cfg(target_os = "macos")]
 mod measure;
+#[cfg(target_os = "macos")]
+mod video;
 #[cfg(target_os = "macos")]
 mod web;
 

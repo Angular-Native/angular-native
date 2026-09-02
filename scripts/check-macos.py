@@ -38,6 +38,10 @@ def leer(ruta: str) -> str:
 props = leer('crates/an-core/src/props.rs')
 soporte = leer('crates/an-macos/src/support.rs')
 host = leer('crates/an-macos/src/host.rs')
+eventos = leer('crates/an-macos/src/events.rs')
+volteada = leer('crates/an-macos/src/flipped.rs')
+plist = leer('shells/macos/Resources/Info.plist')
+directivas = leer('packages/primitives/src/primitives.ts')
 cli = leer('crates/an-cli/src/macos.rs')
 raiz_swift = leer('shells/macos/Sources/RootViewController.swift')
 
@@ -67,10 +71,23 @@ if not faltan and not sobran and del_nucleo:
     nativas = len(re.findall(r'Support::Native\(', soporte))
     armadas = len(re.findall(r'Support::Assembled\(', soporte))
     ausentes = len(re.findall(r'Support::Missing\(', soporte))
+    en_otro_sitio = len(re.findall(r'Support::Elsewhere\(', soporte))
     oks.append(
         f'  ok   las {len(del_nucleo)} primitivas montables están en el inventario '
-        f'({nativas} con control del sistema, {armadas} armadas, {ausentes} que macOS no trae)'
+        f'({nativas} con control del sistema, {armadas} armadas, '
+        f'{en_otro_sitio} que macOS pone fuera del árbol, {ausentes} que no trae)'
     )
+    # Una primitiva declarada ausente tiene que avisar al montarse. Hoy no hay
+    # ninguna, y por eso el camino que avisaba se quitó del host: si alguien
+    # vuelve a declarar una, hay que volver a escribirlo o el nodo se montaría
+    # como una caja vacía y en silencio, que es lo que este fichero persigue.
+    if ausentes and 'HostView::Unsupported' not in host:
+        fallos.append(
+            '  FALLO el inventario declara una primitiva ausente y el host ya no tiene el '
+            'camino que lo dice al montarla'
+        )
+    elif not ausentes:
+        oks.append('  ok   no queda ninguna primitiva sin pintar en este host')
 
 # 2. El reparto de props acaba avisando, no callando.
 #
@@ -144,6 +161,103 @@ if 'an_runtime_set_viewport' not in raiz_swift or 'viewDidLayout' not in raiz_sw
     fallos.append('  FALLO el shell no le cuenta al núcleo que la ventana cambió de tamaño')
 else:
     oks.append('  ok   redimensionar la ventana rehace el layout')
+
+# 7. Los frameworks que usa el host los nombra quien enlaza.
+#
+# Es el fallo silencioso más caro de este host y ya se cobró una pieza: un
+# `staticlib` de Rust no arrastra sus dependencias nativas, así que el
+# `#[link(kind = "framework")]` del crate no llega al enlazador. Sin el
+# `-framework` en el `swiftc` del CLI, el `.app` se arma, se firma, arranca y
+# revienta al montar la primera vista de esa clase.
+declarados = set()
+for fichero in sorted((raiz / 'crates/an-macos/src').glob('*.rs')):
+    declarados.update(
+        re.findall(r'#\[link\(name = "(\w+)", kind = "framework"\)\]', fichero.read_text())
+    )
+if not declarados:
+    fallos.append('  FALLO no se pudo leer ningún #[link] de framework en an-macos')
+else:
+    sin_enlazar = sorted(f for f in declarados if f'"{f}"' not in cli)
+    if sin_enlazar:
+        fallos.append(
+            '  FALLO el host usa estos frameworks y el enlazado del .app no los nombra: '
+            + ', '.join(sin_enlazar)
+        )
+    else:
+        oks.append(
+            f'  ok   los {len(declarados)} frameworks del host los nombra el enlazado del .app'
+        )
+
+# 8. La cabecera va a la barra de título de la ventana, no a una vista.
+#
+# Es la decisión de este host sobre `<an-navigation-bar>`, y tiene dos mitades
+# que se pueden romper por separado: que el `[title]` acabe en la ventana, y
+# que el nodo no deje hueco donde no hay nada. Sin la segunda, la pantalla
+# saldría con una franja vacía arriba y nadie sabría de dónde sale.
+controles = leer('crates/an-macos/src/controls.rs')
+if 'Support::Elsewhere' not in soporte or 'NavigationBar' not in soporte:
+    fallos.append('  FALLO el inventario no dice dónde acaba la cabecera de navegación')
+elif 'window.setTitle' not in host:
+    fallos.append('  FALLO el [title] de <an-navigation-bar> no llega a la barra de título')
+elif not re.search(r'"NavigationBar"\.to_owned\(\), \(0\.0, 0\.0\)', controles):
+    fallos.append(
+        '  FALLO la cabecera no mide cero en macOS: dejaría una franja vacía bajo la barra '
+        'de título'
+    )
+else:
+    oks.append('  ok   el [title] de la cabecera acaba en la barra de título y el nodo no ocupa')
+
+# 9. El deslizamiento es el del sistema, no un `pan` con un umbral inventado.
+#
+# AppKit no tiene reconocedor de deslizamiento, y la salida fácil habría sido
+# medir un arrastre y decidir por nuestra cuenta cuándo cuenta. El gesto de
+# verdad existe —`swipeWithEvent:`, con el umbral y el número de dedos que
+# decide el sistema— y es el que hay que atender.
+if 'swipeWithEvent' not in volteada:
+    fallos.append('  FALLO nadie atiende swipeWithEvent:, así que (swipeLeft) no llega nunca')
+elif 'msg_send![super(self), swipeWithEvent: event]' not in volteada:
+    fallos.append(
+        '  FALLO una vista que no escucha el deslizamiento se lo traga en vez de pasarlo a '
+        'la cadena de responder'
+    )
+else:
+    oks.append('  ok   el deslizamiento es el evento del sistema y el que no escucha lo pasa')
+
+# 10. El puntero: hover y cursor, y ningún cursor dibujado a mano.
+if '(hover)' in directivas and 'hover' not in soporte:
+    fallos.append('  FALLO la primitiva declara (hover) y el host de macOS no lo conoce')
+elif 'NSTrackingArea' not in eventos:
+    fallos.append('  FALLO (hover) no se monta sobre un NSTrackingArea')
+else:
+    cursores = re.findall(r'"([a-z-]+)" => NSCursor::(\w+)\(\)', eventos)
+    # El vocabulario se lee del tipo `NativeCursor`, recortado antes de mirarlo:
+    # una expresión suelta sobre el fichero entero cogería cualquier otra unión
+    # de cadenas y exigiría un `NSCursor` para valores que no son cursores.
+    union = directivas[directivas.index('export type NativeCursor ='):]
+    union = union[:union.index('\n\n')]
+    vocabulario = set(re.findall(r"'([a-z-]+)'", union))
+    faltan_cursores = sorted(vocabulario - {nombre for nombre, _ in cursores})
+    if faltan_cursores:
+        fallos.append(
+            '  FALLO estos cursores los acepta la primitiva y macOS no los pone: '
+            + ', '.join(faltan_cursores)
+        )
+    else:
+        oks.append(
+            f'  ok   los {len(cursores)} punteros son NSCursor del sistema, ninguno dibujado'
+        )
+
+# 11. Enseñar dónde estás pide permiso, y el permiso se declara o no se pide.
+#
+# `setShowsUserLocation:` sin la clave en el plist no falla: el sistema deniega
+# el permiso él solo y el punto no sale nunca, sin error y sin nada que mirar.
+if 'setShowsUserLocation' in host and 'NSLocationUsageDescription' not in plist:
+    fallos.append(
+        '  FALLO el mapa pide la ubicación y el Info.plist no declara para qué: el permiso se '
+        'deniega solo y el punto no sale'
+    )
+elif 'setShowsUserLocation' in host:
+    oks.append('  ok   el mapa declara para qué pide la ubicación antes de pedirla')
 
 for linea in oks:
     print(linea)

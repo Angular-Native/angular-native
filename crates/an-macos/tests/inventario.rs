@@ -21,7 +21,9 @@ fn lo_que_no_es_nativo_viene_con_su_motivo() {
     for (kind, sop) in SUPPORT {
         let texto = match sop {
             Support::Native(nombre) => nombre,
-            Support::Assembled(motivo) | Support::Missing(motivo) => motivo,
+            Support::Assembled(motivo)
+            | Support::Missing(motivo)
+            | Support::Elsewhere(motivo) => motivo,
         };
         assert!(!texto.trim().is_empty(), "{kind:?} no dice qué hay detrás");
     }

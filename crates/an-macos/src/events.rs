@@ -16,10 +16,18 @@
 //! - `pinch` es `NSMagnificationGestureRecognizer` y `rotate` es
 //!   `NSRotationGestureRecognizer`: los dos son de trackpad, con un ratón no
 //!   pasan nunca. Se enganchan igual, porque un Mac con trackpad sí los da.
-//! - **Los deslizamientos no existen.** AppKit no tiene reconocedor de
-//!   deslizamiento; el de dos dedos del trackpad llega como scroll. No se
-//!   imita con un `pan` con umbral: se dice al suscribirse. Ver
-//!   `support::unsupported_event`.
+//! - **El deslizamiento no es un reconocedor.** AppKit no tiene
+//!   `NSSwipeGestureRecognizer`, pero sí tiene el gesto: llega como
+//!   `swipeWithEvent:` por la cadena de responder, así que no se engancha a
+//!   una vista cualquiera, hay que atenderlo en la clase. Por eso vive en
+//!   `flipped.rs` y no aquí. No se imita con un `pan` con umbral: los umbrales
+//!   son los del sistema.
+//! - **Y hay algo que en un teléfono no existe: el puntero.** Estar encima de
+//!   una vista es un evento —`hover`— y la forma del cursor es una prop. Los
+//!   dos se montan con un `NSTrackingArea`, que a diferencia de un reconocedor
+//!   no tiene que ser la vista quien lo atienda: el dueño del área es un
+//!   objeto aparte, y por eso funcionan igual sobre un `NSButton` del sistema
+//!   que sobre una vista nuestra.
 //!
 //! Lo que no cambia es cuándo se despachan: el evento se encola y se entrega al
 //! principio del frame siguiente, para que todo lo que pasó entre dos vsync se
@@ -29,14 +37,15 @@ use an_core::{NodeId, PropValue};
 use an_host::{push_event, EventQueue, HostEvent};
 use objc2::rc::Retained;
 use objc2::runtime::Sel;
-use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadOnly};
+use objc2::{define_class, msg_send, sel, AnyThread, DefinedClass, MainThreadOnly, Message};
 use objc2_app_kit::{
-    NSClickGestureRecognizer, NSControl, NSDatePicker, NSGestureRecognizer,
+    NSClickGestureRecognizer, NSControl, NSCursor, NSDatePicker, NSEvent, NSGestureRecognizer,
     NSGestureRecognizerState, NSMagnificationGestureRecognizer, NSPanGestureRecognizer,
     NSControlTextEditingDelegate, NSPopUpButton, NSPressGestureRecognizer,
     NSRotationGestureRecognizer, NSSegmentedControl, NSSlider, NSStepper, NSSwitch, NSTextField,
-    NSTextFieldDelegate, NSView,
+    NSTextFieldDelegate, NSTrackingArea, NSTrackingAreaOptions, NSView,
 };
+use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_foundation::NSObjectProtocol;
 
 fn emit(queue: &EventQueue, target: NodeId, name: &str, payload: Vec<(String, PropValue)>) {
@@ -379,6 +388,186 @@ impl ControlTarget {
     }
 }
 
+/// El puntero, que en un teléfono no existe.
+///
+/// Es el dueño de un `NSTrackingArea`, no la vista: `NSTrackingArea` acepta
+/// cualquier objeto como dueño y le manda a él las entradas y las salidas. Eso
+/// es lo que hace que `(hover)` funcione igual encima de un `NSButton` del
+/// sistema que encima de una vista nuestra, sin subclasear nada.
+pub struct HoverIvars {
+    node: NodeId,
+    queue: EventQueue,
+    /// La vista vigilada. Hace falta para dar el punto en sus coordenadas: el
+    /// evento trae el de la ventana, y `NSTrackingArea` no dice de quién es.
+    ///
+    /// Retenerla no deja un ciclo: la vista retiene el área, el área apunta al
+    /// dueño en débil, y quien retiene al dueño es el host, que suelta los dos
+    /// al destruir el nodo.
+    view: Retained<NSView>,
+}
+
+define_class!(
+    // SAFETY: igual que GestureTarget.
+    #[unsafe(super(objc2_foundation::NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "AnMacHoverTarget"]
+    #[ivars = HoverIvars]
+    pub struct HoverTarget;
+
+    unsafe impl NSObjectProtocol for HoverTarget {}
+
+    impl HoverTarget {
+        #[unsafe(method(mouseEntered:))]
+        fn mouse_entered(&self, event: &NSEvent) {
+            self.emit(event, true);
+        }
+
+        #[unsafe(method(mouseExited:))]
+        fn mouse_exited(&self, event: &NSEvent) {
+            self.emit(event, false);
+        }
+    }
+);
+
+impl HoverTarget {
+    fn new(
+        mtm: objc2::MainThreadMarker,
+        node: NodeId,
+        queue: EventQueue,
+        view: Retained<NSView>,
+    ) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(HoverIvars { node, queue, view });
+        unsafe { msg_send![super(this), init] }
+    }
+
+    /// Un solo evento con un booleano, que es como lo declara la primitiva.
+    ///
+    /// El punto va en coordenadas de la vista, igual que el de un `press`. Al
+    /// salir es el último por el que pasó el puntero, o sea el borde por donde
+    /// se fue.
+    fn emit(&self, event: &NSEvent, hovered: bool) {
+        let ivars = self.ivars();
+        let point = ivars.view.convertPoint_fromView(unsafe { event.locationInWindow() }, None);
+        emit(
+            &ivars.queue,
+            ivars.node,
+            "hover",
+            vec![
+                ("hovered".to_owned(), PropValue::Bool(hovered)),
+                ("x".to_owned(), PropValue::Number(point.x)),
+                ("y".to_owned(), PropValue::Number(point.y)),
+            ],
+        );
+    }
+}
+
+/// La forma del puntero encima de una vista.
+///
+/// También es dueño de un `NSTrackingArea`, y por la misma razón: poner un
+/// cursor con `addCursorRect:cursor:` exige sobrescribir `resetCursorRects` en
+/// la vista, y las vistas de este host son en su mayoría controles del sistema.
+/// Con `NSTrackingCursorUpdate` el sistema pregunta al dueño del área justo
+/// cuando el puntero entra, que es cuando hay que contestar.
+pub struct CursorIvars {
+    cursor: Retained<NSCursor>,
+}
+
+define_class!(
+    // SAFETY: igual que GestureTarget.
+    #[unsafe(super(objc2_foundation::NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "AnMacCursorTarget"]
+    #[ivars = CursorIvars]
+    pub struct CursorTarget;
+
+    unsafe impl NSObjectProtocol for CursorTarget {}
+
+    impl CursorTarget {
+        #[unsafe(method(cursorUpdate:))]
+        fn cursor_update(&self, _event: &NSEvent) {
+            self.ivars().cursor.set();
+        }
+    }
+);
+
+impl CursorTarget {
+    fn new(mtm: objc2::MainThreadMarker, cursor: Retained<NSCursor>) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(CursorIvars { cursor });
+        unsafe { msg_send![super(this), init] }
+    }
+}
+
+/// El cursor del sistema que le toca a cada nombre de la primitiva.
+///
+/// `None` es un nombre que no está en el vocabulario: quien llama avisa. No hay
+/// ninguno dibujado a mano; todos son los del sistema, con el aspecto que
+/// tengan en esa versión de macOS.
+pub fn system_cursor(name: &str) -> Option<Retained<NSCursor>> {
+    Some(match name {
+        "default" => NSCursor::arrowCursor(),
+        "pointer" => NSCursor::pointingHandCursor(),
+        "text" => NSCursor::IBeamCursor(),
+        "crosshair" => NSCursor::crosshairCursor(),
+        "grab" => NSCursor::openHandCursor(),
+        "grabbing" => NSCursor::closedHandCursor(),
+        "not-allowed" => NSCursor::operationNotAllowedCursor(),
+        _ => return None,
+    })
+}
+
+/// El área que cubre a una vista entera, ahora y después de cada cambio de
+/// tamaño.
+///
+/// `InVisibleRect` es lo que hace que no haya que rehacerla en cada
+/// `set_layout`: con ella el rectángulo lo lleva AppKit pegado al de la vista y
+/// el que se pasa aquí se ignora. Sin ella, un área quedaría del tamaño que
+/// tenía la vista cuando alguien se suscribió, y al redimensionar la ventana
+/// —que en escritorio pasa constantemente— el puntero entraría y saldría por
+/// donde ya no hay nada.
+fn tracking_area(
+    mtm: objc2::MainThreadMarker,
+    view: &NSView,
+    options: NSTrackingAreaOptions,
+    owner: &objc2::runtime::AnyObject,
+) -> Retained<NSTrackingArea> {
+    let _ = mtm;
+    let rect = CGRect { origin: CGPoint { x: 0.0, y: 0.0 }, size: CGSize::default() };
+    let area = unsafe {
+        NSTrackingArea::initWithRect_options_owner_userInfo(
+            NSTrackingArea::alloc(),
+            rect,
+            options | NSTrackingAreaOptions::InVisibleRect,
+            Some(owner),
+            None,
+        )
+    };
+    view.addTrackingArea(&area);
+    area
+}
+
+/// Pone el cursor de esta vista, quitando el que hubiera.
+///
+/// Devuelve lo que hay que guardar vivo: AppKit se queda con el dueño del área
+/// por referencia débil, así que soltarlo aquí dejaría un área que no contesta
+/// y un puntero que no cambia, sin ningún error.
+pub fn attach_cursor(
+    mtm: objc2::MainThreadMarker,
+    view: &NSView,
+    cursor: Retained<NSCursor>,
+) -> (Retained<NSTrackingArea>, Retained<CursorTarget>) {
+    let target = CursorTarget::new(mtm, cursor);
+    // `ActiveInKeyWindow` es lo que hace AppKit con sus propios rectángulos de
+    // cursor: la forma del puntero es cosa de la ventana con la que se está
+    // trabajando, no de una que está detrás.
+    let area = tracking_area(
+        mtm,
+        view,
+        NSTrackingAreaOptions::CursorUpdate | NSTrackingAreaOptions::ActiveInKeyWindow,
+        &target,
+    );
+    (area, target)
+}
+
 /// Una suscripción viva. Guarda lo que AppKit referencia débilmente, que es
 /// justo lo que se libera solo si no lo retiene nadie: el destino de una acción
 /// y el delegado de un campo.
@@ -391,6 +580,13 @@ pub enum AttachedListener {
     /// Delegado de un campo de texto, que es por donde llegan las tres cosas
     /// que un campo cuenta mientras se escribe.
     FieldDelegate { _target: Retained<ControlTarget> },
+    /// El puntero por encima. No es un reconocedor: es un `NSTrackingArea` con
+    /// un dueño aparte, que es lo que deja vigilar un control del sistema.
+    Hover { area: Retained<NSTrackingArea>, _target: Retained<HoverTarget> },
+    /// Una dirección de deslizamiento. No hay nada que enganchar: el método ya
+    /// está en la clase de la vista (ver `flipped.rs`); lo que se guarda es a
+    /// quién hay que decírselo y qué dirección deja de escucharse al soltar.
+    Swipe { view: Retained<crate::flipped::FlippedView>, bit: u8 },
 }
 
 impl AttachedListener {
@@ -407,6 +603,8 @@ impl AttachedListener {
                 let field: *const NSView = view;
                 unsafe { (*field.cast::<NSTextField>()).setDelegate(None) };
             }
+            AttachedListener::Hover { area, .. } => view.removeTrackingArea(area),
+            AttachedListener::Swipe { view, bit } => view.unlisten_swipe(*bit),
         }
     }
 }
@@ -464,6 +662,24 @@ pub fn attach(
                 .setDelegate(Some(objc2::runtime::ProtocolObject::from_ref(&*target)));
         }
         return Some(AttachedListener::FieldDelegate { _target: target });
+    }
+
+    // El puntero por encima. Va antes que los gestos porque no es uno: no hay
+    // reconocedor, hay un área vigilada, y el dueño del área es un objeto
+    // aparte. Por eso funciona sobre cualquier vista, del sistema o nuestra.
+    if event == "hover" {
+        let target = HoverTarget::new(mtm, node, queue, view.retain());
+        // `ActiveInActiveApp` y no `ActiveAlways`: en un Mac los controles solo
+        // se iluminan al pasar por encima cuando la app está delante, y esta no
+        // va a ser la excepción que se comporta distinto que el resto del
+        // escritorio.
+        let area = tracking_area(
+            mtm,
+            view,
+            NSTrackingAreaOptions::MouseEnteredAndExited | NSTrackingAreaOptions::ActiveInActiveApp,
+            &target,
+        );
+        return Some(AttachedListener::Hover { area, _target: target });
     }
 
     // Gestos continuos.

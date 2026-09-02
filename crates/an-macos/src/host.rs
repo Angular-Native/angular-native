@@ -38,7 +38,7 @@ use objc2_foundation::{
 };
 
 use crate::flipped::FlippedView;
-use crate::support::{is_known_event, support, unsupported_event, Support};
+use crate::support::{is_known_event, unsupported_event};
 
 /// Lista de cadenas en JSON, sin traerse un analizador entero para esto.
 /// Idéntica a la del host de iOS, y por lo mismo: solo tiene que entender lo
@@ -103,17 +103,12 @@ const IGNORED: &[(&str, &str)] = &[
     // La pila de pantallas se monta y se desmonta, pero no se anima: las
     // transiciones de `an-native-stack` están sin portar a este host.
     ("transition", "las transiciones de pila todavía no están portadas a este host"),
-    // La cabecera de macOS es la barra de título de la ventana.
-    ("title", "en un <an-navigation-bar>: la cabecera de macOS es la barra de título"),
-    ("backTitle", "la cabecera de macOS es la barra de título de la ventana"),
-    ("showsBack", "la cabecera de macOS es la barra de título de la ventana"),
-    // Primitivas sin portar (ver `support.rs`).
-    ("latitude", "MapView no está portado a este host"),
-    ("longitude", "MapView no está portado a este host"),
-    ("zoom", "MapView no está portado a este host"),
-    ("showsUser", "MapView no está portado a este host"),
-    ("playing", "VideoView no está portado a este host"),
-    ("muted", "VideoView no está portado a este host"),
+    // La cabecera de un Mac es la barra de título de la ventana, y ahí es
+    // donde acaba el `[title]` (ver `apply_window_title`). Lo que la barra de
+    // título no tiene es botón de atrás: un Mac vuelve con el menú o con un
+    // botón de la app, no con una flecha en la cabecera.
+    ("backTitle", "una barra de título de macOS no lleva botón de atrás"),
+    ("showsBack", "una barra de título de macOS no lleva botón de atrás"),
     // El modal de este host es una capa por encima del contenido, no una hoja
     // ni un panel: no hay dos presentaciones entre las que elegir.
     ("presentation", "el modal de este host es una capa, no hay hoja que elegir"),
@@ -149,23 +144,30 @@ enum HostView {
     Menu(Retained<NSPopUpButton>),
     Date(Retained<NSDatePicker>),
     Web(Retained<crate::web::WKWebView>),
+    Map(Retained<crate::map::MKMapView>),
+    /// En AppKit el vídeo sí es una vista: `AVPlayerView` hereda de `NSView` y
+    /// trae los controles del sistema. En UIKit no hay ninguna, y por eso allí
+    /// hay que contener un controlador entero.
+    Video(Retained<crate::video::AVPlayerView>),
+    /// La cabecera de navegación no se dibuja: el `[title]` va a la barra de
+    /// título de la ventana. La vista existe para que el árbol tenga dónde
+    /// colgar el nodo, y mide cero, así que no deja hueco. Ver `support.rs`.
+    Nav(Retained<FlippedView>),
     /// Capa por encima de la raíz.
     Overlay(Retained<FlippedView>),
     /// Un diálogo no tiene vista: lo presenta el sistema. Se monta una vacía
     /// para que el árbol tenga algo donde colgar el nodo.
     Dialog(Retained<FlippedView>),
-    /// Primitiva que este host no cubre. La vista existe para que el árbol no
-    /// se descuadre, pero no dibuja nada y se avisó al crearla.
-    Unsupported(Retained<FlippedView>, NodeKind),
 }
 
 impl HostView {
     fn as_view(&self) -> &NSView {
         match self {
-            HostView::View(v) | HostView::Stack(v) | HostView::Overlay(v) | HostView::Dialog(v) => {
-                v
-            }
-            HostView::Unsupported(v, _) => v,
+            HostView::View(v)
+            | HostView::Stack(v)
+            | HostView::Overlay(v)
+            | HostView::Dialog(v)
+            | HostView::Nav(v) => v,
             HostView::Label(v) | HostView::Field(v) => v,
             HostView::Area(v) => v,
             HostView::Image(v) | HostView::Icon(v) => v,
@@ -180,6 +182,8 @@ impl HostView {
             HostView::Menu(v) => v,
             HostView::Date(v) => v,
             HostView::Web(v) => v,
+            HostView::Map(v) => v,
+            HostView::Video(v) => v,
         }
     }
 
@@ -205,9 +209,11 @@ impl HostView {
             HostView::Menu(_) => NodeKind::Picker,
             HostView::Date(_) => NodeKind::DatePicker,
             HostView::Web(_) => NodeKind::WebView,
+            HostView::Map(_) => NodeKind::MapView,
+            HostView::Video(_) => NodeKind::VideoView,
+            HostView::Nav(_) => NodeKind::NavigationBar,
             HostView::Overlay(_) => NodeKind::Modal,
             HostView::Dialog(_) => NodeKind::Alert,
-            HostView::Unsupported(_, kind) => *kind,
         }
     }
 
@@ -304,6 +310,28 @@ pub struct AppKitHost {
     stepper_values: HashMap<NodeId, f64>,
     alerts: HashMap<NodeId, crate::alert::AlertState>,
     dirty_alerts: Vec<NodeId>,
+    /// Centro y zoom de cada mapa. Van juntos porque MapKit no tiene tres
+    /// propiedades sino una región, y las tres props llegan sueltas.
+    maps: HashMap<NodeId, (f64, f64, f64)>,
+    /// El reproductor de cada `<an-video-view>`. Nace con la dirección, que
+    /// llega después de la vista.
+    videos: HashMap<NodeId, Retained<crate::video::AVPlayer>>,
+    /// Los que deberían estar sonando. Ver `flush`.
+    video_playing: HashSet<NodeId>,
+    /// El título que pidió el último `<an-navigation-bar>` montado, y el que
+    /// tenía la ventana antes de que ninguno lo pidiera.
+    window_title: Option<String>,
+    original_title: Option<String>,
+    dirty_title: bool,
+    /// Área de cursor de cada vista que pidió una. Se guarda el dueño porque
+    /// `NSTrackingArea` lo referencia débilmente.
+    cursors: HashMap<
+        NodeId,
+        (
+            Retained<objc2_app_kit::NSTrackingArea>,
+            Retained<crate::events::CursorTarget>,
+        ),
+    >,
     listeners: HashMap<(NodeId, String), crate::events::AttachedListener>,
     /// Lo que ya se avisó, para no repetirlo sesenta veces por segundo.
     warned: HashSet<String>,
@@ -337,6 +365,13 @@ impl AppKitHost {
             stepper_values: HashMap::new(),
             alerts: HashMap::new(),
             dirty_alerts: Vec::new(),
+            maps: HashMap::new(),
+            videos: HashMap::new(),
+            video_playing: HashSet::new(),
+            window_title: None,
+            original_title: None,
+            dirty_title: false,
+            cursors: HashMap::new(),
             listeners: HashMap::new(),
             warned: HashSet::new(),
             events,
@@ -468,6 +503,52 @@ impl AppKitHost {
         // es el tipo que ese atributo espera.
         let attributed = unsafe { NSAttributedString::new_with_attributes(&string, &attrs) };
         unsafe { field.setPlaceholderAttributedString(Some(&attributed)) };
+    }
+
+    /// La vista de este host que puede recoger el deslizamiento de un nodo.
+    ///
+    /// Casi siempre es la suya. La excepción es el `<an-scroll-view>`: su vista
+    /// es un `NSScrollView` del sistema, y la nuestra es el documento que lleva
+    /// dentro, que además es el que ocupa todo el contenido desplazable.
+    fn swipe_view(&self, id: NodeId) -> Option<Retained<FlippedView>> {
+        match self.views.get(&id)? {
+            HostView::View(view)
+            | HostView::Stack(view)
+            | HostView::Overlay(view)
+            | HostView::Nav(view)
+            | HostView::Dialog(view) => Some(view.retain()),
+            HostView::Scroll(scroll) => unsafe { scroll.documentView() }
+                .and_then(|document| document.downcast::<FlippedView>().ok()),
+            _ => None,
+        }
+    }
+
+    /// Escribe en la barra de título de la ventana lo que pidió un
+    /// `<an-navigation-bar>`.
+    ///
+    /// Esto es lo que macOS pone en lugar de una cabecera dentro del
+    /// contenido, y no es un apaño: en un Mac el título de la pantalla en la
+    /// que estás vive ahí arriba, en la barra de la ventana, y dibujar otra
+    /// debajo serían dos. Ver `support.rs`.
+    ///
+    /// Se llama desde `flush` y no desde `set_prop` porque cuando la prop
+    /// llega la vista puede no estar todavía dentro de una ventana; mientras
+    /// no lo esté, la petición se queda pendiente y se reintenta al frame
+    /// siguiente.
+    fn apply_window_title(&mut self) {
+        let Some(window) = self.container.window() else { return };
+        // Lo que la ventana traía puesto, para poder devolvérselo cuando la
+        // pantalla que pidió el título se desmonte.
+        if self.original_title.is_none() {
+            self.original_title = Some(window.title().to_string());
+        }
+        let title = self
+            .window_title
+            .clone()
+            .or_else(|| self.original_title.clone())
+            .unwrap_or_default();
+        window.setTitle(&NSString::from_str(&title));
+        self.dirty_title = false;
     }
 
     /// Corre un cambio dentro de una animación si el nodo la pidió.
@@ -784,6 +865,19 @@ impl HostRenderer for AppKitHost {
                 HostView::Date(picker)
             }
             NodeKind::WebView => HostView::Web(crate::web::WKWebView::new(mtm)),
+            NodeKind::MapView => HostView::Map(crate::map::MKMapView::new(mtm)),
+            NodeKind::VideoView => {
+                let player = crate::video::AVPlayerView::new(mtm);
+                // Los controles del sistema, dentro de la vista. Es lo que
+                // trae `AVPlayerView` de fábrica y lo que hace que el vídeo de
+                // macOS se pueda parar sin que la app ponga un botón.
+                player.setControlsStyle(crate::video::CONTROLS_INLINE);
+                HostView::Video(player)
+            }
+            // La cabecera no se dibuja aquí: el `[title]` acaba en la barra de
+            // título de la ventana, que es la cabecera de un Mac. Ver
+            // `support.rs` y `apply_window_title`.
+            NodeKind::NavigationBar => HostView::Nav(FlippedView::new(mtm)),
             NodeKind::Alert => {
                 let placeholder = FlippedView::new(mtm);
                 placeholder.setHidden(true);
@@ -795,21 +889,6 @@ impl HostRenderer for AppKitHost {
                 overlay.setHidden(true);
                 HostView::Overlay(overlay)
             }
-            // Lo que macOS no trae. No se imita: se monta una vista que no
-            // dibuja nada y se dice por qué, una vez.
-            NodeKind::NavigationBar | NodeKind::MapView | NodeKind::VideoView => {
-                let reason = match support(kind) {
-                    Some(Support::Missing(reason)) => reason,
-                    _ => "sin portar",
-                };
-                self.warn_once(format!("kind:{kind:?}"), || {
-                    eprintln!(
-                        "angular-native: <{kind:?}> no se pinta en macOS: {reason}. \
-                         El nodo ocupa su sitio en el layout pero no dibuja nada."
-                    );
-                });
-                HostView::Unsupported(FlippedView::new(mtm), kind)
-            }
             // Nunca llega: el core no manda `Create` de un nodo de texto crudo.
             NodeKind::RawText => return,
         };
@@ -818,6 +897,16 @@ impl HostRenderer for AppKitHost {
 
     fn destroy(&mut self, id: NodeId) {
         if let Some(view) = self.views.remove(&id) {
+            // La pantalla que puso el título se va: la ventana recupera el
+            // suyo. Sin esto, cerrar una pantalla dejaría su nombre arriba
+            // para siempre.
+            if view.kind() == NodeKind::NavigationBar {
+                self.window_title = None;
+                self.dirty_title = true;
+            }
+            if let Some((area, _)) = self.cursors.remove(&id) {
+                view.as_view().removeTrackingArea(&area);
+            }
             view.as_view().removeFromSuperview();
         }
         self.fonts.remove(&id);
@@ -837,6 +926,9 @@ impl HostRenderer for AppKitHost {
         self.slider_values.remove(&id);
         self.stepper_values.remove(&id);
         self.alerts.remove(&id);
+        self.maps.remove(&id);
+        self.videos.remove(&id);
+        self.video_playing.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
     }
 
@@ -1440,6 +1532,120 @@ impl HostRenderer for AppKitHost {
                 }
             }
 
+            // --- mapa
+            "latitude" | "longitude" | "zoom" | "showsUser" if kind == NodeKind::MapView => {
+                if key == "showsUser" {
+                    // Enseñar dónde estás pide permiso de ubicación, y el
+                    // permiso lo pide el sistema con el texto que declara el
+                    // `Info.plist` del `.app`. Aquí solo se pide el punto.
+                    if let Some(HostView::Map(map)) = self.views.get(&id) {
+                        map.setShowsUserLocation(matches!(value, PropValue::Bool(true)));
+                    }
+                    return;
+                }
+                // Las tres llegan sueltas y en cualquier orden, y MapKit no
+                // tiene tres propiedades sino una región: hay que guardarlas y
+                // recomponerla entera cada vez.
+                let entry = self.maps.entry(id).or_insert((0.0, 0.0, 12.0));
+                match key {
+                    "latitude" => entry.0 = number.unwrap_or(0.0) as f64,
+                    "longitude" => entry.1 = number.unwrap_or(0.0) as f64,
+                    _ => entry.2 = number.unwrap_or(12.0) as f64,
+                }
+                let (lat, lon, zoom) = *entry;
+                let Some(HostView::Map(map)) = self.views.get(&id) else { return };
+                let span = crate::map::span_for_zoom(zoom);
+                map.setRegion_animated(
+                    crate::map::MKCoordinateRegion {
+                        center: crate::map::CLLocationCoordinate2D {
+                            latitude: lat,
+                            longitude: lon,
+                        },
+                        span: crate::map::MKCoordinateSpan {
+                            latitude_delta: span,
+                            longitude_delta: span,
+                        },
+                    },
+                    false,
+                );
+            }
+
+            // --- vídeo
+            "url" | "playing" | "muted" if kind == NodeKind::VideoView => {
+                if key == "url" {
+                    let Some(raw) = text.clone() else { return };
+                    let Some(url) = (unsafe {
+                        objc2_foundation::NSURL::URLWithString(&NSString::from_str(&raw))
+                    }) else {
+                        // Una dirección que no es una dirección no puede
+                        // acabar en un reproductor mudo y una caja negra.
+                        self.warn_once(format!("videourl:{raw}"), || {
+                            eprintln!(
+                                "angular-native: `[url]` de <an-video-view> no es una dirección \
+                                 válida: {raw}"
+                            );
+                        });
+                        return;
+                    };
+                    let player = crate::video::AVPlayer::with_url(&url, self.mtm);
+                    if let Some(HostView::Video(view)) = self.views.get(&id) {
+                        view.setPlayer(Some(&player));
+                    }
+                    self.videos.insert(id, player);
+                    return;
+                }
+                let Some(player) = self.videos.get(&id).cloned() else { return };
+                match key {
+                    "playing" => {
+                        if matches!(value, PropValue::Bool(true)) {
+                            self.video_playing.insert(id);
+                            player.play();
+                        } else {
+                            self.video_playing.remove(&id);
+                            player.pause();
+                        }
+                    }
+                    _ => player.setMuted(matches!(value, PropValue::Bool(true))),
+                }
+            }
+
+            // --- cabecera de navegación
+            //
+            // No se dibuja ninguna: la cabecera de un Mac es la barra de
+            // título de la ventana. Lo que sí se hace es llevar el `[title]`
+            // hasta ahí, que es donde un usuario de Mac lo busca. Ver
+            // `support.rs`.
+            "title" if kind == NodeKind::NavigationBar => {
+                self.window_title = Some(text.clone().unwrap_or_default());
+                // Se escribe en `flush`: cuando la prop llega, la vista puede
+                // no estar todavía dentro de una ventana.
+                self.dirty_title = true;
+            }
+
+            // --- el puntero
+            //
+            // La forma del cursor no es una propiedad de `NSView`: es un
+            // rectángulo que la vista declara, y declararlo exige sobrescribir
+            // `resetCursorRects`, cosa que no se puede hacer con un control del
+            // sistema. Con un `NSTrackingArea` el dueño es un objeto aparte y
+            // funciona igual encima de un `NSButton`. Ver `events.rs`.
+            "cursor" => {
+                if let Some((area, _)) = self.cursors.remove(&id) {
+                    native.removeTrackingArea(&area);
+                }
+                let Some(name) = text.clone().filter(|n| !n.is_empty()) else { return };
+                let Some(cursor) = crate::events::system_cursor(&name) else {
+                    self.warn_once(format!("cursor:{name}"), || {
+                        eprintln!(
+                            "angular-native: `[cursor]=\"{name}\"` no es ninguno de los punteros \
+                             del sistema; el puntero se queda como estaba"
+                        );
+                    });
+                    return;
+                };
+                self.cursors.insert(id, crate::events::attach_cursor(self.mtm, &native, cursor));
+            }
+
             // --- diálogos del sistema
             "title" | "message" | "buttons" | "sheet" if self.alerts.contains_key(&id) => {
                 let Some(state) = self.alerts.get_mut(&id) else { return };
@@ -1557,6 +1763,20 @@ impl HostRenderer for AppKitHost {
             return;
         }
 
+        // El deslizamiento no se engancha: ya está en la clase de la vista
+        // (ver `flipped.rs`). Lo que hay que hacer es decirle a quién avisar y
+        // de qué dirección. El `<an-scroll-view>` lo recoge por su documento,
+        // que es el que es nuestro; el `NSScrollView` de fuera es del sistema.
+        if let Some(bit) = crate::flipped::swipe_bit(event) {
+            let Some(flipped) = self.swipe_view(id) else { return };
+            flipped.listen_swipe(id, self.events.clone(), bit);
+            self.listeners.insert(
+                key,
+                crate::events::AttachedListener::Swipe { view: flipped, bit },
+            );
+            return;
+        }
+
         if let Some(listener) =
             crate::events::attach(self.mtm, &native, kind, id, event, self.events.clone())
         {
@@ -1602,6 +1822,23 @@ impl HostRenderer for AppKitHost {
     }
 
     fn flush(&mut self) {
+        if self.dirty_title {
+            self.apply_window_title();
+        }
+
+        // Volver a pedir que suene lo que debería estar sonando.
+        //
+        // `play()` sobre un reproductor que todavía no ha cargado nada no
+        // prende: el `rate` se queda en cero y ahí se queda para siempre, sin
+        // error y con la vista en negro. Como `playing` llega una sola vez,
+        // hay que reintentarlo hasta que agarre. `1` es
+        // `AVPlayerStatusReadyToPlay`.
+        for (id, player) in &self.videos {
+            if self.video_playing.contains(id) && player.rate() == 0.0 && player.status() == 1 {
+                player.play();
+            }
+        }
+
         // Presentar va después del layout: un diálogo se presenta cuando todas
         // sus props ya llegaron, o saldría con el título a medias.
         for id in std::mem::take(&mut self.dirty_alerts) {
@@ -1621,7 +1858,16 @@ impl HostRenderer for AppKitHost {
         self.frames.clear();
         self.transforms.clear();
         self.listeners.clear();
+        self.cursors.clear();
         self.alerts.clear();
         self.dirty_alerts.clear();
+        self.maps.clear();
+        self.videos.clear();
+        self.video_playing.clear();
+        // Un `clear()` es una recarga en frío: el árbol se levanta entero de
+        // nuevo, así que la ventana vuelve a llamarse como se llamaba hasta
+        // que la pantalla nueva pida su título.
+        self.window_title = None;
+        self.dirty_title = true;
     }
 }

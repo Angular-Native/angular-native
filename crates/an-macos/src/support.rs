@@ -28,6 +28,14 @@ pub enum Support {
     Assembled(&'static str),
     /// macOS no lo trae y no se imita. El texto explica por qué.
     Missing(&'static str),
+    /// Lo que la primitiva pide sí se cumple, pero no con una vista del árbol:
+    /// macOS lo pone en otro sitio. El texto dice dónde.
+    ///
+    /// No es un `Missing` con buenas palabras. Un `Missing` deja a la
+    /// plantilla sin lo que pidió; esto se lo da donde la plataforma lo tiene,
+    /// que en un Mac casi siempre está fuera de la ventana de contenido: la
+    /// barra de título, la barra de menús, el Dock.
+    Elsewhere(&'static str),
 }
 
 /// Todos los `NodeKind` que se pueden montar, con lo que macOS pone detrás.
@@ -66,21 +74,24 @@ pub const SUPPORT: &[(NodeKind, Support)] = &[
     // cambiar de sección, así que se arma con él y se dice. `NSTabView` no
     // vale: es la pestaña de documento, con su marco y su fondo.
     (NodeKind::TabBar, Support::Assembled("NSSegmentedControl")),
-    // La cabecera de navegación de macOS es la barra de título de la ventana,
-    // que no vive en el árbol de vistas: la pone el shell. Poner una barra
-    // dentro del contenido sería dibujar una segunda cabecera debajo de la de
-    // verdad, que es lo que este proyecto no hace.
+    // La cabecera de navegación de un Mac es la barra de título de la ventana.
+    // No se dibuja otra dentro del contenido —serían dos—, pero tampoco se
+    // tira lo que la plantilla escribió: el `[title]` va a parar al título de
+    // la ventana, que es donde un usuario de Mac lo busca. Lo pone
+    // `AppKitHost::apply_window_title`. El nodo mide cero, así que no deja
+    // hueco donde no hay nada. Ver `controls.rs`.
     (
         NodeKind::NavigationBar,
-        Support::Missing("en macOS la cabecera es la barra de título de la ventana, no una vista"),
+        Support::Elsewhere("la barra de título de la ventana: el [title] acaba ahí"),
     ),
-    // MapKit existe en macOS, pero `MKMapView` pide clave de mapa y permisos
-    // que este host todavía no gestiona; montar una vista en blanco sería peor
-    // que no montarla.
-    (NodeKind::MapView, Support::Missing("MKMapView todavía no está portado a este host")),
-    // `AVPlayerView` es de AppKit y no es el `AVPlayerViewController` de iOS:
-    // no es un port, es otro control. Todavía no está hecho.
-    (NodeKind::VideoView, Support::Missing("AVPlayerView todavía no está portado a este host")),
+    // MapKit nativo no pide clave —esa es MapKit JS, que es otro producto— y
+    // en macOS `MKMapView` hereda de `NSView`, así que entra en el árbol como
+    // una vista más. Enseñar dónde estás sí pide permiso, y eso es `showsUser`.
+    (NodeKind::MapView, Support::Native("MKMapView")),
+    // En AppKit sí hay vista de vídeo, cosa que en UIKit no: `AVPlayerView`
+    // **es** una `NSView` y trae los controles del sistema. Sale más barato
+    // que en iOS, donde hay que contener un `AVPlayerViewController`.
+    (NodeKind::VideoView, Support::Native("AVPlayerView")),
 ];
 
 /// Lo que macOS pone detrás de una primitiva.
@@ -102,8 +113,8 @@ pub fn support(kind: NodeKind) -> Option<Support> {
 /// primeros: de lo que alguien pidió de verdad y esta plataforma no da.
 pub const KNOWN_EVENTS: &[&str] = &[
     "press", "doublePress", "longPress", "pan", "pinch", "rotate", "swipeLeft", "swipeRight",
-    "swipeUp", "swipeDown", "layout", "safeArea", "back", "refresh", "scroll", "load", "change",
-    "input", "focus", "blur", "submit", "select", "dismiss",
+    "swipeUp", "swipeDown", "hover", "layout", "safeArea", "back", "refresh", "scroll", "load",
+    "change", "input", "focus", "blur", "submit", "select", "dismiss",
 ];
 
 pub fn is_known_event(event: &str) -> bool {
@@ -117,9 +128,17 @@ pub fn is_known_event(event: &str) -> bool {
 /// un evento que nunca va a llegar.
 pub fn unsupported_event(kind: NodeKind, event: &str) -> Option<&'static str> {
     match (kind, event) {
-        (_, "swipeLeft" | "swipeRight" | "swipeUp" | "swipeDown") => Some(
-            "AppKit no tiene reconocedor de deslizamiento: el de dos dedos del trackpad llega \
-             como scroll, no como gesto",
+        (kind, "swipeLeft" | "swipeRight" | "swipeUp" | "swipeDown") if !catches_swipe(kind) => {
+            Some(
+                "el deslizamiento de AppKit no es un reconocedor que se le cuelgue a una vista: \
+                 es un evento que sube por la cadena de responder, y solo lo puede recoger una \
+                 vista de este host. Un control del sistema no se puede subclasear con la app en \
+                 marcha; ponlo en el <an-view> que lo envuelve, que sí lo recibe",
+            )
+        }
+        (NodeKind::NavigationBar, "back") => Some(
+            "la cabecera de este host es la barra de título de la ventana, y una barra de título \
+             no tiene botón de atrás: en un Mac se vuelve con el menú o con un botón de la app",
         ),
         (NodeKind::ScrollView, "refresh") => Some(
             "no hay «tirar para recargar» en escritorio: se recarga con un botón o con un \
@@ -139,4 +158,27 @@ pub fn unsupported_event(kind: NodeKind, event: &str) -> Option<&'static str> {
         // y no se avisa.
         _ => None,
     }
+}
+
+/// Primitivas cuya vista en este host la crea el propio host, y no AppKit.
+///
+/// Importa para una sola cosa, y por eso está aquí y no escondida en `host.rs`:
+/// **el deslizamiento**. AppKit no tiene reconocedor de deslizamiento, pero sí
+/// tiene el gesto: llega como `swipeWithEvent:` a la cadena de responder, y una
+/// clase de Objective-C solo puede atenderlo si el método está en ella. Las
+/// vistas de esta lista son `AnFlippedView` —ver `flipped.rs`— y lo tienen; un
+/// `NSButton` es del sistema y no se le puede añadir un método con la app en
+/// marcha.
+///
+/// No es un agujero: un `swipeWithEvent:` que un control no atiende sube al
+/// siguiente en la cadena, que es su vista padre. O sea que un deslizamiento
+/// encima de un botón acaba llegando al `<an-view>` que lo envuelve, que es
+/// donde una plantilla lo pone casi siempre.
+pub fn catches_swipe(kind: NodeKind) -> bool {
+    matches!(
+        kind,
+        // El `<an-scroll-view>` lo recoge por su documento, que también es
+        // nuestro; el `NSScrollView` de fuera es del sistema.
+        NodeKind::View | NodeKind::StackView | NodeKind::ScrollView | NodeKind::Modal
+    )
 }

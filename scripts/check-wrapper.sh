@@ -22,11 +22,23 @@ raiz = pathlib.Path(sys.argv[1])
 directivas = (raiz / 'packages/primitives/src/primitives.ts').read_text()
 ios = (raiz / 'crates/an-ios/src/host.rs').read_text()
 android = (raiz / 'shells/android/java/dev/angularnative/AnHost.java').read_text()
+macos = (raiz / 'crates/an-macos/src/host.rs').read_text()
 
 # Props que no son para ningún host: las consume el núcleo y ahí se acaban.
 SOLO_NUCLEO = {
     'intrinsicWidth': 'la mide el layout para reservar el hueco de una imagen',
     'intrinsicHeight': 'la mide el layout para reservar el hueco de una imagen',
+}
+
+# Props que solo significan algo donde hay puntero.
+#
+# No son un hueco de iOS ni de Android: es que un dedo no tiene forma. Pedirle
+# a esos dos hosts que miren `cursor` sería pedirles que miren algo que no
+# pueden hacer, y meterla en PENDIENTES sería decir que algún día llegarán.
+# Quien sí tiene que mirarlas es el host de escritorio, y eso se comprueba
+# igual de fuerte que lo demás.
+SOLO_PUNTERO = {
+    'cursor': 'la forma del puntero; un dedo no tiene forma',
 }
 
 # Props que sí deberían llegar y todavía no llegan. Cada una con su motivo en
@@ -44,6 +56,10 @@ fallos = []
 pendientes_vistas = set()
 for prop in comunes:
     if prop in SOLO_NUCLEO:
+        continue
+    if prop in SOLO_PUNTERO:
+        if f'"{prop}"' not in macos:
+            fallos.append(f'  FALLO "{prop}" no la mira el host de macOS, que es el del puntero')
         continue
     faltan = [n for n, h in (('iOS', ios), ('Android', android)) if f'"{prop}"' not in h]
     if not faltan:
@@ -94,8 +110,10 @@ if fallos:
     print('  (el inventario y los motivos están en docs/wrapper-nativo.md)')
     sys.exit(1)
 
-print(f'  ok   las {len(comunes) - len(SOLO_NUCLEO) - len(pendientes_vistas)} props comunes '
-      'llegan a los dos hosts')
+print(f'  ok   las {len(comunes) - len(SOLO_NUCLEO) - len(SOLO_PUNTERO) - len(pendientes_vistas)} '
+      'props comunes llegan a los dos hosts')
+print('  ok   las props de puntero las mira el host de escritorio: '
+      + ', '.join(sorted(SOLO_PUNTERO)))
 print(f'  ok   las {len(declaradas["ios"])} props de [ios] las mira solo iOS')
 print(f'  ok   las {len(declaradas["android"])} props de [android] las mira solo Android')
 print('  ok   todos los objetos de plataforma pasan por platform(), que avisa de lo que no reconoce')

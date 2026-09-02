@@ -91,6 +91,51 @@ export interface NativeScrollEvent {
 }
 
 /**
+ * El puntero entra o sale de una vista.
+ *
+ * Es una sola salida con un booleano y no dos —`hoverIn` y `hoverOut`— porque
+ * lo que hay debajo también es uno solo: un `NSTrackingArea` da entrada y
+ * salida por el mismo camino, y partirlo en dos salidas obligaría a montar dos
+ * suscripciones para lo que casi siempre acaba en la misma señal.
+ *
+ * Las coordenadas son las del puntero dentro de la vista, en puntos. Al salir
+ * son las del último punto por el que pasó, que es el borde por donde se fue.
+ */
+export interface NativeHoverEvent {
+  hovered: boolean
+  x: number
+  y: number
+}
+
+/**
+ * Qué puntero enseña el sistema encima de esta vista.
+ *
+ * Los nombres son los de CSS y no los de AppKit porque son los que ya sabe
+ * cualquiera que haya escrito una interfaz, y porque el vocabulario tiene que
+ * poder significar lo mismo en otro escritorio. Cada uno es un cursor del
+ * sistema —`NSCursor`— y no un dibujo nuestro: `pointer` es la mano de macOS,
+ * con el aspecto que tenga en esa versión.
+ *
+ * `null` es «el que toque», que no es lo mismo que `default`: sin poner nada,
+ * un campo de texto sigue enseñando el cursor de texto que pone él solo, y
+ * `default` es pedir la flecha *encima* de lo que el control haría.
+ *
+ * No están los de redimensionar. Los que macOS tiene desde siempre
+ * —`resizeLeftRightCursor` y compañía— están marcados como obsoletos, y los
+ * que los sustituyen llegaron en macOS 15, que es posterior al mínimo que
+ * compila este host. Meterlos sería elegir entre un aviso de obsolescencia en
+ * cada build o un método que no existe en la versión que decimos soportar.
+ */
+export type NativeCursor =
+  | 'default'
+  | 'pointer'
+  | 'text'
+  | 'crosshair'
+  | 'grab'
+  | 'grabbing'
+  | 'not-allowed'
+
+/**
  * Las claves que un control acepta en `[ios]` o en `[android]`.
  *
  * Se declara la lista aunque el tipo del objeto ya la diga, y no es
@@ -214,6 +259,7 @@ export abstract class NativeVisual {
       borderWidth: this.borderWidth,
       borderColor: this.borderColor,
       opacity: this.opacity,
+      cursor: this.cursor,
       testID: this.testID
     })
   }
@@ -299,6 +345,17 @@ export abstract class NativeVisual {
   readonly swipeDown = outputFromObservable(this.nativeEvent<NativePressEvent>('swipeDown'))
 
   /**
+   * El puntero entra o sale de esta vista.
+   *
+   * En un escritorio no es un adorno: un control que no cambia al pasar el
+   * ratón por encima parece apagado, y esa es la única señal que tiene alguien
+   * con un ratón de que ahí hay algo que pulsar. En un teléfono no existe —no
+   * hay puntero al que responder— y por eso el host de esa plataforma no la
+   * entrega.
+   */
+  readonly hover = outputFromObservable(this.nativeEvent<NativeHoverEvent>('hover'))
+
+  /**
    * El marco que le asignó el layout, cada vez que cambia.
    *
    * No lo produce ninguna plataforma: lo emite el core al terminar el commit,
@@ -372,6 +429,17 @@ export abstract class NativeVisual {
   readonly borderColor = input<string | null>(null)
 
   readonly opacity = input<number | null>(null)
+
+  /**
+   * Puntero del sistema encima de esta vista.
+   *
+   * Va con `(hover)` y por lo mismo: donde hay ratón, la forma del cursor es
+   * la mitad de la respuesta. Donde no lo hay no significa nada, así que el
+   * único host que la mira es el del escritorio; los otros dos no tienen
+   * puntero al que darle forma. Está en la lista de props de puntero de
+   * `scripts/check-wrapper.sh`, que es quien exige que macOS sí la mire.
+   */
+  readonly cursor = input<NativeCursor | null>(null)
 
   /** Identificador para pruebas de interfaz; acaba en accessibilityIdentifier. */
   readonly testID = input<string | null>(null)

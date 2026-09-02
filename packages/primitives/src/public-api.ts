@@ -1,6 +1,8 @@
 export type {
   AndroidButtonProps,
   IosButtonProps,
+  NativeCursor,
+  NativeHoverEvent,
   NativeImageLoadEvent,
   NativeLayoutEvent,
   NativeSafeAreaInsets,
