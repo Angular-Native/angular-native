@@ -84,7 +84,9 @@ implementación, es la plataforma, y cambia lo que una plantilla puede dar por
 hecho. Está todo en [docs/tvos.md](docs/tvos.md).
 
 El escritorio no pide nada: `aarch64-apple-darwin` es la máquina, así que no hay
-simulador que arrancar ni aparato que buscar. Ver [docs/macos.md](docs/macos.md).
+simulador que arrancar ni aparato que buscar. Es también la única plataforma
+donde una comprobación puede arrancar la app, moverle el ratón por encima y
+mirar la foto de lo que pintó. Ver [docs/macos.md](docs/macos.md).
 
 Todo va por el mismo binario, `an`. No hay `.xcodeproj` ni Gradle: las
 herramientas de cada SDK ya hacen el trabajo y el proceso cabe en un fichero
@@ -134,7 +136,15 @@ lleva congelado desde 2011 y no es el de Material 3.
 
 **Gestos** — `press`, `doublePress`, `longPress`, `pan`, `pinch`, `rotation`,
 `swipeLeft`/`Right`/`Up`/`Down`. Los reconocedores son los del sistema, así que
-los umbrales de cuándo un gesto cuenta son los de cada plataforma.
+los umbrales de cuándo un gesto cuenta son los de cada plataforma. En el
+escritorio el deslizamiento no es un reconocedor sino un evento que sube por la
+cadena de responder, y por eso solo lo recogen las vistas del propio host; lo
+que no, avisa al suscribirse.
+
+**Y donde hay ratón** — `(hover)` dice cuándo el puntero entra y sale de una
+vista, y `[cursor]` elige cuál de los punteros del sistema se enseña encima. Las
+dos son de escritorio: un dedo no tiene forma, así que iOS y Android no las
+miran y eso está declarado, no olvidado.
 
 **Transformaciones y animación** — `translateX`, `translateY`, `scale`,
 `rotate`, y `[animate]="ms"` para que los cambios de esa vista dejen de ser un
@@ -142,7 +152,7 @@ salto. Las hace la plataforma en su hilo de dibujo, sin volver a pasar por
 JavaScript en cada frame.
 
 **Otros eventos** — `layout`, `safeArea`, `scroll`, `refresh`, `change`,
-`focus`, `blur`, `submit`, `select`, `load`, `back`, `dismiss`.
+`focus`, `blur`, `submit`, `select`, `load`, `back`, `dismiss`, `hover`.
 
 **Angular** — plantillas AOT, señales, `@if`, `@for`, router con parámetros,
 módulos nativos tipados, y refresco en caliente: al guardar cambia el código de
@@ -175,7 +185,7 @@ cargo test                    # solo el núcleo Rust
 ./scripts/check-watchos.sh    # el modelo del reloj y su compilación cruzada
 ./scripts/check-tvos.sh       # las medidas de la tele, lo que su SDK no trae, y su compilación cruzada
 ./scripts/check-visionos.sh   # la ventana del visor, que no tape el cristal, y su compilación cruzada
-./scripts/check-macos.sh      # el .app de escritorio, arrancado de verdad y con captura
+./scripts/check-macos.sh      # el .app de escritorio: arrancado, con el ratón encima y con captura
 cargo run -p an-bridge --example headless -- build/bundle/hello-angular/main.js 6
 ```
 
@@ -317,13 +327,14 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   `UIView`, así que el árbol se refleja en un modelo que redibuja SwiftUI. El
   porqué y lo que falta, en [docs/watchos.md](docs/watchos.md).
 
-- **En el escritorio faltan tres primitivas y el gesto de deslizar.** macOS monta
-  veintidós de las veinticinco: se quedan fuera `an-navigation-bar` —la cabecera
-  de un Mac es la barra de título de la ventana, y dibujar otra dentro sería
-  pintar dos—, `an-map-view` y `an-video-view`, que no están portadas. AppKit
-  tampoco tiene reconocedor de deslizamiento, así que `(swipeLeft)` y sus tres
-  hermanos avisan al suscribirse en vez de no llegar nunca. El menú de la app lo
-  pone el shell y no se expone a Angular. Todo ello, en
+- **Del escritorio falta el campo de contraseña y las transiciones de la
+  pila.** macOS monta las veinticinco primitivas: veintidós con un control del
+  sistema, dos armadas con vistas del sistema, y la cabecera de navegación en el
+  sitio donde un Mac la tiene, que es la barra de título de la ventana y no una
+  vista del árbol. Lo que no está es `secureTextEntry` —en AppKit el campo de
+  contraseña es otra clase y una vista no puede cambiar de clase en marcha—, las
+  transiciones de `an-native-stack`, y los plugins. El menú de la app lo pone el
+  shell y no se expone a Angular. Todo ello, en
   [docs/macos.md](docs/macos.md).
 
 ## Desarrollo

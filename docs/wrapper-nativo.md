@@ -293,3 +293,14 @@ del que luego se dibujaba.
 las consume el layout para reservar el hueco de una imagen que todavía no ha
 cargado, y no tienen nada que decirle a ningún host. Están declaradas como tal
 en `check-wrapper.sh`.
+
+`cursor` tampoco es una fuga, y su motivo es de otro tipo: no es que no sea para
+ningún host, es que **no es para esos dos**. La forma del puntero solo significa
+algo donde hay puntero, y un dedo no tiene forma. Exigirle a iOS y a Android que
+la miren sería exigirles algo que no pueden hacer, y ponerla en la lista de
+pendientes sería decir que algún día llegarán. Está en `SOLO_PUNTERO`, que es la
+misma comprobación con otro destinatario: quien tiene que mirarla es el host de
+escritorio, y eso se exige igual de fuerte. La salida que va con ella —`(hover)`—
+no aparece aquí porque las salidas no son props: no viajan por `set_prop` sino
+por `set_listener`, y ahí cada host dice qué no sabe entregar. Ver
+[docs/macos.md](macos.md).
