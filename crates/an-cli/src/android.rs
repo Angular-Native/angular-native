@@ -5,10 +5,11 @@
 //! fichero que se puede leer entero. `javac` compila, `d8` dexa, `aapt2` enlaza
 //! el manifiesto, y el resto es un zip firmado.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::plugins::{self, Platform, Plugin};
 use crate::workspace::Workspace;
@@ -69,8 +70,7 @@ impl Sdk {
             .or_else(|_| std::env::var("ANDROID_SDK_ROOT"))
             .map(PathBuf::from)
             .unwrap_or_else(|_| {
-                PathBuf::from(std::env::var("HOME").unwrap_or_default())
-                    .join("Library/Android/sdk")
+                PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Library/Android/sdk")
             });
         if !root.is_dir() {
             bail!("no encuentro el SDK de Android; define ANDROID_HOME");
@@ -83,7 +83,11 @@ impl Sdk {
         if !android_jar.is_file() {
             bail!("no encuentro android.jar en {}", platform.display());
         }
-        Ok(Sdk { root, build_tools, android_jar })
+        Ok(Sdk {
+            root,
+            build_tools,
+            android_jar,
+        })
     }
 
     fn tool(&self, name: &str) -> PathBuf {
@@ -146,7 +150,11 @@ pub fn assemble(
         bail!("la compilación del core para Android falló");
     }
     std::fs::copy(
-        workspace.target_dir().join(RUST_TARGET).join(profile).join("liban_android.so"),
+        workspace
+            .target_dir()
+            .join(RUST_TARGET)
+            .join(profile)
+            .join("liban_android.so"),
         staging.join(format!("lib/{ABI}/liban_android.so")),
     )?;
     std::fs::copy(bundle, staging.join("assets/main.js"))?;
@@ -220,6 +228,10 @@ pub fn assemble(
         .overlay("android", form.manifest_name())
         .unwrap_or_else(|| root.join(form.manifest()));
     comprobar_manifiesto(&manifest)?;
+    // Y el que se le pasa a `aapt2` es el del proyecto más lo que piden los
+    // plugins. El original no se toca: es del usuario.
+    let manifest =
+        escribir_manifiesto(&manifest, &out.join("AndroidManifest.merged.xml"), plugins)?;
     let mut link: Vec<String> = vec![
         "link".into(),
         "-I".into(),
@@ -254,7 +266,12 @@ pub fn assemble(
     // redefina lo que traigan las librerías, y no al revés.
     link.push("-R".into());
     link.push(app_res.to_string_lossy().into_owned());
-    run(root, &sdk.tool("aapt2").to_string_lossy(), &link, "aapt2 link falló")?;
+    run(
+        root,
+        &sdk.tool("aapt2").to_string_lossy(),
+        &link,
+        "aapt2 link falló",
+    )?;
 
     eprintln!("==> shell Java");
     let classes = out.join("classes");
@@ -275,7 +292,11 @@ pub fn assemble(
     // `AnPlugin` y `AnPluginCall` sin classpath adicional.
     for plugin in plugins {
         let aportadas = plugins::sources(plugin, Platform::Android)?;
-        eprintln!("==> plugin {} ({} fuentes Java)", plugin.module, aportadas.len());
+        eprintln!(
+            "==> plugin {} ({} fuentes Java)",
+            plugin.module,
+            aportadas.len()
+        );
         sources.extend(aportadas);
     }
     sources.push(
@@ -356,7 +377,11 @@ pub fn assemble(
     if dev_server.is_some() {
         entries.push("assets/dev-server.txt".to_owned());
     }
-    let mut zip_args: Vec<String> = vec!["-q".into(), "-X".into(), unsigned.to_string_lossy().into_owned()];
+    let mut zip_args: Vec<String> = vec![
+        "-q".into(),
+        "-X".into(),
+        unsigned.to_string_lossy().into_owned(),
+    ];
     zip_args.extend(entries.iter().cloned());
     let status = Command::new("zip")
         .args(&zip_args)
@@ -372,7 +397,12 @@ pub fn assemble(
     run(
         root,
         &sdk.tool("zipalign").to_string_lossy(),
-        &["-p", "4", &unsigned.to_string_lossy(), &aligned.to_string_lossy()],
+        &[
+            "-p",
+            "4",
+            &unsigned.to_string_lossy(),
+            &aligned.to_string_lossy(),
+        ],
         "zipalign falló",
     )?;
 
@@ -423,6 +453,123 @@ fn application_id(workspace: &Workspace) -> String {
     }
 }
 
+/// Escribe el manifiesto que ve `aapt2`: el del proyecto más los permisos y
+/// las características que piden los plugins.
+///
+/// El fichero de partida no se toca nunca. Es del usuario —lo escribe `an add
+/// android` y a partir de ahí es suyo—, y un build que edita fuentes deja al
+/// siguiente sin saber qué escribió él y qué escribió la herramienta.
+///
+/// Lo que ya declare la app no se repite: `aapt2` acepta dos
+/// `<uses-permission>` iguales, pero un manifiesto con la misma línea dos
+/// veces es un manifiesto que nadie sabe leer.
+fn escribir_manifiesto(base: &Path, destino: &Path, plugins: &[Plugin]) -> Result<PathBuf> {
+    let entradas = plugins::manifest_entries(plugins)?;
+    let texto = std::fs::read_to_string(base)
+        .with_context(|| format!("no se pudo leer {}", base.display()))?;
+    if entradas.is_empty() {
+        return Ok(base.to_owned());
+    }
+
+    let mut lineas = String::new();
+    let ya_permisos = nombres_declarados(&texto, "uses-permission");
+    for permiso in &entradas.permissions {
+        if ya_permisos.contains_key(permiso) {
+            // La app ya lo pide. No hay nada que decidir: un permiso no tiene
+            // valor, así que pedirlo dos veces es pedirlo una.
+            continue;
+        }
+        eprintln!("==> AndroidManifest.xml: uses-permission {permiso}");
+        lineas.push_str(&format!(
+            "    <uses-permission android:name=\"{permiso}\" />\n"
+        ));
+    }
+    let ya_features = nombres_declarados(&texto, "uses-feature");
+    for (nombre, required) in &entradas.features {
+        if let Some(actual) = ya_features.get(nombre) {
+            let declarado = actual.as_deref().unwrap_or("true");
+            if declarado != required.to_string() {
+                eprintln!(
+                    "==> AndroidManifest.xml: {nombre} ya la declara la app con \
+                     android:required=\"{declarado}\"; se queda la suya"
+                );
+            }
+            continue;
+        }
+        eprintln!("==> AndroidManifest.xml: uses-feature {nombre} (required={required})");
+        lineas.push_str(&format!(
+            "    <uses-feature android:name=\"{nombre}\" android:required=\"{required}\" />\n"
+        ));
+    }
+
+    let salida = if lineas.is_empty() {
+        texto
+    } else {
+        // Delante de `<application>`, que es donde van en cualquier manifiesto
+        // y donde el que lo abra los va a buscar.
+        let corte = texto.find("<application").with_context(|| {
+            format!(
+                "{}: no encuentro <application>, y ahí es donde van los permisos",
+                base.display()
+            )
+        })?;
+        // Hasta el principio de su línea, para no partir la sangría.
+        let corte = texto[..corte]
+            .rfind('\n')
+            .map(|salto| salto + 1)
+            .unwrap_or(corte);
+        format!(
+            "{}    <!-- De los plugins. Lo escribe `an` al armar el APK. -->\n{}\n{}",
+            &texto[..corte],
+            lineas.trim_end(),
+            &texto[corte..]
+        )
+    };
+    if let Some(padre) = destino.parent() {
+        std::fs::create_dir_all(padre)?;
+    }
+    std::fs::write(destino, salida)
+        .with_context(|| format!("no se pudo escribir {}", destino.display()))?;
+    Ok(destino.to_owned())
+}
+
+/// Los `android:name` de un tipo de elemento del manifiesto, con su
+/// `android:required` si lo lleva.
+///
+/// Se busca elemento a elemento y no por texto suelto: `contains` sobre la
+/// línea entera fallaría en cuanto alguien pusiera los atributos en otro orden
+/// o partiera el elemento en varias líneas, y el fallo sería un permiso
+/// repetido, no un error.
+fn nombres_declarados(texto: &str, elemento: &str) -> BTreeMap<String, Option<String>> {
+    let mut encontrados = BTreeMap::new();
+    let abre = format!("<{elemento}");
+    let mut resto = texto;
+    while let Some(inicio) = resto.find(&abre) {
+        resto = &resto[inicio + abre.len()..];
+        let Some(fin) = resto.find('>') else { break };
+        let atributos = &resto[..fin];
+        if let Some(nombre) = atributo(atributos, "android:name") {
+            encontrados.insert(nombre, atributo(atributos, "android:required"));
+        }
+        resto = &resto[fin..];
+    }
+    encontrados
+}
+
+/// El valor de un atributo entrecomillado dentro de un elemento.
+fn atributo(atributos: &str, nombre: &str) -> Option<String> {
+    let inicio = atributos.find(nombre)? + nombre.len();
+    let resto = atributos[inicio..].trim_start();
+    let resto = resto.strip_prefix('=')?.trim_start();
+    let comilla = resto.chars().next()?;
+    if comilla != '"' && comilla != '\'' {
+        return None;
+    }
+    let resto = &resto[comilla.len_utf8()..];
+    let fin = resto.find(comilla)?;
+    Some(resto[..fin].to_owned())
+}
+
 /// Que el manifiesto siga declarando el paquete del shell.
 ///
 /// Si alguien lo cambia a mano, `javac` compila igual —las clases llevan su
@@ -446,7 +593,8 @@ fn comprobar_manifiesto(manifest: &Path) -> Result<()> {
 /// El almacén de claves de depuración estándar. Si no existe, se crea: es el
 /// mismo que genera Android Studio, con la contraseña de siempre.
 fn debug_keystore() -> Result<PathBuf> {
-    let path = PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".android/debug.keystore");
+    let path =
+        PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".android/debug.keystore");
     if path.is_file() {
         return Ok(path);
     }
@@ -491,7 +639,9 @@ fn devices(adb: &Path) -> Result<Vec<(String, Form)>> {
     let mut encontrados = Vec::new();
     for linea in listado.lines().skip(1) {
         let mut campos = linea.split_whitespace();
-        let (Some(serial), Some("device")) = (campos.next(), campos.next()) else { continue };
+        let (Some(serial), Some("device")) = (campos.next(), campos.next()) else {
+            continue;
+        };
         let props = Command::new(adb)
             .args(["-s", serial, "shell", "getprop", "ro.build.characteristics"])
             .output()
@@ -539,7 +689,11 @@ fn pick_device(adb: &Path, form: Form) -> Result<String> {
             "hay {} aparatos con forma de {}: {}. Elige con --device",
             varios.len(),
             form.nombre(),
-            varios.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+            varios
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
     }
 }
@@ -555,7 +709,9 @@ pub fn install_and_launch(
     eprintln!("==> instalando");
     // Mismo motivo que en iOS: instalar sobre una app en marcha no recarga el
     // bundle nuevo.
-    let _ = Command::new(&adb).args(["shell", "am", "force-stop", &application_id]).output();
+    let _ = Command::new(&adb)
+        .args(["shell", "am", "force-stop", &application_id])
+        .output();
     run(
         workspace,
         &adb.to_string_lossy(),
@@ -568,7 +724,13 @@ pub fn install_and_launch(
         // La actividad conserva el paquete del shell aunque la aplicación se
         // llame de otra forma: `--rename-manifest-package` cualifica los
         // nombres de clase con el paquete original.
-        &["shell", "am", "start", "-n", &format!("{application_id}/{ACTIVITY}")],
+        &[
+            "shell",
+            "am",
+            "start",
+            "-n",
+            &format!("{application_id}/{ACTIVITY}"),
+        ],
         "no se pudo lanzar la app",
     )?;
     Ok(())
@@ -576,7 +738,9 @@ pub fn install_and_launch(
 
 fn walk(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(dir) else { return out };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return out;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -588,12 +752,7 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-fn run<T: AsRef<str>>(
-    cwd: impl AsCwd,
-    program: &str,
-    args: &[T],
-    context: &str,
-) -> Result<()> {
+fn run<T: AsRef<str>>(cwd: impl AsCwd, program: &str, args: &[T], context: &str) -> Result<()> {
     let status = Command::new(program)
         .args(args.iter().map(|a| a.as_ref()))
         .current_dir(cwd.cwd())

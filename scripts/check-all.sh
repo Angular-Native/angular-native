@@ -41,6 +41,12 @@ echo
 "$ROOT/scripts/check-plugins.sh"
 
 echo
+"$ROOT/scripts/check-permissions.sh"
+
+echo
+"$ROOT/scripts/check-secrets.sh"
+
+echo
 "$ROOT/scripts/check-android-java.sh"
 
 echo
