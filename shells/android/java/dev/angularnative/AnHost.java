@@ -116,6 +116,16 @@ public final class AnHost {
     private final java.util.List<Integer> backListeners = new java.util.ArrayList<>();
     /** Nodos suscritos al área segura, con los márgenes que ya se les contó. */
     private final SparseArray<float[]> safeArea = new SparseArray<>();
+    /**
+     * What the template has said about each node's accessibility.
+     *
+     * It only exists for nodes something has been said about. The six props
+     * arrive separately and in any order, and three of them — role, value and
+     * state — cannot be applied on the spot because they are not properties of
+     * the view: they are kept here and `AnAccessibility` pours them out every
+     * time a screen reader asks about the node.
+     */
+    private final SparseArray<AnAccessibility.State> accessibility = new SparseArray<>();
     /** Diálogos declarados, con lo que llevan puesto. */
     private final SparseArray<AlertState> alerts = new SparseArray<>();
     private final java.util.List<Integer> dirtyAlerts = new java.util.ArrayList<>();
@@ -614,6 +624,7 @@ public final class AnHost {
         }
         views.remove(id);
         unsupported.remove(id);
+        accessibility.remove(id);
         animations.remove(id);
         buttonVariants.remove(id);
         buttonColors.remove(id);
@@ -1572,9 +1583,47 @@ public final class AnHost {
                     ((ImageView) view).setScaleType(scaleTypeOf(value));
                 }
                 break;
-            case "testID":
-                view.setContentDescription(value);
+            // --- accessibility
+            //
+            // The seven go together because they end up in the same place: the
+            // node state, which is the only thing that knows whether the name
+            // came from `[accessibilityLabel]` or from `[testID]`, and the only
+            // thing that can decide between them without depending on which
+            // one arrived first.
+            case "accessibilityLabel":
+            case "accessibilityHint":
+            case "accessibilityRole":
+            case "accessibilityValue":
+            case "accessibilityState":
+            case "accessible":
+            case "testID": {
+                AnAccessibility.State state = accessibilityOf(id);
+                switch (key) {
+                    case "accessibilityLabel":
+                        state.label = text(value);
+                        break;
+                    case "accessibilityHint":
+                        state.hint = text(value);
+                        break;
+                    case "accessibilityRole":
+                        state.role = text(value);
+                        break;
+                    case "accessibilityValue":
+                        state.value = text(value);
+                        break;
+                    case "accessible":
+                        state.accessible = flag(value);
+                        break;
+                    case "testID":
+                        state.testID = text(value);
+                        break;
+                    default:
+                        readAccessibilityState(state, value);
+                        break;
+                }
+                AnAccessibility.apply(view, state);
                 break;
+            }
             case "color": {
                 Integer color = parseColor(value);
                 if (color == null) {
@@ -1828,6 +1877,94 @@ public final class AnHost {
                 break;
             default:
                 break;
+        }
+    }
+
+    private AnAccessibility.State accessibilityOf(int id) {
+        AnAccessibility.State state = accessibility.get(id);
+        if (state == null) {
+            state = new AnAccessibility.State();
+            accessibility.put(id, state);
+        }
+        return state;
+    }
+
+    /**
+     * A text prop the template may have taken away.
+     *
+     * An input that goes back to `null` arrives here as an empty string — that
+     * is what `set_prop` writes in Rust for `PropValue::Null` — and for
+     * accessibility the difference matters: an empty label is not a label, it
+     * is having no label, and the node has to go back to announcing itself the
+     * way it did before anyone said anything.
+     */
+    private static String text(String value) {
+        return value == null || value.isEmpty() ? null : value;
+    }
+
+    private static Boolean flag(String value) {
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        return "true".equals(value);
+    }
+
+    /**
+     * `accessibilityState` travels as a JSON object, just like the labels of
+     * an `an-alert`.
+     *
+     * It is emptied out before being read because the template sends the whole
+     * object: a key that is no longer there means nothing is being said about
+     * it any more, and leaving the previous one in place would announce a
+     * state the template withdrew.
+     */
+    private static void readAccessibilityState(AnAccessibility.State state, String value) {
+        state.disabled = null;
+        state.selected = null;
+        state.checked = null;
+        state.expanded = null;
+        state.busy = null;
+        if (value == null || value.isEmpty()) {
+            return;
+        }
+        org.json.JSONObject json;
+        try {
+            json = new org.json.JSONObject(value);
+        } catch (org.json.JSONException error) {
+            android.util.Log.e(
+                    "angular-native",
+                    "accessibilityState is not an object: "
+                            + value
+                            + " ("
+                            + error.getMessage()
+                            + ")");
+            return;
+        }
+        if (json.has("disabled")) {
+            state.disabled = json.optBoolean("disabled");
+        }
+        if (json.has("selected")) {
+            state.selected = json.optBoolean("selected");
+        }
+        if (json.has("expanded")) {
+            state.expanded = json.optBoolean("expanded");
+        }
+        if (json.has("busy")) {
+            state.busy = json.optBoolean("busy");
+        }
+        if (json.has("checked")) {
+            Object checked = json.opt("checked");
+            if (checked instanceof Boolean) {
+                state.checked =
+                        ((Boolean) checked) ? AnAccessibility.CHECKED : AnAccessibility.UNCHECKED;
+            } else if ("mixed".equals(checked)) {
+                state.checked = AnAccessibility.MIXED;
+            } else {
+                android.util.Log.e(
+                        "angular-native",
+                        "accessibilityState.checked only takes true, false or \"mixed\";"
+                                + " got " + checked);
+            }
         }
     }
 

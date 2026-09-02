@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What a screen reader speaks verbatim.
+
+  These are the only strings in the framework that reach a user, and that is
+  exactly why they live here and not in the code. `setRoleDescription` and
+  `setStateDescription` translate nothing: they are handed a text and the
+  reader pronounces it as it comes, so a constant in Java would be a Spanish
+  phone saying "link".
+
+  Only the roles and states Android cannot say on its own are here. "Button",
+  "check box" or "switch" do not appear because they are not needed: those go
+  through the node's class name and the system says them, in the system's
+  language and with whatever word that version uses.
+
+  English is the source, as in the documentation; `values-es/` is the
+  translation. If a language is missing, Android falls back to this file.
+-->
+<resources>
+
+    <!-- Role: something that takes you elsewhere. Android has no link widget. -->
+    <string name="an_role_link">link</string>
+
+    <!-- Role: a search field. -->
+    <string name="an_role_search">search field</string>
+
+    <!-- Role: a summary of what is below. -->
+    <string name="an_role_summary">summary</string>
+
+    <!--
+      State: the third value of a checkbox, the one that is neither yes nor no.
+      `AccessibilityNodeInfo.setChecked` is a boolean and has no room for it,
+      so it is told in words.
+    -->
+    <string name="an_state_partially_checked">partially checked</string>
+
+    <!-- State: busy. Android has no field for this. -->
+    <string name="an_state_busy">busy</string>
+
+</resources>
