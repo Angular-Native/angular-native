@@ -108,7 +108,7 @@ pub fn assemble(
     }
     sources.extend(swift_sources(&root.join("shells/shared"))?);
 
-    let lib_dir = root.join("target").join(TARGET).join(profile);
+    let lib_dir = workspace.target_dir().join(TARGET).join(profile);
     let mut args: Vec<String> = vec![
         "swiftc".into(),
         "-sdk".into(),

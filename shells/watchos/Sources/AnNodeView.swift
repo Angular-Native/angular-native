@@ -35,6 +35,12 @@ struct AnNodeView: View {
         content
             .frame(width: node.width, height: node.height)
             .position(x: node.x + node.width / 2, y: node.y + node.height / 2)
+            // Accessibility goes here and not in every `case` of `content`
+            // for the same reason the frame does: it belongs to every node,
+            // not to a type. A `Toggle` already ships with the system's label
+            // and trait, and what is here only goes on top of that if the
+            // template really set it; `AnAccessibility` takes care of that.
+            .anAccessibility(node)
     }
 
     @ViewBuilder

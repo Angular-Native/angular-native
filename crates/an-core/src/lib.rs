@@ -10,6 +10,7 @@
 //! Commit is the only point where layout runs, and the `Frame` that comes out
 //! carries only what actually changed.
 
+pub mod accessibility;
 pub mod color;
 pub mod icons;
 pub mod props;

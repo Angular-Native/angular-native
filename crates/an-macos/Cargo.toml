@@ -50,7 +50,10 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
   "NSPressGestureRecognizer", "NSMagnificationGestureRecognizer",
   "NSRotationGestureRecognizer", "NSTrackingArea", "NSEvent", "NSCursor",
   "NSAttributedString", "NSParagraphStyle", "NSStringDrawing", "NSAnimationContext",
-  "NSGraphics", "NSGraphicsContext", "NSAccessibilityProtocols", "NSUserInterfaceItemIdentification",
+  "NSGraphics", "NSGraphicsContext", "NSAccessibilityProtocols",
+  # AppKit's roles and subroles, which are the other set: UIKit's are bits of
+  # a mask and these are strings.
+  "NSAccessibilityConstants", "NSUserInterfaceItemIdentification",
   "NSLayoutConstraint", "NSAppearance", "NSColorSpace", "block2",
 ] }
 

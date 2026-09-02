@@ -32,6 +32,8 @@
 pub mod support;
 
 #[cfg(target_os = "macos")]
+mod accessibility;
+#[cfg(target_os = "macos")]
 mod alert;
 #[cfg(target_os = "macos")]
 mod color;

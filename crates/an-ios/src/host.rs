@@ -490,6 +490,11 @@ pub struct UikitHost {
     /// que poder quitarlas: un `@if` que desmonta su rama destruye la vista,
     /// pero un `(press)` que deja de estar bindeado no.
     listeners: HashMap<(NodeId, String), crate::events::AttachedListener>,
+    /// Accessibility role and state per node, plus the traits the view
+    /// carried from the system. They go together because
+    /// `accessibilityTraits` is a mask: writing one bit means knowing the
+    /// others. See `accessibility.rs`.
+    accessibility: crate::accessibility::Accessibility,
     events: EventQueue,
 }
 
@@ -537,6 +542,7 @@ impl UikitHost {
             modals: HashMap::new(),
             dirty_modals: Vec::new(),
             listeners: HashMap::new(),
+            accessibility: crate::accessibility::Accessibility::new(),
             events,
         }
     }
@@ -1306,6 +1312,7 @@ impl HostRenderer for UikitHost {
         self.stepper_values.remove(&id);
         self.modals.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
+        self.accessibility.forget(id);
     }
 
     fn insert(&mut self, parent: NodeId, child: NodeId, index: u32) {
@@ -1825,6 +1832,15 @@ impl HostRenderer for UikitHost {
                 if let Some(t) = &text {
                     native.setAccessibilityIdentifier(Some(&NSString::from_str(t)));
                 }
+            }
+            // The six of the contract. They all go together to
+            // `accessibility.rs` because they are not six independent props:
+            // role and state end up in the same bit mask, and `checked` ends
+            // up in the value only if the template set none.
+            _ if crate::accessibility::handles(key) => {
+                let kind = format!("{:?}", view.kind());
+                let native = native.retain();
+                self.accessibility.apply(self.mtm, id, &native, &kind, key, value);
             }
             "color" => {
                 let Some(color) = text.as_deref().and_then(crate::color::to_uicolor) else {

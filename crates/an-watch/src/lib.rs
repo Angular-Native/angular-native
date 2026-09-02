@@ -106,6 +106,71 @@ mod tests {
         assert!(button.listens.iter().any(|e| e == "press"), "la plantilla puso un (press)");
     }
 
+    /// The six accessibility props, as the shell receives them.
+    ///
+    /// This is the closest the watch gets to being checked. The other three
+    /// Apple hosts can be read from outside the app — a separate process walks
+    /// their accessibility tree — and watchOS cannot: there is no route into a
+    /// watch simulator's tree, so nothing here proves a reader would announce
+    /// any of it.
+    ///
+    /// What it does prove is the half that is ours. The whole translation from
+    /// the contract to SwiftUI happens in Rust, in `accessibility_traits_of`,
+    /// and the shell only attaches what arrives; so if the snapshot carries the
+    /// right trait names and the right strings, everything left between here
+    /// and a spoken word belongs to SwiftUI. That is worth having and it is
+    /// worth not overselling.
+    #[test]
+    fn la_foto_lleva_la_accesibilidad_traducida_a_swiftui() {
+        let mut tree = ShadowTree::new();
+        tree.create_node(1, NodeKind::View).unwrap();
+        tree.set_style(1, "width", "176").unwrap();
+        tree.set_style(1, "height", "223").unwrap();
+        tree.set_root(1).unwrap();
+
+        // A row acting as a switch, on, and read as one stop.
+        tree.create_node(2, NodeKind::View).unwrap();
+        tree.set_style(2, "height", "40").unwrap();
+        tree.set_prop(2, "accessibilityLabel", PropValue::Str("Night mode".into())).unwrap();
+        tree.set_prop(2, "accessibilityHint", PropValue::Str("dims the screen".into())).unwrap();
+        tree.set_prop(2, "accessibilityRole", PropValue::Str("switch".into())).unwrap();
+        tree.set_prop(2, "accessibilityState", PropValue::Str(r#"{"checked":true}"#.into()))
+            .unwrap();
+        tree.set_prop(2, "accessible", PropValue::Bool(true)).unwrap();
+        tree.insert_child(1, 2, 0).unwrap();
+
+        // And a row asking for the two things SwiftUI has no trait for.
+        tree.create_node(3, NodeKind::View).unwrap();
+        tree.set_style(3, "height", "40").unwrap();
+        tree.set_prop(3, "accessibilityRole", PropValue::Str("radio".into())).unwrap();
+        tree.set_prop(3, "accessibilityState", PropValue::Str(r#"{"selected":true}"#.into()))
+            .unwrap();
+        tree.insert_child(1, 3, 1).unwrap();
+
+        let events = new_event_queue();
+        let mut mount = MountSide::new(WatchHost::new(events));
+        let frame = tree.commit((176.0, 223.0), &WatchMeasurer::new(Default::default())).unwrap();
+        mount.apply(&frame);
+
+        let snapshot = crate::snapshot::snapshot(mount.host());
+        let root = snapshot.root.expect("tiene que haber raíz");
+
+        let row = &root.children[0];
+        assert_eq!(row.accessibility_label.as_deref(), Some("Night mode"));
+        assert_eq!(row.accessibility_hint.as_deref(), Some("dims the screen"));
+        assert_eq!(row.accessible, Some(true));
+        // The role travels already translated: the shell never sees "switch".
+        assert_eq!(row.accessibility_traits, vec!["isToggle"]);
+        // `checked` is nobody's trait — it goes in the value, and with the
+        // platform's own convention rather than a word of ours.
+        assert_eq!(row.accessibility_value.as_deref(), Some("1"));
+
+        let gap = &root.children[1];
+        // `radio` has no SwiftUI trait, so nothing is sent for it — and
+        // `selected` does have one, so the row is not left empty either.
+        assert_eq!(gap.accessibility_traits, vec!["isSelected"]);
+    }
+
     /// Un nodo que se va tiene que irse también de la foto, y la revisión tiene
     /// que subir: si no subiera, SwiftUI seguiría enseñando lo que ya no está.
     #[test]

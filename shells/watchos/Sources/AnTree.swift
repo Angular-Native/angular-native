@@ -91,6 +91,17 @@ struct AnNode: Decodable, Identifiable, Equatable {
     let disabled: Bool?
     let testId: String?
 
+    /// The six of the contract, already translated by Rust.
+    /// `accessibilityTraits` are `AccessibilityTraits` names —`isButton`,
+    /// `isSelected`— and not the contract's role: the table lives in
+    /// `snapshot.rs`, which is also what says what has no shape in SwiftUI.
+    /// See `AnAccessibility`.
+    let accessibilityLabel: String?
+    let accessibilityHint: String?
+    let accessibilityValue: String?
+    let accessibilityTraits: [String]?
+    let accessible: Bool?
+
     let text: String?
     let fontSize: Double?
     let fontWeight: Int?

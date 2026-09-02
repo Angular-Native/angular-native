@@ -333,6 +333,9 @@ pub struct AppKitHost {
         ),
     >,
     listeners: HashMap<(NodeId, String), crate::events::AttachedListener>,
+    /// The role AppKit gave each view and the state the template asked for.
+    /// See `accessibility.rs`.
+    accessibility: crate::accessibility::Accessibility,
     /// Lo que ya se avisó, para no repetirlo sesenta veces por segundo.
     warned: HashSet<String>,
     events: EventQueue,
@@ -373,6 +376,7 @@ impl AppKitHost {
             dirty_title: false,
             cursors: HashMap::new(),
             listeners: HashMap::new(),
+            accessibility: crate::accessibility::Accessibility::new(),
             warned: HashSet::new(),
             events,
         }
@@ -933,6 +937,7 @@ impl HostRenderer for AppKitHost {
         self.videos.remove(&id);
         self.video_playing.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
+        self.accessibility.forget(id);
     }
 
     fn insert(&mut self, parent: NodeId, child: NodeId, index: u32) {
@@ -1049,6 +1054,13 @@ impl HostRenderer for AppKitHost {
                 if let Some(t) = &text {
                     unsafe { native.setIdentifier(Some(&NSString::from_str(t))) };
                 }
+            }
+            // The six of the contract, all together in `accessibility.rs`:
+            // role and state are written through different properties of the
+            // NSAccessibility protocol, but `checked` ends up in the value,
+            // and that means knowing whether the template set one.
+            _ if crate::accessibility::handles(key) => {
+                self.accessibility.apply(id, &native, kind, key, value);
             }
 
             // --- geometría propia de la vista

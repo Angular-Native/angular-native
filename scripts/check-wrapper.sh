@@ -20,9 +20,18 @@ import pathlib, re, sys
 
 raiz = pathlib.Path(sys.argv[1])
 directivas = (raiz / 'packages/primitives/src/primitives.ts').read_text()
-ios = (raiz / 'crates/an-ios/src/host.rs').read_text()
+# El crate entero y no solo `host.rs`: un host puede repartir su `set_prop` en
+# varios ficheros —la accesibilidad de Apple está en `accessibility.rs` porque
+# sus seis props se deciden juntas— y lo que esto comprueba es que el *host* las
+# mire, no que las mire un fichero concreto. Buscar solo en uno diría que una
+# prop no llega cuando llega, que es la mentira más cara de las dos.
+def crate(ruta: str) -> str:
+    return '\n'.join(f.read_text() for f in sorted((raiz / ruta).rglob('*.rs')))
+
+
+ios = crate('crates/an-ios/src')
 android = (raiz / 'shells/android/java/dev/angularnative/AnHost.java').read_text()
-macos = (raiz / 'crates/an-macos/src/host.rs').read_text()
+macos = crate('crates/an-macos/src')
 
 # Props que no son para ningún host: las consume el núcleo y ahí se acaban.
 SOLO_NUCLEO = {
@@ -43,18 +52,7 @@ SOLO_PUNTERO = {
 
 # Props que sí deberían llegar y todavía no llegan. Cada una con su motivo en
 # docs/wrapper-nativo.md. La lista solo puede encoger.
-PENDIENTES: dict[str, str] = {
-    # La accesibilidad llegó primero a Android, que es donde se pudo verificar
-    # de verdad volcando el árbol con `uiautomator`. El host de Apple está en
-    # camino; hasta que llegue, estas seis se declaran aquí para que el hueco
-    # esté escrito y no descubierto por un usuario ciego.
-    'accessibilityLabel': 'el host de Apple todavía no la mira',
-    'accessibilityHint': 'el host de Apple todavía no la mira',
-    'accessibilityRole': 'el host de Apple todavía no la mira',
-    'accessibilityValue': 'el host de Apple todavía no la mira',
-    'accessibilityState': 'el host de Apple todavía no la mira',
-    'accessible': 'el host de Apple todavía no la mira',
-}
+PENDIENTES: dict[str, str] = {}
 
 # Las props comunes son las claves de los `push({...})` de cada directiva, más
 # las que alguna manda a mano —el tamaño de una imagen lo escribe su oyente de

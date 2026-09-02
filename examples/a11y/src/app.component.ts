@@ -179,6 +179,45 @@ import type { NativeAccessibilityState } from '@angular-native/primitives'
       <an-switch [on]="alerts()" (onChange)="alerts.set($event)" />
 
       <an-button [title]="'OK'" />
+
+      <!--
+        And the same control with a name of ours on top. This is the row that
+        catches the AppKit trap: overriding anything on an NSView makes AppKit
+        stop working that view's accessibility out, and the role nobody
+        overrode comes back AXUnknown. The dump has to still call this a
+        button, with our name and not its title.
+      -->
+      <an-button [title]="'Save'" [accessibilityLabel]="'Save the changes you made'" />
+
+      <!--
+        A role taken away from a control that had one. 'none' is not the same
+        as saying nothing: saying nothing leaves the control announcing itself,
+        and 'none' strips it — android.view.View on one side, AXUnknown on the
+        other.
+      -->
+      <an-button [title]="'Stripped of its role'" [accessibilityRole]="'none'" />
+
+      <!--
+        A switch by role rather than by widget. On AppKit this is the pair that
+        needs a subrole: AXCheckBox alone would be indistinguishable from a
+        checkbox, and what makes it a switch is AXSwitch on top.
+      -->
+      <an-view
+        [style.height]="'20'"
+        [accessibilityRole]="'switch'"
+        [accessibilityLabel]="'Night mode'"
+        [accessibilityState]="checked" />
+
+      <!--
+        A value the template wrote by hand, on something that behaves like a
+        slider without being one. Nothing derived from the state may overwrite
+        it: 'checked' fills a value nobody claimed and no other.
+      -->
+      <an-view
+        [style.height]="'20'"
+        [accessibilityRole]="'slider'"
+        [accessibilityLabel]="'Loudness'"
+        [accessibilityValue]="'60 per cent'" />
     </an-view>
   `
 })
