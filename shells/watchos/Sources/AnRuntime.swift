@@ -15,6 +15,10 @@ import Observation
 @Observable
 final class AnRuntime {
     let tree = AnTree()
+    /// Lo que el dedo mueve y la app todavía no ha confirmado. Vive aquí y no
+    /// en una vista porque tiene que sobrevivir a que el árbol se rehaga
+    /// entero en cada foto, que es lo que pasa treinta veces por segundo.
+    let controls = AnControls()
 
     @ObservationIgnored private var runtime: OpaquePointer?
     @ObservationIgnored private var timer: Timer?
@@ -30,9 +34,14 @@ final class AnRuntime {
     /// `sizeThatFits` antes de que exista una vista. Van fijados, con las
     /// medidas que usa watchOS, y el ancho de los que se estiran lo decide
     /// luego el layout.
+    ///
+    /// El `Picker` es el más alto de todos porque en el reloj es una rueda, no
+    /// un desplegable: necesita ver la opción de arriba y la de abajo o no se
+    /// entiende que gira.
     private static let controlSizes = """
-    {"Button":[80,44],"Switch":[52,32],"Slider":[120,32],\
-    "ProgressBar":[120,4],"ActivityIndicator":[24,24]}
+    {"Button":[80,44],"Switch":[52,40],"Slider":[120,36],\
+    "ProgressBar":[120,6],"ActivityIndicator":[24,24],\
+    "Stepper":[120,44],"Picker":[120,88],"DatePicker":[120,44],"Icon":[24,24]}
     """
 
     func start(width: Double, height: Double) {
@@ -41,6 +50,9 @@ final class AnRuntime {
         guard let runtime else {
             NSLog("angular-native: an_watch_runtime_new devolvió nil")
             return
+        }
+        controls.dispatch = { [weak self] target, name, payload in
+            self?.dispatch(target, name, payload)
         }
         loadBundleScript(into: runtime)
         // Solo existe si el `.app` lo armó `an dev`. En una compilación normal
@@ -73,7 +85,9 @@ final class AnRuntime {
         }
         // Solo vuelca si la revisión cambió: un frame quieto no despierta a
         // SwiftUI.
-        tree.sync(runtime: runtime)
+        if tree.sync(runtime: runtime) {
+            controls.reconcile(root: tree.root, overlays: tree.overlays)
+        }
     }
 
     /// El bundle de la app trae el JS, igual que el `main.jsbundle` de React
@@ -92,19 +106,43 @@ final class AnRuntime {
 
     /// Código nuevo encima del que ya corre. Lo llama el cliente de desarrollo
     /// desde el hilo principal, que es el único que puede tocar el runtime.
+    ///
+    /// El estado de los controles no se toca aquí a propósito. En una recarga
+    /// en caliente el árbol sigue en pie con los mismos ids, así que un
+    /// deslizador a medio camino se queda donde estaba; en una recarga en frío
+    /// el host vacía el árbol, y `reconcile` se lleva por delante lo que ya no
+    /// existe sin que haya que acordarse de vaciarlo a mano.
     private func reload(_ source: String) {
         guard let runtime else { return }
         if an_watch_runtime_reload(runtime, "main.js", source) != 0 {
             NSLog("angular-native: la recarga falló")
         }
-        tree.sync(runtime: runtime)
+        if tree.sync(runtime: runtime) {
+            controls.reconcile(root: tree.root, overlays: tree.overlays)
+        }
     }
 
-    /// Un toque de SwiftUI hacia JS. Se encola aquí y JS lo ve en el tick
+    /// Un evento de SwiftUI hacia JS. Se encola aquí y JS lo ve en el tick
     /// siguiente, que es como llegan los eventos en iOS y en Android.
-    func dispatch(_ target: UInt32, _ name: String) {
+    ///
+    /// La carga va como JSON porque cada evento lleva claves distintas: un
+    /// `pan` seis números, un `dismiss` ninguno. Se serializa aquí, en el hilo
+    /// principal y sobre un objeto plano, así que no puede fallar por nada que
+    /// no sea un error de programación — y si falla, se dice.
+    func dispatch(_ target: UInt32, _ name: String, _ payload: [String: Any]) {
         guard let runtime else { return }
-        an_watch_runtime_event(runtime, target, name)
+        guard !payload.isEmpty else {
+            an_watch_runtime_event(runtime, target, name, nil)
+            return
+        }
+        guard JSONSerialization.isValidJSONObject(payload),
+              let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8)
+        else {
+            NSLog("angular-native: la carga de \(name) no se puede serializar: \(payload)")
+            return
+        }
+        an_watch_runtime_event(runtime, target, name, json)
     }
 
     deinit {

@@ -38,9 +38,13 @@ uint64_t an_watch_runtime_revision(AnWatchRuntime *rt);
 /// El árbol en JSON. Válido hasta la siguiente llamada a esta misma función.
 const char *an_watch_runtime_snapshot(AnWatchRuntime *rt);
 
-/// Un evento nativo desde SwiftUI, por ejemplo "press".
+/// Un evento nativo desde SwiftUI, por ejemplo "press" o "crown".
+///
+/// `payload_json` es un objeto plano —{"value":0.4}— o NULL si el evento no
+/// lleva nada. Solo se aceptan números, cadenas y booleanos: lo que venga
+/// anidado se rechaza avisando, porque el puente no lo sabe llevar.
 void an_watch_runtime_event(AnWatchRuntime *rt, uint32_t target,
-                            const char *name);
+                            const char *name, const char *payload_json);
 
 void an_watch_runtime_free(AnWatchRuntime *rt);
 

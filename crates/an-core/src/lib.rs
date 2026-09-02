@@ -10,6 +10,7 @@
 //! contiene solo lo que cambió de verdad.
 
 pub mod color;
+pub mod icons;
 pub mod props;
 pub mod tree;
 

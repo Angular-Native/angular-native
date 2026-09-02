@@ -13,6 +13,13 @@ struct AngularNativeWatchApp: App {
 
 struct RootView: View {
     @State private var runtime = AnRuntime()
+    /// Quién tiene la corona.
+    ///
+    /// El foco de watchOS es uno solo y la corona va con él, así que se lleva
+    /// en la raíz y se pasa hacia abajo: si cada nodo tuviera el suyo, cada uno
+    /// creería tenerla y ninguno la tendría. Quien lo reclama es el propio nodo
+    /// al aparecer, en `AnCrown`.
+    @FocusState private var crownTarget: UInt32?
 
     var body: some View {
         // `GeometryReader` da el tamaño real de la pantalla del modelo que sea
@@ -21,12 +28,21 @@ struct RootView: View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 if let root = runtime.tree.root {
-                    AnNodeView(node: root) { target, name in
-                        runtime.dispatch(target, name)
-                    }
+                    AnNodeView(
+                        node: root,
+                        controls: runtime.controls,
+                        dispatch: runtime.dispatch,
+                        crownFocus: $crownTarget
+                    )
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+            .anOverlays(
+                runtime.tree.overlays,
+                controls: runtime.controls,
+                dispatch: runtime.dispatch,
+                crownFocus: $crownTarget
+            )
             .onAppear {
                 runtime.start(width: geometry.size.width, height: geometry.size.height)
             }
