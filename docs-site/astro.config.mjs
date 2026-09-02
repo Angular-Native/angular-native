@@ -14,6 +14,7 @@ import { defineConfig } from 'astro/config'
 // página en inglés en vez de un 404 — que es justo lo que hace falta mientras
 // una traducción se pone al día.
 export default defineConfig({
+  site: 'https://angular-native.dev',
   integrations: [
     starlight({
       title: 'angular-native',
@@ -29,11 +30,20 @@ export default defineConfig({
           href: 'https://github.com/nesgarbo/angular-native'
         }
       ],
+      // Tres grupos y no diez: alguien que llega quiere aprender, alguien que
+      // ya está quiere consultar, y quien porta a una plataforma quiere saber
+      // qué le falta ahí. Un sidebar que refleje la estructura de ficheros
+      // obliga al lector a deducir esa diferencia.
       sidebar: [
         {
-          label: 'Start here',
-          translations: { es: 'Empezar' },
-          items: [{ autogenerate: { directory: 'start' } }]
+          label: 'Guide',
+          translations: { es: 'Guía' },
+          items: [{ autogenerate: { directory: 'guide' } }]
+        },
+        {
+          label: 'Reference',
+          translations: { es: 'Referencia' },
+          items: [{ autogenerate: { directory: 'reference' } }]
         },
         {
           label: 'Platforms',

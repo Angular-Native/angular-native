@@ -2,7 +2,6 @@ import { ChangeDetectionStrategy, Component, signal } from '@angular/core'
 import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
 import type { NativeAccessibilityState } from '@angular-native/primitives'
 
-import { Accessibility } from './accessibility'
 
 /**
  * A screen whose only job is to say things that can only be seen with a screen
@@ -22,7 +21,7 @@ import { Accessibility } from './accessibility'
 @Component({
   selector: 'app-root',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NATIVE_PRIMITIVES, Accessibility],
+  imports: [NATIVE_PRIMITIVES],
   template: `
     <an-view [style.padding]="'6'" [style.gap]="'2'" [backgroundColor]="'#0b1020'">
       <!-- A heading. On Android it is not a class, it is a flag. -->
