@@ -1,21 +1,22 @@
-//! Medición de nodos hoja. El layout no puede resolver un `<Text>` sin
-//! preguntar a alguien cuánto ocupa ese texto con esa fuente.
+//! Measuring leaf nodes. Layout cannot resolve a `<Text>` without asking
+//! somebody how much room that text takes up in that font.
 //!
-//! En iOS/Android lo responde la plataforma (UIKit / android.text). En tests y
-//! en CI responde `NaiveMeasurer`, que aproxima sin dependencias de sistema.
+//! On iOS/Android the platform answers (UIKit / android.text). In tests and in
+//! CI the answer comes from `NaiveMeasurer`, which approximates it without
+//! depending on the system.
 
-/// Fuente con la que se mide un `<Text>`.
+/// The font a `<Text>` is measured with.
 #[derive(Clone, Debug, PartialEq)]
 pub struct FontSpec {
     pub size: f32,
-    /// 100..900, escala CSS.
+    /// 100..900, the CSS scale.
     pub weight: u16,
     pub italic: bool,
     pub family: Option<String>,
-    /// Alto de línea absoluto en puntos. `None` = derivado del tamaño.
+    /// Absolute line height in points. `None` = derived from the size.
     pub line_height: Option<f32>,
     pub letter_spacing: f32,
-    /// Truncado a N líneas. `None` = sin límite.
+    /// Truncated to N lines. `None` = no limit.
     pub max_lines: Option<u32>,
 }
 
@@ -33,57 +34,57 @@ impl Default for FontSpec {
     }
 }
 
-/// Qué hace falta medir en un nodo hoja.
+/// What there is to measure on a leaf node.
 #[derive(Clone, Debug)]
 pub enum MeasureCtx {
     Text { text: String, font: FontSpec },
-    /// Imagen con tamaño intrínseco conocido (ancho, alto).
+    /// An image with a known intrinsic size (width, height).
     Image { intrinsic: (f32, f32) },
-    /// Un control del sistema —un interruptor, un deslizador, una barra de
-    /// pestañas—. Cuánto mide no lo decide el framework: lo decide la
-    /// plataforma, y cambia entre versiones del sistema.
+    /// A system control —a switch, a slider, a tab bar—. How big it is is not
+    /// the framework's call: it is the platform's, and it changes between
+    /// versions of the system.
     Control { name: String },
 }
 
-/// Lo implementa cada plataforma. Debe ser puro: mismas entradas, misma salida,
-/// o el layout oscila entre frames.
+/// Each platform implements it. It has to be pure: same inputs, same output,
+/// or layout oscillates from frame to frame.
 pub trait TextMeasurer {
-    /// `max_width` = `None` cuando el ancho disponible es infinito.
-    /// Devuelve (ancho, alto) en puntos lógicos.
+    /// `max_width` = `None` when the available width is infinite.
+    /// Returns (width, height) in logical points.
     fn measure_text(&self, text: &str, font: &FontSpec, max_width: Option<f32>) -> (f32, f32);
 
-    /// El mínimo intrínseco de un texto: lo más estrecho que puede quedarse
-    /// sin partir palabras por la mitad, o sea el ancho de la palabra más
-    /// larga.
+    /// The intrinsic minimum of a text: the narrowest it can get without
+    /// breaking words in half, which is the width of its longest word.
     ///
-    /// Hay que preguntarlo aparte y no colarlo como "ancho disponible cero":
-    /// medir con ancho cero devuelve cero en UIKit y en Android, y un texto de
-    /// mínimo cero se encoge a nada en cuanto su contenedor no le impone un
-    /// ancho —dentro de un `alignItems: center`, por ejemplo—. El texto
-    /// desaparecía de la pantalla sin que fallara nada.
+    /// It has to be asked for separately and not slipped in as "available width
+    /// zero": measuring with width zero returns zero on both UIKit and Android,
+    /// and a text with a minimum of zero shrinks to nothing the moment its
+    /// container stops imposing a width on it —inside an `alignItems: center`,
+    /// for instance—. The text used to vanish off the screen without anything
+    /// failing.
     fn measure_text_min_content(&self, text: &str, font: &FontSpec) -> (f32, f32) {
         let widest = text
             .split_whitespace()
             .map(|word| self.measure_text(word, font, None).0)
             .fold(0.0_f32, f32::max);
         if widest <= 0.0 {
-            // Un texto sin espacios —o vacío— no tiene nada que partir: su
-            // mínimo es su tamaño entero.
+            // A text with no spaces —or an empty one— has nothing to break:
+            // its minimum is its whole size.
             return self.measure_text(text, font, None);
         }
-        // El alto es el de ese texto partido a ese ancho, que es más de una
-        // línea: el mínimo intrínseco es ancho *y* alto, y quedarse con el
-        // alto de una sola línea recortaría el texto.
+        // The height is that of the text broken at that width, which is more
+        // than one line: the intrinsic minimum is width *and* height, and
+        // settling for the height of a single line would clip the text.
         let (_, height) = self.measure_text(text, font, Some(widest));
         (widest, height)
     }
 
-    /// Tamaño natural de un control del sistema.
+    /// The natural size of a system control.
     ///
-    /// La implementación por defecto devuelve medidas razonables para que el
-    /// núcleo sea usable sin plataforma; cada host la sustituye preguntando al
-    /// control de verdad, que es quien sabe cuánto ocupa en esta versión del
-    /// sistema y con los ajustes de accesibilidad del usuario.
+    /// The default implementation returns sensible numbers so that the core is
+    /// usable with no platform behind it; each host replaces it by asking the
+    /// real control, which is the one that knows how much room it takes on this
+    /// version of the system and with this user's accessibility settings.
     fn measure_control(&self, name: &str, _available_width: Option<f32>) -> (f32, f32) {
         match name {
             "Switch" => (51.0, 31.0),
@@ -92,19 +93,19 @@ pub trait TextMeasurer {
             "ProgressBar" => (200.0, 4.0),
             "Button" => (80.0, 44.0),
             "TabBar" => (320.0, 49.0),
-            // El tamaño por defecto de un icono. Se puede cambiar con
-            // `[size]`, que además de configurar el símbolo fija el ancho y el
-            // alto: así un icono sin medidas no queda invisible.
+            // The default size of an icon. `[size]` can change it, and besides
+            // configuring the symbol it pins the width and the height: that way
+            // an icon with no measurements does not end up invisible.
             "Icon" => (24.0, 24.0),
             "SegmentedControl" => (320.0, 32.0),
             "Stepper" => (94.0, 32.0),
             "SearchBar" => (320.0, 56.0),
-            // El desplegable, con el nombre que usa el núcleo. La etiqueta se
-            // llama `<an-select>` desde que las etiquetas llevan prefijo, pero
-            // lo que llega aquí es `NodeKind::control_name()`, y eso sigue
-            // diciendo `Picker`. Mientras puso "Select" no lo reconocía nadie
-            // y el desplegable medía cero: sin error, sin traza, y visible
-            // solo si la plantilla no le daba un alto explícito.
+            // The dropdown, under the name the core uses. The tag has been
+            // called `<an-select>` ever since tags took a prefix, but what
+            // arrives here is `NodeKind::control_name()`, and that still says
+            // `Picker`. For as long as this said "Select" nobody recognised it
+            // and the dropdown measured zero: no error, no trace, and only
+            // visible at all if the template gave it no explicit height.
             "Picker" => (140.0, 44.0),
             "DatePicker" => (200.0, 44.0),
             "NavigationBar" => (320.0, 44.0),
@@ -113,8 +114,8 @@ pub trait TextMeasurer {
     }
 }
 
-/// Aproximación monoespaciada. Sirve para tests y para no bloquear el núcleo
-/// mientras la capa nativa no existe. No usar en producción.
+/// A monospaced approximation. Good for tests, and for not holding up the core
+/// while the native layer does not exist. Not for production.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NaiveMeasurer;
 
@@ -135,8 +136,8 @@ impl TextMeasurer for NaiveMeasurer {
             return (widest, lines * line_height);
         };
 
-        // Salto por palabras; una palabra más ancha que el límite desborda,
-        // no se parte. Es lo que hace UIKit por defecto.
+        // Wrapping by words; a word wider than the limit overflows, it does
+        // not get broken. That is what UIKit does by default.
         let mut lines = 0_u32;
         let mut widest = 0.0_f32;
         for paragraph in text.split('\n') {
@@ -170,29 +171,30 @@ impl TextMeasurer for NaiveMeasurer {
 mod min_content_tests {
     use super::*;
 
-    /// El mínimo de un texto es su palabra más larga, no cero.
+    /// A text's minimum is its longest word, not zero.
     ///
-    /// Este es el caso que hacía desaparecer texto en el dispositivo: un
-    /// `<Text>` dentro de un contenedor centrado no tiene ancho impuesto, así
-    /// que el layout se queda con el mínimo, y con el mínimo a cero el texto
-    /// se quedaba en una caja de ancho cero.
+    /// This is the case that made text vanish on the device: a `<Text>` inside
+    /// a centred container has no width imposed on it, so layout settles for
+    /// the minimum, and with the minimum at zero the text was left in a box of
+    /// zero width.
     #[test]
-    fn el_minimo_es_la_palabra_mas_larga() {
+    fn the_minimum_is_the_longest_word() {
         let font = FontSpec { size: 10.0, ..Default::default() };
-        let (width, height) = NaiveMeasurer.measure_text_min_content("hola mundo enorme", &font);
-        let (solo, _) = NaiveMeasurer.measure_text("enorme", &font, None);
-        assert_eq!(width, solo);
+        let (width, height) = NaiveMeasurer.measure_text_min_content("hello huge world", &font);
+        let (alone, _) = NaiveMeasurer.measure_text("hello", &font, None);
+        assert_eq!(width, alone);
         assert!(width > 0.0);
-        // Partido a ese ancho caben tres líneas: el alto no es el de una.
-        let (_, una_linea) = NaiveMeasurer.measure_text("enorme", &font, None);
-        assert!(height > una_linea);
+        // Broken at that width it takes three lines: the height is not that of
+        // a single one.
+        let (_, one_line) = NaiveMeasurer.measure_text("hello", &font, None);
+        assert!(height > one_line);
     }
 
-    /// Una sola palabra no se parte: su mínimo es ella entera.
+    /// A single word does not get broken: its minimum is the whole of it.
     #[test]
-    fn una_palabra_suelta_no_se_parte() {
+    fn a_lone_word_does_not_get_broken() {
         let font = FontSpec { size: 10.0, ..Default::default() };
-        let entera = NaiveMeasurer.measure_text("indivisible", &font, None);
-        assert_eq!(NaiveMeasurer.measure_text_min_content("indivisible", &font), entera);
+        let whole = NaiveMeasurer.measure_text("indivisible", &font, None);
+        assert_eq!(NaiveMeasurer.measure_text_min_content("indivisible", &font), whole);
     }
 }

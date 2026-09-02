@@ -1,13 +1,14 @@
-//! Colores: de la cadena que manda el estilo a canales RGBA.
+//! Colors: from the string the style sends to RGBA channels.
 //!
-//! Se acepta lo mismo que en web (`#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb()`,
-//! `rgba()`) más un puñado de nombres. No hay `currentColor` ni cascada.
+//! The same shapes as on the web are accepted (`#rgb`, `#rrggbb`, `#rrggbbaa`,
+//! `rgb()`, `rgba()`) plus a handful of names. There is no `currentColor` and
+//! no cascade.
 //!
-//! Vive en el núcleo y no en un host porque los tres hosts lo necesitan y las
-//! tres respuestas tienen que ser la misma: si iOS y el reloj tuvieran cada uno
-//! su tabla, `#0b1020` acabaría siendo dos azules distintos.
+//! It lives in the core and not in a host because all three hosts need it and
+//! all three answers have to be the same one: if iOS and the watch each had
+//! their own table, `#0b1020` would end up being two different blues.
 
-/// RGBA en 0..1.
+/// RGBA in 0..1.
 pub type Rgba = (f64, f64, f64, f64);
 
 pub fn parse(raw: &str) -> Option<Rgba> {
@@ -84,22 +85,22 @@ mod tests {
     use super::parse;
 
     #[test]
-    fn acepta_las_formas_de_css() {
+    fn accepts_the_css_shapes() {
         assert_eq!(parse("#fff"), Some((1.0, 1.0, 1.0, 1.0)));
         assert_eq!(parse("#00ff00"), Some((0.0, 1.0, 0.0, 1.0)));
         assert_eq!(parse("#00000080").map(|c| (c.3 * 255.0).round()), Some(128.0));
         assert_eq!(parse("rgb(255, 0, 0)"), Some((1.0, 0.0, 0.0, 1.0)));
         assert_eq!(parse("rgba(0, 0, 0, 0.5)"), Some((0.0, 0.0, 0.0, 0.5)));
         assert_eq!(parse("transparent"), Some((0.0, 0.0, 0.0, 0.0)));
-        assert_eq!(parse("no-es-un-color"), None);
+        assert_eq!(parse("not-a-color"), None);
     }
 }
 
-/// Blanco o negro, el que se lea encima del color que se le pase.
+/// Black or white, whichever reads on top of the color it is given.
 ///
-/// La luminancia va con los pesos de siempre —el ojo ve mucho más el verde que
-/// el azul—, y el corte en 0,55 es el que deja el texto legible tanto sobre un
-/// amarillo como sobre un azul marino.
+/// Luminance uses the usual weights —the eye sees far more green than blue—
+/// and the cut at 0.55 is the one that keeps text legible both over a yellow
+/// and over a navy blue.
 pub fn contrast_on(color: Rgba) -> Rgba {
     let (r, g, b, _) = color;
     let luminance = 0.299 * r + 0.587 * g + 0.114 * b;

@@ -1,27 +1,28 @@
-//! Frontera con la plataforma. Todo lo que iOS o Android tienen que aportar
-//! está en dos traits: `HostRenderer` (montar vistas) y `TextMeasurer` (medir
-//! texto con la tipografía real del sistema).
+//! The border with the platform. Everything iOS or Android have to bring is in
+//! two traits: `HostRenderer` (mounting views) and `TextMeasurer` (measuring
+//! text in the system's real typeface).
 //!
-//! El resto del núcleo no sabe que existen UIKit ni Android.
+//! The rest of the core does not know UIKit or Android exist.
 //!
-//! El trabajo está partido en dos mitades que pueden vivir en hilos distintos:
+//! The work is split into two halves that can live on different threads:
 //!
-//! - `ShadowSide` tiene el árbol, el layout y la medición. Produce `Frame`s.
-//! - `MountSide` tiene las vistas nativas. Consume `Frame`s.
+//! - `ShadowSide` owns the tree, the layout and the measuring. It makes `Frame`s.
+//! - `MountSide` owns the native views. It consumes `Frame`s.
 //!
-//! Entre las dos solo viaja `Frame`, que es `Send`. Es la misma separación que
-//! hace Fabric entre su hilo de sombra y el de UI, y es lo que permite meter el
-//! motor JS en un hilo con pila grande sin sacar UIKit del principal.
+//! The only thing that travels between them is `Frame`, which is `Send`. It is
+//! the same split Fabric makes between its shadow thread and its UI thread, and
+//! it is what lets the JS engine sit on a thread with a big stack without
+//! dragging UIKit off the main one.
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use an_core::{Frame, MountOp, NodeId, NodeKind, PropValue, Rect, ShadowTree, TextMeasurer};
 
-/// Lo implementa cada plataforma sobre sus vistas nativas.
+/// Each platform implements it over its own native views.
 ///
-/// Las llamadas siempre llegan en el hilo de UI y en el orden en que el core
-/// las emitió: estructura, props, y layout al final.
+/// The calls always arrive on the UI thread and in the order the core emitted
+/// them: structure, props, and layout last.
 pub trait HostRenderer {
     fn create(&mut self, id: NodeId, kind: NodeKind);
     fn destroy(&mut self, id: NodeId);
@@ -31,36 +32,37 @@ pub trait HostRenderer {
     fn set_text(&mut self, id: NodeId, text: &str);
     fn set_listener(&mut self, id: NodeId, event: &str, enabled: bool);
     fn set_layout(&mut self, id: NodeId, frame: Rect);
-    /// Solo llega para nodos scrollables, y solo cuando el contenido cambia
-    /// de tamaño.
+    /// Only comes for scrollable nodes, and only when the content changes
+    /// size.
     fn set_content_size(&mut self, id: NodeId, width: f32, height: f32) {
         let _ = (id, width, height);
     }
     fn set_root(&mut self, id: NodeId);
-    /// Se llama una vez por frame, después de aplicar todas las ops.
+    /// Called once per frame, after all the ops have been applied.
     fn flush(&mut self) {}
 
-    /// Desmonta todo. Solo la usa la recarga en caliente: el árbol de JS se va
-    /// a reconstruir de cero y las vistas actuales ya no le corresponden.
+    /// Unmounts everything. Only hot reload uses it: the JS tree is about to be
+    /// rebuilt from scratch and the views standing there no longer match it.
     fn clear(&mut self) {}
 }
 
-/// Evento nativo de vuelta hacia JS. El host los encola; el runtime los drena
-/// al principio del siguiente tick.
+/// A native event on its way back to JS. The host queues them; the runtime
+/// drains them at the start of the next tick.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HostEvent {
     pub target: NodeId,
     pub name: String,
-    /// Pares clave/valor del evento (`x`, `y`, `text`...). Sin objetos anidados:
-    /// lo que no quepa aquí es una llamada a un módulo nativo, no un evento.
+    /// The event's key/value pairs (`x`, `y`, `text`...). No nested objects:
+    /// whatever does not fit here is a call to a native module, not an event.
     pub payload: Vec<(String, PropValue)>,
 }
 
-/// Cola de eventos nativos. La comparten el host, que empuja desde los
-/// callbacks de la plataforma, y el runtime, que la vacía al empezar el frame.
+/// The queue of native events. It is shared by the host, which pushes from the
+/// platform's callbacks, and the runtime, which empties it when the frame
+/// starts.
 ///
-/// Es `Arc<Mutex<..>>` porque las dos puntas pueden estar en hilos distintos:
-/// los eventos nacen en el de UI y se consumen en el del motor.
+/// It is an `Arc<Mutex<..>>` because the two ends can be on different threads:
+/// events are born on the UI one and consumed on the engine's.
 pub type EventQueue = Arc<Mutex<Vec<HostEvent>>>;
 
 pub fn new_event_queue() -> EventQueue {
@@ -68,21 +70,22 @@ pub fn new_event_queue() -> EventQueue {
 }
 
 pub fn push_event(queue: &EventQueue, event: HostEvent) {
-    queue.lock().expect("cola de eventos envenenada").push(event);
+    queue.lock().expect("the event queue is poisoned").push(event);
 }
 
 pub fn drain_events(queue: &EventQueue) -> Vec<HostEvent> {
-    std::mem::take(&mut *queue.lock().expect("cola de eventos envenenada"))
+    std::mem::take(&mut *queue.lock().expect("the event queue is poisoned"))
 }
 
-/// La mitad que piensa: árbol, layout y medición. No sabe nada de vistas.
+/// The half that thinks: tree, layout and measuring. It knows nothing about
+/// views.
 pub struct ShadowSide<M: TextMeasurer> {
     pub tree: ShadowTree,
     measurer: M,
     viewport: (f32, f32),
-    /// Nodos suscritos a `layout`. Se lleva aquí y no en el host porque el
-    /// marco lo calcula el core: así `onLayout` funciona igual en cualquier
-    /// plataforma, sin que ninguna tenga que implementarlo.
+    /// Nodes subscribed to `layout`. It is kept here and not in the host
+    /// because the core is what computes the frame: that way `onLayout` behaves
+    /// the same on every platform, without any of them having to implement it.
     layout_listeners: HashSet<NodeId>,
 }
 
@@ -100,7 +103,7 @@ impl<M: TextMeasurer> ShadowSide<M> {
         self.viewport
     }
 
-    /// Cambio de tamaño de pantalla o rotación: obliga a recalcular todo.
+    /// The screen resized, or rotated: everything has to be computed again.
     pub fn set_viewport(&mut self, viewport: (f32, f32)) {
         if self.viewport == viewport {
             return;
@@ -112,15 +115,15 @@ impl<M: TextMeasurer> ShadowSide<M> {
         }
     }
 
-    /// Tira el árbol. Tras esto la app tiene que volver a construirse desde
-    /// JS; es lo que hace la recarga en caliente.
+    /// Throws the tree away. After this the app has to be built again from JS;
+    /// it is what hot reload does.
     pub fn reset(&mut self) {
         self.tree = ShadowTree::new();
         self.layout_listeners.clear();
     }
 
-    /// Corre layout y diff. Devuelve las operaciones para el host y los
-    /// eventos `layout` que el propio core produce.
+    /// Runs layout and diff. Returns the operations for the host and the
+    /// `layout` events the core itself produces.
     pub fn commit(&mut self) -> Result<(Frame, Vec<HostEvent>), an_core::tree::Error> {
         let frame = self.tree.commit(self.viewport, &self.measurer)?;
 
@@ -153,7 +156,8 @@ impl<M: TextMeasurer> ShadowSide<M> {
     }
 }
 
-/// La mitad que monta: vistas nativas y nada más. Vive en el hilo de UI.
+/// The half that mounts: native views and nothing else. It lives on the UI
+/// thread.
 pub struct MountSide<H: HostRenderer> {
     host: H,
 }
@@ -163,7 +167,7 @@ impl<H: HostRenderer> MountSide<H> {
         MountSide { host }
     }
 
-    /// Aplica un frame. Devuelve cuántas operaciones tocó.
+    /// Applies a frame. Returns how many operations it touched.
     pub fn apply(&mut self, frame: &Frame) -> usize {
         if frame.ops.is_empty() {
             return 0;
@@ -176,7 +180,7 @@ impl<H: HostRenderer> MountSide<H> {
                 MountOp::Remove { parent, child } => self.host.remove(*parent, *child),
                 MountOp::SetProp { id, key, value } => self.host.set_prop(*id, key, value),
                 MountOp::SetText { id, text } => self.host.set_text(*id, text),
-                // `layout` no es un evento de plataforma: lo emite el core.
+                // `layout` is not a platform event: the core emits it.
                 MountOp::SetListener { event, .. } if event == "layout" => {}
                 MountOp::SetListener { id, event, enabled } => {
                     self.host.set_listener(*id, event, *enabled)
@@ -205,8 +209,8 @@ impl<H: HostRenderer> MountSide<H> {
     }
 }
 
-/// Las dos mitades juntas en un hilo. Es lo que usan los tests y el renderer
-/// sin pantalla; las plataformas las separan.
+/// Both halves together on one thread. It is what the tests and the screenless
+/// renderer use; the platforms pull them apart.
 pub struct Renderer<H: HostRenderer, M: TextMeasurer> {
     shadow: ShadowSide<M>,
     mount: MountSide<H>,
@@ -214,8 +218,8 @@ pub struct Renderer<H: HostRenderer, M: TextMeasurer> {
 }
 
 impl<H: HostRenderer, M: TextMeasurer> Renderer<H, M> {
-    /// `events` tiene que ser la misma cola que se le dio al host, o los
-    /// eventos nativos nunca llegarán a JS.
+    /// `events` has to be the very queue the host was given, or native events
+    /// will never reach JS.
     pub fn new(host: H, measurer: M, viewport: (f32, f32), events: EventQueue) -> Self {
         Renderer {
             shadow: ShadowSide::new(measurer, viewport),
@@ -235,10 +239,10 @@ impl<H: HostRenderer, M: TextMeasurer> Renderer<H, M> {
     pub fn reset(&mut self) {
         self.mount.clear();
         self.shadow.reset();
-        self.events.lock().expect("cola envenenada").clear();
+        self.events.lock().expect("the queue is poisoned").clear();
     }
 
-    /// Un frame completo: layout, diff y montaje.
+    /// A whole frame: layout, diff and mounting.
     pub fn render_frame(&mut self) -> Result<usize, an_core::tree::Error> {
         let (frame, layout_events) = self.shadow.commit()?;
         let applied = self.mount.apply(&frame);
@@ -252,7 +256,7 @@ impl<H: HostRenderer, M: TextMeasurer> Renderer<H, M> {
         push_event(&self.events, event);
     }
 
-    /// La llama el runtime JS al empezar su tick.
+    /// The JS runtime calls it when its tick starts.
     pub fn drain_events(&mut self) -> Vec<HostEvent> {
         drain_events(&self.events)
     }
@@ -280,8 +284,8 @@ impl<H: HostRenderer, M: TextMeasurer> std::ops::DerefMut for Renderer<H, M> {
     }
 }
 
-/// Host de mentira que solo apunta lo que le mandan. Para tests del núcleo y
-/// para depurar sin simulador.
+/// A pretend host that only writes down what it is told. For core tests and for
+/// debugging with no simulator.
 #[derive(Default, Debug)]
 pub struct RecordingHost {
     pub log: Vec<String>,
