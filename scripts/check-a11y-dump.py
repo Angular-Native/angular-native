@@ -152,6 +152,14 @@ full = nodes_of(full_dump)
 compressed = nodes_of(compressed_dump)
 
 
+# Not every dumper writes every attribute, and `hint` is the one that moves.
+# Android 16's writes it; Android 14's — the one the Wear OS image ships — does
+# not write it at all. Comparing against an attribute the tool never emits would
+# fail on the host and not on the code, so when it is missing everywhere the
+# hint is left unchecked and that is said out loud, rather than quietly passing.
+dumps_hint = any('hint' in node for node in compressed)
+
+
 def by_description(nodes: list[dict[str, str]], description: str) -> dict[str, str] | None:
     found = [node for node in nodes if node.get('content-desc') == description]
     return found[0] if len(found) == 1 else None
@@ -233,7 +241,7 @@ for element in elements:
         checkable = ROLE_CHECKABLE[role]
 
     hint = literal(attrs.get('accessibilityHint', ''))
-    if hint is not None:
+    if hint is not None and dumps_hint:
         expect(node, 'hint', hint, name)
 
     if 'press' in element.events:
@@ -282,6 +290,11 @@ for class_name, label in (('android.widget.Switch', 'switch'), ('android.widget.
 
 print(f'  ok   {rows} rows of the template found in the tree the system reports')
 print(f'  ok   {checked} node attributes match what the template asked for')
+if not dumps_hint:
+    print(
+        '  note this uiautomator does not write the hint attribute, so'
+        ' accessibilityHint went unchecked'
+    )
 for line in failures:
     print(line)
 sys.exit(1 if failures else 0)

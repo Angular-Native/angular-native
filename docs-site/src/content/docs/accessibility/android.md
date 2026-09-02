@@ -180,14 +180,27 @@ Wear OS is Android, so all of it applies with nothing added: the same
 screen reader is TalkBack too. Nothing in this page is conditional on the shape
 of the device.
 
-Two things are worth saying anyway. The primitives Wear OS does not mount —
-`an-tab-bar`, `an-select` and the five others in
+That was checked and not assumed: the same APK built with `an wearos`, installed
+on a Wear OS 5 emulator, dumps the same classes, the same content descriptions
+and the same checkable/checked/selected/enabled for every row that fits on a
+227-point round screen.
+
+Three things are worth saying anyway. `check-a11y-device.sh` refuses to run on a
+watch, and says why: this example lays out more rows than fit on a dial, what is
+off screen is not in the accessibility tree either, and the check would fail on
+the screen size while reading as if the labels had not arrived. The dumper on
+the Wear image — Android 14 — does not write the `hint` attribute at all, where
+Android 16's does; the check notices that and says the hint went unchecked
+rather than failing on a tool that never reported it. And the primitives Wear OS
+does not mount — `an-tab-bar`, `an-select` and the five others in
 [docs/wearos.md](https://github.com/nesgarbo/angular-native/blob/main/docs/wearos.md) —
 leave a visible marker in their place, and that marker keeps its own: it takes
 no props of the primitive it replaces, accessibility included, precisely so it
-cannot disguise itself as the control that is not there. And the crown is not a
-touch: it is a rotary encoder, so it does not go through the accessibility
-actions at all.
+cannot disguise itself as the control that is not there.
+
+The crown is the one thing that could have needed something of its own and does
+not: it is a rotary encoder, not a touch, so it never goes near the accessibility
+actions.
 
 ## Seeing it, not claiming it
 

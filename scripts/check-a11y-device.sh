@@ -54,6 +54,18 @@ if [ -z "$SERIAL" ]; then
   fi
   SERIAL="$READY"
 fi
+
+# A watch is not the device for this. Wear OS runs this very host and the same
+# code path — the accessibility work is not conditional on the shape of the
+# screen — but 227 round points do not fit the rows this template lays out, and
+# what is off screen is not in the accessibility tree either. The check would
+# fail on the screen size and read as if the labels had not arrived.
+if "$ADB" -s "$SERIAL" shell getprop ro.build.characteristics | grep -q watch; then
+  echo "  FAIL $SERIAL is a watch, and examples/a11y does not fit on one."
+  echo "         Wear OS inherits all of this: same AnHost, same AnAccessibility,"
+  echo "         same delegate. Run this on a phone."
+  exit 1
+fi
 echo "  ok   device $SERIAL"
 
 # The output goes to a file and not to /dev/null: with `set -e` and `pipefail`,
