@@ -64,14 +64,21 @@ cargo an dev                  # compila, lanza en el simulador y recarga al guar
 cargo an dev --android        # lo mismo, en el emulador de Android
 cargo an ios                  # una sola vez, sin vigilar
 cargo an android              # APK, emulador y lanzamiento
+cargo an tvos                 # tele: .app de tvOS y simulador del Apple TV
 cargo an watchos              # reloj: .app de watchOS y simulador
 cargo an macos                # escritorio: .app de macOS, en esta misma máquina
 cargo an dev --macos          # lo mismo, vigilando y con refresco en caliente
 cargo an build --release      # solo el bundle: 276 KB frente a 1,3 MB en debug
 ```
 
-El reloj pide nightly: `aarch64-apple-watchos-sim` es un target de nivel 3 y su
-`std` se construye en el momento. Ver [docs/watchos.md](docs/watchos.md).
+La tele y el reloj piden nightly: `aarch64-apple-tvos-sim` y
+`aarch64-apple-watchos-sim` son targets de nivel 3 y su `std` se construye en el
+momento. Ver [docs/tvos.md](docs/tvos.md) y [docs/watchos.md](docs/watchos.md).
+
+En la tele no hay toques: se navega con el mando y el motor de foco, y un
+control que no se puede enfocar no se puede pulsar. Eso no es un detalle de
+implementación, es la plataforma, y cambia lo que una plantilla puede dar por
+hecho. Está todo en [docs/tvos.md](docs/tvos.md).
 
 El escritorio no pide nada: `aarch64-apple-darwin` es la máquina, así que no hay
 simulador que arrancar ni aparato que buscar. Ver [docs/macos.md](docs/macos.md).
@@ -163,6 +170,7 @@ cargo test                    # solo el núcleo Rust
 ./scripts/check-styles.sh     # que las dos listas de nombres de estilo no se separen
 ./scripts/check-kinds.sh      # que la etiqueta, la primitiva y el código digan lo mismo
 ./scripts/check-watchos.sh    # el modelo del reloj y su compilación cruzada
+./scripts/check-tvos.sh       # las medidas de la tele, lo que su SDK no trae, y su compilación cruzada
 ./scripts/check-macos.sh      # el .app de escritorio, arrancado de verdad y con captura
 cargo run -p an-bridge --example headless -- build/bundle/hello-angular/main.js 6
 ```
@@ -276,6 +284,18 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   el árbol: eso exige abrir el `NodeKind` del core a nombres que no conoce en
   tiempo de compilación y que los tres hosts sepan construir una vista ajena.
   Lo que falta, en [docs/plugins.md](docs/plugins.md).
+
+- **De la tele faltan dos controles y el icono.** tvOS monta el host de iOS tal
+  cual —es el mismo UIKit, las mismas `UIView` y los mismos marcos absolutos—,
+  pero su SDK no trae `UISwitch`, `UISlider`, `UIStepper`, `UIDatePicker` ni
+  WebKit. Hoy esas cinco dejan un hueco del tamaño que dijo el layout y lo
+  dicen en el log; el interruptor y el deslizador tendrían que ser una fila
+  enfocable y una fila que responde a izquierda y derecha, que es como se
+  hacen en una tele, y eso es una primitiva nueva. Falta también que una
+  plantilla pueda escuchar `(focus)` y `(blur)`: el host los emite, pero esas
+  dos salidas solo existen hoy en `an-text-input`. Y falta el icono, que en
+  tvOS es un catálogo de assets compilado con `actool`. En
+  [docs/tvos.md](docs/tvos.md).
 
 - **El reloj va por la mitad.** watchOS pinta `an-view`, `an-text`, `an-button` y
   `an-scroll-view`, que es lo que da para una pantalla de verdad, pero le faltan el

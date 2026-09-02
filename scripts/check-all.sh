@@ -30,6 +30,7 @@ cargo test --quiet 2>&1 | tail -1
 "$ROOT/scripts/check-media.sh"
 "$ROOT/scripts/check-hot.sh"
 "$ROOT/scripts/check-watchos.sh"
+"$ROOT/scripts/check-tvos.sh"
 
 echo
 "$ROOT/scripts/check-macos.sh"
