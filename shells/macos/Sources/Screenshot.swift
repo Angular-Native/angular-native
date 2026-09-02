@@ -20,10 +20,44 @@ enum Screenshot {
     /// del sistema —el `NSSwitch`, el `NSProgressIndicator`— animan su estado
     /// inicial durante unas décimas. Disparar en el frame del montaje da una
     /// imagen de controles a medio pintar.
-    private static let framesDeGracia = 40
+    private static var framesDeGracia: Int {
+        Int(ProcessInfo.processInfo.environment["AN_SCREENSHOT_FRAMES"] ?? "") ?? 40
+    }
 
     static var destino: String? {
         ProcessInfo.processInfo.environment["AN_SCREENSHOT"]
+    }
+
+    /// Dónde poner el puntero antes de disparar, en puntos de la vista raíz.
+    ///
+    /// Sin esto no hay forma de fotografiar un `(hover)`: el realce lo produce
+    /// el sistema cuando el ratón entra de verdad en el área vigilada, y en una
+    /// comprobación no hay nadie moviendo el ratón. `CGWarpMouseCursorPosition`
+    /// lo mueve sin pedir ningún permiso —no es `CGEventPost`, que sí exige
+    /// accesibilidad—, así que lo que entra en el área es el puntero real y lo
+    /// que sale en la imagen es el `NSTrackingArea` de verdad haciendo su
+    /// trabajo, no un estado puesto a mano.
+    static var hover: CGPoint? {
+        guard let bruto = ProcessInfo.processInfo.environment["AN_SCREENSHOT_HOVER"] else {
+            return nil
+        }
+        let partes = bruto.split(separator: ",").compactMap { Double($0) }
+        guard partes.count == 2 else {
+            NSLog("angular-native: AN_SCREENSHOT_HOVER se escribe x,y (y son puntos de la ventana)")
+            return nil
+        }
+        return CGPoint(x: partes[0], y: partes[1])
+    }
+
+    /// Fotografiar la ventana entera, barra de título incluida.
+    ///
+    /// La captura normal es la del contenido, que es lo que monta el núcleo.
+    /// Pero en macOS hay una cosa del árbol que **no** está en el contenido: el
+    /// `[title]` de un `<an-navigation-bar>`, que acaba en la barra de título.
+    /// Para verlo hay que dibujar la vista de arriba del todo, que es la que
+    /// AppKit usa para el marco de la ventana.
+    static var conMarco: Bool {
+        ProcessInfo.processInfo.environment["AN_SCREENSHOT_WINDOW"] == "1"
     }
 
     /// Cuántas recargas en caliente hay que esperar antes de disparar.
@@ -41,7 +75,11 @@ enum Screenshot {
     /// Escribe la vista en PNG. Devuelve `false` y dice por qué si no puede:
     /// una captura que no se guarda y no avisa deja una comprobación en verde
     /// mirando un fichero de la ejecución anterior.
-    static func write(_ view: NSView, to path: String) -> Bool {
+    static func write(_ raiz: NSView, to path: String) -> Bool {
+        // El marco de la ventana es el ancestro de la vista de contenido. No
+        // hace falta pedirle la pantalla a nadie: sigue siendo una `NSView` que
+        // sabe dibujarse en un mapa de bits.
+        let view = conMarco ? (raiz.window?.contentView?.superview ?? raiz) : raiz
         guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
             NSLog("angular-native: la vista no pudo dar un mapa de bits")
             return false
@@ -66,6 +104,36 @@ enum Screenshot {
             "angular-native: captura escrita en \(path) (\(rep.pixelsWide)x\(rep.pixelsHigh), \(colores(rep)) colores)"
         )
         return true
+    }
+
+    /// Lleva el puntero de verdad al punto que pidió `AN_SCREENSHOT_HOVER`.
+    ///
+    /// Hay dos cosas que hacer y las dos hacen falta. Una es mover el puntero,
+    /// que es lo que hace que entre en el `NSTrackingArea`. La otra es poner la
+    /// app delante: las áreas de este host son `ActiveInActiveApp`, porque en
+    /// un Mac los controles solo se iluminan al pasar por encima cuando la app
+    /// está activa, y una comprobación no puede pedir que el host se comporte
+    /// distinto que el resto del escritorio. Es la única captura que roba el
+    /// foco, y solo la pide quien quiere fotografiar el puntero.
+    ///
+    /// Lo que pase después —que AppKit note el área nueva y reparta el
+    /// `mouseEntered:`— lo hace el bucle de eventos normal de la app, que sigue
+    /// corriendo. Por eso esto se llama a mitad de la espera y no justo antes
+    /// de disparar.
+    static func ponerElPuntero(en view: NSView) {
+        guard let punto = hover, let window = view.window else { return }
+        NSApp.activate(ignoringOtherApps: true)
+
+        let enVentana = view.convert(punto, to: nil)
+        let enPantalla = window.convertPoint(toScreen: enVentana)
+        // `CGWarpMouseCursorPosition` trabaja en coordenadas de pantalla con el
+        // origen arriba; AppKit las da con el origen abajo.
+        let alto = NSScreen.screens.first?.frame.height ?? 0
+        CGWarpMouseCursorPosition(CGPoint(x: enPantalla.x, y: alto - enPantalla.y))
+        // Un warp deja un intervalo en el que el sistema no asocia el ratón
+        // con el puntero. Sin cerrarlo, el movimiento no se reparte y el área
+        // no se entera de que hay alguien encima.
+        CGAssociateMouseAndMouseCursorPosition(1)
     }
 
     /// Cuántos colores distintos hay en el mapa de bits.
@@ -144,6 +212,15 @@ enum Screenshot {
                 }
                 montado = true
                 frames = 0
+            }
+            // El puntero se pone a mitad de la espera, no justo antes de
+            // disparar. Entre que entra en el área vigilada y que el realce
+            // está en pantalla hay tres pasos —AppKit reparte el
+            // `mouseEntered:`, el evento cruza al motor, Angular recompone—, y
+            // los tres pasan solos con dejar correr los frames. Forzar el
+            // bucle de eventos desde aquí sería reentrar en este método.
+            if frames == max(1, Screenshot.framesDeGracia / 2) {
+                Screenshot.ponerElPuntero(en: view)
             }
             guard frames >= Screenshot.framesDeGracia else { return }
             exit(Screenshot.write(view, to: path) ? 0 : 1)

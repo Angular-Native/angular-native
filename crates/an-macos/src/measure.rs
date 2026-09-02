@@ -49,6 +49,13 @@ impl AppKitMeasurer {
         AppKitMeasurer { cache: RefCell::new(HashMap::new()), controls }
     }
 
+    /// Lo que el rótulo se guarda a los lados de su texto, preguntado al
+    /// arrancar. Ver `controls::text_inset`: sin sumarlo, un texto en una caja
+    /// de su tamaño exacto parte de línea y no se ve ninguna.
+    fn text_inset(&self) -> f32 {
+        self.controls.get(crate::controls::TEXT_INSET).map(|(w, _)| *w).unwrap_or(0.0)
+    }
+
     pub fn cache_len(&self) -> usize {
         self.cache.borrow().len()
     }
@@ -121,8 +128,15 @@ impl TextMeasurer for AppKitMeasurer {
             NSAttributedString::new_with_attributes(&NSString::from_str(text), &attrs)
         };
 
+        // El hueco que se le da al texto es el de la caja menos lo que el
+        // rótulo se guarda a los lados: medir con el ancho entero haría que
+        // partiera de línea una palabra más tarde de lo que va a partir.
+        let inset = self.text_inset();
         let constraint = CGSize {
-            width: max_width.filter(|w| w.is_finite()).unwrap_or(f32::MAX / 2.0) as f64,
+            width: max_width
+                .filter(|w| w.is_finite())
+                .map(|w| (w - inset).max(0.0))
+                .unwrap_or(f32::MAX / 2.0) as f64,
             height: f64::MAX / 2.0,
         };
         let options = NSStringDrawingOptions::UsesLineFragmentOrigin
@@ -133,7 +147,7 @@ impl TextMeasurer for AppKitMeasurer {
         // métricas que lo componen. El descendente viene en negativo, así que
         // se resta.
         let natural_line = (nsfont.ascender() - nsfont.descender() + nsfont.leading()) as f32;
-        let mut width = rect.size.width as f32;
+        let mut width = rect.size.width as f32 + inset;
         let mut height = rect.size.height as f32;
 
         // `boundingRect` no conoce `lineHeight` ni `numberOfLines`: se aplican
