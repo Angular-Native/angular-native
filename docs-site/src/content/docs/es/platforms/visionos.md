@@ -1,4 +1,7 @@
-# visionOS
+---
+title: visionOS
+description: Angular en el Vision Pro — el mismo núcleo, el mismo host que iOS, y una ventana que no es una pantalla.
+---
 
 Angular en el Vision Pro: mismo núcleo, mismo layout, mismo bundle y el mismo
 host. visionOS trae UIKit con jerarquía de `UIView` y marcos absolutos, igual
@@ -15,7 +18,7 @@ Lo que cambia de verdad no es el catálogo de controles —está casi entero—,
 ## La tercera familia
 
 Es la tercera rama del mismo enum `Family` de
-[`crates/an-cli/src/ios.rs`](../crates/an-cli/src/ios.rs), y hereda todo lo que
+`crates/an-cli/src/ios.rs`, y hereda todo lo que
 ese módulo ya sabía: el `Info.plist` que puede aportar un proyecto de fuera, la
 comprobación de que ese plist dice lo mismo que el proyecto, y `build_dir()`.
 
@@ -97,7 +100,7 @@ dónde está apuntando.
 Ese realce lo dibuja el sistema, fuera del proceso de la app, pero solo si la
 vista lo pide con `hoverStyle`. Una `UIView` con un reconocedor de toque no lo
 pide: el valor de fábrica es `nil`. Por eso el host le pone `automaticStyle` a
-toda vista que se hace pulsable ([hover.rs](../crates/an-ios/src/hover.rs)).
+toda vista que se hace pulsable (`crates/an-ios/src/hover.rs`).
 `automaticStyle` es el realce del sistema con la forma que UIKit deduce de la
 vista: no se dibuja nada a mano, y si visionOS cambia su aspecto en una
 versión, esto cambia con él.
