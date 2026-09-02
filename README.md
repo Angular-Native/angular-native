@@ -251,6 +251,19 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
 
 ## Lo que no está hecho
 
+- **HarmonyOS no está empezado.** Su SDK —DevEco— no se instala sin aceptar su
+  licencia a mano, así que aquí no hay forma de compilar ni de ver nada. El
+  encaje sí está estudiado y es bueno: Rust tiene target `aarch64-unknown-linux-ohos`
+  y ArkUI expone una API nativa en C que es imperativa —crear nodo, poner
+  atributo, añadir hijo—, o sea el mismo modelo que las `MountOp` de aquí. Se
+  parecería al host de Android, no al del reloj de Apple.
+
+- **Windows no está empezado.** Los targets de Rust están instalados, pero
+  enlazar necesita las librerías de MSVC y ejecutarlo necesita una máquina
+  Windows: desde un Mac se puede llegar como mucho a un `.exe` enlazado con
+  mingw, y un binario que nadie ha visto arrancar no es una plataforma
+  soportada. Queda a la espera de una máquina donde probarlo.
+
 - **El de pasos de Android no es un control, es un montaje.** Material 3 no
   define ninguno, así que se arma con dos botones de icono y un rótulo suyos.
   El resto de controles sí son componentes de la librería.
