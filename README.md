@@ -67,8 +67,10 @@ cargo an android              # APK, emulador y lanzamiento
 cargo an tvos                 # tele: .app de tvOS y simulador del Apple TV
 cargo an visionos             # visor: .app de visionOS y simulador del Vision Pro
 cargo an watchos              # reloj: .app de watchOS y simulador
+cargo an wearos               # reloj de Android: APK de Wear OS y emulador
 cargo an macos                # escritorio: .app de macOS, en esta misma máquina
 cargo an dev --tvos           # tele: vigilando y con refresco en caliente
+cargo an dev --wearos         # reloj de Android: vigilando y con refresco
 cargo an dev --macos          # lo mismo, vigilando y con refresco en caliente
 cargo an build --release      # solo el bundle: 276 KB frente a 1,3 MB en debug
 ```
@@ -82,6 +84,11 @@ En la tele no hay toques: se navega con el mando y el motor de foco, y un
 control que no se puede enfocar no se puede pulsar. Eso no es un detalle de
 implementación, es la plataforma, y cambia lo que una plantilla puede dar por
 hecho. Está todo en [docs/tvos.md](docs/tvos.md).
+
+El reloj de Android no pide nada de eso: un Wear OS es Android, así que corre
+`android.view.View` y el host del teléfono le vale entero. Lo que cambia son
+cuatro cosas —el manifiesto, la pantalla redonda, la corona y las primitivas
+que allí no tienen sentido— y están en [docs/wearos.md](docs/wearos.md).
 
 El escritorio no pide nada: `aarch64-apple-darwin` es la máquina, así que no hay
 simulador que arrancar ni aparato que buscar. Es también la única plataforma
@@ -183,6 +190,7 @@ cargo test                    # solo el núcleo Rust
 ./scripts/check-styles.sh     # que las dos listas de nombres de estilo no se separen
 ./scripts/check-kinds.sh      # que la etiqueta, la primitiva y el código digan lo mismo
 ./scripts/check-watchos.sh    # el modelo del reloj y su compilación cruzada
+./scripts/check-wearos.sh     # el APK del reloj de Android, su tema y lo que allí no va
 ./scripts/check-tvos.sh       # las medidas de la tele, lo que su SDK no trae, y su compilación cruzada
 ./scripts/check-visionos.sh   # la ventana del visor, que no tape el cristal, y su compilación cruzada
 ./scripts/check-macos.sh      # el .app de escritorio: arrancado, con el ratón encima y con captura
@@ -203,7 +211,7 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
 | `an-host` | Traits `HostRenderer` y `TextMeasurer`, y las dos mitades del renderer |
 | `an-bridge` | Motor JS (QuickJS), protocolo binario, módulos nativos, hilo del motor |
 | `an-ios` | Host UIKit, medición, controles, animaciones y superficie C |
-| `an-android` | Host JNI, medición con `StaticLayout` y puntos de entrada JNI |
+| `an-android` | Host JNI, medición con `StaticLayout` y puntos de entrada JNI. También el de Wear OS |
 | `an-watch` | Host watchOS: el árbol reflejado en un modelo que pinta SwiftUI |
 | `an-macos` | Host AppKit: `NSView` por nodo, controles del sistema y superficie C |
 | `an-cli` | La herramienta `an`: build, ios, android, watchos, macos, plugins y servidor de desarrollo |
@@ -326,6 +334,16 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   en caliente. No es un port del host de iOS: watchOS no tiene jerarquía de
   `UIView`, así que el árbol se refleja en un modelo que redibuja SwiftUI. El
   porqué y lo que falta, en [docs/watchos.md](docs/watchos.md).
+
+- **Del reloj de Android falta el modo ambiente y el propio reloj.** Wear OS
+  monta el host de Android tal cual, y el APK, la pantalla redonda, la corona
+  y las siete primitivas que allí no tienen sentido están hechas y vistas
+  correr. Lo que no está: el modo ambiente —cuando se baja la muñeca, el
+  sistema espera una pantalla en blanco y negro a 1 Hz, y una app que no lo
+  declara simplemente se cierra—, la corona como fuente de valor para un
+  `an-slider`, y las complicaciones y esferas, que no comparten nada con esto.
+  Y falta un reloj de verdad: todo se ha visto en el emulador, que simula la
+  corona y no trae códecs de vídeo. En [docs/wearos.md](docs/wearos.md).
 
 - **Del escritorio falta el campo de contraseña y las transiciones de la
   pila.** macOS monta las veinticinco primitivas: veintidós con un control del

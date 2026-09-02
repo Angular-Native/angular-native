@@ -4,7 +4,8 @@ Angular en el reloj de Android: mismo núcleo, mismo layout, mismo bundle y
 —esta vez sí— el mismo host.
 
 ```bash
-cargo an wearos examples/hello-wear
+cargo an wearos examples/hello-wear      # una vez, en el emulador de reloj
+cargo an dev --wearos                    # lo mismo, vigilando y con refresco
 ./scripts/check-wearos.sh
 ```
 
@@ -144,7 +145,16 @@ Lo que **sí** va, y por qué no está en la lista: `an-switch`, `an-slider`,
 `an-stepper`, `an-alert` y `an-modal` son controles de Material que se dibujan
 igual en cualquier pantalla; `an-text-input` abre el teclado del sistema, que en
 el reloj es la pantalla de entrada de Wear; y `an-video-view` y `an-map-view`
-son vistas de la plataforma que existen en Wear OS.
+se montan igual que en un teléfono —el mapa ni siquiera es del sistema: son
+teselas de OpenStreetMap sobre un `Canvas`—.
+
+De esa lista se han visto correr en el emulador `an-switch`, `an-slider`,
+`an-progress-bar`, `an-icon` y `an-button`, con el aspecto de Material que
+tienen en un teléfono. `an-video-view` se monta y pide el foco de audio, pero
+la imagen de Wear del emulador no trae códecs —«OMX service is not
+available»— y el reproductor acaba en `error (100, 0)`. Eso es del emulador,
+no del reloj, pero mientras no se pruebe en uno de verdad no se puede decir
+otra cosa.
 
 ## Cómo se prueba sin reloj
 
@@ -163,25 +173,78 @@ hw.lcd.circular=true    # sin esto isScreenRound() es false y no hay margen redo
 hw.rotaryInput=yes      # sin esto no hay corona que girar
 ```
 
+El emulador se arranca con su puerto puesto. No es una manía: `adb` identifica
+el aparato por él —`emulator-5560`— y con un teléfono arrancado a la vez, un
+`adb` sin `-s` no sabe a cuál va.
+
+```bash
+emulator -avd an-wear -port 5560 -no-boot-anim
+```
+
 La corona se mueve desde el terminal, que es como se hicieron las capturas:
 
 ```bash
-adb -s emulator-5556 shell input rotaryencoder scroll --axis SCROLL,-3   # abajo
-adb -s emulator-5556 shell input rotaryencoder scroll --axis SCROLL,3    # arriba
+adb -s emulator-5560 shell input rotaryencoder scroll --axis SCROLL,-3   # abajo
+adb -s emulator-5560 shell input rotaryencoder scroll --axis SCROLL,3    # arriba
 ```
+
+El valor va en muescas y una muesca es mucho: con el factor de desplazamiento
+del sistema a densidad 2, `SCROLL,-1` mueve unos 43 puntos, o sea más de un
+cuarto de los 160 útiles. Para ver el desplazamiento por dentro —y no solo
+llegar al final de la lista— sirven las fracciones: `SCROLL,-0.2` son unos 9
+puntos.
 
 El emulador de Wear vuelve a la esfera a los diez segundos de no tocarlo, como
 un reloj de verdad. Para dejarlo quieto mientras se mira:
 
 ```bash
-adb -s emulator-5556 shell settings put system screen_off_timeout 1800000
-adb -s emulator-5556 shell svc power stayon true
+adb -s emulator-5560 shell settings put system screen_off_timeout 1800000
+adb -s emulator-5560 shell svc power stayon true
 ```
 
 `an wearos` elige el aparato preguntándole su forma
 —`ro.build.characteristics` lleva `watch` en cualquier imagen de Wear OS—, así
-que con un teléfono y un reloj arrancados a la vez cada APK va al suyo. Antes,
-`adb install` a secas se plantaba en cuanto había más de uno.
+que con un teléfono y un reloj arrancados a la vez cada APK va al suyo, y con
+`--device` se puede nombrar uno: si el que se nombra no es un reloj, se dice y
+no se instala.
+
+Que eso hiciera falta se supo en cuanto se instaló por primera vez. Hasta
+entonces `install_and_launch` recibía la forma del aparato y el `--device`, y
+no usaba ninguno de los dos: lanzaba un `adb install` a secas. Con dos
+aparatos, `adb` se planta y al menos lo dice. Con solo un teléfono arrancado, el
+APK del reloj se instala en el teléfono, arranca y pinta, y lo único que no
+hace es ser una app de reloj.
+
+## Refresco en caliente
+
+`an dev --wearos` arma el APK del reloj —no el del teléfono con otro destino—,
+lo manda al aparato con forma de reloj y se queda vigilando. Al guardar, el
+bundle nuevo se cose encima del que corre: se ve el cambio sin perder la
+pantalla ni el estado.
+
+El emulador ve al Mac en `10.0.2.2`, igual que el de teléfono, así que el
+servidor no cambia. Su `--device` es un número de serie de `adb devices`, no el
+nombre de un simulador.
+
+Lo primero que hizo fue dejar la pantalla en negro, y de ahí salieron los dos
+fallos que este documento no podía ver:
+
+- **Un nodo que se muda no se daba de baja de su padre anterior.** Cuando
+  `an-safe-area` se convierte en vista después de que sus hijos ya estén
+  montados —que es justo lo que pasa al rehacer el árbol en caliente—, el
+  `Remove` no se mandaba nunca. UIKit y AppKit mueven una vista que ya tiene
+  padre sin decir nada, así que en iOS y en el escritorio no se notó jamás;
+  `ViewGroup.addView` lanza, y el subárbol se quedaba sin montar. El core ya no
+  acepta ese `Insert`.
+- **Tras un refresco, las plantillas se quedaban sin directivas.** El refresco
+  vaciaba la lista de directivas de la definición esperando que Angular la
+  recalculara, y Angular no la recalcula nunca. No se veía porque una entrada
+  de primitiva que no casa con nada acaba llegando igual como propiedad; lo que
+  no llega es lo que hace un componente y no una propiedad, y eso aquí es
+  `an-safe-area`, que dejaba de crecer y de apartar del arco. Una esfera es la
+  única pantalla donde ese fallo se ve a simple vista.
+
+Los dos eran de todas las plataformas. Los encontró el reloj.
 
 ## Qué falta
 
@@ -197,3 +260,8 @@ que con un teléfono y un reloj arrancados a la vez cada APK va al suyo. Antes,
 - **Complicaciones y esferas.** No comparten nada con esto.
 - **Relojes cuadrados.** Funcionan —el margen redondo solo se aplica si el
   sistema dice que la pantalla lo es—, pero no se han probado.
+- **Un reloj de verdad.** Todo lo de este documento se ha visto en el emulador
+  `an-wear`, que es una imagen de Wear OS 5 de 454 px a densidad 2. Del
+  hardware queda por ver la corona física —el emulador la simula con
+  `input rotaryencoder`—, el vídeo, que allí no tiene códecs, y la batería,
+  que en una pantalla OLED es la mitad del diseño.
