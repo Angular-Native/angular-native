@@ -1,30 +1,30 @@
-//! Arma el `.app` de las familias de UIKit y lo lleva al simulador.
+//! Builds the `.app` for the UIKit families and takes it to the simulator.
 //!
-//! Sin `.xcodeproj`: `cargo` compila el core a un staticlib, `swiftc` enlaza el
-//! shell contra él, y el bundle se monta a mano. Un proyecto de Xcode aquí solo
-//! añadiría un fichero de 2.000 líneas que nadie puede revisar en un diff.
+//! No `.xcodeproj`: `cargo` compiles the core into a staticlib, `swiftc` links
+//! the shell against it, and the bundle is put together by hand. An Xcode
+//! project here would only add a 2,000-line file nobody can review in a diff.
 //!
-//! iOS, tvOS y visionOS comparten crate (`an-ios`), shell
-//! (`shells/ios/Sources`) y superficie C. Lo que cambia entre ellas cabe en
-//! [`Family`], y es poco: el triple, el SDK, el `Info.plist` y si el `std` de
-//! Rust viene hecho o hay que construirlo en el momento. Por eso no hay un
-//! `tvos.rs` ni un `visionos.rs`: serían dos copias de este mismo `swiftc`, y
-//! la copia es justo lo que se queda atrás el día que alguien arregla algo en
-//! una sola.
+//! iOS, tvOS and visionOS share a crate (`an-ios`), a shell
+//! (`shells/ios/Sources`) and a C surface. What differs between them fits in
+//! [`Family`], and it is not much: the triple, the SDK, the `Info.plist` and
+//! whether Rust's `std` arrives prebuilt or has to be built on the spot. That is
+//! why there is no `tvos.rs` and no `visionos.rs`: they would be two copies of
+//! this same `swiftc`, and a copy is exactly what falls behind the day somebody
+//! fixes something in only one of them.
 //!
-//! Repartir por familias aquí, y no en un fichero aparte, es también lo que
-//! hace que tvOS herede sin trabajo lo que este módulo ya sabía hacer:
-//! `workspace.build_dir()`, el `Info.plist` que aporta el proyecto y la
-//! comprobación de que ese plist dice lo mismo que el proyecto.
+//! Splitting by family here, and not in a separate file, is also what lets tvOS
+//! inherit for free everything this module already knew how to do:
+//! `workspace.build_dir()`, the `Info.plist` the project supplies, and the check
+//! that this plist says the same thing as the project.
 //!
-//! `watchos.rs` sí está aparte, y con motivo: el reloj no tiene `UIView`, así
-//! que ni comparte crate ni comparte shell. Aquí no hay nada de eso.
+//! `watchos.rs` is separate, and for a reason: the watch has no `UIView`, so it
+//! shares neither the crate nor the shell. None of that applies here.
 //!
-//! Lo que sí es distinto de verdad en visionOS es de dónde sale la ventana:
-//! no hay `UIScreen`, así que no hay tamaño de pantalla del que deducirla y
-//! tiene que nacer de un `UIWindowScene`. El shell ya lo hace, y por eso el
-//! `Info.plist` de esa familia declara un `UIApplicationSceneManifest` que las
-//! otras dos no necesitan.
+//! What really is different on visionOS is where the window comes from: there is
+//! no `UIScreen`, so there is no screen size to work it out from and it has to
+//! be born of a `UIWindowScene`. The shell already does that, which is why that
+//! family's `Info.plist` declares a `UIApplicationSceneManifest` the other two
+//! do not need.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -35,7 +35,7 @@ use crate::build::{run, run_in};
 use crate::plugins::{self, Platform, Plugin};
 use crate::workspace::Workspace;
 
-/// Las familias que se montan sobre `UIView` con marcos absolutos.
+/// The families built on `UIView` with absolute frames.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Family {
     Ios,
@@ -52,9 +52,9 @@ impl Family {
         }
     }
 
-    /// El nombre de la plataforma tal y como lo escribe el usuario: el
-    /// directorio del proyecto (`ios/Info.plist`, `tvos/Info.plist`), el
-    /// subdirectorio del build, y el argumento de `an add`.
+    /// The platform's name as the user writes it: the project's directory
+    /// (`ios/Info.plist`, `tvos/Info.plist`), the build's subdirectory, and the
+    /// argument to `an add`.
     pub fn slug(self) -> &'static str {
         match self {
             Family::Ios => "ios",
@@ -63,12 +63,12 @@ impl Family {
         }
     }
 
-    /// Lo que se le añade al nombre de la app y al identificador del bundle.
+    /// What gets appended to the app's name and to the bundle identifier.
     ///
-    /// Las tres familias se pueden instalar a la vez, en simuladores distintos,
-    /// desde el mismo proyecto. Compartir nombre haría que `an tvos` pisara el
-    /// `.app` que acaba de dejar `an ios`; compartir identificador haría que
-    /// instalar una desinstalara la otra.
+    /// All three families can be installed at once, on different simulators,
+    /// from the same project. Sharing a name would have `an tvos` overwrite the
+    /// `.app` `an ios` had just left; sharing an identifier would have
+    /// installing one uninstall the other.
     pub fn suffix(self) -> (&'static str, &'static str) {
         match self {
             Family::Ios => ("", ""),
@@ -85,7 +85,7 @@ impl Family {
         }
     }
 
-    /// El SDK que le pide `xcrun`.
+    /// The SDK it asks `xcrun` for.
     fn sdk(self) -> &'static str {
         match self {
             Family::Ios => "iphonesimulator",
@@ -94,8 +94,8 @@ impl Family {
         }
     }
 
-    /// El triple de `swiftc`, que no es el de Rust. visionOS se sigue llamando
-    /// `xros` aquí: el nombre comercial cambió y el del compilador no.
+    /// `swiftc`'s triple, which is not Rust's. visionOS is still called `xros`
+    /// here: the marketing name changed and the compiler's did not.
     fn swift_target(self) -> String {
         let version = self.deployment();
         match self {
@@ -105,9 +105,9 @@ impl Family {
         }
     }
 
-    /// La variable que le dice a `cc` —el que compila QuickJS— para qué
-    /// versión mínima compila. Sin ella usa el mínimo del SDK y el enlazado
-    /// con Swift avisa de la discrepancia.
+    /// The variable that tells `cc` —the one that builds QuickJS— which minimum
+    /// version it is compiling for. Without it, it uses the SDK's minimum and
+    /// the Swift link step complains about the mismatch.
     fn deployment_env(self) -> &'static str {
         match self {
             Family::Ios => "IPHONEOS_DEPLOYMENT_TARGET",
@@ -118,26 +118,26 @@ impl Family {
 
     fn deployment(self) -> &'static str {
         match self {
-            // tvOS 17 es contemporáneo de iOS 17 y trae el mismo UIKit.
+            // tvOS 17 is contemporary with iOS 17 and brings the same UIKit.
             Family::Ios | Family::TvOs => "17.0",
-            // visionOS empieza en 1.0: no hay versiones anteriores.
+            // visionOS starts at 1.0: there are no earlier versions.
             Family::VisionOs => "1.0",
         }
     }
 
-    /// Si el `std` de Rust viene hecho o hay que construirlo en el momento.
+    /// Whether Rust's `std` arrives prebuilt or has to be built on the spot.
     ///
-    /// `aarch64-apple-ios-sim` es de nivel 2 y rustup lo trae compilado.
-    /// `aarch64-apple-tvos-sim` y `aarch64-apple-visionos-sim` son de nivel 3:
-    /// rustup los lista, pero sin `std`. Es lo mismo que ya pasaba con
-    /// watchOS, y por eso esas dos llaman a `cargo +nightly`.
+    /// `aarch64-apple-ios-sim` is tier 2 and rustup ships it compiled.
+    /// `aarch64-apple-tvos-sim` and `aarch64-apple-visionos-sim` are tier 3:
+    /// rustup lists them, but with no `std`. It is the same thing that already
+    /// happened with watchOS, which is why those two call `cargo +nightly`.
     fn needs_build_std(self) -> bool {
         !matches!(self, Family::Ios)
     }
 
-    /// El `Info.plist` del shell, para cuando el proyecto no aporta el suyo.
-    /// Es lo único del shell que no se comparte: las claves que pide cada
-    /// familia no se parecen.
+    /// The shell's `Info.plist`, for when the project supplies none of its own.
+    /// It is the only part of the shell that is not shared: the keys each family
+    /// asks for look nothing alike.
     fn resources(self) -> &'static str {
         match self {
             Family::Ios => "shells/ios/Resources",
@@ -146,9 +146,9 @@ impl Family {
         }
     }
 
-    /// Lo que tiene que aparecer en el nombre del runtime de `simctl` para que
-    /// un dispositivo cuente como de esta familia. visionOS sale como `xrOS`,
-    /// igual que en el triple de swiftc.
+    /// What has to appear in `simctl`'s runtime name for a device to count as
+    /// belonging to this family. visionOS shows up as `xrOS`, same as in
+    /// swiftc's triple.
     fn runtime_marker(self) -> &'static str {
         match self {
             Family::Ios => "iOS",
@@ -157,8 +157,8 @@ impl Family {
         }
     }
 
-    /// Lo que hay que ejecutar para tener el runtime del simulador, si falta.
-    /// Tener el SDK no basta para arrancar nada: son dos descargas distintas.
+    /// What to run to get the simulator's runtime, if it is missing. Having the
+    /// SDK is not enough to start anything: they are two separate downloads.
     fn download_hint(self) -> &'static str {
         match self {
             Family::Ios => "xcodebuild -downloadPlatform iOS",
@@ -170,16 +170,16 @@ impl Family {
 
 pub struct Package {
     pub dir: PathBuf,
-    /// El identificador con el que `simctl` instala, lanza y desinstala. Sale
-    /// del proyecto: dos apps distintas no pueden compartirlo o cada una
-    /// desinstalaría a la otra.
+    /// The identifier `simctl` installs, launches and uninstalls with. It comes
+    /// from the project: two different apps cannot share it or each would
+    /// uninstall the other.
     pub bundle_id: String,
     family: Family,
 }
 
-/// `dev_server` es la URL del servidor de desarrollo, si lo hay. Se escribe
-/// dentro del `.app`: la app la lee al arrancar y, si está, se suscribe a
-/// recargas.
+/// `dev_server` is the dev server's URL, if there is one. It is written inside
+/// the `.app`: the app reads it on startup and, if it is there, subscribes to
+/// reloads.
 pub fn assemble(
     workspace: &Workspace,
     family: Family,
@@ -188,14 +188,14 @@ pub fn assemble(
     dev_server: Option<&str>,
     plugins: &[Plugin],
 ) -> Result<Package> {
-    // Antes de compilar nada: si algún plugin no trae su parte de iOS, el
-    // build se para aquí y dice cuál.
+    // Before compiling anything: if some plugin does not bring its iOS half,
+    // the build stops here and says which one.
     //
-    // tvOS y visionOS piden la misma clave, `ios`, y usan las mismas fuentes
-    // Swift: es el mismo shell y el mismo protocolo `AnPlugin`. Si ese Swift
-    // usa algo que solo existe en el teléfono, el enlazado se para con el
-    // error de swiftc, que dice qué símbolo y en qué línea. Se avisa antes
-    // para que ese error no llegue de sorpresa.
+    // tvOS and visionOS ask for the same key, `ios`, and use the same Swift
+    // sources: it is the same shell and the same `AnPlugin` protocol. If that
+    // Swift uses something that only exists on the phone, the link step stops
+    // with swiftc's error, which says which symbol and on which line. The
+    // warning comes first so that error does not arrive as a surprise.
     plugins::require(plugins, Platform::Ios)?;
     if family != Family::Ios && !plugins.is_empty() {
         eprintln!(
@@ -212,22 +212,22 @@ pub fn assemble(
     let bundle_id = format!("{}{id_suffix}", workspace.bundle_id());
     let out = workspace.build_dir().join(family.slug());
     let app_dir = out.join(format!("{app_name}.app"));
-    // El `Info.plist` del proyecto pisa al del shell si lo hay: es lo que
-    // escribe `an add ios` / `an add tvos`, y a partir de ahí es del usuario.
-    // Se comprueba antes de compilar nada: son medio minuto de `cargo` y de
-    // `swiftc` que no hay por qué gastar para acabar diciendo que el nombre no
-    // cuadra.
+    // The project's `Info.plist` overrides the shell's if there is one: it is
+    // what `an add ios` / `an add tvos` writes, and from then on it belongs to
+    // the user. It is checked before anything is compiled: that is half a minute
+    // of `cargo` and `swiftc` there is no reason to burn only to say the name
+    // does not line up.
     let plist = workspace
         .overlay(family.slug(), "Info.plist")
         .unwrap_or_else(|| root.join(family.resources()).join("Info.plist"));
-    comprobar_plist(&plist, &app_name, &bundle_id, family, workspace)?;
+    check_plist(&plist, &app_name, &bundle_id, family, workspace)?;
 
     eprintln!("==> core Rust ({profile}, {})", family.target());
     let mut cargo_args: Vec<&str> = Vec::new();
     if family.needs_build_std() {
-        // Ver `needs_build_std`. Si esto falla porque falta el componente, el
-        // mensaje de cargo ya dice cuál es y se deja pasar tal cual en vez de
-        // adivinar.
+        // See `needs_build_std`. If this fails because the component is
+        // missing, cargo's message already says which one, so it is let through
+        // as-is rather than guessed at.
         cargo_args.extend(["+nightly", "build", "-Z", "build-std=std,panic_abort"]);
     } else {
         cargo_args.push("build");
@@ -236,8 +236,8 @@ pub fn assemble(
     if release {
         cargo_args.push("--release");
     }
-    // QuickJS se compila con `cc`, que sin esto usa el mínimo del SDK y el
-    // enlazado con Swift avisa de la discrepancia.
+    // QuickJS is built with `cc`, which without this uses the SDK's minimum and
+    // the Swift link step complains about the mismatch.
     let status = Command::new("cargo")
         .args(&cargo_args)
         .env(family.deployment_env(), family.deployment())
@@ -267,25 +267,25 @@ pub fn assemble(
     let _ = std::fs::remove_dir_all(&app_dir);
     std::fs::create_dir_all(&app_dir)?;
 
-    // El shell es el mismo para las tres familias. Lo que cambia entre ellas
-    // está dentro, en `#if os(...)`, y son dos cosas: cómo nace la ventana
-    // —visionOS no tiene `UIScreen`, así que la suya sale de un
-    // `UIWindowScene`— y de qué color es el fondo de la raíz.
+    // The shell is the same for all three families. What differs between them
+    // is inside, in `#if os(...)`, and it is two things: how the window is born
+    // —visionOS has no `UIScreen`, so its own comes from a `UIWindowScene`— and
+    // what colour the root's background is.
     let mut sources: Vec<String> = swift_sources(&root.join("shells/ios/Sources"))?;
     if sources.is_empty() {
         bail!("no hay fuentes Swift en shells/ios/Sources");
     }
-    // `shells/shared` trae lo que no depende de la plataforma —el cliente del
-    // servidor de desarrollo—, que compilan todos los shells.
+    // `shells/shared` brings what does not depend on the platform —the dev
+    // server's client—, compiled by every shell.
     sources.extend(swift_sources(&root.join("shells/shared"))?);
 
-    // Los plugins: sus fuentes Swift y el registro que las engancha. Todo va
-    // en la misma invocación de `swiftc` que el shell, así que un plugin ve
-    // `AnPlugin` y `AnPluginCall` sin importar nada.
+    // The plugins: their Swift sources and the registry that hooks them up. It
+    // all goes into the same `swiftc` invocation as the shell, so a plugin sees
+    // `AnPlugin` and `AnPluginCall` without importing anything.
     for plugin in plugins {
-        let aportadas = plugins::sources(plugin, Platform::Ios)?;
-        eprintln!("==> plugin {} ({} fuentes Swift)", plugin.module, aportadas.len());
-        sources.extend(aportadas);
+        let contributed = plugins::sources(plugin, Platform::Ios)?;
+        eprintln!("==> plugin {} ({} fuentes Swift)", plugin.module, contributed.len());
+        sources.extend(contributed);
     }
     sources.push(
         plugins::generate_ios(plugins, &out.join("generated"))?
@@ -314,15 +314,15 @@ pub fn assemble(
         "-o".into(),
         app_dir.join(&app_name).to_string_lossy().into_owned(),
     ];
-    if let Some(derechos) = escribir_derechos(plugins, &bundle_id, &out)? {
-        // La forma de meter una sección en el binario desde `swiftc`: cuatro
-        // `-Xlinker` seguidos, uno por argumento que recibe `ld`.
+    if let Some(entitlements) = write_entitlements(plugins, &bundle_id, &out)? {
+        // The way to get a section into the binary from `swiftc`: four
+        // `-Xlinker`s in a row, one per argument `ld` is to receive.
         for flag in ["-sectcreate", "__TEXT", "__entitlements"] {
             args.push("-Xlinker".into());
             args.push(flag.into());
         }
         args.push("-Xlinker".into());
-        args.push(derechos.to_string_lossy().into_owned());
+        args.push(entitlements.to_string_lossy().into_owned());
     }
     if release {
         args.push("-O".into());
@@ -331,7 +331,7 @@ pub fn assemble(
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     run(workspace, "xcrun", &borrowed, "el enlazado del shell falló")?;
 
-    escribir_plist(&plist, &app_dir.join("Info.plist"), plugins)?;
+    write_plist(&plist, &app_dir.join("Info.plist"), plugins)?;
     std::fs::copy(bundle, app_dir.join("main.js"))?;
     match dev_server {
         Some(url) => std::fs::write(app_dir.join("dev-server.txt"), url)?,
@@ -343,56 +343,57 @@ pub fn assemble(
     Ok(Package { dir: app_dir, bundle_id, family })
 }
 
-/// Escribe el fichero de derechos que pide el enlazado, si algún plugin pide
-/// alguno. `None` cuando no hay ninguno y no hay nada que meter.
+/// Writes the entitlements file the link step asks for, if any plugin asks for
+/// one. `None` when there are none and there is nothing to embed.
 ///
-/// Los derechos son lo que le permite a la app pedirle algo al sistema. El
-/// caso que obligó a escribir esto es el llavero: sin `keychain-access-groups`
-/// ni `application-identifier`, `SecItemAdd` contesta el −34018 —«el cliente
-/// no tiene ninguna de las dos»— porque la app no pertenece a ningún grupo del
-/// llavero y no hay dónde guardar. Desde fuera parece un fallo del llavero.
+/// Entitlements are what lets the app ask the system for something. The case
+/// that forced this into existence is the keychain: without
+/// `keychain-access-groups` or `application-identifier`, `SecItemAdd` answers
+/// −34018 —«the client has neither of the two»— because the app belongs to no
+/// keychain group and there is nowhere to save. From the outside it looks like a
+/// keychain bug.
 ///
-/// **En el simulador los derechos no van en la firma, van dentro del binario**,
-/// en la sección `__TEXT,__entitlements` que se le pide al enlazador un poco
-/// más abajo. Firmarlos —ni ad hoc ni con una identidad de desarrollo— no
-/// vale: `keychain-access-groups` es un derecho restringido, y macOS se niega
-/// a ejecutar un binario que lo lleve en la firma sin un perfil de
-/// aprovisionamiento que lo respalde. El síntoma es que la app deja de
-/// arrancar, con un «request denied by SBMainWorkspace» que no menciona los
-/// derechos por ninguna parte. Xcode hace exactamente esto mismo para el
-/// simulador.
+/// **On the simulator the entitlements do not go in the signature, they go
+/// inside the binary**, in the `__TEXT,__entitlements` section asked of the
+/// linker a little further down. Signing them —neither ad hoc nor with a
+/// development identity— does not work: `keychain-access-groups` is a restricted
+/// entitlement, and macOS refuses to run a binary that carries it in its
+/// signature without a provisioning profile backing it up. The symptom is that
+/// the app stops starting, with a «request denied by SBMainWorkspace» that
+/// mentions entitlements nowhere. Xcode does exactly this same thing for the
+/// simulator.
 ///
-/// Para un aparato de verdad haría falta lo otro —identidad y perfil— y no
-/// está: `an` instala en el simulador. Ver docs/plugins.md.
-fn escribir_derechos(
+/// A real device would need the other route —identity and profile— and that is
+/// not here: `an` installs on the simulator. See docs/plugins.md.
+fn write_entitlements(
     plugins: &[Plugin],
     bundle_id: &str,
     out: &Path,
 ) -> Result<Option<PathBuf>> {
-    let pedidos = plugins::entitlement_entries(plugins)?;
-    if pedidos.is_empty() {
+    let requested = plugins::entitlement_entries(plugins)?;
+    if requested.is_empty() {
         return Ok(None);
     }
 
-    let mut derechos = serde_json::Map::new();
-    // El identificador de la aplicación lo pone `an` y no el plugin: un plugin
-    // no sabe —ni tiene por qué— en qué app lo van a meter. Es también lo que
-    // le da valor al `$(BUNDLE_ID)` de abajo.
-    derechos.insert(
+    let mut entitlements = serde_json::Map::new();
+    // The application identifier is put there by `an` and not by the plugin: a
+    // plugin does not know —and has no reason to— which app it is going to be
+    // dropped into. It is also what gives the `$(BUNDLE_ID)` below its value.
+    entitlements.insert(
         "application-identifier".to_owned(),
         serde_json::Value::String(bundle_id.to_owned()),
     );
-    for (clave, aportado) in &pedidos {
-        eprintln!("==> derechos: {clave} (de {})", aportado.package);
-        derechos.insert(clave.clone(), sustituir(&aportado.value, bundle_id));
+    for (key, contributed) in &requested {
+        eprintln!("==> derechos: {key} (de {})", contributed.package);
+        entitlements.insert(key.clone(), substitute(&contributed.value, bundle_id));
     }
 
     std::fs::create_dir_all(out)?;
     let json = out.join("entitlements.json");
     let plist = out.join("angular-native.entitlements");
-    std::fs::write(&json, serde_json::Value::Object(derechos).to_string())?;
-    // El enlazador quiere un plist, no un JSON. Convertirlo con `plutil` evita
-    // escribir XML a mano y escapar los valores del plugin en el proceso.
+    std::fs::write(&json, serde_json::Value::Object(entitlements).to_string())?;
+    // The linker wants a plist, not a JSON. Converting it with `plutil` saves
+    // writing XML by hand and escaping the plugin's values along the way.
     run_in(
         out,
         "plutil",
@@ -402,63 +403,63 @@ fn escribir_derechos(
     Ok(Some(plist))
 }
 
-/// Cambia `$(BUNDLE_ID)` por el identificador de esta app.
+/// Swaps `$(BUNDLE_ID)` for this app's identifier.
 ///
-/// Es la única sustitución que hay, y existe porque el valor que casi siempre
-/// se pide —el grupo del llavero— es el identificador de la app, y el plugin
-/// no lo puede saber. Xcode hace lo mismo con `$(AppIdentifierPrefix)`.
-fn sustituir(value: &serde_json::Value, bundle_id: &str) -> serde_json::Value {
+/// It is the only substitution there is, and it exists because the value that is
+/// nearly always asked for —the keychain group— is the app's identifier, and the
+/// plugin cannot know it. Xcode does the same with `$(AppIdentifierPrefix)`.
+fn substitute(value: &serde_json::Value, bundle_id: &str) -> serde_json::Value {
     match value {
         serde_json::Value::String(text) => {
             serde_json::Value::String(text.replace("$(BUNDLE_ID)", bundle_id))
         }
         serde_json::Value::Array(items) => {
-            serde_json::Value::Array(items.iter().map(|item| sustituir(item, bundle_id)).collect())
+            serde_json::Value::Array(items.iter().map(|item| substitute(item, bundle_id)).collect())
         }
-        otro => otro.clone(),
+        other => other.clone(),
     }
 }
 
-/// Escribe el `Info.plist` del `.app`: el del proyecto más lo que piden los
-/// plugins.
+/// Writes the `.app`'s `Info.plist`: the project's plus whatever the plugins
+/// ask for.
 ///
-/// Un plugin no puede pedir la cámara, Face ID ni el micrófono sin una clave
-/// de uso: iOS no avisa ni devuelve un error, mata el proceso en cuanto se
-/// evalúa el permiso, y desde fuera parece que la app se cerró sola. Que la
-/// clave venga con el plugin es lo que evita que quien lo instala tenga que
-/// saberse esa lista.
+/// A plugin cannot ask for the camera, Face ID or the microphone without a usage
+/// key: iOS neither warns nor returns an error, it kills the process the moment
+/// the permission is evaluated, and from the outside it looks as though the app
+/// closed itself. The key coming with the plugin is what saves whoever installs
+/// it from having to know that list by heart.
 ///
-/// La app manda sobre el plugin. Su `Info.plist` es suyo —lo escribe `an add
-/// ios` y a partir de ahí no se toca—, así que si ya declara la clave se queda
-/// la suya; pero no en silencio: se dice cuál se ignoró y de quién era.
-fn escribir_plist(base: &Path, destino: &Path, plugins: &[Plugin]) -> Result<()> {
-    let aportadas = plugins::plist_entries(plugins)?;
-    std::fs::copy(base, destino)?;
-    if aportadas.is_empty() {
+/// The app outranks the plugin. Its `Info.plist` is its own —`an add ios` writes
+/// it and from then on it is untouched—, so if it already declares the key, its
+/// own stays; but not silently: it says which one was ignored and whose it was.
+fn write_plist(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result<()> {
+    let contributed_keys = plugins::plist_entries(plugins)?;
+    std::fs::copy(base, destination)?;
+    if contributed_keys.is_empty() {
         return Ok(());
     }
-    let ya_estaban = claves_del_plist(base)?;
-    for (clave, aportada) in &aportadas {
-        if let Some(actual) = ya_estaban.get(clave) {
-            if actual != &aportada.value {
+    let already_there = plist_keys(base)?;
+    for (key, contributed) in &contributed_keys {
+        if let Some(current) = already_there.get(key) {
+            if current != &contributed.value {
                 eprintln!(
-                    "==> Info.plist: {clave} ya la declara la app ({actual}); \
+                    "==> Info.plist: {key} ya la declara la app ({current}); \
                      se ignora la de {} ({})",
-                    aportada.package, aportada.value
+                    contributed.package, contributed.value
                 );
             }
             continue;
         }
-        eprintln!("==> Info.plist: {clave} (de {})", aportada.package);
+        eprintln!("==> Info.plist: {key} (de {})", contributed.package);
         run_in(
-            destino.parent().unwrap_or(destino),
+            destination.parent().unwrap_or(destination),
             "plutil",
             &[
                 "-replace",
-                clave,
+                key,
                 "-json",
-                &aportada.value.to_string(),
-                &destino.to_string_lossy(),
+                &contributed.value.to_string(),
+                &destination.to_string_lossy(),
             ],
             "no se pudo escribir en el Info.plist la clave que pide un plugin",
         )?;
@@ -466,12 +467,13 @@ fn escribir_plist(base: &Path, destino: &Path, plugins: &[Plugin]) -> Result<()>
     Ok(())
 }
 
-/// Las claves de primer nivel de un `Info.plist`, leídas de verdad.
+/// The top-level keys of an `Info.plist`, actually read.
 ///
-/// Se convierte a JSON con `plutil` en vez de buscar `<key>` en el XML: un
-/// plist puede venir en binario, y buscar texto dentro de un binario no
-/// encuentra nada y haría creer que la app no declara ninguna clave.
-fn claves_del_plist(plist: &Path) -> Result<serde_json::Map<String, serde_json::Value>> {
+/// It is converted to JSON with `plutil` instead of grepping the XML for
+/// `<key>`: a plist can come in binary form, and looking for text inside a
+/// binary finds nothing and would have you believe the app declares no keys at
+/// all.
+fn plist_keys(plist: &Path) -> Result<serde_json::Map<String, serde_json::Value>> {
     let json = capture("plutil", &["-convert", "json", "-o", "-", &plist.to_string_lossy()])
         .with_context(|| format!("{}: no se pudo leer", plist.display()))?;
     let parsed: serde_json::Value = serde_json::from_str(&json)
@@ -482,34 +484,34 @@ fn claves_del_plist(plist: &Path) -> Result<serde_json::Map<String, serde_json::
     }
 }
 
-/// Que el `Info.plist` diga lo mismo que el proyecto.
+/// That the `Info.plist` says the same thing as the project.
 ///
-/// `CFBundleExecutable` tiene que ser el nombre del binario que se acaba de
-/// enlazar, y `CFBundleIdentifier` el mismo con el que luego se instala. Si
-/// alguien cambia `app.name` en `angular-native.json` y no toca el plist, la
-/// app se instala y al abrirla desaparece sin decir nada: el sistema busca un
-/// ejecutable que no está. Es exactamente el fallo silencioso que no puede
-/// pasar, así que se compara aquí.
-fn comprobar_plist(
+/// `CFBundleExecutable` has to be the name of the binary that was just linked,
+/// and `CFBundleIdentifier` the same one it later gets installed with. If
+/// somebody changes `app.name` in `angular-native.json` and leaves the plist
+/// alone, the app installs and vanishes on opening without a word: the system
+/// goes looking for an executable that is not there. It is exactly the kind of
+/// silent failure that must not happen, so it is compared here.
+fn check_plist(
     plist: &Path,
     app_name: &str,
     bundle_id: &str,
     family: Family,
     workspace: &Workspace,
 ) -> Result<()> {
-    for (clave, esperado) in
+    for (key, expected) in
         [("CFBundleExecutable", app_name), ("CFBundleIdentifier", bundle_id)]
     {
-        let leido = capture(
+        let read = capture(
             "plutil",
-            &["-extract", clave, "raw", "-o", "-", &plist.to_string_lossy()],
+            &["-extract", key, "raw", "-o", "-", &plist.to_string_lossy()],
         )
-        .with_context(|| format!("{}: no se pudo leer {clave}", plist.display()))?;
-        if leido != esperado {
-            // Fuera del monorepo y sin overlay, lo que se está comparando es
-            // el plist del SDK contra el nombre del proyecto: no coinciden
-            // nunca, y la salida no es corregir un fichero que no es suyo.
-            let salida = if workspace.project.is_some()
+        .with_context(|| format!("{}: no se pudo leer {key}", plist.display()))?;
+        if read != expected {
+            // Outside the monorepo and with no overlay, what is being compared
+            // is the SDK's plist against the project's name: they never match,
+            // and the way out is not fixing a file that is not theirs.
+            let way_out = if workspace.project.is_some()
                 && workspace.overlay(family.slug(), "Info.plist").is_none()
             {
                 format!(
@@ -522,7 +524,7 @@ fn comprobar_plist(
                     .to_owned()
             };
             bail!(
-                "{}: {clave} es {leido:?} y el proyecto dice {esperado:?}.\n{salida}",
+                "{}: {key} es {read:?} y el proyecto dice {expected:?}.\n{way_out}",
                 plist.display()
             );
         }
@@ -530,9 +532,9 @@ fn comprobar_plist(
     Ok(())
 }
 
-/// Los `.swift` de un directorio, en orden estable: `read_dir` los devuelve en
-/// el que le dé el sistema de ficheros, y con eso el comando de `swiftc`
-/// cambiaría entre máquinas sin que cambie nada.
+/// The `.swift`s in a directory, in a stable order: `read_dir` hands them back
+/// in whatever order the filesystem feels like, and with that the `swiftc`
+/// command would differ between machines without anything having changed.
 pub fn swift_sources(dir: &Path) -> Result<Vec<String>> {
     let mut found: Vec<String> = std::fs::read_dir(dir)?
         .filter_map(|entry| entry.ok())
@@ -552,8 +554,8 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
     let _ = Command::new("open")
         .args(["-a", "Simulator", "--args", "-CurrentDeviceUDID", &udid])
         .status();
-    // Instalar sobre un simulador a medio arrancar deja el comando colgado sin
-    // decir nada. `bootstatus` espera a que el arranque termine de verdad.
+    // Installing onto a half-booted simulator leaves the command hanging
+    // without a word. `bootstatus` waits for the boot to really finish.
     let ready = Command::new("xcrun")
         .args(["simctl", "bootstatus", &udid, "-b"])
         .status()
@@ -562,14 +564,14 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
         bail!("el simulador {device} no llegó a arrancar");
     }
 
-    // Cerrar y desinstalar antes de instalar.
+    // Quit and uninstall before installing.
     //
-    // `simctl install` sobre una app que ya está instalada no reemplaza el
-    // bundle de forma fiable: la app arranca con el código viejo y parece que
-    // el cambio no ha llegado. Desinstalar borra también los datos de la app,
-    // lo cual en un ciclo de desarrollo es lo que uno espera de todas formas.
-    // Los dos comandos fallan si no había nada, que es lo normal la primera
-    // vez, así que se descarta su salida.
+    // `simctl install` over an app that is already installed does not replace
+    // the bundle reliably: the app starts with the old code and it looks as
+    // though the change never landed. Uninstalling also wipes the app's data,
+    // which in a development cycle is what anyone expects anyway. Both commands
+    // fail if there was nothing there, which is the normal case the first time
+    // round, so their output is thrown away.
     let _ = Command::new("xcrun")
         .args(["simctl", "terminate", &udid, &package.bundle_id])
         .output();
@@ -595,15 +597,15 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
     Ok(())
 }
 
-/// Busca un simulador de esa familia por nombre y devuelve su udid.
+/// Looks a simulator of that family up by name and returns its udid.
 ///
-/// Se parsea el JSON de verdad. Buscar el nombre a pelo y leer el `udid`
-/// siguiente no vale: `simctl` pone el `udid` *antes* que el `name`, así que
-/// eso devuelve el del dispositivo de después y se acaba instalando en un
-/// simulador que no es, sin que nada falle.
+/// The JSON is really parsed. Grepping for the name and reading the next `udid`
+/// does not work: `simctl` puts the `udid` *before* the `name`, so that gives
+/// you the one belonging to the device after it and you end up installing on the
+/// wrong simulator, with nothing failing anywhere.
 ///
-/// El runtime se filtra por familia por lo mismo: instalar una app de tvOS en
-/// un iPhone falla mucho después y de forma confusa.
+/// The runtime is filtered by family for the same reason: installing a tvOS app
+/// on an iPhone fails much later and confusingly.
 fn find_device(family: Family, name: &str) -> Result<String> {
     let json = capture("xcrun", &["simctl", "list", "devices", "available", "-j"])?;
     let parsed: serde_json::Value =
@@ -613,15 +615,16 @@ fn find_device(family: Family, name: &str) -> Result<String> {
         .and_then(serde_json::Value::as_object)
         .context("el JSON de simctl no trae dispositivos")?;
 
-    // Se prefiere uno ya arrancado: si hay varios con el mismo nombre en
-    // distintas versiones del sistema, el que el usuario está mirando es ese.
+    // An already-booted one is preferred: if there are several with the same
+    // name on different versions of the system, that is the one the user is
+    // looking at.
     let mut fallback = None;
-    let mut hay_familia = false;
+    let mut family_present = false;
     for (runtime, devices) in runtimes {
         if !runtime.contains(family.runtime_marker()) {
             continue;
         }
-        hay_familia = true;
+        family_present = true;
         for device in devices.as_array().into_iter().flatten() {
             if device.get("name").and_then(serde_json::Value::as_str) != Some(name) {
                 continue;
@@ -639,12 +642,12 @@ fn find_device(family: Family, name: &str) -> Result<String> {
         return Ok(udid);
     }
 
-    // Sin ningún runtime de la familia el problema no es el nombre del
-    // dispositivo: es que falta la descarga. Tener el SDK instalado —que es lo
-    // que hace falta para compilar y enlazar— no trae el runtime, que es lo
-    // que hace falta para ejecutar. Son gigabytes aparte, y decir «no hay
-    // ningún simulador llamado X» mandaría a buscar en el sitio equivocado.
-    if !hay_familia {
+    // With no runtime of the family at all the problem is not the device's
+    // name: it is that the download is missing. Having the SDK installed —which
+    // is what compiling and linking need— does not bring the runtime, which is
+    // what running needs. They are separate gigabytes, and saying «there is no
+    // simulator called X» would send people looking in the wrong place.
+    if !family_present {
         bail!(
             "no hay ningún runtime de {} instalado, así que no hay simulador que arrancar.\n\
              El `.app` está armado; para poder ejecutarlo:\n    {}",
