@@ -166,6 +166,30 @@ unreadable, while iOS deletes it and reports `notFound`.
   `SecItemCopyMatching` without ever showing Face ID. The access control is on
   the item — the code that sets it is the same code that runs on a device — but
   the gate itself is only real on hardware with a Secure Enclave.
-- **Android**: verified by compiling only. The APK builds with both plugins and
-  their generated registry, and the merged manifest carries the permission and
-  the feature. Nobody has watched it run.
+- **Android**: the Java of both plugins compiles against `android.jar`, and the
+  manifest merge prints the permission and the feature it adds. That is all.
+  **The full APK build did not finish** — the machine ran out of disk during
+  `aapt2 link` — and no emulator was ever started. Nobody has watched any of
+  this run on Android.
+
+### The screenshots
+
+Nothing is enrolled yet, and the app says exactly that instead of showing a
+button that would fail:
+
+![Face ID with nothing enrolled](/img/biometrics-not-enrolled.png)
+
+A matching face — *Features › Face ID › Matching Face* in the Simulator:
+
+![A matching face authenticates](/img/biometrics-face-matches.png)
+
+A non-matching one. The system rejects it, the app is still waiting, and the box
+is still empty:
+
+![A non-matching face is rejected](/img/biometrics-face-does-not-match.png)
+
+Saving a secret, and reading it back:
+
+![A secret stored with SecItemAdd](/img/keychain-saved.png)
+
+![The secret read back with SecItemCopyMatching](/img/keychain-read.png)
