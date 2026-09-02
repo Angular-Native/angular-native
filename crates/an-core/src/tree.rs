@@ -18,9 +18,25 @@ pub type NodeId = u32;
 pub enum Error {
     UnknownNode(NodeId),
     DuplicateNode(NodeId),
+    /// Un id tan por delante de lo ya creado que no puede venir de JS.
+    /// Ver `HUECO_MAXIMO`.
+    IdOutOfRange(NodeId),
+    /// Colgar un nodo de sí mismo o de uno de sus descendientes.
+    Cycle { parent: NodeId, child: NodeId },
     NoRoot,
     Layout(String),
 }
+
+/// Cuánto puede adelantarse un id a lo que ya se ha creado.
+///
+/// La tabla de nodos se indexa por id, así que crear el nodo 1.000 reserva
+/// mil huecos aunque no exista ninguno de los anteriores. Con los ids que
+/// reparte JS —de uno en uno desde el 1— eso no pasa nunca; con un búfer
+/// estropeado sí, y un id cerca de `u32::MAX` pedía cuatro mil millones de
+/// huecos: el proceso lo mataba el sistema por falta de memoria, sin traza,
+/// sin error y sin pantalla. Un margen holgado deja pasar cualquier tráfico
+/// real y convierte lo otro en un error que se puede enseñar.
+const HUECO_MAXIMO: usize = 1024;
 
 /// Operación que el host debe aplicar sobre vistas nativas reales.
 #[derive(Clone, Debug, PartialEq)]
@@ -91,6 +107,9 @@ impl Node {
 pub struct ShadowTree {
     /// Indexado por id. `None` = hueco de un nodo destruido.
     nodes: Vec<Option<Node>>,
+    /// Cuántos nodos se han llegado a crear, vivos o no. Es la referencia
+    /// contra la que se mide si un id viene demasiado adelantado.
+    created: usize,
     root: Option<NodeId>,
     layout: LayoutEngine,
     /// Ops estructurales y de props, en orden de llegada.
@@ -112,6 +131,7 @@ impl ShadowTree {
     pub fn new() -> Self {
         ShadowTree {
             nodes: Vec::new(),
+            created: 0,
             root: None,
             layout: LayoutEngine::new(),
             pending: Vec::new(),
@@ -129,12 +149,16 @@ impl ShadowTree {
 
     pub fn create_node(&mut self, id: NodeId, kind: NodeKind) -> Result<(), Error> {
         let idx = id as usize;
+        if idx > self.created + HUECO_MAXIMO {
+            return Err(Error::IdOutOfRange(id));
+        }
         if idx >= self.nodes.len() {
             self.nodes.resize_with(idx + 1, || None);
         }
         if self.nodes[idx].is_some() {
             return Err(Error::DuplicateNode(id));
         }
+        self.created += 1;
         let mut node = Node::new(kind);
         // Un ScrollView no se dimensiona por su contenido: para eso está el
         // scroll. Sin estos defaults, una lista de cinco mil filas produce un
@@ -225,11 +249,35 @@ impl ShadowTree {
         Ok(())
     }
 
+    /// Si `nodo` es el propio `posible_ancestro` o cuelga de él.
+    ///
+    /// Se sube por los padres y no se baja por los hijos porque la cadena hacia
+    /// arriba es la profundidad del árbol —unos pocos saltos— y la de abajo es
+    /// el subárbol entero.
+    fn desciende_de(&self, nodo: NodeId, posible_ancestro: NodeId) -> bool {
+        let mut actual = Some(nodo);
+        while let Some(id) = actual {
+            if id == posible_ancestro {
+                return true;
+            }
+            actual = self.nodes.get(id as usize).and_then(Option::as_ref).and_then(|n| n.parent);
+        }
+        false
+    }
+
     /// `index` es la posición en la lista completa de hijos, incluidos los no
     /// montables. La conversión al índice del host se hace aquí.
     pub fn insert_child(&mut self, parent: NodeId, child: NodeId, index: usize) -> Result<(), Error> {
         self.node(parent)?;
         self.node(child)?;
+        // Un árbol con un ciclo deja de ser un árbol, y quien lo paga es el
+        // layout: recorre hijos hasta el fondo y aquí no hay fondo, así que se
+        // queda dando vueltas sin devolver nunca el frame. No hay traza, no hay
+        // error: la app se queda quieta. Angular nunca manda esto; un búfer con
+        // un bit volteado, sí.
+        if self.desciende_de(parent, child) {
+            return Err(Error::Cycle { parent, child });
+        }
         let index = index.min(self.node(parent)?.children.len());
         self.node_mut(parent)?.children.insert(index, child);
         self.node_mut(child)?.parent = Some(parent);

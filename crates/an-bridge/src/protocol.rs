@@ -305,6 +305,23 @@ impl Encoder {
         self
     }
 
+    pub fn set_prop_bool(&mut self, id: u32, key: &str, value: bool) -> &mut Self {
+        self.bytes.push(op::SET_PROP_BOOL);
+        self.u32(id);
+        self.str(key);
+        self.bytes.push(value as u8);
+        self
+    }
+
+    /// `null` es "vuelve a tu valor de fábrica", no "no mandes nada": el host
+    /// tiene que enterarse de que le han quitado algo que sí escribió.
+    pub fn set_prop_null(&mut self, id: u32, key: &str) -> &mut Self {
+        self.bytes.push(op::SET_PROP_NULL);
+        self.u32(id);
+        self.str(key);
+        self
+    }
+
     pub fn set_text(&mut self, id: u32, text: &str) -> &mut Self {
         self.bytes.push(op::SET_TEXT);
         self.u32(id);
