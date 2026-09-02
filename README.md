@@ -68,6 +68,7 @@ cargo an tvos                 # tele: .app de tvOS y simulador del Apple TV
 cargo an visionos             # visor: .app de visionOS y simulador del Vision Pro
 cargo an watchos              # reloj: .app de watchOS y simulador
 cargo an macos                # escritorio: .app de macOS, en esta misma máquina
+cargo an dev --tvos           # tele: vigilando y con refresco en caliente
 cargo an dev --macos          # lo mismo, vigilando y con refresco en caliente
 cargo an build --release      # solo el bundle: 276 KB frente a 1,3 MB en debug
 ```

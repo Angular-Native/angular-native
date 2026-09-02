@@ -8,15 +8,21 @@ proyecto, así que `an-ios` compila para la tele sin reescribir nada.
 ```bash
 cargo an tvos                      # examples/hello-tv en el simulador
 cargo an tvos examples/controls    # los controles del sistema, para ver los huecos
+cargo an dev --tvos                # lo mismo, vigilando y con refresco en caliente
 ./scripts/check-tvos.sh
 ```
+
+El refresco en caliente funciona igual que en el teléfono: la app se conecta al
+servidor por WebSocket, y al guardar un cambio en un componente el rótulo cambia
+en la tele sin reiniciar y con el estado —el contador de segundos— donde
+estaba.
 
 Lo que sí cambia, y no es cosmético, es **cómo se maneja**: no hay toques.
 
 ## El reparto por familias
 
-`ios.rs` arma el `.app` de las dos familias de UIKit. Lo que las diferencia cabe
-en un enum, `Family`, y es poco:
+`ios.rs` arma el `.app` de las tres familias de UIKit —iOS, tvOS y visionOS—.
+Lo que separa a la tele del teléfono cabe en un enum, `Family`, y es poco:
 
 | | iOS | tvOS |
 |---|---|---|
@@ -38,6 +44,8 @@ mismo que el proyecto.
 comparte es el `Info.plist`, porque las claves que pide cada familia no se
 parecen: el de tvOS lleva `UIDeviceFamily = 3` y no lleva `LSRequiresIPhoneOS`,
 `UILaunchScreen` ni orientaciones, que son del teléfono.
+
+La tercera familia, visionOS, está en [docs/visionos.md](visionos.md).
 
 **El nombre y el identificador llevan sufijo.** `AngularNativeTV` y
 `dev.angularnative.playground.tv`. Sin él, `an tvos` pisaría el `.app` que acaba
@@ -237,8 +245,6 @@ entera nadie:
   aviso. Lo que corresponde en una tele es una fila enfocable que se pulsa y una
   fila que responde a izquierda/derecha, pero eso es una primitiva nueva y una
   decisión de vocabulario, no un `cfg`.
-- **`an dev --tvos` existe y arranca**, pero el refresco en caliente sobre la
-  tele no se ha ejercitado más allá de eso.
 - **Los plugins se compilan con sus fuentes de iOS**, que es lo único que
   declaran. Si alguna usa API que tvOS no tiene, el enlazado se para con el
   error de swiftc; `an tvos` lo avisa antes de empezar para que no llegue de
