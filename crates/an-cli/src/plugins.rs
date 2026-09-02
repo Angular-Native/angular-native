@@ -150,7 +150,7 @@ impl Plugin {
     }
 }
 
-/// An app's plugins: the dependencies of its that carry a manifest.
+/// An app's plugins: those of its dependencies that carry a manifest.
 ///
 /// The order is alphabetical by module name, not the `package.json`'s: an npm
 /// `HashMap` promises no order and the generated registry file would change from
