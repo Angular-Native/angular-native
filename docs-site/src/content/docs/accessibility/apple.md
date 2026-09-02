@@ -210,15 +210,25 @@ translated into AX attributes by the platform:
 
 ```text
 AXGroup[iOSContentGroup]
-  AXHeading label=" Accessibility "
-  AXButton label="Play" help="Starts the track from the beginning"
-  AXButton label="Untouched button"
+  AXHeading label="Settings"
+  AXButton label="Save the draft" help="saves it without leaving the screen"
+  AXLink label="Open the website"
+  AXCheckBox[AXSwitch] label="Select all"
+  AXCheckBox[AXSwitch] label="Alerts" value="1"
+  AXGenericElement label="Volume" value="35 %" enabled=false selected=true
+  AXGenericElement label="An option"
+  AXSlider label="A range"
+  AXButton label="OK"
   AXButton label="Save the changes you made"
   AXGenericElement label="Stripped of its role"
-  AXCheckBox[AXSwitch] label="Night mode" value="1"
-  AXSlider label="Volume" value="60 per cent"
-  AXButton label="Chosen and switched off" enabled=false selected=true
 ```
+
+Two rows of that are worth reading twice. `Select all` asked for
+`checked: 'mixed'` and came back with **no value at all**, while `Alerts` asked
+for `checked: true` and came back with `"1"` — which is the halfway state having
+nowhere to go in UIKit, visible rather than asserted. And `An option` asked for
+`role="radio"`: it is a stop, because it has a name, and it is not published as
+anything, because there is no such trait to publish.
 
 Half the assertions are about what must **not** be in there, because a check
 that only looks for what it expects cannot catch the opposite failure: the
@@ -251,12 +261,18 @@ see" and "a screen reader said the right words" are two different claims.
 
 ## The example
 
-`examples/a11y-apple` is the screen both checks read. Every row in it is a case
-one of the hosts had to decide something about, including the ones no Apple
-platform can express, so that "it is said out loud" is something a check can
-read in the log rather than something a comment claims.
+`examples/a11y` is the screen every accessibility check reads — the Android
+device dump as well as both of these. It is one screen and not one per platform
+on purpose: the rows that matter are mostly the same rows, and where a platform
+differs it is far more useful to see the difference on the same line than to
+compare two files.
+
+It is not meant to be looked at. Every row is a case one of the hosts had to
+decide something about, including the ones no platform can express, so that "it
+is said out loud" is something a check can read in the log rather than something
+a comment claims.
 
 ```bash
-cargo an macos examples/a11y-apple     # on this machine
-cargo an ios examples/a11y-apple       # in the simulator
+cargo an macos examples/a11y     # on this machine
+cargo an ios examples/a11y       # in the simulator
 ```

@@ -65,7 +65,7 @@ if [ "${permission:-0}" -eq 2 ]; then
 fi
 
 BUILD_LOG="$(mktemp)"
-if cargo an ios examples/a11y-apple >"$BUILD_LOG" 2>&1; then
+if cargo an ios examples/a11y >"$BUILD_LOG" 2>&1; then
   echo "  ok   the example builds, installs and launches in the simulator"
 else
   echo "  FALLO the example did not get as far as running"
@@ -120,19 +120,21 @@ absent() { # <regexp> <what it proves>
 # the bridge turns it into a role, which is what makes this readable at all —
 # and what makes it worth checking, because the mapping from `.header` to
 # `AXHeading` is the platform's, not ours.
-expect 'AXHeading label=" Accessibility "' \
+expect 'AXHeading label="Settings"' \
   'the .header trait arrives as AXHeading'
-expect 'AXButton label="Play" help="Starts the track' \
+expect 'AXButton label="Save the draft" help="saves it' \
   '.button with the label and the hint of a plain view'
 expect 'AXCheckBox\[AXSwitch\] label="Night mode" value="1"' \
   '.toggleButton is what UIKit has for a switch, and checked is its value'
-expect 'AXSlider label="Volume" value="60 per cent"' \
+expect 'AXSlider label="Loudness" value="60 per cent"' \
   '.adjustable arrives as AXSlider, with the value the template wrote'
-expect 'label="Chosen and switched off" enabled=false selected=true' \
+expect 'label="Volume" .*enabled=false selected=true' \
   '.notEnabled and .selected are the two bits of state UIKit keeps in the mask'
-expect 'label="No role in AppKit"' \
+expect 'label="A summary"' \
   'the row AppKit has no role for is a stop here, where the trait does exist'
-expect 'label="Named and nothing else"' \
+expect 'AXButton label="Save the changes you made"' \
+  'a labelled system button reads with our name and is still a button'
+expect 'label="The name beats the testID"' \
   'a name on a plain view is enough to make it a stop here too'
 
 # The one UIKit has no answer for. It is not published as a radio button
@@ -142,10 +144,10 @@ absent 'AXRadioButton' \
 
 # And the grouping, which is the same idea as on the Mac and a different API:
 # `isAccessibilityElement` on the row, not an emptied children list.
-absent 'label="decorative filler"' \
+absent 'DECORATION NOBODY READS' \
   'accessible="false" takes the text inside out of the tree with it'
-absent 'label="Play" enabled=true selected=false\s*$' \
-  'the grouped row is one stop, not a container with two more inside'
+absent 'label="Three unread messages"' \
+  'the grouped row is one stop, not a container with more inside'
 
 echo "       the tree that was read is in build/macos/accessibility-tree-ios.txt"
 

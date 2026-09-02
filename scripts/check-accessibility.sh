@@ -206,7 +206,7 @@ if [ "${permission:-0}" -eq 2 ]; then
 fi
 
 BUILD_LOG="$(mktemp)"
-if cargo an macos examples/a11y-apple --no-launch >"$BUILD_LOG" 2>&1; then
+if cargo an macos examples/a11y --no-launch >"$BUILD_LOG" 2>&1; then
   echo "  ok   the accessibility example builds into the .app"
 else
   echo "  FALLO the accessibility example does not build"
@@ -237,14 +237,23 @@ trap 'kill -9 "$APP_PID" 2>/dev/null || true' EXIT
 # fixed sleep: on a busy machine the first frame can take a while, and a check
 # that fails because the laptop was compiling something else is a check nobody
 # believes.
+# The window shows up before anything is mounted in it, so waiting for the
+# window is waiting for the wrong thing: what has to be there is something
+# *inside* it. Waiting for the window alone reads an empty tree and reports
+# every assertion as a failure, which looks exactly like a broken host.
+window_rows() {
+  sed -n "/AXWindow/,/AXMenuBar/p" "$TREE" 2>/dev/null | wc -l
+}
+
 for _ in $(seq 1 60); do
   sleep 0.5
-  if "$AX_DUMP" "$APP_PID" >"$TREE" 2>/dev/null && grep -q AXWindow "$TREE"; then
+  "$AX_DUMP" "$APP_PID" >"$TREE" 2>/dev/null || continue
+  if [ "$(window_rows)" -gt 8 ]; then
     break
   fi
 done
 
-if grep -q AXWindow "$TREE" 2>/dev/null; then
+if [ "$(window_rows)" -gt 8 ]; then
   echo "  ok   the app publishes an accessibility tree to a process outside it"
 else
   echo "  FALLO nothing came back from the accessibility tree"
@@ -263,29 +272,30 @@ expect() { # <regexp> <what it proves>
   check $r "$2"
 }
 
-expect 'AXHeading value=" Accessibility "' \
+expect 'AXHeading label="Settings"' \
   'role="header" comes back as AXHeading'
-expect 'AXButton label="Play" help="Starts the track' \
+expect 'AXButton label="Save the draft" help="saves it' \
   'the label and the hint of a plain view reach the reader'
 expect 'AXCheckBox\[AXSwitch\] label="Night mode" value="1"' \
   'role="switch" is AXCheckBox with the AXSwitch subrole, and checked is its value'
-expect 'AXSlider label="Volume" value="60 per cent"' \
+expect 'AXCheckBox label="Select all" value="2"' \
+  'checked="mixed", which UIKit cannot say, is a value of its own here'
+expect 'AXSlider label="Loudness" value="60 per cent"' \
   'role="slider" is AXSlider and the value is the one the template wrote'
-expect 'AXButton label="Chosen and switched off" enabled=false selected=true' \
+expect 'label="Volume" .*enabled=false selected=true' \
   'disabled and selected come back as the two properties AppKit has for them'
-expect 'AXRadioButton label="No trait in UIKit"' \
+expect 'AXRadioButton label="An option"' \
   'role="radio", which UIKit has not, is AXRadioButton here'
-
 expect 'AXUnknown title="Stripped of its role"' \
   'role="none" takes the role away and leaves the name, like android.view.View'
-expect 'AXUnknown label="Named and nothing else"' \
+expect 'label="The name beats the testID"' \
   'a name on a plain view is enough to make it a stop'
 
 # The two that guard against the easy mistake: writing our label over the
 # system's. An `NSButton` arrives with its title as its name and with a role
 # AppKit works out for itself, and both are lost the moment anything is
 # overridden on the view. The second row is the one that catches it.
-expect 'AXButton title="Untouched button"' \
+expect 'AXButton title="OK"' \
   'a system button nobody labelled keeps the name AppKit gave it'
 expect 'AXButton label="Save the changes you made" title="Save"' \
   'and one the template did label reads with ours and is still a button'
@@ -298,10 +308,10 @@ absent() { # <regexp> <what it proves>
   check $r "$2"
 }
 
-absent 'decorative filler' \
+absent 'DECORATION NOBODY READS' \
   'accessible="false" takes the text inside out of the tree with it'
-absent 'AXStaticText value="Play"' \
-  'accessible="true" makes the row one stop: its icon and its text are not two more'
+absent 'value="Three unread messages"' \
+  'accessible="true" makes the row one stop: what is inside is not more of them'
 
 # The log side of the same coin: what could not be applied has to have been
 # said. A host that drops something quietly passes every check above.
@@ -310,7 +320,7 @@ said() { # <regexp> <what it proves>
   check $r "$2"
 }
 
-expect 'AXUnknown label="No role in AppKit"' \
+expect 'AXUnknown label="A summary"' \
   'role="summary", which AppKit has not, keeps the name and claims no role'
 said 'accessibilityRole.="summary". on <View>: AppKit has no role' \
   'and it says so, with the name of what was asked for'
