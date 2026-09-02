@@ -2168,11 +2168,6 @@ public final class AnHost {
                 reportSafeArea(id);
             } else {
                 safeArea.remove(id);
-        AlertState alert = alerts.get(id);
-        if (alert != null && alert.presented != null) {
-            alert.presented.dismiss();
-        }
-        alerts.remove(id);
             }
             return;
         }
