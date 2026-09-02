@@ -49,6 +49,11 @@ pub enum Target {
     VisionOs { device: String },
     WatchOs { device: String },
     Android,
+    /// El reloj de Android. Es el mismo emulador y el mismo servidor que
+    /// `Android`; lo que cambia es el manifiesto con el que se arma el APK y
+    /// la forma del aparato al que va, que son justo las dos cosas que no se
+    /// pueden deducir de la otra.
+    Wear { device: Option<String> },
 }
 
 pub fn run(
@@ -81,7 +86,9 @@ pub fn run(
         | Target::WatchOs { .. } => {
             format!("http://127.0.0.1:{port}")
         }
-        Target::Android => format!("http://{}:{port}", crate::android::EMULATOR_HOST),
+        Target::Android | Target::Wear { .. } => {
+            format!("http://{}:{port}", crate::android::EMULATOR_HOST)
+        }
     };
 
     // El puerto se abre antes de dar nada por bueno: si ya hay otro `an dev`
@@ -142,17 +149,22 @@ pub fn run(
                 let package = watchos::assemble(&workspace, &bundle_path, false, Some(&url))?;
                 watchos::launch(&package, device)?;
             }
-            Target::Android => {
-                let apk =
-                    crate::android::assemble(
-                        &workspace,
-                        &bundle_path,
-                        false,
-                        Some(&url),
-                        &plugins,
-                        crate::android::Form::Phone,
-                    )?;
-                crate::android::install_and_launch(&workspace, &apk, crate::android::Form::Phone, None)?;
+            Target::Android | Target::Wear { .. } => {
+                let (form, device) = match &target {
+                    Target::Wear { device } => {
+                        (crate::android::Form::Watch, device.as_deref())
+                    }
+                    _ => (crate::android::Form::Phone, None),
+                };
+                let apk = crate::android::assemble(
+                    &workspace,
+                    &bundle_path,
+                    false,
+                    Some(&url),
+                    &plugins,
+                    form,
+                )?;
+                crate::android::install_and_launch(&workspace, &apk, form, device)?;
             }
         }
     }

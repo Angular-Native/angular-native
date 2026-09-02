@@ -143,6 +143,10 @@ enum Command {
         /// Lanza en el emulador de Android en vez de en el simulador de iOS.
         #[arg(long)]
         android: bool,
+        /// Lanza en el emulador de Wear OS en vez de en el del teléfono.
+        /// Arma el APK del reloj, no el del teléfono con otro destino.
+        #[arg(long)]
+        wearos: bool,
         /// Lanza en el simulador del reloj en vez de en el del teléfono.
         #[arg(long)]
         watchos: bool,
@@ -345,12 +349,19 @@ fn main() -> anyhow::Result<()> {
             device,
             port,
             android,
+            wearos,
             watchos,
             tvos,
             visionos,
             no_launch,
         } => {
-            let app = workspace.app(app.as_deref())?;
+            // Igual que en `an wearos`: el ejemplo del teléfono no se lee en
+            // 227 puntos redondos, así que el reloj tiene el suyo por defecto.
+            let app = workspace.app(if wearos {
+                Some(app.as_deref().unwrap_or("examples/hello-wear"))
+            } else {
+                app.as_deref()
+            })?;
             let found = plugins::discover(&workspace, &app)?;
             // Si el `--device` sigue siendo el del teléfono es que nadie lo
             // eligió, y lo que se quiere es el aparato que pide la bandera.
@@ -361,15 +372,21 @@ fn main() -> anyhow::Result<()> {
                     device.clone()
                 }
             };
-            let target = match (android, watchos, tvos, visionos) {
-                (true, _, _, _) => dev::Target::Android,
-                (_, true, _, _) => dev::Target::WatchOs {
+            let target = match (android, wearos, watchos, tvos, visionos) {
+                (true, _, _, _, _) => dev::Target::Android,
+                // El reloj de Android se identifica por su número de serie de
+                // `adb`, no por el nombre de un simulador, así que no pasa por
+                // `elegido`: sin `--device` lo elige preguntando la forma.
+                (_, true, _, _, _) => dev::Target::Wear {
+                    device: (device != TELEFONO_POR_DEFECTO).then(|| device.clone()),
+                },
+                (_, _, true, _, _) => dev::Target::WatchOs {
                     device: elegido(RELOJ_POR_DEFECTO),
                 },
-                (_, _, true, _) => dev::Target::TvOs {
+                (_, _, _, true, _) => dev::Target::TvOs {
                     device: elegido(TELE_POR_DEFECTO),
                 },
-                (_, _, _, true) => dev::Target::VisionOs {
+                (_, _, _, _, true) => dev::Target::VisionOs {
                     device: elegido(VISOR_POR_DEFECTO),
                 },
                 _ => dev::Target::Ios { device },
