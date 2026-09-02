@@ -86,7 +86,15 @@ export type BiometricOutcome =
   | 'userFallback'
   /** El sistema quitó el diálogo: la app se fue al fondo, entró una llamada. */
   | 'systemCancel'
-  /** Se agotó el tiempo mirando el sensor. Solo Android lo distingue. */
+  /**
+   * Se agotó el tiempo mirando el sensor.
+   *
+   * Solo llega desde Android, que tiene `BIOMETRIC_ERROR_TIMEOUT`. iOS también
+   * agota el tiempo, pero el `LAError` que devuelve —el −1003— no está en el
+   * enumerado público, así que llega como `unavailable` con
+   * `"LAError -1003: Authentication timed out."` dentro de `detail`. Traducir
+   * un número que Apple no documenta sería adivinar; el mensaje es exacto.
+   */
   | 'timeout'
   | 'noHardware'
   | 'notEnrolled'

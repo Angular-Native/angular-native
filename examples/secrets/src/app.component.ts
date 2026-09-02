@@ -80,6 +80,8 @@ const LECTURA: Record<KeychainReadOutcome, string> = {
         <an-text [fontSize]="16" [color]="'#f4f7ff'">{{ contenido() }}</an-text>
       </an-view>
 
+      <an-text [fontSize]="13" [color]="'#9fb0d4'">{{ almacen() }}</an-text>
+
       <an-view [style.flexDirection]="'row'" [style.gap]="'10'">
         <an-view
           [style.flexGrow]="'1'"
@@ -137,6 +139,9 @@ export class AppComponent {
   private readonly keychain = inject(Keychain)
 
   readonly sensor = signal('preguntando al sistema…')
+  /** Si hay algo guardado. Va aparte de `estado` a propósito: es lo que sigue
+   * siendo cierto después de que la última acción termine y su mensaje pase. */
+  readonly almacen = signal('preguntando al llavero…')
   readonly contenido = signal('—')
   readonly estado = signal('')
   readonly detalle = signal('')
@@ -153,7 +158,7 @@ export class AppComponent {
     // cara: saber que el elemento existe no es abrirlo.
     this.keychain
       .has(CLAVE)
-      .then((hay) => this.estado.set(hay ? 'hay un secreto guardado' : 'no hay nada guardado'))
+      .then((hay) => this.almacen.set(hay ? 'hay un secreto guardado' : 'no hay nada guardado'))
       .catch((error: unknown) => this.fallo(error))
   }
 
@@ -174,6 +179,7 @@ export class AppComponent {
         this.detalle.set(resultado.detail)
         if (resultado.outcome === 'saved') {
           this.contenido.set('—')
+          this.almacen.set('hay un secreto guardado')
           this.estado.set('guardado; ahora hace falta tu cara para leerlo')
           return
         }
@@ -206,6 +212,7 @@ export class AppComponent {
       .remove(CLAVE)
       .then((habia) => {
         this.contenido.set('—')
+        this.almacen.set('no hay nada guardado')
         this.detalle.set('')
         this.estado.set(habia ? 'borrado' : 'no había nada que borrar')
       })

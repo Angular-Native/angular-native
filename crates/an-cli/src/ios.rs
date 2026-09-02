@@ -117,6 +117,16 @@ pub fn assemble(
         "-o".into(),
         app_dir.join(&app_name).to_string_lossy().into_owned(),
     ];
+    if let Some(derechos) = escribir_derechos(plugins, &bundle_id, &out)? {
+        // La forma de meter una sección en el binario desde `swiftc`: cuatro
+        // `-Xlinker` seguidos, uno por argumento que recibe `ld`.
+        for flag in ["-sectcreate", "__TEXT", "__entitlements"] {
+            args.push("-Xlinker".into());
+            args.push(flag.into());
+        }
+        args.push("-Xlinker".into());
+        args.push(derechos.to_string_lossy().into_owned());
+    }
     if release {
         args.push("-O".into());
     }
@@ -134,6 +144,82 @@ pub fn assemble(
     }
 
     Ok(Package { dir: app_dir, bundle_id })
+}
+
+/// Escribe el fichero de derechos que pide el enlazado, si algún plugin pide
+/// alguno. `None` cuando no hay ninguno y no hay nada que meter.
+///
+/// Los derechos son lo que le permite a la app pedirle algo al sistema. El
+/// caso que obligó a escribir esto es el llavero: sin `keychain-access-groups`
+/// ni `application-identifier`, `SecItemAdd` contesta el −34018 —«el cliente
+/// no tiene ninguna de las dos»— porque la app no pertenece a ningún grupo del
+/// llavero y no hay dónde guardar. Desde fuera parece un fallo del llavero.
+///
+/// **En el simulador los derechos no van en la firma, van dentro del binario**,
+/// en la sección `__TEXT,__entitlements` que se le pide al enlazador un poco
+/// más abajo. Firmarlos —ni ad hoc ni con una identidad de desarrollo— no
+/// vale: `keychain-access-groups` es un derecho restringido, y macOS se niega
+/// a ejecutar un binario que lo lleve en la firma sin un perfil de
+/// aprovisionamiento que lo respalde. El síntoma es que la app deja de
+/// arrancar, con un «request denied by SBMainWorkspace» que no menciona los
+/// derechos por ninguna parte. Xcode hace exactamente esto mismo para el
+/// simulador.
+///
+/// Para un aparato de verdad haría falta lo otro —identidad y perfil— y no
+/// está: `an` instala en el simulador. Ver docs/plugins.md.
+fn escribir_derechos(
+    plugins: &[Plugin],
+    bundle_id: &str,
+    out: &Path,
+) -> Result<Option<PathBuf>> {
+    let pedidos = plugins::entitlement_entries(plugins)?;
+    if pedidos.is_empty() {
+        return Ok(None);
+    }
+
+    let mut derechos = serde_json::Map::new();
+    // El identificador de la aplicación lo pone `an` y no el plugin: un plugin
+    // no sabe —ni tiene por qué— en qué app lo van a meter. Es también lo que
+    // le da valor al `$(BUNDLE_ID)` de abajo.
+    derechos.insert(
+        "application-identifier".to_owned(),
+        serde_json::Value::String(bundle_id.to_owned()),
+    );
+    for (clave, aportado) in &pedidos {
+        eprintln!("==> derechos: {clave} (de {})", aportado.package);
+        derechos.insert(clave.clone(), sustituir(&aportado.value, bundle_id));
+    }
+
+    std::fs::create_dir_all(out)?;
+    let json = out.join("entitlements.json");
+    let plist = out.join("angular-native.entitlements");
+    std::fs::write(&json, serde_json::Value::Object(derechos).to_string())?;
+    // El enlazador quiere un plist, no un JSON. Convertirlo con `plutil` evita
+    // escribir XML a mano y escapar los valores del plugin en el proceso.
+    run_in(
+        out,
+        "plutil",
+        &["-convert", "xml1", "-o", &plist.to_string_lossy(), &json.to_string_lossy()],
+        "no se pudo escribir el fichero de derechos",
+    )?;
+    Ok(Some(plist))
+}
+
+/// Cambia `$(BUNDLE_ID)` por el identificador de esta app.
+///
+/// Es la única sustitución que hay, y existe porque el valor que casi siempre
+/// se pide —el grupo del llavero— es el identificador de la app, y el plugin
+/// no lo puede saber. Xcode hace lo mismo con `$(AppIdentifierPrefix)`.
+fn sustituir(value: &serde_json::Value, bundle_id: &str) -> serde_json::Value {
+    match value {
+        serde_json::Value::String(text) => {
+            serde_json::Value::String(text.replace("$(BUNDLE_ID)", bundle_id))
+        }
+        serde_json::Value::Array(items) => {
+            serde_json::Value::Array(items.iter().map(|item| sustituir(item, bundle_id)).collect())
+        }
+        otro => otro.clone(),
+    }
 }
 
 /// Escribe el `Info.plist` del `.app`: el del proyecto más lo que piden los

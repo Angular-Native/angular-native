@@ -70,8 +70,16 @@ pub struct Native {
 /// revés. Un tipo común obligaría a inventar una traducción entre los dos, y
 /// esa traducción sería mentira en las dos direcciones.
 pub enum Contributions {
-    /// `angularNative.ios.plist`: clave del `Info.plist` a valor.
-    Plist(BTreeMap<String, Value>),
+    /// iOS: `angularNative.ios.plist` y `angularNative.ios.entitlements`.
+    ///
+    /// Los dos son diccionarios y se funden igual, pero acaban en ficheros
+    /// distintos del `.app` y sirven para cosas distintas: el `Info.plist`
+    /// dice lo que la app le cuenta al usuario, y los derechos, lo que el
+    /// sistema le deja hacer.
+    Ios {
+        plist: BTreeMap<String, Value>,
+        entitlements: BTreeMap<String, Value>,
+    },
     /// `angularNative.android.manifest`.
     Manifest(ManifestEntries),
 }
@@ -318,7 +326,10 @@ fn read_native(
         );
     }
     let contributes = match platform {
-        Platform::Ios => Contributions::Plist(read_plist(declared.get("plist"), manifest)?),
+        Platform::Ios => Contributions::Ios {
+            plist: read_dict(declared.get("plist"), "plist", manifest)?,
+            entitlements: read_dict(declared.get("entitlements"), "entitlements", manifest)?,
+        },
         Platform::Android => {
             Contributions::Manifest(read_manifest_entries(declared.get("manifest"), manifest)?)
         }
@@ -337,13 +348,17 @@ fn read_native(
 /// vez que se autentica: iOS exige `NSFaceIDUsageDescription` y sin ella no
 /// avisa, cierra. Que el plugin declare aquí lo que necesita es lo que impide
 /// que el que lo instala tenga que saberlo.
-fn read_plist(declared: Option<&Value>, manifest: &Path) -> Result<BTreeMap<String, Value>> {
+fn read_dict(
+    declared: Option<&Value>,
+    seccion: &str,
+    manifest: &Path,
+) -> Result<BTreeMap<String, Value>> {
     let Some(declared) = declared else {
         return Ok(BTreeMap::new());
     };
     let declared = declared.as_object().with_context(|| {
         format!(
-            "{}: angularNative.ios.plist tiene que ser un objeto",
+            "{}: angularNative.ios.{seccion} tiene que ser un objeto",
             manifest.display()
         )
     })?;
@@ -355,14 +370,14 @@ fn read_plist(declared: Option<&Value>, manifest: &Path) -> Result<BTreeMap<Stri
         // que se para aquí en vez de escribir en un sitio que nadie pidió.
         if key.is_empty() || key.contains('.') {
             bail!(
-                "{}: angularNative.ios.plist tiene la clave {key:?}; solo se admiten claves de \
+                "{}: angularNative.ios.{seccion} tiene la clave {key:?}; solo se admiten claves de \
                  primer nivel y sin puntos",
                 manifest.display()
             );
         }
         if !plist_value_ok(value) {
             bail!(
-                "{}: angularNative.ios.plist[{key:?}] es {value}; solo se admiten cadenas, \
+                "{}: angularNative.ios.{seccion}[{key:?}] es {value}; solo se admiten cadenas, \
                  booleanos, números y listas de cadenas. Un diccionario anidado todavía no se \
                  funde. Ver docs/plugins.md.",
                 manifest.display()
@@ -462,6 +477,7 @@ pub fn require(plugins: &[Plugin], platform: Platform) -> Result<()> {
         match platform {
             Platform::Ios => {
                 plist_entries(plugins)?;
+                entitlement_entries(plugins)?;
             }
             Platform::Android => {
                 manifest_entries(plugins)?;
@@ -493,26 +509,44 @@ pub fn require(plugins: &[Plugin], platform: Platform) -> Result<()> {
 }
 
 /// Funde las claves del `Info.plist` que piden todos los plugins.
+pub fn plist_entries(plugins: &[Plugin]) -> Result<BTreeMap<String, Contributed>> {
+    merge_dicts(plugins, "el Info.plist", |plist, _| plist)
+}
+
+/// Funde los derechos que piden todos los plugins.
+///
+/// Los derechos son lo que le permite a la app pedirle algo al sistema: sin
+/// `keychain-access-groups`, Keychain Services contesta `errSecMissingEntitlement`
+/// y no guarda nada. Ese error no lo ve nadie hasta que la app corre, y para
+/// entonces parece un fallo del llavero y no una firma que faltaba.
+pub fn entitlement_entries(plugins: &[Plugin]) -> Result<BTreeMap<String, Contributed>> {
+    merge_dicts(plugins, "los derechos", |_, entitlements| entitlements)
+}
+
+/// La fusión que comparten los dos.
 ///
 /// Dos plugins que piden la misma clave con el **mismo** valor no son un
 /// problema: dicen lo mismo, y se escribe una vez. Con valores distintos no
 /// hay forma honrada de elegir —quedarse con el primero por orden alfabético
 /// o por orden de dependencia sería decidir en silencio qué texto le sale al
 /// usuario en el diálogo del sistema—, así que se para el build.
-pub fn plist_entries(plugins: &[Plugin]) -> Result<BTreeMap<String, Contributed>> {
+fn merge_dicts<'a>(
+    plugins: &'a [Plugin],
+    que: &str,
+    elegir: fn(
+        &'a BTreeMap<String, Value>,
+        &'a BTreeMap<String, Value>,
+    ) -> &'a BTreeMap<String, Value>,
+) -> Result<BTreeMap<String, Contributed>> {
     let mut merged: BTreeMap<String, Contributed> = BTreeMap::new();
     for plugin in plugins {
-        let Some(native) = plugin.ios.as_ref() else {
-            continue;
-        };
-        let Contributions::Plist(entries) = &native.contributes else {
-            continue;
-        };
-        for (key, value) in entries {
+        let Some(native) = plugin.ios.as_ref() else { continue };
+        let Contributions::Ios { plist, entitlements } = &native.contributes else { continue };
+        for (key, value) in elegir(plist, entitlements) {
             if let Some(previo) = merged.get(key) {
                 if &previo.value != value {
                     bail!(choque(
-                        &format!("la clave {key:?} del Info.plist"),
+                        &format!("la clave {key:?} de {que}"),
                         &previo.package,
                         &previo.value.to_string(),
                         &plugin.package,
@@ -523,10 +557,7 @@ pub fn plist_entries(plugins: &[Plugin]) -> Result<BTreeMap<String, Contributed>
             }
             merged.insert(
                 key.clone(),
-                Contributed {
-                    value: value.clone(),
-                    package: plugin.package.clone(),
-                },
+                Contributed { value: value.clone(), package: plugin.package.clone() },
             );
         }
     }

@@ -15,6 +15,9 @@
       "register": "AnKeychainPlugin",
       "plist": {
         "NSFaceIDUsageDescription": "Para comprobar que eres tú antes de enseñar lo que hay guardado."
+      },
+      "entitlements": {
+        "keychain-access-groups": ["$(BUNDLE_ID)"]
       }
     },
     "android": {
