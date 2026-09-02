@@ -2,6 +2,15 @@
 # Todo lo verificable sin dispositivo.
 set -euo pipefail
 
+# Red de seguridad: decir qué se cayó.
+#
+# Un sub-script puede morirse sin llegar a imprimir su `FALLO` —basta con que
+# `set -e` lo mate dentro de un `$(...)` que tapaba la salida—, y entonces esto
+# salía con 1 y sin una sola línea que leer, que es la peor forma de fallar
+# posible: parece que no ha fallado nada. Lo que se cayó se dice aquí aunque
+# allí no se dijera nada.
+trap 'echo "  FALLO salió con error: ${BASH_COMMAND} (check-all.sh línea ${LINENO})"' ERR
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 

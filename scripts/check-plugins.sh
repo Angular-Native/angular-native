@@ -141,13 +141,24 @@ else
   ko 'no se generó el registro de iOS'
 fi
 
-APK="$(cargo an android examples/clipboard --no-launch 2>/dev/null | tail -1)"
-if [ -f "$APK" ]; then
+# El build va a un fichero y no dentro de un `$(...)` con la salida tapada.
+# Con `set -e` y `pipefail`, una asignación así no llega nunca a la rama del
+# `ko`: el fallo del build mata el script en la propia línea, y como su salida
+# iba a /dev/null, `check-all` se quedaba saliendo con 1 sin una sola línea que
+# leer. Es lo que pasa cuando falta `vendor/android`.
+APK_LOG="$(mktemp)"
+if cargo an android examples/clipboard --no-launch >"$APK_LOG" 2>&1; then
+  APK="$(tail -1 "$APK_LOG")"
+else
+  APK=""
+fi
+if [ -n "$APK" ] && [ -f "$APK" ]; then
   ok 'javac compila el plugin y su registro dentro del APK'
 else
   ko 'el APK con el plugin no llegó a armarse'
-  cargo an android examples/clipboard --no-launch 2>&1 | tail -20
+  tail -20 "$APK_LOG"
 fi
+rm -f "$APK_LOG"
 GENERADO="build/android/gen-plugins/dev/angularnative/AnGeneratedPlugins.java"
 if [ -f "$GENERADO" ]; then
   contiene "$(cat "$GENERADO")" \
