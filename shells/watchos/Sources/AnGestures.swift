@@ -48,9 +48,11 @@ struct AnGestures: ViewModifier {
         if quiereToque {
             vista = AnyView(vista.contentShape(Rectangle()))
         }
-        if quierePress || node.listens(to: "longPress") || quiereArrastre {
+        if (quierePress || node.listens(to: "longPress")) && !quiereArrastre {
             // Distancia cero: no mueve nada, solo apunta dónde está el dedo.
-            // Va en `simultaneousGesture` para no quitarle el toque a nadie.
+            // Solo se pone cuando no hay arrastre de verdad: dos `DragGesture`
+            // sobre la misma vista se disputan el dedo y gana uno de los dos,
+            // así que cuando lo hay, la posición sale de él.
             vista = AnyView(
                 vista.simultaneousGesture(
                     DragGesture(minimumDistance: 0).onChanged { punto = $0.location }
@@ -64,7 +66,17 @@ struct AnGestures: ViewModifier {
             vista = AnyView(vista.onTapGesture(count: 2) { manda("doublePress", posicion()) })
         }
         if node.listens(to: "longPress") {
-            vista = AnyView(vista.onLongPressGesture { manda("longPress", posicion()) })
+            // `simultaneousGesture` y no `.onLongPressGesture`: este último se
+            // instala como gesto normal y el arrastre de abajo se lo come, así
+            // que sobre una vista que además escucha `(pan)` o `(swipe*)` no
+            // llegaba nunca.
+            vista = AnyView(
+                vista.simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                        manda("longPress", posicion())
+                    }
+                )
+            )
         }
         if quiereArrastre {
             vista = AnyView(vista.gesture(arrastre))
@@ -98,6 +110,9 @@ struct AnGestures: ViewModifier {
     private var arrastre: some Gesture {
         DragGesture(minimumDistance: 1)
             .onChanged { valor in
+                // La posición se apunta siempre, la escuche quien la escuche:
+                // es la que lleva una pulsación larga sobre esta misma vista.
+                punto = valor.location
                 guard node.listens(to: "pan") else { return }
                 let fase = arrastrando ? "move" : "begin"
                 arrastrando = true

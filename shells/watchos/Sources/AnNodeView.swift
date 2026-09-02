@@ -288,12 +288,27 @@ struct AnNodeView: View {
         }
     }
 
+    /// Alto mínimo de un campo en el reloj.
+    ///
+    /// No es una preferencia: el `TextField` de watchOS se dibuja siempre
+    /// dentro de su propio contenedor redondeado —no es un campo con cursor,
+    /// es un botón que abre la pantalla de dictado— y ese contenedor mide esto
+    /// aunque se le dé un marco más bajo. `.textFieldStyle(.plain)` no lo
+    /// quita: se probó, y en watchOS 26 no cambia nada.
+    private static let altoDeCampo: Double = 40
+
     /// Campo de texto.
     ///
     /// En el reloj un `TextField` no se escribe en su sitio: al tocarlo el
     /// sistema abre su propia pantalla —dictado, garabateo o teclado— y
     /// devuelve el texto. Eso es exactamente lo que hace este control, y por
     /// eso es el del sistema y no una caja con un cursor dibujado.
+    ///
+    /// Y por eso su marco no lo puede decidir el texto. taffy mide un
+    /// `an-text-input` como mide un `<Text>` —una línea— porque en iOS un
+    /// `UITextField` sin borde ocupa exactamente eso; aquí el contenedor del
+    /// sistema es más alto y se comería la fila de debajo. Hay que darle
+    /// `[style.height]`, y si no se le da, se dice.
     private var fieldView: some View {
         campo
             .font(fuente)
@@ -303,6 +318,16 @@ struct AnNodeView: View {
             .frame(width: node.width, height: node.height, alignment: blockAlignment)
             .opacity(node.opacity ?? 1)
             .onSubmit { dispatch(node.id, "submit", ["value": controls.text(node).wrappedValue]) }
+            .onAppear {
+                guard node.height < Self.altoDeCampo else { return }
+                AnAvisos.unaVez("campo-bajo-\(node.id)") {
+                    NSLog(
+                        """
+                        angular-native: <an-text-input> tiene \(Int(node.height)) puntos de alto y                         el campo del reloj dibuja \(Int(Self.altoDeCampo)); dale [style.height] o                         se solapará con lo de debajo
+                        """
+                    )
+                }
+            }
     }
 
     @ViewBuilder

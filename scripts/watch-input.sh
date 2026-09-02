@@ -8,6 +8,7 @@
 #
 #   ./scripts/watch-input.sh tap 104 200        toque en (104,200), en puntos
 #   ./scripts/watch-input.sh drag 104 220 104 60  arrastre: desplaza una lista
+#   ./scripts/watch-input.sh hold 104 120 900   mantener pulsado 900 ms
 #   ./scripts/watch-input.sh turn 12            doce pasos de corona hacia abajo
 #   ./scripts/watch-input.sh turn -12           y hacia arriba
 #   ./scripts/watch-input.sh shot /tmp/a.png    captura
@@ -141,6 +142,15 @@ case "tap":
     mueve(p); usleep(120_000)
     boton(.leftMouseDown, p); usleep(80_000)
     boton(.leftMouseUp, p)
+case "hold":
+    // Mantener pulsado sin mover. El umbral de watchOS ronda el medio segundo,
+    // así que lo normal es pedir más.
+    let p = CGPoint(x: Double(a[2])!, y: Double(a[3])!)
+    let ms = UInt32(a[4])!
+    mueve(p); usleep(150_000)
+    boton(.leftMouseDown, p)
+    usleep(ms * 1000)
+    boton(.leftMouseUp, p)
 case "drag":
     let desde = CGPoint(x: Double(a[2])!, y: Double(a[3])!)
     let hasta = CGPoint(x: Double(a[4])!, y: Double(a[5])!)
@@ -186,6 +196,12 @@ case "$ORDEN" in
     read -r X Y <<<"$(punto "$1" "$2")"
     swift "$SW_FILE" tap "$X" "$Y"
     echo "toque en ($1,$2) -> pantalla ($X,$Y)"
+    ;;
+  hold)
+    [ $# -eq 3 ] || uso
+    read -r X Y <<<"$(punto "$1" "$2")"
+    swift "$SW_FILE" hold "$X" "$Y" "$3"
+    echo "pulsación larga en ($1,$2) durante $3 ms"
     ;;
   drag)
     [ $# -eq 4 ] || uso

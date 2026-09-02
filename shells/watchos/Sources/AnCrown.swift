@@ -45,6 +45,13 @@ struct AnCrown: ViewModifier {
                 // tenga el foco, y una vista normal no lo puede tomar.
                 .focusable(true)
                 .focused(focus, equals: node.id)
+                // El foco de salida. En el reloj la corona va con el foco, y
+                // una vista que la pide sin tenerlo no recibe absolutamente
+                // nada; `defaultFocus` es la forma de decir «si nadie lo tiene,
+                // que sea esta» sin quitárselo a quien lo tenga. Asignar el
+                // `FocusState` a mano no vale: SwiftUI se lo traga sin avisar si
+                // la vista todavía no está en pantalla.
+                .defaultFocus(focus, node.id)
                 .digitalCrownRotation(
                     controls.crown(node.id),
                     onChange: { evento in
@@ -78,21 +85,4 @@ extension View {
     ) -> some View {
         modifier(AnCrown(node: node, controls: controls, dispatch: dispatch, focus: focus))
     }
-}
-
-/// El primer nodo del árbol que pide la corona, en orden de pintado.
-///
-/// Se busca una vez por foto y no en cada `body`: recorrer el árbol dentro de
-/// una recomposición sería recorrerlo varias veces por frame.
-func anPrimerNodoConCorona(_ node: AnNode?) -> UInt32? {
-    guard let node else { return nil }
-    if node.listens(to: "crown") {
-        return node.id
-    }
-    for child in node.children ?? [] {
-        if let encontrado = anPrimerNodoConCorona(child) {
-            return encontrado
-        }
-    }
-    return nil
 }

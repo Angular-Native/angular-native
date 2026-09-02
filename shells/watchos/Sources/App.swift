@@ -17,7 +17,8 @@ struct RootView: View {
     ///
     /// El foco de watchOS es uno solo y la corona va con él, así que se lleva
     /// en la raíz y se pasa hacia abajo: si cada nodo tuviera el suyo, cada uno
-    /// creería tenerla y ninguno la tendría.
+    /// creería tenerla y ninguno la tendría. Quien lo reclama es el propio nodo
+    /// al aparecer, en `AnCrown`.
     @FocusState private var crownTarget: UInt32?
 
     var body: some View {
@@ -47,15 +48,6 @@ struct RootView: View {
             }
             .onChange(of: geometry.size) { _, size in
                 runtime.setViewport(width: size.width, height: size.height)
-            }
-            // La corona se le da al primer nodo que la pide, en orden de
-            // pintado. Se recalcula cuando cambia el árbol y no en cada `body`:
-            // recorrerlo dentro de una recomposición sería recorrerlo varias
-            // veces por frame.
-            .onChange(of: runtime.tree.root) { _, root in
-                if let objetivo = anPrimerNodoConCorona(root), crownTarget == nil {
-                    crownTarget = objetivo
-                }
             }
         }
         // El reloj no tiene barras que respetar como el iPhone: la app ocupa la

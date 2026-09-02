@@ -99,8 +99,15 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
                 tocarlo el sistema abre su pantalla —dictado, garabateo o
                 teclado— y devuelve el resultado.
               -->
+              <!--
+                El alto va a mano y no lo pone el texto: en el reloj el campo
+                trae su propio contenedor, más alto que una línea, y sin esto
+                se solaparía con lo de debajo. El host lo dice por el registro
+                si se olvida.
+              -->
               <an-text-input
                 [style.width]="'100%'"
+                [style.height]="'44'"
                 [placeholder]="'nombre'"
                 [(value)]="nombre"
                 [color]="'#f4f7ff'"
@@ -133,13 +140,17 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
       }
 
       @if (pagina() === 2) {
+        <!--
+          Esta pantalla no lleva an-scroll-view a propósito. En el reloj la
+          corona la tiene quien tiene el foco, y un ScrollView se la queda hasta
+          que se toca otra cosa: sin él, la caja de abajo la coge sola al
+          aparecer.
+        -->
         <an-view [style.width]="'100%'" [style.height]="'100%'">
-          <an-scroll-view [style.width]="'100%'" [style.flexGrow]="'1'">
             <an-view
               [style.paddingTop]="'40'"
               [style.paddingHorizontal]="'10'"
-              [style.paddingBottom]="'16'"
-              [style.gap]="'10'"
+              [style.gap]="'8'"
               [style.width]="'100%'">
 
               <an-text [fontSize]="17" [fontWeight]="'bold'" [color]="'#f4f7ff'">corona</an-text>
@@ -157,13 +168,13 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
               -->
               <an-view
                 [style.width]="'100%'"
-                [style.height]="'72'"
+                [style.height]="'64'"
                 [style.alignItems]="'center'"
                 [style.justifyContent]="'center'"
                 [borderRadius]="12"
                 [backgroundColor]="'#152036'"
                 (crown)="gira($any($event))"
-                (longPress)="pasos.set(0)"
+                (longPress)="aCero()"
                 (swipeLeft)="ir(1)">
                 <an-text [fontSize]="26" [fontWeight]="'bold'" [color]="'#f59e0b'">{{ pasos() }}</an-text>
                 <an-text [fontSize]="11" [color]="'#64748b'">gira la corona</an-text>
@@ -193,7 +204,6 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
                 [borderRadius]="10"
                 (press)="ir(0)"></an-button>
             </an-view>
-          </an-scroll-view>
         </an-view>
       }
     </an-stack-view>
@@ -261,7 +271,14 @@ export class AppComponent {
   readonly ritmo = signal(1)
   readonly hora = signal(Date.now())
 
-  /** Lo que lleva girado la corona, redondeado a pasos enteros. */
+  /**
+   * Pasos que lleva la corona.
+   *
+   * El acumulado se guarda con decimales y solo se redondea al enseñarlo: si se
+   * redondeara al sumar, media muesca se perdería en cada aviso y girar despacio
+   * no movería el número nunca.
+   */
+  private giro = 0
   readonly pasos = signal(0)
   readonly velocidad = signal(0)
 
@@ -282,8 +299,14 @@ export class AppComponent {
    * había sin tener que acordarse de dónde estaba.
    */
   gira(evento: { delta: number; offset: number; velocity: number }): void {
-    this.pasos.update((valor) => Math.max(0, Math.round(valor + evento.delta)))
+    this.giro = Math.max(0, this.giro + evento.delta)
+    this.pasos.set(Math.round(this.giro))
     this.velocidad.set(evento.velocity)
+  }
+
+  aCero(): void {
+    this.giro = 0
+    this.pasos.set(0)
   }
 
   /** El botón de un `<an-alert>` llega como su posición en la lista. */
