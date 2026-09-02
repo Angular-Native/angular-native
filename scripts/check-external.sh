@@ -211,7 +211,11 @@ contiene "$(cat "$APP/android/AndroidManifest.xml")" 'package="dev\.angularnativ
   'an add android: el paquete sigue siendo el de las clases del shell'
 
 salida="$(cd "$APP" && falla "$AN" add windows)"
-contiene "$salida" 'ios y android' 'an add de una plataforma que no existe lo dice'
+# La lista de plataformas que `an add` dice conocer tiene que ser la que
+# conoce de verdad: es lo primero que lee quien se equivoca de nombre, y una
+# que falte ahí es una que nadie va a probar.
+contiene "$salida" 'ios, tvos, visionos y android' \
+  'an add de una plataforma que no existe dice cuáles conoce'
 
 # ---------------------------------------------------------------------------
 # an build

@@ -46,6 +46,7 @@ struct Server {
 pub enum Target {
     Ios { device: String },
     TvOs { device: String },
+    VisionOs { device: String },
     WatchOs { device: String },
     Android,
 }
@@ -74,7 +75,10 @@ pub fn run(
     let url = match target {
         // El simulador del reloj comparte la red del Mac igual que el del
         // teléfono, así que le vale la misma dirección.
-        Target::Ios { .. } | Target::TvOs { .. } | Target::WatchOs { .. } => {
+        Target::Ios { .. }
+        | Target::TvOs { .. }
+        | Target::VisionOs { .. }
+        | Target::WatchOs { .. } => {
             format!("http://127.0.0.1:{port}")
         }
         Target::Android => format!("http://{}:{port}", crate::android::EMULATOR_HOST),
@@ -116,6 +120,17 @@ pub fn run(
                 let package = ios::assemble(
                     &workspace,
                     ios::Family::TvOs,
+                    &bundle_path,
+                    false,
+                    Some(&url),
+                    &plugins,
+                )?;
+                ios::launch(&package, device)?;
+            }
+            Target::VisionOs { device } => {
+                let package = ios::assemble(
+                    &workspace,
+                    ios::Family::VisionOs,
                     &bundle_path,
                     false,
                     Some(&url),

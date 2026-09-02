@@ -4,12 +4,13 @@
 //! shell contra él, y el bundle se monta a mano. Un proyecto de Xcode aquí solo
 //! añadiría un fichero de 2.000 líneas que nadie puede revisar en un diff.
 //!
-//! iOS y tvOS comparten crate (`an-ios`), shell (`shells/ios/Sources`) y
-//! superficie C. Lo que cambia entre ellas cabe en [`Family`], y es poco: el
-//! triple, el SDK, el `Info.plist` y si el `std` de Rust viene hecho o hay que
-//! construirlo en el momento. Por eso no hay un `tvos.rs`: sería una copia de
-//! este mismo `swiftc`, y la copia es justo lo que se queda atrás el día que
-//! alguien arregla algo en una sola.
+//! iOS, tvOS y visionOS comparten crate (`an-ios`), shell
+//! (`shells/ios/Sources`) y superficie C. Lo que cambia entre ellas cabe en
+//! [`Family`], y es poco: el triple, el SDK, el `Info.plist` y si el `std` de
+//! Rust viene hecho o hay que construirlo en el momento. Por eso no hay un
+//! `tvos.rs` ni un `visionos.rs`: serían dos copias de este mismo `swiftc`, y
+//! la copia es justo lo que se queda atrás el día que alguien arregla algo en
+//! una sola.
 //!
 //! Repartir por familias aquí, y no en un fichero aparte, es también lo que
 //! hace que tvOS herede sin trabajo lo que este módulo ya sabía hacer:
@@ -19,10 +20,11 @@
 //! `watchos.rs` sí está aparte, y con motivo: el reloj no tiene `UIView`, así
 //! que ni comparte crate ni comparte shell. Aquí no hay nada de eso.
 //!
-//! visionOS es la tercera familia de UIKit y encaja en este mismo enum —el
-//! host de `an-ios` ya la contempla—, pero no está aquí: en esta máquina no
-//! hay runtime de visionOS con el que ejecutar nada, y una familia que nadie
-//! ha visto arrancar no se lista como si funcionara.
+//! Lo que sí es distinto de verdad en visionOS es de dónde sale la ventana:
+//! no hay `UIScreen`, así que no hay tamaño de pantalla del que deducirla y
+//! tiene que nacer de un `UIWindowScene`. El shell ya lo hace, y por eso el
+//! `Info.plist` de esa familia declara un `UIApplicationSceneManifest` que las
+//! otras dos no necesitan.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -38,6 +40,7 @@ use crate::workspace::Workspace;
 pub enum Family {
     Ios,
     TvOs,
+    VisionOs,
 }
 
 impl Family {
@@ -45,6 +48,7 @@ impl Family {
         match self {
             Family::Ios => "iOS",
             Family::TvOs => "tvOS",
+            Family::VisionOs => "visionOS",
         }
     }
 
@@ -55,12 +59,13 @@ impl Family {
         match self {
             Family::Ios => "ios",
             Family::TvOs => "tvos",
+            Family::VisionOs => "visionos",
         }
     }
 
     /// Lo que se le añade al nombre de la app y al identificador del bundle.
     ///
-    /// Las dos familias se pueden instalar a la vez, en simuladores distintos,
+    /// Las tres familias se pueden instalar a la vez, en simuladores distintos,
     /// desde el mismo proyecto. Compartir nombre haría que `an tvos` pisara el
     /// `.app` que acaba de dejar `an ios`; compartir identificador haría que
     /// instalar una desinstalara la otra.
@@ -68,6 +73,7 @@ impl Family {
         match self {
             Family::Ios => ("", ""),
             Family::TvOs => ("TV", ".tv"),
+            Family::VisionOs => ("Vision", ".vision"),
         }
     }
 
@@ -75,6 +81,7 @@ impl Family {
         match self {
             Family::Ios => "aarch64-apple-ios-sim",
             Family::TvOs => "aarch64-apple-tvos-sim",
+            Family::VisionOs => "aarch64-apple-visionos-sim",
         }
     }
 
@@ -83,15 +90,18 @@ impl Family {
         match self {
             Family::Ios => "iphonesimulator",
             Family::TvOs => "appletvsimulator",
+            Family::VisionOs => "xrsimulator",
         }
     }
 
-    /// El triple de `swiftc`, que no es el de Rust.
+    /// El triple de `swiftc`, que no es el de Rust. visionOS se sigue llamando
+    /// `xros` aquí: el nombre comercial cambió y el del compilador no.
     fn swift_target(self) -> String {
         let version = self.deployment();
         match self {
             Family::Ios => format!("arm64-apple-ios{version}-simulator"),
             Family::TvOs => format!("arm64-apple-tvos{version}-simulator"),
+            Family::VisionOs => format!("arm64-apple-xros{version}-simulator"),
         }
     }
 
@@ -102,22 +112,27 @@ impl Family {
         match self {
             Family::Ios => "IPHONEOS_DEPLOYMENT_TARGET",
             Family::TvOs => "TVOS_DEPLOYMENT_TARGET",
+            Family::VisionOs => "XROS_DEPLOYMENT_TARGET",
         }
     }
 
-    /// tvOS 17 es contemporáneo de iOS 17 y trae el mismo UIKit.
     fn deployment(self) -> &'static str {
-        "17.0"
+        match self {
+            // tvOS 17 es contemporáneo de iOS 17 y trae el mismo UIKit.
+            Family::Ios | Family::TvOs => "17.0",
+            // visionOS empieza en 1.0: no hay versiones anteriores.
+            Family::VisionOs => "1.0",
+        }
     }
 
     /// Si el `std` de Rust viene hecho o hay que construirlo en el momento.
     ///
     /// `aarch64-apple-ios-sim` es de nivel 2 y rustup lo trae compilado.
-    /// `aarch64-apple-tvos-sim` es de nivel 3: rustup lo lista, pero sin
-    /// `std`. Es lo mismo que ya pasaba con watchOS, y por eso esta familia
-    /// llama a `cargo +nightly`.
+    /// `aarch64-apple-tvos-sim` y `aarch64-apple-visionos-sim` son de nivel 3:
+    /// rustup los lista, pero sin `std`. Es lo mismo que ya pasaba con
+    /// watchOS, y por eso esas dos llaman a `cargo +nightly`.
     fn needs_build_std(self) -> bool {
-        matches!(self, Family::TvOs)
+        !matches!(self, Family::Ios)
     }
 
     /// El `Info.plist` del shell, para cuando el proyecto no aporta el suyo.
@@ -127,15 +142,18 @@ impl Family {
         match self {
             Family::Ios => "shells/ios/Resources",
             Family::TvOs => "shells/tvos/Resources",
+            Family::VisionOs => "shells/visionos/Resources",
         }
     }
 
     /// Lo que tiene que aparecer en el nombre del runtime de `simctl` para que
-    /// un dispositivo cuente como de esta familia.
+    /// un dispositivo cuente como de esta familia. visionOS sale como `xrOS`,
+    /// igual que en el triple de swiftc.
     fn runtime_marker(self) -> &'static str {
         match self {
             Family::Ios => "iOS",
             Family::TvOs => "tvOS",
+            Family::VisionOs => "xrOS",
         }
     }
 
@@ -145,6 +163,7 @@ impl Family {
         match self {
             Family::Ios => "xcodebuild -downloadPlatform iOS",
             Family::TvOs => "xcodebuild -downloadPlatform tvOS",
+            Family::VisionOs => "xcodebuild -downloadPlatform visionOS",
         }
     }
 }
@@ -172,11 +191,11 @@ pub fn assemble(
     // Antes de compilar nada: si algún plugin no trae su parte de iOS, el
     // build se para aquí y dice cuál.
     //
-    // tvOS pide la misma clave, `ios`, y usa las mismas fuentes Swift: es el
-    // mismo shell y el mismo protocolo `AnPlugin`. Si ese Swift usa algo que
-    // solo existe en el teléfono, el enlazado se para con el error de swiftc,
-    // que dice qué símbolo y en qué línea. Se avisa antes para que ese error
-    // no llegue de sorpresa.
+    // tvOS y visionOS piden la misma clave, `ios`, y usan las mismas fuentes
+    // Swift: es el mismo shell y el mismo protocolo `AnPlugin`. Si ese Swift
+    // usa algo que solo existe en el teléfono, el enlazado se para con el
+    // error de swiftc, que dice qué símbolo y en qué línea. Se avisa antes
+    // para que ese error no llegue de sorpresa.
     plugins::require(plugins, Platform::Ios)?;
     if family != Family::Ios && !plugins.is_empty() {
         eprintln!(
@@ -248,8 +267,10 @@ pub fn assemble(
     let _ = std::fs::remove_dir_all(&app_dir);
     std::fs::create_dir_all(&app_dir)?;
 
-    // El shell es el mismo para las dos familias. Lo que cambia entre ellas
-    // está dentro, en `#if os(...)`.
+    // El shell es el mismo para las tres familias. Lo que cambia entre ellas
+    // está dentro, en `#if os(...)`, y son dos cosas: cómo nace la ventana
+    // —visionOS no tiene `UIScreen`, así que la suya sale de un
+    // `UIWindowScene`— y de qué color es el fondo de la raíz.
     let mut sources: Vec<String> = swift_sources(&root.join("shells/ios/Sources"))?;
     if sources.is_empty() {
         bail!("no hay fuentes Swift en shells/ios/Sources");

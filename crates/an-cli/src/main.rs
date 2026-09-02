@@ -61,6 +61,21 @@ enum Command {
         #[arg(long)]
         no_launch: bool,
     },
+    /// Compila, arma el .app de visionOS y lo lanza en el simulador del visor.
+    ///
+    /// Necesita nightly con `rust-src`: `aarch64-apple-visionos-sim` es un
+    /// target de nivel 3 y su `std` se construye en el momento.
+    Visionos {
+        app: Option<String>,
+        /// Nombre del simulador del visor.
+        #[arg(long, default_value = VISOR_POR_DEFECTO)]
+        device: String,
+        #[arg(long)]
+        release: bool,
+        /// Solo arma el .app, sin instalarlo.
+        #[arg(long)]
+        no_launch: bool,
+    },
     /// No hay simulador: la app corre aquí mismo. Por defecto lleva el ejemplo
     /// de los controles, que es el que enseña de un vistazo qué pinta AppKit y
     /// qué no.
@@ -134,6 +149,9 @@ enum Command {
         /// Lanza en el simulador del Apple TV en vez de en el del teléfono.
         #[arg(long)]
         tvos: bool,
+        /// Lanza en el simulador del visor en vez de en el del teléfono.
+        #[arg(long)]
+        visionos: bool,
         /// No lanza nada; solo sirve el bundle.
         #[arg(long)]
         no_launch: bool,
@@ -186,6 +204,8 @@ const RELOJ_POR_DEFECTO: &str = "Apple Watch Series 11 (46mm)";
 /// El Apple TV 4K de tercera generación, que es el que trae el runtime de
 /// serie. El otro que sale en la lista, «Apple TV», es el mismo a 1080p.
 const TELE_POR_DEFECTO: &str = "Apple TV 4K (3rd generation)";
+/// El único visor que hay: el runtime de visionOS trae un solo modelo.
+const VISOR_POR_DEFECTO: &str = "Apple Vision Pro";
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -219,6 +239,27 @@ fn main() -> anyhow::Result<()> {
             let bundle = build::bundle(&workspace, &app, release, &found)?;
             let package =
                 ios::assemble(&workspace, ios::Family::Ios, &bundle, release, None, &found)?;
+            if no_launch {
+                println!("{}", package.dir.display());
+                return Ok(());
+            }
+            ios::launch(&package, &device)
+        }
+        Command::Visionos {
+            app,
+            device,
+            release,
+            no_launch,
+        } => {
+            // El ejemplo por defecto del visor tampoco puede ser el del
+            // teléfono: la ventana de visionOS no tiene tamaño de pantalla y
+            // `hello-vision` es el que está escrito sin puntos fijos y sin
+            // fondo propio, que es lo que esa ventana pide.
+            let app = workspace.app(Some(app.as_deref().unwrap_or("examples/hello-vision")))?;
+            let found = plugins::discover(&workspace, &app)?;
+            let bundle = build::bundle(&workspace, &app, release, &found)?;
+            let package =
+                ios::assemble(&workspace, ios::Family::VisionOs, &bundle, release, None, &found)?;
             if no_launch {
                 println!("{}", package.dir.display());
                 return Ok(());
@@ -306,6 +347,7 @@ fn main() -> anyhow::Result<()> {
             android,
             watchos,
             tvos,
+            visionos,
             no_launch,
         } => {
             let app = workspace.app(app.as_deref())?;
@@ -319,13 +361,16 @@ fn main() -> anyhow::Result<()> {
                     device.clone()
                 }
             };
-            let target = match (android, watchos, tvos) {
-                (true, _, _) => dev::Target::Android,
-                (_, true, _) => dev::Target::WatchOs {
+            let target = match (android, watchos, tvos, visionos) {
+                (true, _, _, _) => dev::Target::Android,
+                (_, true, _, _) => dev::Target::WatchOs {
                     device: elegido(RELOJ_POR_DEFECTO),
                 },
-                (_, _, true) => dev::Target::TvOs {
+                (_, _, true, _) => dev::Target::TvOs {
                     device: elegido(TELE_POR_DEFECTO),
+                },
+                (_, _, _, true) => dev::Target::VisionOs {
+                    device: elegido(VISOR_POR_DEFECTO),
                 },
                 _ => dev::Target::Ios { device },
             };

@@ -65,15 +65,17 @@ cargo an dev --android        # lo mismo, en el emulador de Android
 cargo an ios                  # una sola vez, sin vigilar
 cargo an android              # APK, emulador y lanzamiento
 cargo an tvos                 # tele: .app de tvOS y simulador del Apple TV
+cargo an visionos             # visor: .app de visionOS y simulador del Vision Pro
 cargo an watchos              # reloj: .app de watchOS y simulador
 cargo an macos                # escritorio: .app de macOS, en esta misma máquina
 cargo an dev --macos          # lo mismo, vigilando y con refresco en caliente
 cargo an build --release      # solo el bundle: 276 KB frente a 1,3 MB en debug
 ```
 
-La tele y el reloj piden nightly: `aarch64-apple-tvos-sim` y
-`aarch64-apple-watchos-sim` son targets de nivel 3 y su `std` se construye en el
-momento. Ver [docs/tvos.md](docs/tvos.md) y [docs/watchos.md](docs/watchos.md).
+La tele, el visor y el reloj piden nightly: `aarch64-apple-tvos-sim`,
+`aarch64-apple-visionos-sim` y `aarch64-apple-watchos-sim` son targets de nivel
+3 y su `std` se construye en el momento. Ver [docs/tvos.md](docs/tvos.md),
+[docs/visionos.md](docs/visionos.md) y [docs/watchos.md](docs/watchos.md).
 
 En la tele no hay toques: se navega con el mando y el motor de foco, y un
 control que no se puede enfocar no se puede pulsar. Eso no es un detalle de
@@ -171,6 +173,7 @@ cargo test                    # solo el núcleo Rust
 ./scripts/check-kinds.sh      # que la etiqueta, la primitiva y el código digan lo mismo
 ./scripts/check-watchos.sh    # el modelo del reloj y su compilación cruzada
 ./scripts/check-tvos.sh       # las medidas de la tele, lo que su SDK no trae, y su compilación cruzada
+./scripts/check-visionos.sh   # la ventana del visor, que no tape el cristal, y su compilación cruzada
 ./scripts/check-macos.sh      # el .app de escritorio, arrancado de verdad y con captura
 cargo run -p an-bridge --example headless -- build/bundle/hello-angular/main.js 6
 ```
@@ -284,6 +287,15 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   el árbol: eso exige abrir el `NodeKind` del core a nombres que no conoce en
   tiempo de compilación y que los tres hosts sepan construir una vista ajena.
   Lo que falta, en [docs/plugins.md](docs/plugins.md).
+
+- **En el visor no hay nada volumétrico.** visionOS monta el host de iOS tal
+  cual, en una ventana plana dentro del espacio 3D, que es lo que el sistema
+  llama una *window*. Ni volúmenes ni espacios inmersivos: las dos cosas son
+  SwiftUI y RealityKit, y no hay `UIView` que montar en ellas, así que serían
+  otro host, como pasó con el reloj. Falta también el icono y, sobre todo,
+  poder conducir la mirada y el pellizco desde fuera: el simulador no deja, así
+  que ahí no hay ni script ni captura que enseñe el realce de la mirada. En
+  [docs/visionos.md](docs/visionos.md).
 
 - **De la tele faltan dos controles y el icono.** tvOS monta el host de iOS tal
   cual —es el mismo UIKit, las mismas `UIView` y los mismos marcos absolutos—,

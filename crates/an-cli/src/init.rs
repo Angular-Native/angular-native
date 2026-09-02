@@ -102,7 +102,7 @@ pub fn init(dir: Option<&str>, name: Option<&str>, id: Option<&str>, force: bool
     Ok(())
 }
 
-/// `an add ios`, `an add tvos`, `an add android`.
+/// `an add ios`, `an add tvos`, `an add visionos`, `an add android`.
 ///
 /// Crea lo único que un proyecto necesita tener suyo de cada plataforma: el
 /// fichero de configuración nativo. El resto —el `.app`, el APK— es producto
@@ -121,13 +121,18 @@ pub fn add(workspace: &Workspace, platform: &str) -> Result<()> {
             "Info.plist",
             plist(workspace, Family::TvOs, &project.name, &project.bundle_id)?,
         ),
+        "visionos" => (
+            "visionos",
+            "Info.plist",
+            plist(workspace, Family::VisionOs, &project.name, &project.bundle_id)?,
+        ),
         "android" => (
             "android",
             "AndroidManifest.xml",
             manifiesto(workspace, &project.name)?,
         ),
         otra => bail!(
-            "no sé añadir {otra:?}. `an add` conoce ios, tvos y android; \
+            "no sé añadir {otra:?}. `an add` conoce ios, tvos, visionos y android; \
              las demás plataformas todavía no tienen nada que el proyecto deba guardar."
         ),
     };
@@ -620,6 +625,7 @@ fn plist(
     let origen = workspace.root.join(match family {
         Family::Ios => "shells/ios/Resources/Info.plist",
         Family::TvOs => "shells/tvos/Resources/Info.plist",
+        Family::VisionOs => "shells/visionos/Resources/Info.plist",
     });
     let texto = std::fs::read_to_string(&origen)
         .with_context(|| format!("no se pudo leer {}", origen.display()))?;
