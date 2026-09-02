@@ -83,8 +83,59 @@ else
 fi
 rm -f "$DESPUES.otro"
 
+# Y el mismo ejercicio con una plantilla que use un componente —no una
+# directiva—, porque son dos cosas distintas y solo una se veía.
+#
+# `hello-angular` es todo primitivas, y una primitiva es una directiva sobre un
+# elemento que el core monta igual: si el refresco deja la plantilla sin
+# directivas, `[backgroundColor]` sigue llegando como propiedad y la pantalla
+# no cambia. Lo que delata el fallo es un componente que hace algo que una
+# propiedad no puede hacer —escribir estilos desde su host y proyectar hijos—,
+# y eso es `an-safe-area`, que solo sale en `hello-wear`.
+FUENTE_W="examples/hello-wear/src/app.component.ts"
+COPIA_W="$(mktemp)"
+ANTES_W="$(mktemp)"
+DESPUES_W="$(mktemp)"
+cp "$FUENTE_W" "$COPIA_W"
+trap 'cp "$COPIA" "$FUENTE"; cp "$COPIA_W" "$FUENTE_W"; rm -f "$COPIA" "$ANTES" "$DESPUES" "$COPIA_W" "$ANTES_W" "$DESPUES_W"' EXIT
+
+cargo an build examples/hello-wear >/dev/null
+cp build/bundle/hello-wear/main.js "$ANTES_W"
+sed -i '' 's/Gira la corona: {{ alto() }} pt\./RELOJ CAMBIADO EN CALIENTE./' "$FUENTE_W"
+cargo an build examples/hello-wear >/dev/null
+cp build/bundle/hello-wear/main.js "$DESPUES_W"
+cp "$COPIA_W" "$FUENTE_W"
+
+# En la esfera del emulador, para que las medidas del árbol sean las suyas.
+RELOJ="$(AN_VIEWPORT=227x227 AN_HOT="$DESPUES_W" \
+  cargo run -q -p an-bridge --example headless -- "$ANTES_W" 6 2>&1)"
+
+checkw() {
+  if grep -qE -- "$1" <<<"$RELOJ"; then
+    echo "  ok   $2"
+  else
+    echo "  FALLO $2"
+    fail=1
+    RELOJ_MAL=1
+  fi
+}
+
+checkw 'refresco en caliente: sí' 'el reloj también se cose en caliente'
+checkw 'RELOJ CAMBIADO EN CALIENTE' 'la plantilla nueva del reloj está en pantalla'
+# El área segura es un componente: sus estilos los escribe su host, no la
+# plantilla. Sin ella el desplazable no crece y se queda en 227x0, que es una
+# pantalla negra sin un solo error.
+checkw 'ScrollView#[0-9]+ \[0,0 227x227\]' 'los estilos del host del área segura siguen puestos'
+# Y las entradas de las primitivas siguen siendo entradas de una directiva y no
+# propiedades sueltas que casualmente acaban en el mismo sitio.
+checkw 'ScrollView#[0-9]+ .*props refreshing=false' 'las primitivas siguen casando como directivas'
+
 if [ "$fail" -ne 0 ]; then
   echo
-  echo "$OUTPUT"
+  if [ -n "${RELOJ_MAL:-}" ]; then
+    echo "$RELOJ"
+  else
+    echo "$OUTPUT"
+  fi
   exit 1
 fi
