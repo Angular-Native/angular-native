@@ -286,6 +286,12 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   mingw, y un binario que nadie ha visto arrancar no es una plataforma
   soportada. Queda a la espera de una máquina donde probarlo.
 
+- **En macOS y en el reloj de Apple no hay módulos nativos.** Los dos hosts
+  montan vistas pero no registran ninguno, así que `Device.info()` —y cualquier
+  plugin— rechaza la promesa diciendo que el módulo no existe. En iOS y en
+  Android sí están. Es un hueco de host, no de diseño: el registro es el mismo
+  para todos.
+
 - **El de pasos de Android no es un control, es un montaje.** Material 3 no
   define ninguno, así que se arma con dos botones de icono y un rótulo suyos.
   El resto de controles sí son componentes de la librería.

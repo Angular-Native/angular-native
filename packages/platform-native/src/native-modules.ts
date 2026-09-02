@@ -26,9 +26,26 @@ export function callNative<T>(module: string, method: string, args?: unknown): P
   return __an_native.call(module, method, args) as Promise<T>
 }
 
+/**
+ * Dónde corre la app.
+ *
+ * Una por host, no una por sistema: `ios` es también el iPad, porque son el
+ * mismo host y la misma superficie; `tvos`, `visionos`, `macos`, `watchos` y
+ * `wearos` sí son sitios distintos, con controles distintos y con formas de
+ * manejarse distintas, y una app que quiera adaptarse necesita distinguirlos.
+ */
+export type NativePlatform =
+  | 'ios'
+  | 'tvos'
+  | 'visionos'
+  | 'macos'
+  | 'watchos'
+  | 'android'
+  | 'wearos'
+
 export interface DeviceInfo {
-  /** `ios` o `android`. */
-  platform: string
+  /** Dónde corre. Ver `NativePlatform`. */
+  platform: NativePlatform
   /** Versión del sistema, tal cual la da la plataforma. */
   systemVersion: string
   /** Nombre del modelo. */
