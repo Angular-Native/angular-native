@@ -510,13 +510,16 @@ impl AppKitHost {
     /// Casi siempre es la suya. La excepción es el `<an-scroll-view>`: su vista
     /// es un `NSScrollView` del sistema, y la nuestra es el documento que lleva
     /// dentro, que además es el que ocupa todo el contenido desplazable.
+    ///
+    /// Los tipos de aquí son los mismos que dice `support::catches_swipe`, y
+    /// tienen que serlo: esa función es la que decide si se avisa o no, así que
+    /// una primitiva que ella diera por buena y esta no encontrara se quedaría
+    /// sin suscripción y sin aviso. Quien llama lo comprueba.
     fn swipe_view(&self, id: NodeId) -> Option<Retained<FlippedView>> {
         match self.views.get(&id)? {
-            HostView::View(view)
-            | HostView::Stack(view)
-            | HostView::Overlay(view)
-            | HostView::Nav(view)
-            | HostView::Dialog(view) => Some(view.retain()),
+            HostView::View(view) | HostView::Stack(view) | HostView::Overlay(view) => {
+                Some(view.retain())
+            }
             HostView::Scroll(scroll) => unsafe { scroll.documentView() }
                 .and_then(|document| document.downcast::<FlippedView>().ok()),
             _ => None,
@@ -1768,7 +1771,21 @@ impl HostRenderer for AppKitHost {
         // de qué dirección. El `<an-scroll-view>` lo recoge por su documento,
         // que es el que es nuestro; el `NSScrollView` de fuera es del sistema.
         if let Some(bit) = crate::support::swipe_bit(event) {
-            let Some(flipped) = self.swipe_view(id) else { return };
+            let Some(flipped) = self.swipe_view(id) else {
+                // Aquí no se llega: `unsupported_event` ya devolvió un motivo
+                // para todo lo que no sea una vista nuestra, y esta suscripción
+                // no habría pasado de ahí. Si algún día se llega, es que las
+                // dos listas se han separado, y eso no puede acabar en una
+                // salida que no dispara nunca y nadie ha avisado.
+                self.warn_once(format!("swipe:{kind:?}"), || {
+                    eprintln!(
+                        "angular-native: `({event})` en <{kind:?}> no se pudo enganchar: el \
+                         inventario dice que esta primitiva recoge el deslizamiento y el host no \
+                         encuentra dónde. Mira `support::catches_swipe` y `swipe_view`."
+                    );
+                });
+                return;
+            };
             flipped.listen_swipe(id, self.events.clone(), bit);
             self.listeners.insert(
                 key,
