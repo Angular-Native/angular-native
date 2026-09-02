@@ -646,7 +646,20 @@ pub fn attach(
     let control_action = match (kind, event) {
         (NodeKind::Switch, "change") => Some((UIControlEvents::ValueChanged, sel!(handleSwitch:))),
         (NodeKind::Slider, "change") => Some((UIControlEvents::ValueChanged, sel!(handleSlider:))),
+        // El botón, y aquí las dos familias no se pueden tratar igual.
+        //
+        // En el teléfono se toca, y UIKit manda `TouchUpInside`. En una tele no
+        // hay toques: el mando pulsa el botón central sobre lo que esté
+        // enfocado y UIKit manda `PrimaryActionTriggered`; `TouchUpInside` no
+        // llega nunca. El reconocedor se engancha igual, no falla nada, y el
+        // botón sencillamente no responde. Es el fallo silencioso de manual, y
+        // costó verlo con el botón enfocado y blanco en pantalla.
+        #[cfg(not(target_os = "tvos"))]
         (NodeKind::Button, "press") => Some((UIControlEvents::TouchUpInside, sel!(handleButton:))),
+        #[cfg(target_os = "tvos")]
+        (NodeKind::Button, "press") => {
+            Some((UIControlEvents::PrimaryActionTriggered, sel!(handleButton:)))
+        }
         (NodeKind::SegmentedControl, "change") => {
             Some((UIControlEvents::ValueChanged, sel!(handleSegments:)))
         }

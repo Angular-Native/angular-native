@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/core'
+import { ChangeDetectionStrategy, Component, signal } from '@angular/core'
 import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
 
 /**
@@ -18,11 +18,13 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
  *    El viewport son 1920x1080 puntos, no los 393 de un iPhone: un `fontSize`
  *    de 28 aquí no se lee desde el sofá.
  *
- * 3. **El resalte del foco lo pinta cada control, no el sistema.** `an-button`
- *    es un `UIButton` y se levanta solo al enfocarse, porque lo dibuja UIKit.
- *    Un `an-view` con `(press)` es enfocable —el host lo hace posible— pero no
- *    se resalta: tvOS no tiene `UIFocusEffect`. Hoy no hay forma de saberlo
- *    desde la plantilla, y eso está apuntado como lo que falta.
+ * 3. **El resalte del foco lo pinta cada control, no el sistema.** Los dos
+ *    `an-button` son `UIButton` y se levantan y se ponen blancos solos al
+ *    enfocarse, porque eso lo dibuja UIKit: por eso hay dos, y no uno. Mover
+ *    el foco entre ellos se ve. El `an-view` de abajo es enfocable —el host lo
+ *    crea como `AnFocusableView`— y pulsable, pero no se resalta: tvOS no
+ *    tiene `UIFocusEffect`, y aquí no se dibuja ninguno a mano. Que el foco
+ *    llegó se ve en su contador al pulsar el botón central.
  */
 @Component({
   selector: 'app-root',
@@ -34,30 +36,42 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
       [style.height]="'100%'"
       [style.paddingHorizontal]="'90'"
       [style.paddingVertical]="'60'"
-      [style.gap]="'32'"
+      [style.gap]="'28'"
       [backgroundColor]="'#0b1020'">
 
       <an-text [fontSize]="76" [fontWeight]="'bold'" [color]="'#f4f7ff'">angular-native</an-text>
 
-      <an-text [fontSize]="32" [color]="'#9fb0d4'">
+      <an-text [fontSize]="30" [color]="'#9fb0d4'">
         Angular con señales, en QuickJS, con el layout de taffy, sobre UIView de
         verdad. El mismo host que el teléfono; lo que cambia es que aquí se
         navega con el mando.
       </an-text>
 
       <!--
-        Un botón del sistema. Es un UIButton, así que tvOS ya sabe enfocarlo y
-        lo levanta él al llegarle el foco. Es lo primero que el mando encuentra.
+        Dos botones del sistema, uno debajo del otro. Son UIButton, así que
+        tvOS ya sabe enfocarlos y es él quien los levanta y los pone blancos al
+        llegarles el foco. Están para que mover el foco con el mando se vea en
+        una captura sin dibujar nada.
       -->
       <an-button
-        [title]="etiqueta()"
+        [title]="'arriba — pulsado ' + arriba() + ' veces'"
         [fontSize]="34"
         [color]="'#0b1020'"
         [backgroundColor]="'#6ee7b7'"
         [borderRadius]="16"
-        [style.width]="'520'"
+        [style.width]="'760'"
         [style.height]="'88'"
-        (press)="pulsa()"></an-button>
+        (press)="arriba.set(arriba() + 1)"></an-button>
+
+      <an-button
+        [title]="'abajo — pulsado ' + abajo() + ' veces'"
+        [fontSize]="34"
+        [color]="'#0b1020'"
+        [backgroundColor]="'#fca5a5'"
+        [borderRadius]="16"
+        [style.width]="'760'"
+        [style.height]="'88'"
+        (press)="abajo.set(abajo() + 1)"></an-button>
 
       <!--
         Una vista pelada con (press). En iOS esto es un UIView con un
@@ -67,17 +81,17 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
         aquí. Sin eso, este rectángulo sería inalcanzable.
       -->
       <an-view
-        [style.width]="'520'"
+        [style.width]="'760'"
         [style.height]="'88'"
         [borderRadius]="16"
         [backgroundColor]="'#1e2a4a'"
-        (press)="pulsa()">
+        (press)="vista.set(vista() + 1)">
         <an-text
-          [style.width]="'520'"
+          [style.width]="'760'"
           [style.height]="'88'"
           [fontSize]="30"
           [textAlign]="'center'"
-          [color]="'#f4f7ff'">y esto es un an-view, no un botón</an-text>
+          [color]="'#f4f7ff'">an-view, no un botón — pulsada {{ vista() }} veces</an-text>
       </an-view>
 
       <an-text [fontSize]="26" [color]="'#5f7099'">
@@ -87,16 +101,12 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
   `
 })
 export class AppComponent {
-  readonly pulsaciones = signal(0)
+  readonly arriba = signal(0)
+  readonly abajo = signal(0)
+  /** El `an-view`. Su contador aparte es lo que demuestra que el foco llegó a
+   *  una vista que no es un control: si se pulsara el botón, subiría el otro. */
+  readonly vista = signal(0)
   readonly segundos = signal(0)
-
-  readonly etiqueta = computed(() =>
-    this.pulsaciones() === 0 ? 'pulsa el botón central' : `pulsaciones: ${this.pulsaciones()}`
-  )
-
-  pulsa(): void {
-    this.pulsaciones.update((valor) => valor + 1)
-  }
 
   constructor() {
     // El reloj de JS lo marca el frame, no un hilo aparte: esto avanza con el
