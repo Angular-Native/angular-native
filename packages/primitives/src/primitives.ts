@@ -275,6 +275,19 @@ export abstract class NativeVisual {
       borderColor: this.borderColor,
       opacity: this.opacity,
       cursor: this.cursor,
+      accessibilityLabel: this.accessibilityLabel,
+      accessibilityHint: this.accessibilityHint,
+      accessibilityRole: this.accessibilityRole,
+      accessibilityValue: this.accessibilityValue,
+      // El estado es un objeto y el protocolo no lleva objetos, así que viaja
+      // como JSON, igual que las listas de `an-tab-bar`. `null` se queda en
+      // `null` a propósito: mandar `"{}"` sería decir «sin estado», que no es
+      // lo mismo que «no se ha dicho nada del estado».
+      accessibilityState: () => {
+        const estado = this.accessibilityState()
+        return estado === null ? null : JSON.stringify(estado)
+      },
+      accessible: this.accessible,
       testID: this.testID
     })
   }

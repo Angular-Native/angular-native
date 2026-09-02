@@ -1,13 +1,14 @@
-//! Núcleo del renderer: shadow tree, mutaciones, commit y diff hacia el host.
+//! The renderer's core: shadow tree, mutations, commit, and the diff towards
+//! the host.
 //!
-//! Nadie de fuera toca vistas nativas directamente. El flujo siempre es:
+//! Nobody outside touches native views directly. The flow is always:
 //!
 //! ```text
-//! JS  --mutaciones-->  ShadowTree  --commit-->  Frame { ops }  -->  HostRenderer
+//! JS  --mutations-->  ShadowTree  --commit-->  Frame { ops }  -->  HostRenderer
 //! ```
 //!
-//! El commit es el único punto donde corre el layout, y el `Frame` que sale
-//! contiene solo lo que cambió de verdad.
+//! Commit is the only point where layout runs, and the `Frame` that comes out
+//! carries only what actually changed.
 
 pub mod accessibility;
 pub mod color;

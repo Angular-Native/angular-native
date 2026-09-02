@@ -172,6 +172,14 @@ enum Screenshot {
         // La app ya se activó al arrancar (ver `AppDelegate`); esto es por si
         // algo se la llevó delante mientras tanto.
         NSApp.activate(ignoringOtherApps: true)
+        // And say whether it worked, because it does not always. With a
+        // simulator open, macOS gives the front to whoever asked last and the
+        // pointer ends up over another window: there is then no `(hover)` to
+        // receive, and without this line the check reports it as a failure of
+        // the code. The two messages share no substring on purpose — one
+        // containing the other is how the first version of this check fooled
+        // itself.
+        NSLog("angular-native: frontmost=%@", NSApp.isActive ? "yes" : "no")
         // Dónde estaba el ratón de quien lanzó la comprobación. Se le devuelve
         // en cuanto la foto está hecha: mover el puntero de alguien y dejarlo
         // donde te vino bien es lo mismo que romperle lo que estaba haciendo.
@@ -182,7 +190,17 @@ enum Screenshot {
         // `CGWarpMouseCursorPosition` trabaja en coordenadas de pantalla con el
         // origen arriba; AppKit las da con el origen abajo.
         let alto = NSScreen.screens.first?.frame.height ?? 0
-        CGWarpMouseCursorPosition(CGPoint(x: enPantalla.x, y: alto - enPantalla.y))
+        let destino = CGPoint(x: enPantalla.x, y: alto - enPantalla.y)
+        // Out first, then in. A tracking area reports an entry when the
+        // pointer *moves* into it, not because of where it happens to be, so
+        // warping straight to a point the pointer is already on produces
+        // nothing at all. On its own this check passed, because the pointer
+        // came from wherever the person left it; inside the full run an
+        // earlier step had already parked it inside the view, and the entry
+        // that never happened looked exactly like a broken `(hover)`.
+        CGWarpMouseCursorPosition(CGPoint(x: 0, y: 0))
+        CGAssociateMouseAndMouseCursorPosition(1)
+        CGWarpMouseCursorPosition(destino)
         // Un warp deja un intervalo en el que el sistema no asocia el ratón
         // con el puntero. Sin cerrarlo, el movimiento no se reparte y el área
         // no se entera de que hay alguien encima.

@@ -66,6 +66,12 @@ echo
 "$ROOT/scripts/check-wearos.sh"
 
 echo
+# Only the half that costs nothing. The other one — build the APK, install it
+# and ask the system for its accessibility tree — is `check-a11y-device.sh`,
+# and it needs a device.
+"$ROOT/scripts/check-a11y.sh"
+
+echo
 echo "== compilación cruzada"
 for target in aarch64-apple-ios-sim aarch64-linux-android; do
   case "$target" in

@@ -1,0 +1,167 @@
+---
+title: Quick start
+description: From an empty directory to an Angular app running on native views, on the platform of your choice.
+---
+
+import { Steps, Tabs, TabItem, Aside, CardGrid, LinkCard } from '@astrojs/starlight/components'
+
+## Requirements
+
+<Tabs syncKey="platform">
+  <TabItem label="iOS · tvOS · visionOS">
+    Xcode with the simulator runtime for the platform you want. tvOS and
+    visionOS ship theirs separately: `xcodebuild -downloadPlatform tvOS`.
+
+    tvOS, visionOS and watchOS also need a nightly Rust toolchain — their Rust
+    targets are tier 3 and ship no prebuilt `std`:
+
+    ```bash
+    rustup toolchain install nightly
+    rustup component add rust-src --toolchain nightly
+    ```
+  </TabItem>
+  <TabItem label="Android · Wear OS">
+    The Android SDK, found through `ANDROID_HOME` or its usual location, plus
+    the NDK. There is no Gradle here: `an` drives `aapt2`, `javac`, `d8` and
+    `apksigner` itself.
+
+    The Material 3 dependencies are resolved once:
+
+    ```bash
+    python3 scripts/fetch-android-deps.py
+    python3 scripts/prepare-android-deps.py
+    ```
+  </TabItem>
+  <TabItem label="macOS">
+    Xcode's command line tools and nothing else. There is no simulator: the app
+    runs on the machine you build it on.
+  </TabItem>
+</Tabs>
+
+## Install the CLI
+
+<Steps>
+
+1. Clone this repository and put `an` on your PATH:
+
+   ```bash
+   git clone https://github.com/nesgarbo/angular-native
+   cd angular-native
+   cargo install --path crates/an-cli
+   ```
+
+   <Aside type="note">
+   `cargo install` records where it was built from, so `an` knows how to find
+   the framework's sources later, from any directory. `AN_HOME` overrides it.
+   </Aside>
+
+2. Create an Angular project, or use one you already have:
+
+   ```bash
+   npx @angular/cli@latest new my-app
+   cd my-app
+   ```
+
+3. Set it up:
+
+   ```bash
+   an init
+   ```
+
+   This adds a manifest, a native tsconfig, the two framework packages and a
+   native entry point. It touches neither `src/main.ts` nor `angular.json`, so
+   `ng build` and `ng serve` keep working exactly as before.
+
+4. Add a platform and run it:
+
+   <Tabs syncKey="platform">
+     <TabItem label="iOS · tvOS · visionOS">
+       ```bash
+       an add ios && an ios
+       an add tvos && an tvos
+       an add visionos && an visionos
+       ```
+     </TabItem>
+     <TabItem label="Android · Wear OS">
+       ```bash
+       an add android && an android
+       an wearos
+       ```
+     </TabItem>
+     <TabItem label="macOS">
+       ```bash
+       an macos
+       ```
+     </TabItem>
+   </Tabs>
+
+</Steps>
+
+## Develop with hot refresh
+
+```bash
+an dev              # iPhone simulator
+an dev --android    # Android emulator
+an dev --macos      # a window on your Mac
+an dev --tvos       # Apple TV simulator
+an dev --watchos    # Apple Watch simulator
+an dev --wearos     # Wear OS emulator
+```
+
+Saving a component swaps its definition in the running app. You stay on the
+same screen, with whatever you had typed and the timers still running.
+
+<Aside type="caution" title="What a save cannot change">
+Editing the framework itself — anything under `packages/` — or a dependency
+forces a full restart. Only one copy of Angular fits in the interpreter, so the
+running one cannot be replaced. The app says so and restarts rather than
+showing you stale code.
+</Aside>
+
+## Your first template
+
+```html
+<an-view [style.padding]="'16'" [style.gap]="'12'">
+  <an-text [fontSize]="28" [fontWeight]="'bold'">Settings</an-text>
+
+  <an-view [style.flexDirection]="'row'" [style.justifyContent]="'space-between'">
+    <an-text>Notifications</an-text>
+    <an-switch [on]="notify()" (onChange)="notify.set($event)" />
+  </an-view>
+
+  <an-button
+    [title]="'Save'"
+    [variant]="'filled'"
+    [accessibilityHint]="'saves without leaving the screen'"
+    (press)="save()" />
+</an-view>
+```
+
+That `an-switch` is a `UISwitch` on iOS and a `MaterialSwitch` on Android.
+Layout is flexbox, computed once in the core and handed to every platform as
+absolute frames.
+
+## Next
+
+<CardGrid>
+  <LinkCard
+    title="How it works"
+    href="/guide/how-it-works/"
+    description="The core, the hosts, and why the layout does not belong to the platform."
+  />
+  <LinkCard
+    title="Components"
+    href="/reference/components/"
+    description="The 25 primitives and what each platform does with them."
+  />
+  <LinkCard
+    title="Accessibility"
+    href="/guide/accessibility/"
+    description="Labels, roles and state, and how they reach VoiceOver and TalkBack."
+  />
+  <LinkCard
+    title="Plugins"
+    href="/extending/plugin-permissions/"
+    description="Native methods written outside this repository."
+  />
+</CardGrid>

@@ -177,8 +177,18 @@ fi
 AN_SCREENSHOT="$SHOT_ENCIMA" AN_SCREENSHOT_FRAMES=150 \
   AN_SCREENSHOT_HOVER=97,200 "$BIN" >"$HOVER_LOG" 2>&1 || true
 
+# A hover only happens if the window is actually under the pointer, and that
+# needs the app to win the front. With a simulator or an emulator open, macOS
+# hands the front to whoever asked last and this check would fail for a reason
+# that has nothing to do with the code — it has already happened to three
+# separate runs. So the precondition is checked first and reported as a skip,
+# loudly and with its reason. A skip is not a pass: the run says so, and the
+# same binary passes as soon as nothing else is fighting for the front.
 if grep -q "\[hover\] dentro de pointer" "$HOVER_LOG"; then
   echo "  ok   el puntero entra en la vista y la plantilla se entera"
+elif grep -q "frontmost=no" "$HOVER_LOG"; then
+  echo "  omitida el (hover): la app no llegó al frente, así que el puntero"
+  echo "           nunca estuvo encima. Ciérrale los simuladores y repite."
 else
   echo "  FALLO nadie recibió el (hover) con el ratón encima"
   fail=1

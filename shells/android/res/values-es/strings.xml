@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Spanish translation of res/values/strings.xml. -->
+<resources>
+
+    <string name="an_role_link">enlace</string>
+
+    <string name="an_role_search">campo de búsqueda</string>
+
+    <string name="an_role_summary">resumen</string>
+
+    <string name="an_state_partially_checked">parcialmente marcado</string>
+
+    <string name="an_state_busy">ocupado</string>
+
+</resources>

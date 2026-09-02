@@ -1,0 +1,68 @@
+---
+title: angular-native
+description: Angular apps that render real native views on eight platforms. No WebView anywhere.
+template: splash
+hero:
+  tagline: |
+    Write Angular. Get a UIView, an android.view.View, an NSView or a SwiftUI
+    view — the real control, from the real system, on eight platforms.
+  actions:
+    - text: Quick start
+      link: /guide/quick-start/
+      icon: right-arrow
+      variant: primary
+    - text: Why not a WebView
+      link: /guide/how-it-works/
+      icon: open-book
+      variant: minimal
+---
+
+import { Card, CardGrid, Code } from '@astrojs/starlight/components'
+
+<CardGrid>
+  <Card title="Real controls, not lookalikes" icon="approve-check">
+    An `<an-switch>` **is** a `UISwitch` on iOS and a `MaterialSwitch` on
+    Android. It looks and behaves however that control does in that version of
+    the system, and it ages with the platform instead of with this repository.
+  </Card>
+  <Card title="The layout is not the platform's" icon="puzzle">
+    Flexbox runs in a Rust core over taffy, once, and every host is handed
+    absolute frames. The same template lays out identically on a phone, a TV
+    and a watch — what differs is which control gets mounted.
+  </Card>
+  <Card title="Angular as it is" icon="seti:angular">
+    Signals, `@if`, `@for`, the router, AOT templates, dependency injection.
+    Zoneless, because the frame loop is what drives change detection. No
+    dialect, no subset.
+  </Card>
+  <Card title="A gap is never silent" icon="warning">
+    A prop no host reads, a style nobody recognises, a plugin missing a
+    platform: each one warns or stops the build. Checks enforce it — a
+    primitive that is unsupported somewhere has to say so in writing.
+  </Card>
+</CardGrid>
+
+## Eight platforms, one bundle
+
+| | Renders with | State |
+|---|---|---|
+| **iOS · iPadOS** | UIKit | All 25 primitives |
+| **Android** | android.view + Material 3 | All 25 primitives |
+| **macOS** | AppKit | All 25 primitives |
+| **tvOS** | UIKit + focus engine | 20 of 25 — a TV has no switch or slider |
+| **visionOS** | UIKit in a windowed scene | All 25 primitives |
+| **watchOS** | SwiftUI | 17 of 25 |
+| **Wear OS** | android.view | 18 of 25 |
+| **HarmonyOS · Windows** | — | Not started |
+
+## In one minute
+
+```bash
+npx @angular/cli@latest new my-app && cd my-app
+an init
+an add ios
+an ios
+```
+
+That is an Angular project created by the Angular CLI, unmodified, running on
+native views. Nothing moves into this repository and `ng build` keeps working.
