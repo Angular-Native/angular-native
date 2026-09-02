@@ -189,7 +189,7 @@ cargo test                    # solo el núcleo Rust
 ./scripts/check-external.sh   # un proyecto Angular de fuera: init, add, build
 ./scripts/check-styles.sh     # que las dos listas de nombres de estilo no se separen
 ./scripts/check-kinds.sh      # que la etiqueta, la primitiva y el código digan lo mismo
-./scripts/check-watchos.sh    # el modelo del reloj y su compilación cruzada
+./scripts/check-watchos.sh    # el modelo del reloj, sus listas y su compilación cruzada
 ./scripts/check-wearos.sh     # el APK del reloj de Android, su tema y lo que allí no va
 ./scripts/check-tvos.sh       # las medidas de la tele, lo que su SDK no trae, y su compilación cruzada
 ./scripts/check-visionos.sh   # la ventana del visor, que no tape el cristal, y su compilación cruzada
@@ -294,6 +294,12 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   mingw, y un binario que nadie ha visto arrancar no es una plataforma
   soportada. Queda a la espera de una máquina donde probarlo.
 
+- **En macOS y en el reloj de Apple no hay módulos nativos.** Los dos hosts
+  montan vistas pero no registran ninguno, así que `Device.info()` —y cualquier
+  plugin— rechaza la promesa diciendo que el módulo no existe. En iOS y en
+  Android sí están. Es un hueco de host, no de diseño: el registro es el mismo
+  para todos.
+
 - **El de pasos de Android no es un control, es un montaje.** Material 3 no
   define ninguno, así que se arma con dos botones de icono y un rótulo suyos.
   El resto de controles sí son componentes de la librería.
@@ -328,12 +334,19 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   tvOS es un catálogo de assets compilado con `actool`. En
   [docs/tvos.md](docs/tvos.md).
 
-- **El reloj va por la mitad.** watchOS pinta `an-view`, `an-text`, `an-button` y
-  `an-scroll-view`, que es lo que da para una pantalla de verdad, pero le faltan el
-  resto de primitivas, los gestos más allá del toque, la animación y la recarga
-  en caliente. No es un port del host de iOS: watchOS no tiene jerarquía de
-  `UIView`, así que el árbol se refleja en un modelo que redibuja SwiftUI. El
-  porqué y lo que falta, en [docs/watchos.md](docs/watchos.md).
+- **El reloj monta diecisiete de las veinticinco, y dice por qué no las otras
+  ocho.** Se quedan fuera `an-tab-bar` y `an-navigation-bar` —en 205 puntos de
+  ancho no son lo mismo que en un teléfono—, `an-segmented-control`,
+  `an-textarea` y `an-web-view` —el SDK de watchOS no los trae—, `an-search-bar`
+  —en el reloj buscar es una pantalla del sistema—, `an-video-view` —AVKit allí
+  no tiene vista de reproducción— y `an-map-view`, que existe pero no acepta ni
+  centro ni zoom desde la app. La corona digital llega como `(crown)` a
+  cualquier vista, y con ella `(longPress)`, `(pan)` y los cuatro `(swipe*)`;
+  `(pinch)` y `(rotation)` no, porque no caben dos dedos en 40 mm. No es un port
+  del host de iOS: watchOS no tiene jerarquía de `UIView`, así que el árbol se
+  refleja en un modelo que redibuja SwiftUI. Faltan la animación y las
+  transformaciones. El porqué de cada decisión, en
+  [docs/watchos.md](docs/watchos.md).
 
 - **Del reloj de Android falta el modo ambiente y el propio reloj.** Wear OS
   monta el host de Android tal cual, y el APK, la pantalla redonda, la corona

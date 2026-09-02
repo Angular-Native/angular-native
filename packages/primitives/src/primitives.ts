@@ -69,6 +69,21 @@ export interface NativeTextEvent {
 }
 
 /** Marco resuelto de una vista, relativo a su padre y en puntos. */
+/**
+ * Un giro de la corona digital del reloj.
+ *
+ * `delta` es lo que ha girado desde el aviso anterior, que es lo que casi
+ * siempre se quiere: SwiftUI solo entrega el acumulado, y restar en cada
+ * plantilla sería repetir la misma cuenta en todas.
+ */
+export interface NativeCrownEvent {
+  delta: number
+  /** Acumulado desde que la vista tomó el foco. */
+  offset: number
+  /** Vueltas por segundo. Sirve para seguir por inercia al soltar. */
+  velocity: number
+}
+
 export interface NativeLayoutEvent {
   x: number
   y: number
@@ -368,6 +383,29 @@ export abstract class NativeVisual {
    * aparecer el teclado, al entrar en pantalla dividida.
    */
   readonly safeArea = outputFromObservable(this.nativeEvent<NativeSafeAreaInsets>('safeArea'))
+
+  /**
+   * El foco entró o salió de esta vista.
+   *
+   * Estaban solo en `an-text-input` porque en un teléfono el foco es del
+   * teclado. En una tele es la plataforma entera: el mando recorre las vistas
+   * enfocables y no hay otra forma de resaltar la que está debajo del cursor.
+   * `value` solo viene cuando la vista es un campo de texto.
+   */
+  readonly focus = outputFromObservable(this.nativeEvent<{ value?: string }>('focus'))
+  readonly blur = outputFromObservable(this.nativeEvent<{ value?: string }>('blur'))
+
+  /**
+   * La corona digital del reloj, mientras gira.
+   *
+   * Va en la base y no en un control porque la corona la recibe **la vista que
+   * tiene el foco**, sea cual sea: en el reloj es el equivalente a rodar la
+   * rueda del ratón sobre algo.
+   */
+  readonly crown = outputFromObservable(this.nativeEvent<NativeCrownEvent>('crown'))
+
+  /** La corona dejó de girar. Sin él no hay forma de saber cuándo parar. */
+  readonly crownIdle = outputFromObservable(this.nativeEvent<void>('crownIdle'))
 
   readonly backgroundColor = input<string | null>(null)
 
@@ -782,8 +820,6 @@ export class TextInput extends NativeVisual {
     this.nativeEvent<{ value: string }>('change').pipe(map((event) => event.value))
   )
 
-  readonly focus = outputFromObservable(this.nativeEvent<{ value: string }>('focus'))
-  readonly blur = outputFromObservable(this.nativeEvent<{ value: string }>('blur'))
   /** La tecla de retorno del teclado. */
   readonly submit = outputFromObservable(
     this.nativeEvent<{ value: string }>('submit').pipe(map((event) => event.value))

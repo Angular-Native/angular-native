@@ -1,4 +1,7 @@
-# Llevar un proyecto Angular al móvil
+---
+title: Llevar un proyecto Angular al móvil
+description: Ya tienes una app de `ng new` y quieres que corra sobre vistas nativas. No hace falta mover nada a este repositorio.
+---
 
 Este documento es para quien ya tiene una app de Angular —una de `ng new`— y
 quiere que corra sobre vistas nativas. No hace falta clonar nada dentro de este

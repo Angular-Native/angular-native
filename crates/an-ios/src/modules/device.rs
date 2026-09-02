@@ -10,6 +10,16 @@
 //! `Responder`, que para eso se puede guardar y resolver más tarde.
 
 use an_bridge::native_module;
+
+/// Dónde corre esto. Sale del `cfg` y no de una comprobación en tiempo de
+/// ejecución: la familia se decide al compilar, y preguntarlo luego sería
+/// poder equivocarse.
+#[cfg(target_os = "tvos")]
+const PLATAFORMA: &str = "tvos";
+#[cfg(target_os = "visionos")]
+const PLATAFORMA: &str = "visionos";
+#[cfg(not(any(target_os = "tvos", target_os = "visionos")))]
+const PLATAFORMA: &str = "ios";
 use objc2::MainThreadMarker;
 use objc2_foundation::NSLocale;
 use objc2_ui_kit::UIDevice;
@@ -52,16 +62,11 @@ impl DeviceModule {
 
         DeviceModule {
             info: DeviceInfo {
-                // Sigue diciendo "ios" en las tres familias, y eso es un
-                // hueco conocido: una app que quiera adaptarse a la tele no
-                // tiene hoy forma de saber que está en una.
-                //
-                // No se arregla aquí porque el arreglo no está aquí: el tipo
-                // `NativeDeviceInfo.platform` de `packages/primitives` declara
-                // la unión `'ios' | 'android'`, y devolver "tvos" sería
-                // devolver algo que el tipo del cliente dice que no puede
-                // llegar. Ver docs/tvos.md.
-                platform: "ios",
+                // Las tres familias comparten host, pero no son el mismo
+                // sitio: en una tele no se toca, en el visor la ventana no es
+                // una pantalla, y una app que quiera adaptarse necesita
+                // distinguirlas. El tipo del cliente las declara todas.
+                platform: PLATAFORMA,
                 system_version: device.systemVersion().to_string(),
                 model: device.model().to_string(),
                 scale,
