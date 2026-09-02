@@ -479,12 +479,91 @@ export abstract class NativeVisual {
    */
   readonly cursor = input<NativeCursor | null>(null)
 
+  /**
+   * El nombre que anuncia un lector de pantalla.
+   *
+   * Sin esto, VoiceOver y TalkBack leen lo que encuentren dentro —el texto de
+   * un hijo, el nombre del fichero de una imagen— o no leen nada. Un
+   * `an-view` que hace de botón es, sin etiqueta, un elemento sin nombre: se
+   * puede enfocar y no se puede saber qué hace.
+   *
+   * Los controles del sistema traen la suya de fábrica y solo hay que ponerla
+   * cuando la de fábrica no dice lo que toca.
+   */
+  readonly accessibilityLabel = input<string | null>(null)
+
+  /** Qué pasa al activarlo, si el nombre no basta. Se lee después del nombre. */
+  readonly accessibilityHint = input<string | null>(null)
+
+  /** Qué es. Ver `NativeRole`. */
+  readonly accessibilityRole = input<NativeRole | null>(null)
+
+  /** Lo que vale ahora mismo: «35 %», «tres de siete». */
+  readonly accessibilityValue = input<string | null>(null)
+
+  /** Cómo está. Ver `NativeAccessibilityState`. */
+  readonly accessibilityState = input<NativeAccessibilityState | null>(null)
+
+  /**
+   * Si esto es **un** elemento para el lector, en vez de un contenedor por el
+   * que se navega hacia dentro.
+   *
+   * Es lo que convierte una fila entera —icono, título y subtítulo— en una
+   * sola parada que se lee de una vez, en vez de tres paradas sueltas. `false`
+   * hace lo contrario: esconde la vista y lo que tenga dentro, que es lo que
+   * hace falta para lo puramente decorativo.
+   */
+  readonly accessible = input<boolean | null>(null)
+
   /** Identificador para pruebas de interfaz; acaba en accessibilityIdentifier. */
   readonly testID = input<string | null>(null)
 }
 
 @Directive({ selector: 'an-view' })
 export class View extends NativeVisual {}
+
+/**
+ * Qué es esto para quien no lo ve.
+ *
+ * El vocabulario es corto a propósito. Cada plataforma tiene el suyo —traits
+ * en UIKit, roles de `NSAccessibility` en AppKit, `AccessibilityNodeInfo` en
+ * Android— y no se parecen ni en el número ni en los nombres. Lo que sí
+ * comparten es este puñado, que es además lo que un lector de pantalla
+ * anuncia de forma distinta: «botón», «encabezado», «enlace», «imagen»,
+ * «casilla», «selector».
+ *
+ * Un rol que solo tuviera una plataforma iría en su objeto `[ios]` o
+ * `[android]`, como cualquier otra cosa que solo existe en un sitio.
+ */
+export type NativeRole =
+  | 'button'
+  | 'link'
+  | 'header'
+  | 'image'
+  | 'text'
+  | 'checkbox'
+  | 'radio'
+  | 'switch'
+  | 'slider'
+  | 'search'
+  | 'summary'
+  | 'none'
+
+/**
+ * En qué estado está, para quien no lo ve.
+ *
+ * Va aparte del rol porque cambia con el tiempo y el rol no: un lector de
+ * pantalla vuelve a anunciar «seleccionado» cuando esto cambia, sin que la
+ * vista se rehaga.
+ */
+export interface NativeAccessibilityState {
+  disabled?: boolean
+  selected?: boolean
+  /** Marcado, para casillas e interruptores. `mixed` es el estado intermedio. */
+  checked?: boolean | 'mixed'
+  expanded?: boolean
+  busy?: boolean
+}
 
 /**
  * Un control del sistema: algo que se toca y que se puede apagar.
