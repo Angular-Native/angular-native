@@ -1826,17 +1826,39 @@ impl HostRenderer for AppKitHost {
             self.apply_window_title();
         }
 
-        // Volver a pedir que suene lo que debería estar sonando.
+        // Volver a pedir que suene lo que debería estar sonando, y decirlo si
+        // no va a sonar nunca.
         //
         // `play()` sobre un reproductor que todavía no ha cargado nada no
         // prende: el `rate` se queda en cero y ahí se queda para siempre, sin
         // error y con la vista en negro. Como `playing` llega una sola vez,
         // hay que reintentarlo hasta que agarre. `1` es
-        // `AVPlayerStatusReadyToPlay`.
+        // `AVPlayerStatusReadyToPlay` y `2` es `AVPlayerStatusFailed`.
+        //
+        // Y un vídeo que falló se queda igual de negro que uno que todavía no
+        // ha cargado. Mirando la ventana no se distinguen, así que hay que
+        // decirlo: es la diferencia entre «espera un poco» y «esa dirección no
+        // se puede reproducir».
+        let mut fallidos: Vec<(NodeId, String)> = Vec::new();
         for (id, player) in &self.videos {
+            if player.status() == 2 {
+                let motivo = player
+                    .error()
+                    .map(|error| unsafe { error.localizedDescription() }.to_string())
+                    .unwrap_or_else(|| "sin detalle".to_owned());
+                fallidos.push((*id, motivo));
+                continue;
+            }
             if self.video_playing.contains(id) && player.rate() == 0.0 && player.status() == 1 {
                 player.play();
             }
+        }
+        for (id, motivo) in fallidos {
+            self.warn_once(format!("video:{id}"), || {
+                eprintln!(
+                    "angular-native: el vídeo de <an-video-view> no se puede reproducir: {motivo}"
+                );
+            });
         }
 
         // Presentar va después del layout: un diálogo se presenta cuando todas

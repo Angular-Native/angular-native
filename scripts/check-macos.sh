@@ -127,10 +127,124 @@ else
   echo "  ok   ninguna prop del ejemplo se queda sin dueño"
 fi
 
+# 8. El escritorio de verdad: el puntero y el deslizamiento.
+#
+# Las dos cosas que esta plataforma tiene y las otras cuatro no, y las dos se
+# pueden comprobar aquí *corriendo la app*, que es lo que separa a macOS del
+# resto: no hay simulador que levantar ni aparato que buscar.
+#
+# El puntero se mueve de verdad. `CGWarpMouseCursorPosition` no pide ningún
+# permiso —no es `CGEventPost`, que sí exige accesibilidad—, así que lo que
+# entra en el `NSTrackingArea` es el ratón, y lo que sale en la imagen es el
+# área del sistema haciendo su trabajo.
+#
+# El deslizamiento no se puede provocar: el gesto lo reconoce el sistema a
+# partir de dos dedos en el trackpad y no hay forma de pedírselo. Lo que sí se
+# puede es entrar por su misma puerta —`swipeWithEvent:` sobre la vista que hay
+# bajo el punto— con los deltas que manda él, y comprobar todo lo que viene
+# después. Ver `Screenshot.swift`.
+BUILD_LOG="$(mktemp)"
+if cargo an macos examples/desktop --no-launch >"$BUILD_LOG" 2>&1; then
+  echo "  ok   el ejemplo del escritorio se arma"
+else
+  echo "  FALLO el ejemplo del escritorio no se arma"
+  tail -20 "$BUILD_LOG"
+  fail=1
+fi
+rm -f "$BUILD_LOG"
+
+BIN="$APP/Contents/MacOS/AngularNativeMac"
+SHOT_QUIETO="$ROOT/build/macos/escritorio.png"
+SHOT_ENCIMA="$ROOT/build/macos/escritorio-encima.png"
+DESK_LOG="$(mktemp)"
+HOVER_LOG="$(mktemp)"
+
+AN_SCREENSHOT="$SHOT_QUIETO" AN_SCREENSHOT_FRAMES=150 \
+  AN_SCREENSHOT_SWIPE=360,600,-1,0 "$BIN" >"$DESK_LOG" 2>&1 || true
+
+# El signo lo dice `NSEvent.h`: «-1 for swipe right». Si esta línea deja de
+# cuadrar es que alguien cambió la correspondencia, no que el gesto no llegue.
+if grep -q "\[swipe\] derecha" "$DESK_LOG"; then
+  echo "  ok   un deslizamiento con deltaX -1 llega a la plantilla como «derecha»"
+else
+  echo "  FALLO el deslizamiento no llegó a la plantilla"
+  fail=1
+fi
+
+# El puntero encima de la primera tarjeta. Las coordenadas son las de la
+# ventana de 720x820 que abre el shell; si el ejemplo cambia de sitio, aquí
+# hay que moverlas.
+AN_SCREENSHOT="$SHOT_ENCIMA" AN_SCREENSHOT_FRAMES=150 \
+  AN_SCREENSHOT_HOVER=97,200 "$BIN" >"$HOVER_LOG" 2>&1 || true
+
+if grep -q "\[hover\] dentro de pointer" "$HOVER_LOG"; then
+  echo "  ok   el puntero entra en la vista y la plantilla se entera"
+else
+  echo "  FALLO nadie recibió el (hover) con el ratón encima"
+  fail=1
+fi
+
+# Y que además se vea. Un `(hover)` que llega y no cambia nada en pantalla es
+# la mitad del trabajo: lo que hay que comprobar es que el árbol se recompuso.
+if [ -s "$SHOT_QUIETO" ] && [ -s "$SHOT_ENCIMA" ] \
+  && ! cmp -s "$SHOT_QUIETO" "$SHOT_ENCIMA"; then
+  echo "  ok   y la ventana cambia con el ratón encima"
+else
+  echo "  FALLO la ventana sale igual con el ratón encima que sin él"
+  fail=1
+fi
+
+# 9. El mapa y el vídeo, que son los dos que faltaban.
+#
+# Lo que se mira del mapa es la imagen: `MKMapView` dibuja teselas y eso sube
+# el recuento de colores muy por encima de lo que da una caja vacía. Del vídeo
+# no se puede mirar la imagen y no se disimula: `AVPlayerView` compone sus
+# fotogramas fuera del dibujado de la vista —por eso tampoco los ve
+# `cacheDisplay`—, así que lo que se comprueba es que se monta como vista de
+# verdad y que el reproductor no falla. Está dicho en docs/macos.md.
+BUILD_LOG="$(mktemp)"
+if cargo an macos examples/media --no-launch >"$BUILD_LOG" 2>&1; then
+  echo "  ok   el ejemplo de mapa y vídeo se arma"
+else
+  echo "  FALLO el ejemplo de mapa y vídeo no se arma"
+  tail -20 "$BUILD_LOG"
+  fail=1
+fi
+rm -f "$BUILD_LOG"
+
+SHOT_MEDIA="$ROOT/build/macos/media.png"
+MEDIA_LOG="$(mktemp)"
+AN_SCREENSHOT="$SHOT_MEDIA" AN_SCREENSHOT_FRAMES=240 \
+  AN_SCREENSHOT_PRESS=360,782 "$BIN" >"$MEDIA_LOG" 2>&1 || true
+
+if grep -q "no se pinta en macOS" "$MEDIA_LOG"; then
+  echo "  FALLO el mapa o el vídeo siguen sin pintarse:"
+  grep "no se pinta en macOS" "$MEDIA_LOG" | sed 's/^/       /'
+  fail=1
+else
+  echo "  ok   el mapa y el vídeo se montan con su vista del sistema"
+fi
+
+if grep -q "no se puede reproducir" "$MEDIA_LOG"; then
+  echo "  FALLO el reproductor falló:"
+  grep "no se puede reproducir" "$MEDIA_LOG" | sed 's/^/       /'
+  fail=1
+else
+  echo "  ok   el reproductor no falló al ponerse en marcha"
+fi
+
+colores_media="$(sed -n 's/.*, \([0-9]*\) colores).*/\1/p' "$MEDIA_LOG" | tail -1)"
+if [ -n "$colores_media" ] && [ "$colores_media" -gt 200 ]; then
+  echo "  ok   el mapa dibuja de verdad ($colores_media colores en la captura)"
+else
+  echo "  FALLO el mapa salió liso: ${colores_media:-ninguna captura} colores"
+  fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo
-  cat "$RUN_LOG"
-  rm -f "$RUN_LOG"
+  cat "$RUN_LOG" "$DESK_LOG" "$HOVER_LOG" "$MEDIA_LOG"
+  rm -f "$RUN_LOG" "$DESK_LOG" "$HOVER_LOG" "$MEDIA_LOG"
   exit 1
 fi
-rm -f "$RUN_LOG"
+rm -f "$RUN_LOG" "$DESK_LOG" "$HOVER_LOG" "$MEDIA_LOG"

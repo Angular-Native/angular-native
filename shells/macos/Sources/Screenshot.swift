@@ -49,6 +49,25 @@ enum Screenshot {
         return CGPoint(x: partes[0], y: partes[1])
     }
 
+    /// Un botón que pulsar antes de disparar, en `x,y`.
+    ///
+    /// Hay estados de una app que no existen al arrancar y que son justo los
+    /// que hay que fotografiar: un vídeo sonando, por ejemplo, empieza cuando
+    /// alguien le da a reproducir. Esto pulsa el control del sistema que haya
+    /// bajo el punto, por su propio camino —`performClick:`—, no simulando el
+    /// ratón.
+    static var pulsacion: CGPoint? {
+        guard let bruto = ProcessInfo.processInfo.environment["AN_SCREENSHOT_PRESS"] else {
+            return nil
+        }
+        let partes = bruto.split(separator: ",").compactMap { Double($0) }
+        guard partes.count == 2 else {
+            NSLog("angular-native: AN_SCREENSHOT_PRESS se escribe x,y")
+            return nil
+        }
+        return CGPoint(x: partes[0], y: partes[1])
+    }
+
     /// Un deslizamiento, en `x,y,deltaX,deltaY`.
     ///
     /// Es lo único de este host que no se puede provocar de verdad sin un
@@ -149,6 +168,10 @@ enum Screenshot {
     static func ponerElPuntero(en view: NSView) {
         guard let punto = hover, let window = view.window else { return }
         NSApp.activate(ignoringOtherApps: true)
+        // Dónde estaba el ratón de quien lanzó la comprobación. Se le devuelve
+        // en cuanto la foto está hecha: mover el puntero de alguien y dejarlo
+        // donde te vino bien es lo mismo que romperle lo que estaba haciendo.
+        dondeEstabaElPuntero = NSEvent.mouseLocation
 
         let enVentana = view.convert(punto, to: nil)
         let enPantalla = window.convertPoint(toScreen: enVentana)
@@ -160,6 +183,37 @@ enum Screenshot {
         // con el puntero. Sin cerrarlo, el movimiento no se reparte y el área
         // no se entera de que hay alguien encima.
         CGAssociateMouseAndMouseCursorPosition(1)
+    }
+
+    /// Dónde estaba el puntero antes de que esto lo moviera.
+    private static var dondeEstabaElPuntero: CGPoint?
+
+    /// Le devuelve el ratón a quien lo tenía.
+    static func devolverElPuntero() {
+        guard let punto = dondeEstabaElPuntero else { return }
+        dondeEstabaElPuntero = nil
+        let alto = NSScreen.screens.first?.frame.height ?? 0
+        CGWarpMouseCursorPosition(CGPoint(x: punto.x, y: alto - punto.y))
+        CGAssociateMouseAndMouseCursorPosition(1)
+    }
+
+    /// Pulsa el control del sistema que haya bajo el punto.
+    ///
+    /// Sube por los padres hasta encontrar un `NSControl` porque lo que hay
+    /// justo bajo el punto suele ser la celda o el rótulo de dentro del botón,
+    /// no el botón. Un `<an-view>` con `(press)` no entra aquí: ese va por un
+    /// reconocedor de gestos, y esto solo sabe de controles.
+    static func pulsar(en view: NSView) {
+        guard let punto = pulsacion else { return }
+        var destino = view.hitTest(view.convert(punto, to: view.superview))
+        while let actual = destino, !(actual is NSControl) {
+            destino = actual.superview
+        }
+        guard let control = destino as? NSControl else {
+            NSLog("angular-native: no hay ningún control del sistema en %@", "\(punto)")
+            return
+        }
+        control.performClick(nil)
     }
 
     /// Manda un deslizamiento a la vista que haya bajo el punto.
@@ -270,6 +324,9 @@ enum Screenshot {
             // `mouseEntered:`, el evento cruza al motor, Angular recompone—, y
             // los tres pasan solos con dejar correr los frames. Forzar el
             // bucle de eventos desde aquí sería reentrar en este método.
+            if frames == max(1, Screenshot.framesDeGracia / 4) {
+                Screenshot.pulsar(en: view)
+            }
             if frames == max(1, Screenshot.framesDeGracia / 3) {
                 Screenshot.deslizar(en: view)
             }
@@ -277,7 +334,9 @@ enum Screenshot {
                 Screenshot.ponerElPuntero(en: view)
             }
             guard frames >= Screenshot.framesDeGracia else { return }
-            exit(Screenshot.write(view, to: path) ? 0 : 1)
+            let escrita = Screenshot.write(view, to: path)
+            Screenshot.devolverElPuntero()
+            exit(escrita ? 0 : 1)
         }
     }
 }
