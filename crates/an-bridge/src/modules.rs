@@ -1,9 +1,9 @@
-//! Módulos nativos: cómo llama JavaScript a código Rust que no es el renderer.
+//! Native modules: how JavaScript calls Rust code that is not the renderer.
 //!
-//! Todo lo que no sea pintar —leer el dispositivo, guardar un fichero, pedir
-//! permisos, hablar por red— entra por aquí. El contrato es el mismo que el
-//! resto del puente: JS no bloquea nunca, y las respuestas llegan en un frame,
-//! el mismo o uno posterior.
+//! Everything that is not painting —reading the device, saving a file, asking
+//! for permissions, talking over the network— comes in through here. The
+//! contract is the same as the rest of the bridge: JS never blocks, and answers
+//! arrive in a frame, this one or a later one.
 
 use std::sync::{Arc, Mutex};
 
@@ -11,18 +11,18 @@ use serde_json::Value;
 
 pub type ModuleResult = Result<Value, String>;
 
-/// Un identificador de llamada. Lo asigna el puente y viaja de ida y vuelta
-/// para casar la respuesta con su promesa en JS.
+/// A call identifier. The bridge assigns it, and it travels out and back so the
+/// answer can be matched to its promise on the JS side.
 pub type CallId = u64;
 
-/// Buzón de respuestas. Es `Arc<Mutex<..>>` y no `Rc<RefCell<..>>` a
-/// propósito: un módulo puede resolver desde otro hilo —una descarga, una
-/// consulta a disco— y esa es justamente la razón de que exista.
+/// The answers mailbox. It is an `Arc<Mutex<..>>` and not an `Rc<RefCell<..>>`
+/// on purpose: a module can resolve from another thread —a download, a trip to
+/// disk— and that is precisely why it exists.
 type Outbox = Arc<Mutex<Vec<(CallId, ModuleResult)>>>;
 
-/// Lo que un módulo usa para contestar. Se puede resolver en el acto o
-/// guardarse y resolver más tarde; si se tira sin contestar, la promesa del
-/// lado JS se rechaza en vez de quedarse colgada para siempre.
+/// What a module answers with. It can be resolved on the spot or held onto and
+/// resolved later; if it is dropped without an answer, the promise on the JS
+/// side is rejected instead of hanging around for ever.
 pub struct Responder {
     id: CallId,
     outbox: Outbox,
@@ -32,14 +32,14 @@ pub struct Responder {
 impl Responder {
     pub fn resolve(mut self, value: Value) {
         self.answered = true;
-        self.outbox.lock().expect("buzón envenenado").push((self.id, Ok(value)));
+        self.outbox.lock().expect("the mailbox is poisoned").push((self.id, Ok(value)));
     }
 
     pub fn reject(mut self, message: impl Into<String>) {
         self.answered = true;
         self.outbox
             .lock()
-            .expect("buzón envenenado")
+            .expect("the mailbox is poisoned")
             .push((self.id, Err(message.into())));
     }
 }
@@ -49,9 +49,9 @@ impl Drop for Responder {
         if self.answered {
             return;
         }
-        // Un módulo que se olvida de contestar es un bug, pero una promesa
-        // colgada para siempre es peor: al menos se ve.
-        self.outbox.lock().expect("buzón envenenado").push((
+        // A module that forgets to answer is a bug, but a promise left hanging
+        // for ever is worse: at least this one can be seen.
+        self.outbox.lock().expect("the mailbox is poisoned").push((
             self.id,
             Err("el módulo nativo no contestó".to_owned()),
         ));
@@ -59,10 +59,10 @@ impl Drop for Responder {
 }
 
 pub trait NativeModule {
-    /// El nombre por el que JS lo invoca.
+    /// The name JS calls it by.
     fn name(&self) -> &'static str;
 
-    /// `respond` se puede consumir aquí mismo o guardarse para más tarde.
+    /// `respond` can be consumed right here or kept for later.
     fn call(&mut self, method: &str, args: Value, respond: Responder);
 }
 
@@ -86,7 +86,7 @@ impl ModuleRegistry {
         self.modules.iter().map(|m| m.name()).collect()
     }
 
-    /// Arranca una llamada y devuelve su identificador. No bloquea.
+    /// Starts a call and returns its identifier. It does not block.
     pub fn invoke(&mut self, module: &str, method: &str, args: Value) -> CallId {
         self.next_id += 1;
         let id = self.next_id;
@@ -99,18 +99,18 @@ impl ModuleRegistry {
         id
     }
 
-    /// Respuestas listas desde la última vez. Las recoge el puente al cerrar
-    /// el frame.
+    /// Answers that came in since last time. The bridge collects them as it
+    /// closes the frame.
     pub fn drain(&mut self) -> Vec<(CallId, ModuleResult)> {
-        std::mem::take(&mut *self.outbox.lock().expect("buzón envenenado"))
+        std::mem::take(&mut *self.outbox.lock().expect("the mailbox is poisoned"))
     }
 }
 
-/// Declara un módulo nativo sin escribir el despacho a mano.
+/// Declares a native module without writing the dispatch by hand.
 ///
-/// Cada método recibe los argumentos ya deserializados y devuelve
-/// `Result<T, String>` con `T: Serialize`. Un método que no exista se rechaza
-/// con un mensaje que dice cuál se pidió.
+/// Each method gets its arguments already deserialised and returns
+/// `Result<T, String>` with `T: Serialize`. A method that does not exist is
+/// rejected with a message naming the one that was asked for.
 ///
 /// ```ignore
 /// native_module! {

@@ -1,22 +1,21 @@
-//! El motor JS y el árbol, en su propio hilo.
+//! The JS engine and the tree, on a thread of their own.
 //!
-//! No es por paralelismo: es por la pila. QuickJS necesita unos 4 MB para que
-//! el router de Angular complete una navegación —diecisiete operadores de RxJS
-//! encadenados y una recursión de suscripción profunda— y el hilo principal de
-//! iOS tiene 1 MB que no se pueden cambiar. Un hilo propio sí admite la pila
-//! que se le pida.
+//! Not for parallelism: for the stack. QuickJS needs some 4 MB for Angular's
+//! router to complete one navigation —seventeen chained RxJS operators and a
+//! deep subscription recursion— and iOS's main thread has 1 MB that cannot be
+//! changed. A thread of its own will take whatever stack it is asked for.
 //!
-//! El `Tick` se manda y se espera, pero con plazo. Si el turno de JS cabe en
-//! lo que queda de frame —el caso normal— se monta en el mismo frame y no hay
-//! latencia añadida. Si se pasa del plazo, el hilo de UI sigue y monta ese
-//! frame cuando llegue, sin congelarse.
+//! The `Tick` is sent and waited on, but with a deadline. If the JS turn fits in
+//! what is left of the frame —the normal case— it mounts in that same frame and
+//! there is no latency added. If it runs past the deadline, the UI thread
+//! carries on and mounts that frame when it comes, without freezing.
 //!
-//! Es el punto medio entre bloquear siempre, que congela la interfaz cuando
-//! Angular tarda, y no esperar nunca, que añade un frame de latencia a cada
-//! toque aunque el turno haya durado dos milisegundos.
+//! It is the middle ground between always blocking, which freezes the interface
+//! whenever Angular takes its time, and never waiting, which adds a frame of
+//! latency to every touch even when the turn took two milliseconds.
 //!
-//! Las operaciones de control —evaluar, recargar, cambiar el viewport— sí
-//! esperan: son raras y el orden importa.
+//! Control operations —evaluating, reloading, changing the viewport— do wait:
+//! they are rare and the order matters.
 
 use std::cell::Cell;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError};
@@ -30,23 +29,25 @@ use crate::protocol::apply;
 use crate::quickjs::QuickJsRuntime;
 use crate::runtime::{JsError, JsRuntime};
 
-/// Lo que el hilo de UI le pide al worker.
+/// What the UI thread asks the worker for.
 pub enum Request {
     Eval { name: String, code: String },
-    /// Vistas fuera, motor nuevo, árbol vacío, y a evaluar de cero.
+    /// Views out, new engine, empty tree, and evaluate from scratch.
     Reload { name: String, code: String },
     SetViewport(f32, f32),
     Tick { now_ms: f64, events: Vec<HostEvent> },
     Stop,
 }
 
-/// Lo que devuelve. Un `Tick` trae el frame; el resto solo dicen si hubo error.
+/// What comes back. A `Tick` brings the frame; the rest only say whether there
+/// was an error.
 #[derive(Default)]
 pub struct Reply {
     pub frame: Frame,
     pub error: Option<String>,
-    /// Solo lo mira `Reload`: dice si la app se cosió en caliente. Cuando es
-    /// `true` las vistas nativas siguen valiendo y no hay que desmontarlas.
+    /// Only `Reload` looks at it: it says whether the app was stitched back
+    /// together hot. When it is `true` the native views still hold and there is
+    /// no need to unmount them.
     pub hot: bool,
 }
 
@@ -54,16 +55,17 @@ pub struct RuntimeWorker {
     requests: Sender<Request>,
     replies: Receiver<Reply>,
     handle: Option<JoinHandle<()>>,
-    /// Peticiones mandadas y todavía sin contestar. Sirve para no encolar un
-    /// `Tick` nuevo encima de uno que aún no terminó: si JS va lento, la cola
-    /// crecería sin fin y cada frame montado sería más viejo que el anterior.
+    /// Requests sent and still unanswered. It is what keeps a new `Tick` from
+    /// being queued on top of one that has not finished: if JS is running slow,
+    /// the queue would grow without end and every mounted frame would be older
+    /// than the last.
     in_flight: Cell<usize>,
 }
 
 impl RuntimeWorker {
-    /// `init` corre ya dentro del hilo: el runtime de QuickJS no es `Send`, así
-    /// que no se puede construir fuera y mover. Lo que sí cruza son las piezas
-    /// con las que se construye.
+    /// `init` runs inside the thread already: QuickJS's runtime is not `Send`,
+    /// so it cannot be built outside and moved. What does cross over are the
+    /// pieces it is built from.
     pub fn spawn<M, F>(stack_size: usize, init: F) -> Result<Self, JsError>
     where
         M: TextMeasurer + 'static,
@@ -87,9 +89,9 @@ impl RuntimeWorker {
                         return;
                     }
                 };
-                // Los `layout` que produce un frame se despachan al principio
-                // del siguiente, sin volver a cruzar al hilo de UI: el worker
-                // tiene las dos puntas.
+                // The `layout` events a frame produces are dispatched at the
+                // start of the next one, without crossing back to the UI thread:
+                // the worker holds both ends.
                 let mut pending_layout: Vec<HostEvent> = Vec::new();
 
                 while let Ok(request) = request_rx.recv() {
@@ -100,19 +102,20 @@ impl RuntimeWorker {
                             ..Reply::default()
                         },
                         Request::Reload { name, code } => {
-                            // Primero se intenta en caliente: si el bundle
-                            // nuevo encaja con lo que ya está montado, se le
-                            // cambian las definiciones a los componentes y las
-                            // instancias siguen vivas, con su estado. El árbol
-                            // no se toca: lo que Angular rehaga sale por el
-                            // búfer de comandos como cualquier otro cambio.
+                            // Hot is tried first: if the new bundle fits what
+                            // is already mounted, the components get their
+                            // definitions swapped and the instances stay alive,
+                            // state and all. The tree is left alone: whatever
+                            // Angular redoes goes out through the command buffer
+                            // like any other change.
                             if matches!(js.eval_hot(&name, &code), Ok(true)) {
                                 Reply { hot: true, ..Reply::default() }
                             } else {
-                                // El estado que la app quiera conservar se pide
-                                // antes de tirar el motor y se le devuelve al
-                                // nuevo antes de evaluar nada: los componentes lo
-                                // leen mientras se construyen.
+                                // Whatever state the app wants kept is asked for
+                                // before the engine is thrown away and handed
+                                // back to the new one before anything is
+                                // evaluated: the components read it while they
+                                // are being built.
                                 let state = js.take_hot_state();
                                 shadow.reset();
                                 pending_layout.clear();
@@ -189,8 +192,8 @@ impl RuntimeWorker {
         }
     }
 
-    /// Manda sin esperar. Devuelve `false` si el worker ya está ocupado o no
-    /// responde; el llamante decide si le importa.
+    /// Sends without waiting. Returns `false` if the worker is already busy or
+    /// not answering; the caller decides whether that matters.
     pub fn post(&self, request: Request) -> bool {
         if self.requests.send(request).is_err() {
             return false;
@@ -199,7 +202,7 @@ impl RuntimeWorker {
         true
     }
 
-    /// Respuesta lista, si la hay. No bloquea.
+    /// An answer if there is one. It does not block.
     pub fn try_reply(&self) -> Option<Reply> {
         match self.replies.try_recv() {
             Ok(reply) => {
@@ -217,11 +220,11 @@ impl RuntimeWorker {
         }
     }
 
-    /// Espera a la siguiente respuesta hasta agotar el plazo.
+    /// Waits for the next answer until the deadline runs out.
     ///
-    /// Devuelve `None` si no hay nada en vuelo o si el plazo venció: en ese
-    /// caso la petición sigue viva y su respuesta se recogerá más adelante con
-    /// `try_reply`.
+    /// Returns `None` if there is nothing in flight or if the deadline passed:
+    /// in that case the request is still alive and its answer will be picked up
+    /// later with `try_reply`.
     pub fn wait_reply_until(&self, deadline: Duration) -> Option<Reply> {
         if self.in_flight.get() == 0 {
             return None;
@@ -242,7 +245,7 @@ impl RuntimeWorker {
         }
     }
 
-    /// Espera a la siguiente respuesta pendiente, sin plazo.
+    /// Waits for the next pending answer, with no deadline.
     pub fn wait_reply(&self) -> Option<Reply> {
         if self.in_flight.get() == 0 {
             return None;
@@ -259,9 +262,8 @@ impl RuntimeWorker {
         self.in_flight.get() > 0
     }
 
-    /// Manda y espera. Solo para operaciones de control: el llamante tiene que
-    /// haber vaciado antes lo que hubiera en vuelo, o recogerá la respuesta
-    /// equivocada.
+    /// Sends and waits. Control operations only: the caller has to have drained
+    /// whatever was in flight first, or it will pick up the wrong answer.
     pub fn request(&self, request: Request) -> Reply {
         if !self.post(request) {
             return Reply {

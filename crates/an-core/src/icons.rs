@@ -1,18 +1,19 @@
-//! Nombres comunes de icono, traducidos al SF Symbol que les toca.
+//! Common icon names, translated into the SF Symbol each one maps to.
 //!
-//! Vive en el núcleo por lo mismo que la tabla de colores: con más de un host
-//! Apple —iOS, tvOS, visionOS y el reloj— dos copias serían dos sitios donde
-//! `back` podría dejar de ser `chevron.left`, y un icono que cambia de dibujo
-//! según la pantalla es un fallo que nadie ve hasta que lo ve un usuario.
+//! It lives in the core for the same reason the color table does: with more
+//! than one Apple host —iOS, tvOS, visionOS and the watch— two copies would be
+//! two places where `back` could stop being `chevron.left`, and an icon that
+//! changes drawing depending on the screen is the kind of bug nobody sees until
+//! a user sees it.
 //!
-//! La lista es corta a propósito: cubre lo que lleva casi cualquier app —una
-//! barra de pestañas, una cabecera— y para lo demás se escribe el nombre del
-//! símbolo directamente, que son más de cinco mil y no tiene sentido
-//! duplicarlos aquí.
+//! The list is deliberately short: it covers what almost any app carries —a tab
+//! bar, a header— and for anything else you write the symbol's name directly.
+//! There are more than five thousand of them and duplicating them here would
+//! make no sense.
 
-/// El SF Symbol que corresponde a un nombre común. Lo que no está en la tabla
-/// sale tal cual: es el nombre nativo del símbolo, que la plantilla puede
-/// escribir directamente.
+/// The SF Symbol a common name maps to. Anything not in the table comes out
+/// untouched: it is the symbol's native name, which the template is free to
+/// write directly.
 pub fn translate(name: &str) -> &str {
     match name {
         "home" => "house.fill",
@@ -54,11 +55,11 @@ pub fn translate(name: &str) -> &str {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn los_nombres_comunes_se_traducen_y_los_nativos_pasan() {
+    fn common_names_are_translated_and_native_ones_pass_through() {
         assert_eq!(super::translate("back"), "chevron.left");
         assert_eq!(super::translate("account"), "person.crop.circle.fill");
-        // Un SF Symbol escrito a pelo no se toca: la tabla no es una lista
-        // blanca, es un atajo.
+        // An SF Symbol written out by hand is left alone: the table is not an
+        // allowlist, it is a shortcut.
         assert_eq!(super::translate("square.and.arrow.up"), "square.and.arrow.up");
         assert_eq!(super::translate("figure.run"), "figure.run");
     }

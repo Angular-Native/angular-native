@@ -1,25 +1,26 @@
-//! Plugins: módulos nativos escritos fuera del repo.
+//! Plugins: native modules written outside the repo.
 //!
-//! Un módulo de los de [`crate::modules`] se implementa en Rust y se compila
-//! dentro del core. Un *plugin* no: lo escribe alguien de fuera, en Swift o en
-//! Java, y el core solo tiene que llevarle la llamada y traerse la respuesta.
+//! A module of the [`crate::modules`] sort is implemented in Rust and compiled
+//! into the core. A *plugin* is not: somebody outside writes it, in Swift or in
+//! Java, and all the core has to do is carry the call over and bring the answer
+//! back.
 //!
-//! Por eso aquí no hay una implementación por plugin sino una sola,
-//! [`HostPlugin`], que hace de cartero. Lo que cambia entre un plugin y otro
-//! está al otro lado de la frontera, no aquí.
+//! That is why there is no implementation per plugin here but a single one,
+//! [`HostPlugin`], acting as postman. What differs from one plugin to the next
+//! is on the other side of the border, not here.
 //!
-//! El reparto de hilos es la razón de que esto sea una cola y no una llamada
-//! directa. `NativeModule::call` corre en el hilo del motor JS; `UIPasteboard`
-//! y `ClipboardManager` quieren el hilo de UI. Así que la llamada se encola,
-//! el hilo de UI la recoge en su frame —que ya pasa por ahí una vez por
-//! vsync— y contesta cuando puede: en el acto, o tres segundos después si lo
-//! que hay detrás es una cámara. El motor no espera a nadie.
+//! The way the threads are split is the reason this is a queue and not a direct
+//! call. `NativeModule::call` runs on the JS engine's thread; `UIPasteboard` and
+//! `ClipboardManager` want the UI one. So the call gets queued, the UI thread
+//! picks it up in its frame —it already comes through there once per vsync— and
+//! answers when it can: on the spot, or three seconds later if what is behind it
+//! is a camera. The engine waits for nobody.
 //!
 //! ```text
-//!   hilo del motor                         hilo de UI
+//!   engine thread                          UI thread
 //!   ──────────────────                     ─────────────────────
 //!   HostPlugin::call
-//!        │ encola con su Responder
+//!        │ queues it with its Responder
 //!        ▼
 //!   PluginBridge ──────── take_calls() ──▶ AnPluginRegistry (Swift/Java)
 //!        ▲                                        │
@@ -34,29 +35,30 @@ use serde_json::Value;
 
 use crate::modules::{NativeModule, Responder};
 
-/// Una llamada que espera a que la plataforma la atienda.
+/// A call waiting for the platform to get to it.
 pub struct PluginCall {
-    /// Identificador con el que la plataforma contestará.
+    /// The identifier the platform will answer with.
     pub id: u64,
-    /// El nombre del módulo, tal como lo escribió JS.
+    /// The module's name, exactly as JS wrote it.
     pub module: String,
     pub method: String,
-    /// Los argumentos ya serializados: al otro lado hay Swift o Java, no serde.
+    /// The arguments already serialised: on the other side there is Swift or
+    /// Java, not serde.
     pub args: String,
 }
 
-/// El buzón compartido entre el hilo del motor y el de UI.
+/// The mailbox shared between the engine thread and the UI one.
 ///
-/// Se crea una vez por proceso y vive detrás de un `Arc`: los [`HostPlugin`]
-/// se quedan con una copia y el shell de la plataforma con otra.
+/// It is created once per process and lives behind an `Arc`: the [`HostPlugin`]s
+/// keep one copy and the platform's shell keeps another.
 #[derive(Default)]
 pub struct PluginBridge {
     next: AtomicU64,
-    /// Llamadas que el hilo de UI todavía no ha recogido.
+    /// Calls the UI thread has not picked up yet.
     pending: Mutex<Vec<PluginCall>>,
-    /// Llamadas recogidas y aún sin contestar. El `Responder` guardado aquí es
-    /// lo que mantiene viva la promesa del lado JS; si el buzón se destruye,
-    /// su `Drop` las rechaza en vez de dejarlas colgadas para siempre.
+    /// Calls picked up and still unanswered. The `Responder` kept here is what
+    /// keeps the promise on the JS side alive; if the mailbox is destroyed, its
+    /// `Drop` rejects them instead of leaving them hanging for ever.
     waiting: Mutex<HashMap<u64, Responder>>,
 }
 
@@ -65,26 +67,26 @@ impl PluginBridge {
         Arc::new(PluginBridge::default())
     }
 
-    /// Recoge lo que haya llegado desde la última vez. La llama el hilo de UI
-    /// una vez por frame.
+    /// Picks up whatever came in since last time. The UI thread calls it once
+    /// per frame.
     pub fn take_calls(&self) -> Vec<PluginCall> {
-        std::mem::take(&mut *self.pending.lock().expect("buzón de plugins envenenado"))
+        std::mem::take(&mut *self.pending.lock().expect("the plugin mailbox is poisoned"))
     }
 
-    /// Contesta a una llamada. `json` es el valor de vuelta ya serializado;
-    /// `"null"` para un método que no devuelve nada.
+    /// Answers a call. `json` is the return value, already serialised; `"null"`
+    /// for a method that returns nothing.
     ///
-    /// El `Err` no es un fallo del plugin sino del shell: o contestó dos veces
-    /// a la misma llamada, o contestó a una que no existe. Se devuelve para
-    /// que la plataforma lo pueda registrar; tragárselo dejaría un plugin roto
-    /// pareciendo uno lento.
+    /// The `Err` is not the plugin's failure but the shell's: either it answered
+    /// the same call twice, or it answered one that does not exist. It is
+    /// returned so the platform can log it; swallowing it would leave a broken
+    /// plugin looking like a slow one.
     pub fn resolve(&self, id: u64, json: &str) -> Result<(), String> {
         let responder = self.take_waiting(id)?;
         match serde_json::from_str::<Value>(json) {
             Ok(value) => responder.resolve(value),
-            // El plugin sí contestó; lo que no se entiende es su respuesta. La
-            // promesa se rechaza con el motivo exacto en vez de resolverse con
-            // un `undefined` que nadie sabría de dónde salió.
+            // The plugin did answer; what makes no sense is its answer. The
+            // promise is rejected with the exact reason rather than resolved
+            // with an `undefined` nobody could trace back to anything.
             Err(error) => responder
                 .reject(format!("el plugin contestó con algo que no es JSON válido: {error}")),
         }
@@ -96,21 +98,21 @@ impl PluginBridge {
         Ok(())
     }
 
-    /// Cuántas llamadas siguen en vuelo. Para diagnóstico y para los tests.
+    /// How many calls are still in flight. For diagnostics and for the tests.
     pub fn in_flight(&self) -> usize {
-        self.waiting.lock().expect("buzón de plugins envenenado").len()
+        self.waiting.lock().expect("the plugin mailbox is poisoned").len()
     }
 
     fn take_waiting(&self, id: u64) -> Result<Responder, String> {
-        self.waiting.lock().expect("buzón de plugins envenenado").remove(&id).ok_or_else(|| {
+        self.waiting.lock().expect("the plugin mailbox is poisoned").remove(&id).ok_or_else(|| {
             format!("no hay ninguna llamada a plugin con el id {id} esperando respuesta")
         })
     }
 
     fn enqueue(&self, module: &str, method: &str, args: Value, respond: Responder) {
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
-        self.waiting.lock().expect("buzón de plugins envenenado").insert(id, respond);
-        self.pending.lock().expect("buzón de plugins envenenado").push(PluginCall {
+        self.waiting.lock().expect("the plugin mailbox is poisoned").insert(id, respond);
+        self.pending.lock().expect("the plugin mailbox is poisoned").push(PluginCall {
             id,
             module: module.to_owned(),
             method: method.to_owned(),
@@ -119,21 +121,21 @@ impl PluginBridge {
     }
 }
 
-/// El módulo nativo que representa a un plugin dentro del registro.
+/// The native module that stands in for a plugin inside the registry.
 ///
-/// Uno por nombre declarado. No sabe qué métodos tiene el plugin ni le
-/// corresponde saberlo: quien rechaza un método que no existe es la
-/// implementación, que es la única que conoce su propia lista.
+/// One per declared name. It does not know which methods the plugin has, and it
+/// is not its job to: the one that turns down a method that does not exist is
+/// the implementation, the only one that knows its own list.
 pub struct HostPlugin {
     name: &'static str,
     bridge: Arc<PluginBridge>,
 }
 
 impl HostPlugin {
-    /// El nombre se filtra a propósito. `NativeModule::name` devuelve
-    /// `&'static str` porque los módulos compilados dentro son literales, y
-    /// aquí el nombre llega en tiempo de ejecución. Son unas decenas de bytes
-    /// por plugin, una sola vez en la vida del proceso.
+    /// The name is leaked on purpose. `NativeModule::name` returns a
+    /// `&'static str` because the modules compiled in are literals, and here the
+    /// name arrives at runtime. It is a few dozen bytes per plugin, once in the
+    /// life of the process.
     pub fn new(name: &str, bridge: Arc<PluginBridge>) -> Self {
         HostPlugin { name: Box::leak(name.to_owned().into_boxed_str()), bridge }
     }
@@ -154,7 +156,7 @@ mod tests {
     use super::*;
     use crate::modules::ModuleRegistry;
 
-    fn registro() -> (ModuleRegistry, Arc<PluginBridge>) {
+    fn registry_with_clipboard() -> (ModuleRegistry, Arc<PluginBridge>) {
         let bridge = PluginBridge::new();
         let mut registry = ModuleRegistry::new();
         registry.register(Box::new(HostPlugin::new("clipboard", bridge.clone())));
@@ -162,11 +164,12 @@ mod tests {
     }
 
     #[test]
-    fn la_llamada_viaja_y_la_respuesta_vuelve() {
-        let (mut registry, bridge) = registro();
+    fn the_call_travels_out_and_the_answer_comes_back() {
+        let (mut registry, bridge) = registry_with_clipboard();
         registry.invoke("clipboard", "read", Value::Null);
 
-        // Nada resuelto todavía: el motor no bloquea esperando a la plataforma.
+        // Nothing resolved yet: the engine does not block waiting on the
+        // platform.
         assert!(registry.drain().is_empty());
 
         let calls = bridge.take_calls();
@@ -174,62 +177,63 @@ mod tests {
         assert_eq!(calls[0].module, "clipboard");
         assert_eq!(calls[0].method, "read");
         assert_eq!(calls[0].args, "null");
-        // Y ya no está pendiente: recoger es consumir.
+        // And it is no longer pending: picking up is consuming.
         assert!(bridge.take_calls().is_empty());
         assert_eq!(bridge.in_flight(), 1);
 
-        bridge.resolve(calls[0].id, "\"hola\"").expect("la llamada estaba esperando");
+        bridge.resolve(calls[0].id, "\"hello\"").expect("the call was waiting");
         assert_eq!(bridge.in_flight(), 0);
         let answers = registry.drain();
         assert_eq!(answers.len(), 1);
-        assert_eq!(answers[0].1, Ok(Value::String("hola".to_owned())));
+        assert_eq!(answers[0].1, Ok(Value::String("hello".to_owned())));
     }
 
     #[test]
-    fn los_argumentos_llegan_serializados() {
-        let (mut registry, bridge) = registro();
+    fn the_arguments_arrive_serialised() {
+        let (mut registry, bridge) = registry_with_clipboard();
         registry.invoke("clipboard", "write", serde_json::json!({ "text": "ñandú" }));
         let calls = bridge.take_calls();
         assert_eq!(calls[0].args, r#"{"text":"ñandú"}"#);
     }
 
     #[test]
-    fn el_rechazo_llega_con_su_motivo() {
-        let (mut registry, bridge) = registro();
+    fn a_rejection_arrives_with_its_reason() {
+        let (mut registry, bridge) = registry_with_clipboard();
         registry.invoke("clipboard", "read", Value::Null);
         let calls = bridge.take_calls();
-        bridge.reject(calls[0].id, "el portapapeles está vacío").expect("estaba esperando");
-        assert_eq!(registry.drain()[0].1, Err("el portapapeles está vacío".to_owned()));
+        bridge.reject(calls[0].id, "the clipboard is empty").expect("it was waiting");
+        assert_eq!(registry.drain()[0].1, Err("the clipboard is empty".to_owned()));
     }
 
     #[test]
-    fn contestar_dos_veces_se_nota() {
-        let (mut registry, bridge) = registro();
+    fn answering_twice_gets_noticed() {
+        let (mut registry, bridge) = registry_with_clipboard();
         registry.invoke("clipboard", "read", Value::Null);
         let id = bridge.take_calls()[0].id;
-        bridge.resolve(id, "null").expect("la primera sí");
-        assert!(bridge.resolve(id, "null").is_err(), "la segunda tiene que dar la cara");
-        // Y a JS le llegó una sola respuesta, no dos.
+        bridge.resolve(id, "null").expect("the first one goes through");
+        assert!(bridge.resolve(id, "null").is_err(), "the second one has to own up");
+        // And JS got one answer, not two.
         assert_eq!(registry.drain().len(), 1);
     }
 
     #[test]
-    fn una_respuesta_ilegible_rechaza_la_promesa() {
-        let (mut registry, bridge) = registro();
+    fn an_unreadable_answer_rejects_the_promise() {
+        let (mut registry, bridge) = registry_with_clipboard();
         registry.invoke("clipboard", "read", Value::Null);
         let id = bridge.take_calls()[0].id;
-        bridge.resolve(id, "{esto no es json}").expect("la llamada existía");
+        bridge.resolve(id, "{this is not json}").expect("the call did exist");
         let answers = registry.drain();
         assert!(matches!(&answers[0].1, Err(message) if message.contains("JSON")));
     }
 
     #[test]
-    fn un_modulo_que_no_esta_registrado_no_se_traga_la_llamada() {
-        let (mut registry, bridge) = registro();
-        registry.invoke("biometria", "authenticate", Value::Null);
-        // No llegó a la cola de la plataforma…
+    fn a_module_that_is_not_registered_does_not_swallow_the_call() {
+        let (mut registry, bridge) = registry_with_clipboard();
+        registry.invoke("biometrics", "authenticate", Value::Null);
+        // It never reached the platform's queue…
         assert!(bridge.take_calls().is_empty());
-        // …y la promesa se rechaza en el acto, diciendo cuál faltaba.
-        assert!(matches!(&registry.drain()[0].1, Err(message) if message.contains("biometria")));
+        // …and the promise is rejected on the spot, naming the one that was
+        // missing.
+        assert!(matches!(&registry.drain()[0].1, Err(message) if message.contains("biometrics")));
     }
 }

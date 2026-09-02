@@ -1,18 +1,19 @@
 /**
- * Árbol de nodos del lado JS.
+ * The node tree on the JS side.
  *
- * El árbol autoritativo vive en Rust, pero `Renderer2` exige `parentNode()` y
- * `nextSibling()`, y `insertBefore()` recibe un nodo de referencia, no un
- * índice. Preguntar eso al core en cada llamada sería un ida y vuelta síncrono
- * por mutación — justo lo que el búfer de comandos evita. Así que este lado
- * mantiene la topología, y solo manda mutaciones.
+ * The authoritative tree lives in Rust, but `Renderer2` demands `parentNode()`
+ * and `nextSibling()`, and `insertBefore()` takes a reference node, not an
+ * index. Asking the core for that on every call would be a synchronous round
+ * trip per mutation — precisely what the command buffer avoids. So this side
+ * keeps the topology, and only sends mutations.
  *
- * Es también donde se decide qué nodos existen de verdad. El host de un
- * componente Angular —`<app-root>`, `<an-virtual-list>`, `<page-home>`— no es una
- * vista: es un envoltorio. Si nadie le pone estilo, prop ni oyente, no se crea
- * en el core y sus hijos cuelgan del abuelo. Fabric hace lo mismo en una pasada
- * posterior y lo llama *view flattening*; aquí sale gratis porque este lado ve
- * la secuencia entera antes de mandarla.
+ * It is also where it is decided which nodes really exist. An Angular
+ * component's host —`<app-root>`, `<an-virtual-list>`, `<page-home>`— is not a
+ * view: it is a wrapper. If nobody puts a style, a prop or a listener on it, it
+ * never gets created in the core and its children hang off the grandparent.
+ * Fabric does the same thing in a later pass and calls it *view flattening*;
+ * here it comes free, because this side sees the whole sequence before sending
+ * it.
  */
 
 declare const __an_dom: {
@@ -28,17 +29,16 @@ declare const __an_dom: {
 }
 
 /**
- * Vocabulario del núcleo: las primitivas que sabe montar.
+ * The core's vocabulary: the primitives it knows how to mount.
  *
- * Es una lista y no un mapa de etiqueta a primitiva porque la etiqueta se
- * traduce con una regla, no con una tabla: `an-text-input` es `TextInput` y
- * `an-view` es `View`. Añadir una primitiva es escribir su nombre aquí y su
- * directiva en `packages/primitives`; no hay una tercera lista que se pueda
- * quedar atrás sin que nadie se entere, y lo que queda lo vigila
- * `scripts/check-kinds.sh`.
+ * It is a list and not a tag-to-primitive map because the tag is translated by a
+ * rule, not by a table: `an-text-input` is `TextInput` and `an-view` is `View`.
+ * Adding a primitive means writing its name here and its directive in
+ * `packages/primitives`; there is no third list that can fall behind without
+ * anybody noticing, and what is left is watched by `scripts/check-kinds.sh`.
  *
- * `RawText` no está: no tiene etiqueta porque no se escribe en ninguna
- * plantilla, lo crea `Renderer2.createText()`.
+ * `RawText` is not here: it has no tag because no template ever writes it,
+ * `Renderer2.createText()` creates it.
  */
 const NATIVE_KINDS = [
   'View',
@@ -72,19 +72,18 @@ export type NativeKind = (typeof NATIVE_KINDS)[number] | 'RawText'
 
 const MOUNTABLE = new Set<string>(NATIVE_KINDS)
 
-/** Prefijo de todas las etiquetas del framework, al estilo de Ionic. */
+/** The prefix on every one of the framework's tags, Ionic-style. */
 const PREFIX = 'an-'
 
 /**
- * De la etiqueta al nombre de la primitiva: quitar `an-` y juntar los trozos
- * en PascalCase.
+ * From the tag to the primitive's name: strip `an-` and join the pieces in
+ * PascalCase.
  *
- * Es una regla y no una tabla a propósito. El prefijo también es lo que
- * distingue una primitiva del host de un componente: `<app-root>` y
- * `<page-home>` no lo llevan y por eso no se buscan aquí. Un `an-` mal
- * escrito no se cuela —Angular rechaza en tiempo de compilación cualquier
- * etiqueta que no case con una directiva— así que aquí basta con no
- * reconocerlo y tratarlo como envoltorio.
+ * It is a rule and not a table on purpose. The prefix is also what tells a
+ * primitive apart from a component's host: `<app-root>` and `<page-home>` do not
+ * carry it, which is why they are not looked up here. A misspelt `an-` cannot
+ * sneak through —Angular rejects at compile time any tag that does not match a
+ * directive— so here it is enough not to recognise it and treat it as a wrapper.
  */
 function kindFromTag(tag: string): NativeKind | null {
   if (!tag.startsWith(PREFIX)) return null
@@ -98,25 +97,26 @@ export class NativeNode {
   parent: NativeNode | null = null
   readonly children: NativeNode[] = []
   /**
-   * Un nodo destruido no vuelve. Angular sigue soltando suscripciones después
-   * de destruir la vista —un `(press)` desengancha su gesto al morir— y esas
-   * operaciones llegarían al core apuntando a algo que ya no existe.
+   * A destroyed node never comes back. Angular goes on dropping subscriptions
+   * after destroying the view —a `(press)` unhooks its gesture as it dies— and
+   * those operations would reach the core pointing at something that is no
+   * longer there.
    */
   destroyed = false
 
   /**
-   * `0` mientras el nodo no exista en el core. Los envoltorios y los
-   * comentarios ancla de `@if` y `@for` viven solo en este lado.
+   * `0` for as long as the node does not exist in the core. Wrappers and the
+   * anchor comments of `@if` and `@for` live on this side only.
    */
   id = 0
 
   constructor(
     readonly kind: NativeKind | 'Comment',
-    /** `false` para envoltorios y comentarios: no hay vista nativa detrás. */
+    /** `false` for wrappers and comments: there is no native view behind. */
     public materialized: boolean
   ) {}
 
-  /** Tiene vista nativa propia ahora mismo. */
+  /** It has a native view of its own right now. */
   get mounted(): boolean {
     return this.materialized && !this.destroyed
   }
@@ -126,7 +126,7 @@ export class NativeNode {
   }
 }
 
-/** Cuántas vistas nativas cuelgan de aquí, contándose a sí mismo. */
+/** How many native views hang off here, counting itself. */
 function mountedCount(node: NativeNode): number {
   if (node.mounted) return 1
   let total = 0
@@ -134,7 +134,7 @@ function mountedCount(node: NativeNode): number {
   return total
 }
 
-/** Las vistas nativas más altas que cuelgan de aquí, en orden. */
+/** The topmost native views hanging off here, in order. */
 function mountedRoots(node: NativeNode, out: NativeNode[] = []): NativeNode[] {
   if (node.mounted) {
     out.push(node)
@@ -144,7 +144,7 @@ function mountedRoots(node: NativeNode, out: NativeNode[] = []): NativeNode[] {
   return out
 }
 
-/** El ancestro que sí tiene vista nativa, saltándose los envoltorios. */
+/** The nearest ancestor that does have a native view, skipping wrappers. */
 function mountParent(node: NativeNode): NativeNode | null {
   let parent = node.parent
   while (parent && !parent.mounted) parent = parent.parent
@@ -152,10 +152,11 @@ function mountParent(node: NativeNode): NativeNode | null {
 }
 
 /**
- * Posición que le toca a este nodo dentro de su padre montado.
+ * The position this node is due inside its mounted parent.
  *
- * Hay que contar hacia arriba: entre él y su padre real puede haber varios
- * envoltorios, y cada uno aporta las vistas de sus hermanos anteriores.
+ * The counting has to go upwards: between it and its real parent there may be
+ * several wrappers, and each one contributes the views of the siblings before
+ * it.
  */
 function mountIndex(node: NativeNode): number {
   let index = 0
@@ -179,8 +180,8 @@ export function createElementNode(name: string): NativeNode {
     node.id = __an_dom.createNode(kind)
     return node
   }
-  // Host de un componente: por ahora no existe. Si alguien le pone algo
-  // encima, se creará entonces.
+  // A component's host: for now it does not exist. If somebody puts something
+  // on it, it will get created then.
   return new NativeNode('View', false)
 }
 
@@ -192,41 +193,42 @@ export function createTextNode(value: string): NativeNode {
 }
 
 /**
- * Un comentario no tiene contrapartida nativa: es solo un marcador de posición
- * de `@if` y `@for` en el árbol de JS.
+ * A comment has no native counterpart: it is nothing but a placeholder for `@if`
+ * and `@for` in the JS tree.
  */
 export function createCommentNode(): NativeNode {
   return new NativeNode('Comment', false)
 }
 
 /**
- * Crea de verdad un envoltorio que hasta ahora no existía.
+ * Really creates a wrapper that until now did not exist.
  *
- * Ocurre cuando algo le pone un estilo, una prop o un oyente: deja de ser un
- * envoltorio y pasa a ser una vista. Sus hijos, que colgaban del abuelo, se
- * mudan dentro.
+ * It happens when something puts a style, a prop or a listener on it: it stops
+ * being a wrapper and becomes a view. Its children, which were hanging off the
+ * grandparent, move inside it.
  */
 export function materialize(node: NativeNode): void {
   if (node.materialized || node.destroyed || node.kind === 'Comment') return
 
-  // Se apuntan antes de cambiar nada: después de materializar, `mountedRoots`
-  // devolvería el propio nodo.
+  // They are written down before anything changes: after materialising,
+  // `mountedRoots` would return the node itself.
   const descendants = mountedRoots(node)
   const parent = mountParent(node)
   const index = mountIndex(node)
 
-  // Los hijos salen del abuelo antes de que este nodo sea una vista, y no
-  // después: en cuanto `materialized` está a `true`, el padre montado de cada
-  // hijo es ya este nodo, así que la baja se comparaba consigo misma y no se
-  // mandaba nunca. El árbol quedaba con el mismo hijo colgando de dos padres.
+  // The children come off the grandparent before this node becomes a view, and
+  // not after: the moment `materialized` is `true`, every child's mounted parent
+  // is already this node, so the detach was comparing itself against itself and
+  // never got sent. The tree was left with the same child hanging off two
+  // parents.
   //
-  // No se notaba porque UIKit y AppKit mueven una vista que ya tiene padre sin
-  // decir nada; `ViewGroup.addView` de Android lanza, y la primera vez que se
-  // vio fue con un `an-safe-area` recargado en caliente en el reloj: la
-  // pantalla se quedaba negra.
+  // Nobody noticed, because UIKit and AppKit move a view that already has a
+  // parent without a word; Android's `ViewGroup.addView` throws, and the first
+  // time anyone saw it was with an `an-safe-area` hot-reloaded on the watch: the
+  // screen went black.
   //
-  // Todos los descendientes montados cuelgan del mismo sitio —el padre montado
-  // de este nodo—, porque lo que hay entre medias no es vista.
+  // Every mounted descendant hangs off the same place —this node's mounted
+  // parent— because what sits in between is not a view.
   if (parent) {
     for (const child of descendants) __an_dom.removeChild(parent.id, child.id)
   }
@@ -248,8 +250,8 @@ export function attach(parent: NativeNode, child: NativeNode, index: number): vo
 
   const target = mountParent(child)
   if (!target) return
-  // Si el que entra es un envoltorio, lo que se monta son las vistas que
-  // cuelgan de él.
+  // If the one coming in is a wrapper, what gets mounted are the views hanging
+  // off it.
   let position = mountIndex(child)
   for (const view of mountedRoots(child)) {
     __an_dom.insertChild(target.id, view.id, position++)
@@ -272,12 +274,12 @@ export function detach(parent: NativeNode, child: NativeNode): void {
 }
 
 /**
- * Marca el nodo y todo lo que cuelga de él.
+ * Marks the node and everything hanging off it.
  *
- * El core destruye subárboles enteros de una vez, así que basta con que
- * Angular pida borrar el padre para que los hijos dejen de existir allí. Si
- * este lado no se entera, la baja de un `(press)` de un hijo llega después
- * apuntando a un nodo que ya no está.
+ * The core destroys whole subtrees at once, so Angular asking for the parent to
+ * be removed is enough for the children to stop existing over there. If this
+ * side does not find out, a child's `(press)` unsubscribe arrives afterwards
+ * pointing at a node that is no longer there.
  */
 export function markDestroyed(node: NativeNode): void {
   if (node.destroyed) return

@@ -1,14 +1,15 @@
-//! Compilación del bundle JS: `ngc` para las plantillas, esbuild para empaquetar.
+//! Building the JS bundle: `ngc` for the templates, esbuild for the packaging.
 //!
-//! Nada del CLI de Angular. `ng build` produce un bundle de navegador, con sus
-//! polyfills y sus suposiciones sobre el DOM; aquí hace falta lo contrario.
+//! Nothing from Angular's CLI. `ng build` produces a browser bundle, with its
+//! polyfills and its assumptions about the DOM; what is needed here is the
+//! opposite.
 //!
-//! Los dos mundos —el monorepo y un proyecto de fuera— pasan por el mismo
-//! camino; lo único que cambia son cuatro rutas y desde dónde se ejecuta.
-//! Fuera, `ngc` y esbuild corren con el directorio de trabajo en el proyecto,
-//! así que `@angular/core` sale de las dependencias del proyecto y no de las
-//! del SDK: la app se compila contra la versión de Angular que el usuario
-//! tiene instalada, que es la única que tiene sentido.
+//! Both worlds —the monorepo and a project from outside— go down the same road;
+//! all that changes is four paths and where it runs from. Outside, `ngc` and
+//! esbuild run with the working directory set to the project, so `@angular/core`
+//! comes from the project's dependencies and not the SDK's: the app is compiled
+//! against the version of Angular the user has installed, which is the only one
+//! that makes any sense.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -18,14 +19,15 @@ use anyhow::{bail, Context, Result};
 use crate::plugins::Plugin;
 use crate::workspace::Workspace;
 
-/// Los dos paquetes del framework, con el directorio del que salen dentro del
-/// monorepo. Ahí son TypeScript suelto y esbuild no los puede resolver por
-/// `node_modules`: hay que apuntarle al `.js` que `ngc` acaba de escribir.
+/// The framework's two packages, with the directory they come from inside the
+/// monorepo. In there they are loose TypeScript and esbuild cannot resolve them
+/// through `node_modules`: it has to be pointed at the `.js` `ngc` has just
+/// written.
 ///
-/// En un proyecto de fuera no hace falta ninguno de estos alias: los dos
-/// paquetes están instalados, compilados y con sus `.d.ts`, y se resuelven como
-/// cualquier otra dependencia.
-const PAQUETES: [(&str, &str); 2] = [
+/// In a project from outside none of these aliases is needed: both packages are
+/// installed, compiled and carrying their `.d.ts`, and they resolve like any
+/// other dependency.
+const PACKAGES: [(&str, &str); 2] = [
     ("@angular-native/platform", "packages/platform-native"),
     ("@angular-native/primitives", "packages/primitives"),
 ];
@@ -55,8 +57,8 @@ pub fn bundle(
         None => {
             let name = Workspace::name(app);
             let tsconfig = workspace.root.join(app).join("tsconfig.json");
-            // Relativas: en el monorepo el directorio de trabajo es la raíz, y
-            // las rutas cortas son las que salen por pantalla.
+            // Relative: in the monorepo the working directory is the root, and
+            // short paths are what shows up on screen.
             let entry = PathBuf::from("build/js").join(&name).join(app).join("src/main.js");
             let out = workspace.root.join("build/bundle").join(&name).join("main.js");
             (tsconfig, entry, out, workspace.root.clone())
@@ -69,30 +71,30 @@ pub fn bundle(
     eprintln!("==> esbuild{}", if release { " (release)" } else { "" });
     std::fs::create_dir_all(out.parent().expect("la salida tiene padre"))?;
 
-    // El empaquetado va por un script de Node y no por el binario de esbuild:
-    // hace falta el Angular Linker, que es un plugin de Babel. El script vive
-    // en el SDK, así que sus propios `import` se resuelven contra el
-    // `node_modules` del SDK aunque el directorio de trabajo sea otro.
+    // The packaging goes through a Node script and not esbuild's binary: the
+    // Angular Linker is needed, and that is a Babel plugin. The script lives in
+    // the SDK, so its own `import`s resolve against the SDK's `node_modules`
+    // even when the working directory is somewhere else.
     let mut args: Vec<String> = vec![
         workspace.root.join("scripts/bundle.mjs").to_string_lossy().into_owned(),
         entry.to_string_lossy().into_owned(),
         out.to_string_lossy().into_owned(),
     ];
     if workspace.project.is_none() {
-        for (paquete, origen) in PAQUETES {
-            // Absolutas: el `alias` de esbuild resuelve contra el importador, no
-            // contra el directorio de trabajo.
-            let compilado = js_dir.join(origen).join("src/public-api.js");
-            args.push(format!("--alias={paquete}={}", compilado.display()));
+        for (package, source) in PACKAGES {
+            // Absolute: esbuild's `alias` resolves against the importer, not
+            // against the working directory.
+            let compiled = js_dir.join(source).join("src/public-api.js");
+            args.push(format!("--alias={package}={}", compiled.display()));
         }
     }
-    // Y uno por plugin que traiga su API en TypeScript: `ngc` la ha dejado en
-    // el mismo sitio que la de la app, y el import del paquete tiene que
-    // apuntar ahí y no a lo que haya en `node_modules`.
+    // And one per plugin that brings its API in TypeScript: `ngc` has left it
+    // in the same place as the app's, and the package's import has to point
+    // there and not at whatever is in `node_modules`.
     args.extend(crate::plugins::aliases(workspace, &js_dir, plugins));
     if release {
-        // `ngDevMode` a false quita las comprobaciones de desarrollo de Angular,
-        // que son casi la mitad del bundle.
+        // `ngDevMode` set to false strips Angular's development checks, which
+        // are close to half the bundle.
         args.push("--release".into());
     }
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();

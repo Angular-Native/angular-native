@@ -1,5 +1,6 @@
-//! Layout: traduce props de estilo a `taffy::Style`, mantiene el árbol de layout
-//! espejo del shadow tree y resuelve la medición de nodos hoja (texto, imagen).
+//! Layout: turns style props into `taffy::Style`, keeps the layout tree
+//! mirroring the shadow tree, and resolves the measuring of leaf nodes (text,
+//! images).
 
 pub mod engine;
 pub mod measure;

@@ -22,8 +22,9 @@ import { dom, NativeNode } from './native-node'
 import { NativeRendererFactory } from './renderer'
 
 /**
- * Raíz del árbol nativo. Se crea una sola vez por app: es el `<an-view>` del que
- * cuelga todo y el que el core monta sobre la vista que da la plataforma.
+ * The native tree's root. It is created once per app: it is the `<an-view>`
+ * everything hangs off, and the one the core mounts onto the view the platform
+ * hands it.
  */
 function createRootNode(): NativeNode {
   const root = new NativeNode('View', true)
@@ -35,9 +36,9 @@ function createRootNode(): NativeNode {
 }
 
 /**
- * Plataforma propia. No se hereda de `platform-browser`: ese paquete arrastra
- * el `DomAdapter`, el `DomRendererFactory2` y el sanitizador de HTML, todo
- * inútil aquí y todo asumiendo que existe un DOM.
+ * A platform of our own. It does not inherit from `platform-browser`: that
+ * package drags in the `DomAdapter`, the `DomRendererFactory2` and the HTML
+ * sanitiser, all useless here and all assuming a DOM exists.
  */
 export const platformNative: (extraProviders?: Provider[]) => PlatformRef =
   createPlatformFactory(platformCore, 'native', [
@@ -49,11 +50,11 @@ export interface NativeApplicationConfig {
 }
 
 /**
- * Equivalente de `bootstrapApplication` para esta plataforma.
+ * The equivalent of `bootstrapApplication` for this platform.
  *
- * Zoneless es obligatorio, no una opción: sin zone.js no hay que parchear
- * temporizadores ni XHR dentro del motor JS, y la detección de cambios la
- * disparan las señales, que es justo lo que el bucle por frame necesita.
+ * Zoneless is compulsory, not an option: without zone.js there is no patching of
+ * timers or XHR inside the JS engine, and change detection is driven by signals,
+ * which is exactly what the per-frame loop needs.
  */
 export async function bootstrapNativeApplication(
   rootComponent: Type<unknown>,
@@ -61,10 +62,10 @@ export async function bootstrapNativeApplication(
 ): Promise<ApplicationRef> {
   const already = runningApplication()
   if (already !== null) {
-    // Segunda evaluación del bundle: no es un arranque, es un guardado. En vez
-    // de montar otra app encima, se le pasan a la que hay las definiciones
-    // nuevas. Quien pidió la recarga mira la marca para saber si hizo falta
-    // reiniciar de verdad.
+    // A second evaluation of the bundle: this is not a startup, it is a save.
+    // Instead of mounting another app on top, the one already there is handed
+    // the new definitions. Whoever asked for the reload looks at the flag to
+    // know whether a real restart was needed.
     const globals = globalThis as typeof globalThis & { __anHotOk?: boolean }
     try {
       globals.__anHotOk = hotRefresh(rootComponent)
@@ -83,15 +84,15 @@ export async function bootstrapNativeApplication(
     rootComponent,
     appProviders: [
       provideZonelessChangeDetection(),
-      // Marca este inyector como la raíz. Sin esto, ningún servicio
-      // `providedIn: 'root'` resuelve y el arranque muere con NG0201 en el
-      // primer token interno que Angular pide.
+      // Marks this injector as the root. Without it, no `providedIn: 'root'`
+      // service resolves and the bootstrap dies with NG0201 on the first
+      // internal token Angular asks for.
       { provide: INJECTOR_SCOPE, useValue: 'root' },
-      // Lo provee `platform-browser` normalmente; aquí hay que ponerlo a mano
-      // o Angular aborta el arranque con NG0402.
+      // `platform-browser` normally provides it; here it has to go in by hand
+      // or Angular aborts the bootstrap with NG0402.
       { provide: ErrorHandler, useClass: ErrorHandler },
-      // Sirve para separar estilos y estado entre apps en la misma página.
-      // Aquí solo hay una app y no hay página, pero el token es obligatorio.
+      // It is for keeping styles and state apart between apps on the same page.
+      // Here there is one app and no page, but the token is compulsory.
       { provide: APP_ID, useValue: 'an' },
       { provide: DOCUMENT, useValue: document },
       { provide: RendererFactory2, useFactory: () => new NativeRendererFactory(root), deps: [] },

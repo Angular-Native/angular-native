@@ -1,15 +1,16 @@
 /**
- * Los nombres de estilo que el núcleo sabe resolver.
+ * The style names the core knows how to resolve.
  *
- * Está aquí duplicada la lista que vive en `crates/an-layout/src/style.rs`, y
- * no se puede evitar: el núcleo la necesita para resolver el layout y este
- * lado la necesita para avisar antes de mandar algo que nadie va a mirar. Que
- * no se separen lo comprueba `scripts/check-styles.sh`, que las compara.
+ * This duplicates the list that lives in `crates/an-layout/src/style.rs`, and
+ * there is no way round it: the core needs it to resolve layout and this side
+ * needs it to warn before sending something nobody is going to look at. That
+ * they do not drift apart is checked by `scripts/check-styles.sh`, which
+ * compares them.
  *
- * Sin este aviso, escribir un nombre que nadie reconoce no hacía nada: la
- * propiedad viajaba al host como una prop cualquiera, el host no la usaba, y
- * ahí se acababa. Sin error, sin traza, sin nada. Ha costado tres tardes en
- * cuatro casos distintos.
+ * Without this warning, writing a name nobody recognises did nothing at all: the
+ * property travelled to the host like any other prop, the host did not use it,
+ * and that was the end of it. No error, no trace, nothing. It has cost three
+ * afternoons across four separate cases.
  */
 export const KNOWN_STYLES: ReadonlySet<string> = new Set([
   'alignContent',

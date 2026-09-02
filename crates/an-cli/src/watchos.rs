@@ -1,17 +1,18 @@
-//! Arma el `.app` del reloj y lo lleva al simulador de watchOS.
+//! Builds the watch `.app` and takes it to the watchOS simulator.
 //!
-//! Lo mismo que hace `ios.rs` —sin `.xcodeproj`, `swiftc` enlazando contra el
-//! staticlib de Rust— con tres diferencias que no son cosméticas:
+//! The same thing `ios.rs` does —no `.xcodeproj`, `swiftc` linking against
+//! Rust's staticlib— with three differences that are not cosmetic:
 //!
-//! 1. **Hace falta nightly.** `aarch64-apple-watchos-sim` es un target de
-//!    nivel 3 y no trae `std` precompilada, así que hay que construirla en el
-//!    momento con `-Z build-std`. Es la razón por la que este subcomando llama
-//!    a `cargo +nightly` en vez de al `cargo` del `rust-toolchain.toml`.
-//! 2. **`-parse-as-library`.** El shell del reloj arranca con `@main` sobre un
-//!    `App` de SwiftUI. Sin este flag `swiftc` trata el primer fichero como un
-//!    script de nivel superior y `@main` no se usa.
-//! 3. **El bundle es de reloj.** `WKApplication` en el `Info.plist` y familia
-//!    de dispositivo 4; sin eso `simctl` instala algo que luego no sabe lanzar.
+//! 1. **Nightly is required.** `aarch64-apple-watchos-sim` is a tier 3 target
+//!    and ships no precompiled `std`, so it has to be built on the spot with
+//!    `-Z build-std`. That is why this subcommand calls `cargo +nightly` rather
+//!    than the `cargo` from `rust-toolchain.toml`.
+//! 2. **`-parse-as-library`.** The watch shell starts at an `@main` on a SwiftUI
+//!    `App`. Without this flag `swiftc` treats the first file as a top-level
+//!    script and the `@main` goes unused.
+//! 3. **The bundle is a watch's.** `WKApplication` in the `Info.plist` and
+//!    device family 4; without those `simctl` installs something it then cannot
+//!    launch.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -23,29 +24,29 @@ use crate::ios::swift_sources;
 use crate::plugins::Plugin;
 use crate::workspace::Workspace;
 
-/// El reloj todavía no carga plugins: `an-watch` no tiene el registro que
-/// tienen `an-ios` y `an-android`, y su shell no es un port del de iOS.
+/// The watch does not load plugins yet: `an-watch` has none of the registry
+/// `an-ios` and `an-android` have, and its shell is not a port of the iOS one.
 ///
-/// Se dice aquí y se para. Armar el `.app` igualmente dejaría una app en la
-/// que el módulo no existe y cada llamada se rechaza en tiempo de ejecución, y
-/// eso es justo lo que este sistema no debe hacer nunca.
+/// It is said here and it stops. Building the `.app` anyway would leave an app
+/// in which the module does not exist and every call is turned down at runtime,
+/// and that is exactly what this system must never do.
 pub fn reject_plugins(plugins: &[Plugin]) -> Result<()> {
     if plugins.is_empty() {
         return Ok(());
     }
-    let nombres: Vec<&str> = plugins.iter().map(|plugin| plugin.package.as_str()).collect();
+    let names: Vec<&str> = plugins.iter().map(|plugin| plugin.package.as_str()).collect();
     bail!(
         "esta app no se puede compilar para watchOS: el reloj todavía no carga plugins, \
          y depende de {}. Ver docs/plugins.md.",
-        nombres.join(", ")
+        names.join(", ")
     )
 }
 
 const APP_NAME: &str = "AngularNativeWatch";
 const BUNDLE_ID: &str = "dev.angularnative.playground.watchkitapp";
 const TARGET: &str = "aarch64-apple-watchos-sim";
-/// watchOS 11 es lo más antiguo donde `@Observable` y las novedades de SwiftUI
-/// que usa el shell están disponibles sin `@available` por todas partes.
+/// watchOS 11 is the oldest one where `@Observable` and the SwiftUI additions
+/// the shell uses are available without `@available` sprinkled everywhere.
 const DEPLOYMENT: &str = "11.0";
 
 pub struct Package {
@@ -63,9 +64,9 @@ pub fn assemble(
     let app_dir = workspace.build_dir().join("watchos").join(format!("{APP_NAME}.app"));
 
     eprintln!("==> core Rust ({profile}, {TARGET})");
-    // `+nightly` y `build-std`: ver la cabecera. Si esto falla porque falta el
-    // componente, el mensaje de cargo ya dice cuál es y se deja pasar tal cual
-    // en vez de adivinar.
+    // `+nightly` and `build-std`: see the header. If this fails because the
+    // component is missing, cargo's message already says which one, so it is let
+    // through as-is rather than guessed at.
     let mut cargo_args = vec![
         "+nightly",
         "build",
@@ -79,8 +80,8 @@ pub fn assemble(
     if release {
         cargo_args.push("--release");
     }
-    // QuickJS se compila con `cc`, que sin esto usa el mínimo del SDK y el
-    // enlazado con Swift avisa de la discrepancia.
+    // QuickJS is built with `cc`, which without this uses the SDK's minimum and
+    // the Swift link step complains about the mismatch.
     let status = Command::new("cargo")
         .args(&cargo_args)
         .env("WATCHOS_DEPLOYMENT_TARGET", DEPLOYMENT)
@@ -99,8 +100,8 @@ pub fn assemble(
     let _ = std::fs::remove_dir_all(&app_dir);
     std::fs::create_dir_all(&app_dir)?;
 
-    // `shells/shared` trae lo que no depende de la plataforma —el cliente del
-    // servidor de desarrollo—, que compilan los dos shells.
+    // `shells/shared` brings what does not depend on the platform —the dev
+    // server's client—, compiled by both shells.
     let mut sources: Vec<String> = swift_sources(&root.join("shells/watchos/Sources"))?;
     if sources.is_empty() {
         bail!("no hay fuentes Swift en shells/watchos/Sources");
@@ -114,7 +115,8 @@ pub fn assemble(
         sdk.clone(),
         "-target".into(),
         format!("arm64-apple-watchos{DEPLOYMENT}-simulator"),
-        // Sin esto `@main` no se usa: swiftc trataría un fichero como script.
+        // Without this the `@main` goes unused: swiftc would treat a file as a
+        // script.
         "-parse-as-library".into(),
         "-import-objc-header".into(),
         root.join("shells/watchos/Sources/Bridging-Header.h").to_string_lossy().into_owned(),
@@ -156,8 +158,8 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
     let _ = Command::new("open")
         .args(["-a", "Simulator", "--args", "-CurrentDeviceUDID", &udid])
         .status();
-    // Instalar sobre un simulador a medio arrancar deja el comando colgado sin
-    // decir nada. `bootstatus` espera a que el arranque termine de verdad.
+    // Installing onto a half-booted simulator leaves the command hanging
+    // without a word. `bootstatus` waits for the boot to really finish.
     let ready = Command::new("xcrun")
         .args(["simctl", "bootstatus", &udid, "-b"])
         .status()
@@ -166,9 +168,9 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
         bail!("el simulador {device} no llegó a arrancar");
     }
 
-    // Cerrar y desinstalar antes de instalar: `simctl install` sobre una app
-    // que ya está no reemplaza el bundle de forma fiable. Los dos fallan si no
-    // había nada, que es lo normal la primera vez.
+    // Quit and uninstall before installing: `simctl install` over an app that is
+    // already there does not replace the bundle reliably. Both fail if there was
+    // nothing, which is the normal case the first time round.
     let _ = Command::new("xcrun").args(["simctl", "terminate", &udid, BUNDLE_ID]).output();
     let _ = Command::new("xcrun").args(["simctl", "uninstall", &udid, BUNDLE_ID]).output();
     let install = Command::new("xcrun")
@@ -190,11 +192,11 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
     Ok(())
 }
 
-/// Busca un reloj por nombre y devuelve su udid.
+/// Looks a watch up by name and returns its udid.
 ///
-/// Se parsea el JSON de verdad, por lo mismo que en iOS: `simctl` pone el
-/// `udid` *antes* que el `name`, así que buscar el nombre a pelo y leer el
-/// `udid` siguiente devuelve el del dispositivo de después.
+/// The JSON is really parsed, for the same reason as on iOS: `simctl` puts the
+/// `udid` *before* the `name`, so grepping for the name and reading the next
+/// `udid` gives you the one belonging to the device after it.
 fn find_device(name: &str) -> Result<String> {
     let json = capture("xcrun", &["simctl", "list", "devices", "available", "-j"])?;
     let parsed: serde_json::Value =
@@ -206,8 +208,8 @@ fn find_device(name: &str) -> Result<String> {
 
     let mut fallback = None;
     for (runtime, devices) in runtimes {
-        // Solo relojes: hay iPhones y iPads con nombres parecidos, y meter una
-        // app de watchOS en un iPhone falla mucho después y de forma confusa.
+        // Watches only: there are iPhones and iPads with similar names, and
+        // putting a watchOS app on an iPhone fails much later and confusingly.
         if !runtime.contains("watchOS") {
             continue;
         }

@@ -14,25 +14,25 @@ import {
 import { KNOWN_STYLES } from './style-names'
 
 /**
- * `Renderer2` sobre primitivas nativas.
+ * `Renderer2` over native primitives.
  *
- * Esta clase es toda la costura entre Angular y el core: las plantillas
- * compiladas por AOT emiten instrucciones que acaban aquí, así que una
- * plantilla Angular funciona sin tocarla — lo único que cambia es que los
- * elementos son `<an-view>` y `<an-text>` en vez de `<div>` y `<span>`.
+ * This class is the entire seam between Angular and the core: templates compiled
+ * by AOT emit instructions that end up here, so an Angular template works
+ * untouched — the only thing that changes is that the elements are `<an-view>`
+ * and `<an-text>` instead of `<div>` and `<span>`.
  */
 /**
- * Props de texto que en CSS serían estilos y aquí no lo son.
+ * Text props that in CSS would be styles and here are not.
  *
- * El tamaño y el peso de la letra no son estilo de caja: el layout los
- * necesita para medir y el host para dibujar, y los dos los leen de las props.
- * Sin esto, escribir `[style.fontSize]` en una plantilla —que Angular acepta
- * sin rechistar— no hacía nada: la letra se medía con la de por defecto y se
- * dibujaba con la de UIKit, que no es la misma, y el texto se salía de su
- * caja y lo recortaba el padre. Se veía como texto que desaparece.
+ * A font's size and weight are not box styling: layout needs them to measure and
+ * the host needs them to draw, and both read them off the props. Without this,
+ * writing `[style.fontSize]` in a template —which Angular accepts without a
+ * murmur— did nothing at all: the text was measured in the default font and
+ * drawn in UIKit's, which is not the same one, and the text spilled out of its
+ * box and the parent clipped it. It looked like text disappearing.
  *
- * La forma recomendada sigue siendo la entrada tipada, `[fontSize]`, que el
- * compilador comprueba. Esto es para que la otra no mienta.
+ * The recommended way is still the typed input, `[fontSize]`, which the compiler
+ * checks. This is so the other one does not lie.
  */
 const TEXT_PROPS = new Map<string, string>(
   [
@@ -45,9 +45,9 @@ const TEXT_PROPS = new Map<string, string>(
     'color',
     'textAlign',
     'numberOfLines'
-    // Angular normaliza los nombres de estilo a guiones antes de llegar aquí,
-    // así que las dos grafías tienen que reconocerse: la que se escribe en la
-    // plantilla y la que llega.
+    // Angular normalises style names to hyphens before they get here, so both
+    // spellings have to be recognised: the one written in the template and the
+    // one that arrives.
   ].flatMap((name) => {
     const dashed = name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)
     return [
@@ -58,21 +58,24 @@ const TEXT_PROPS = new Map<string, string>(
 )
 
 /**
- * Avisa una vez por nombre de estilo que nadie va a mirar.
+ * Warns once per style name that nobody is going to look at.
  *
- * Angular deja escribir `[style.loQueSea]` sin rechistar, y hasta aquí eso
- * viajaba al host como una prop cualquiera: el host no la usaba y no pasaba
- * nada. Sin error y sin traza, que es lo que hace caros estos fallos —han
- * caído cuatro en un día, y los cuatro se veían como "esto no hace nada".
+ * Angular lets you write `[style.whatever]` without a murmur, and up to here
+ * that travelled to the host like any other prop: the host did not use it and
+ * nothing happened. No error and no trace, which is what makes these bugs
+ * expensive —four of them turned up in a single day, and all four looked like
+ * "this does nothing".
  *
- * Se avisa una vez por nombre: el mismo estilo se escribe en cada detección de
- * cambios, y avisar en todas llenaría el registro sin decir nada nuevo.
+ * The warning fires once per name: the same style gets written on every change
+ * detection pass, and warning every time would fill the log without saying
+ * anything new.
  */
 const warned = new Set<string>()
 
 function warnUnknownStyle(name: string): void {
-  // El núcleo acepta las dos grafías, así que aquí también: si no, cada estilo
-  // escrito en camello —que Angular entrega con guiones— daría un aviso falso.
+  // The core accepts both spellings, so this does too: otherwise every style
+  // written in camel case —which Angular hands over hyphenated— would raise a
+  // false warning.
   const camel = name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase())
   if (KNOWN_STYLES.has(camel) || TEXT_PROPS.has(camel) || warned.has(camel)) return
   warned.add(camel)
@@ -84,7 +87,7 @@ function warnUnknownStyle(name: string): void {
 }
 
 export class NativeRenderer extends Renderer2 {
-  /** Clases acumuladas por nodo, para poder mandarlas juntas al core. */
+  /** Classes accumulated per node, so they can be sent to the core together. */
   private readonly classes = new WeakMap<NativeNode, Set<string>>()
 
   constructor(private readonly root: NativeNode) {
@@ -109,11 +112,11 @@ export class NativeRenderer extends Renderer2 {
 
   override destroyNode = (node: NativeNode): void => {
     if (node.destroyed) return
-    // Se pregunta antes de marcar: `mounted` es «materializado y vivo», así
-    // que marcar primero lo pone a `false` y la baja no llegaría nunca al
-    // core. Normalmente no se nota —Angular quita del árbol antes de
-    // destruir—, pero al refrescar en caliente destruye primero, y entonces
-    // la pantalla vieja se quedaba debajo de la nueva.
+    // It is asked before marking: `mounted` means «materialised and alive», so
+    // marking first sets it to `false` and the removal would never reach the
+    // core. Normally nobody notices —Angular takes things out of the tree before
+    // destroying them— but on a hot refresh it destroys first, and then the old
+    // screen was left sitting underneath the new one.
     const wasMounted = node.mounted
     markDestroyed(node)
     if (wasMounted) dom.destroyNode(node.id)
@@ -135,8 +138,8 @@ export class NativeRenderer extends Renderer2 {
   }
 
   /**
-   * Angular pasa aquí el selector del componente raíz. No hay `querySelector`
-   * que valga: la raíz la fija la plataforma al arrancar.
+   * Angular passes the root component's selector here. There is no
+   * `querySelector` worth having: the platform pins the root down at startup.
    */
   selectRootElement(): NativeNode {
     return this.root
@@ -163,10 +166,10 @@ export class NativeRenderer extends Renderer2 {
   }
 
   /**
-   * Deja el nodo listo para recibir algo.
+   * Gets the node ready to receive something.
    *
-   * Un envoltorio de componente no existe en el core hasta que alguien le
-   * pone estilo, prop u oyente: en ese momento deja de ser un envoltorio.
+   * A component's wrapper does not exist in the core until somebody puts a
+   * style, a prop or a listener on it: at that moment it stops being a wrapper.
    */
   private writable(node: NativeNode): boolean {
     if (node.destroyed || node.kind === 'Comment') return false
@@ -175,9 +178,9 @@ export class NativeRenderer extends Renderer2 {
   }
 
   /**
-   * Aquí no hay hojas de estilo ni cascada, así que una clase no puede
-   * resolverse sola. Se acumulan y se mandan como prop `className`: lo que haga
-   * con ellas es cosa de la capa de estilos, no del renderer.
+   * There are no stylesheets and no cascade here, so a class cannot resolve
+   * itself. They are accumulated and sent as a `className` prop: what gets done
+   * with them is the styling layer's business, not the renderer's.
    */
   addClass(el: NativeNode, name: string): void {
     let set = this.classes.get(el)
@@ -201,8 +204,8 @@ export class NativeRenderer extends Renderer2 {
   setStyle(el: NativeNode, style: string, value: unknown, flags?: RendererStyleFlags2): void {
     if (!this.writable(el)) return
     warnUnknownStyle(style)
-    // `!important` no significa nada sin cascada: se ignora la bandera y se
-    // aplica el valor, que es el único comportamiento posible aquí.
+    // `!important` means nothing without a cascade: the flag is ignored and the
+    // value applied, which is the only behaviour possible here.
     void flags
     const prop = TEXT_PROPS.get(style)
     if (prop) {
@@ -227,7 +230,7 @@ export class NativeRenderer extends Renderer2 {
     dom.setProp(el.id, name, value as never)
   }
 
-  /** `Renderer2.setValue` sobre un nodo de texto. */
+  /** `Renderer2.setValue` on a text node. */
   setValue(node: NativeNode, value: string): void {
     if (node.kind === 'RawText' && !node.destroyed) dom.setText(node.id, value)
   }
@@ -240,16 +243,16 @@ export class NativeRenderer extends Renderer2 {
   ): () => void {
     void options
     if (typeof target === 'string') {
-      // No hay ventana ni documento a los que escuchar. Los eventos de app
-      // (background, teclado) llegarán por un módulo nativo, no por aquí.
+      // There is no window and no document to listen to. App events
+      // (background, keyboard) will come through a native module, not here.
       return () => {}
     }
     if (!this.writable(target)) return () => {}
     const unlisten = dom.listen(target.id, event, (payload) => {
       callback(payload)
     })
-    // Angular suelta las suscripciones al destruir la vista, y para entonces
-    // el nodo ya no existe en el core.
+    // Angular drops the subscriptions when it destroys the view, and by then
+    // the node no longer exists in the core.
     return () => {
       if (!target.destroyed) unlisten()
     }
@@ -257,8 +260,8 @@ export class NativeRenderer extends Renderer2 {
 }
 
 /**
- * Un único renderer para toda la app: sin encapsulación de estilos no hay nada
- * que aislar por componente, así que crear uno por vista solo gastaría memoria.
+ * One renderer for the whole app: with no style encapsulation there is nothing
+ * to isolate per component, so creating one per view would only burn memory.
  */
 export class NativeRendererFactory extends RendererFactory2 {
   private readonly renderer: NativeRenderer
@@ -272,8 +275,8 @@ export class NativeRendererFactory extends RendererFactory2 {
     return this.renderer
   }
 
-  // Ganchos del renderer de animaciones del navegador. Aquí no hay nada que
-  // agrupar ni que esperar: el core ya agrupa por frame.
+  // Hooks belonging to the browser's animation renderer. There is nothing here
+  // to batch and nothing to wait for: the core already batches per frame.
   begin(): void {}
   end(): void {}
   whenRenderingDone(): Promise<unknown> {

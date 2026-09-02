@@ -1,10 +1,10 @@
-//! El lazo completo: mutaciones, commit, y ops llegando al host.
+//! The whole loop: mutations, commit, and ops landing on the host.
 
 use an_core::{NaiveMeasurer, NodeKind};
 use an_host::{new_event_queue, HostEvent, RecordingHost, Renderer};
 
 #[test]
-fn monta_y_solo_repite_lo_que_cambia() {
+fn it_mounts_and_only_repeats_what_changed() {
     let mut renderer = Renderer::new(RecordingHost::default(), NaiveMeasurer, (320.0, 568.0), new_event_queue());
 
     renderer.create_node(1, NodeKind::View).unwrap();
@@ -16,7 +16,7 @@ fn monta_y_solo_repite_lo_que_cambia() {
     renderer.insert_child(1, 2, 0).unwrap();
 
     assert!(renderer.render_frame().unwrap() > 0);
-    assert_eq!(renderer.render_frame().unwrap(), 0, "segundo frame debe ser vacío");
+    assert_eq!(renderer.render_frame().unwrap(), 0, "the second frame has to be empty");
 
     let log = &renderer.host().log;
     assert!(log.iter().any(|l| l == "create 2 View"));
@@ -27,7 +27,7 @@ fn monta_y_solo_repite_lo_que_cambia() {
 }
 
 #[test]
-fn los_eventos_del_host_se_drenan_una_sola_vez() {
+fn host_events_are_drained_exactly_once() {
     let mut renderer = Renderer::new(RecordingHost::default(), NaiveMeasurer, (320.0, 568.0), new_event_queue());
     renderer.push_event(HostEvent { target: 7, name: "press".into(), payload: vec![] });
 

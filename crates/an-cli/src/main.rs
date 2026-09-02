@@ -1,8 +1,8 @@
-//! `an` — la herramienta de línea de comandos de angular-native.
+//! `an` — angular-native's command line tool.
 //!
-//! Hace lo que hacían los scripts de shell, pero como programa: compilar el
-//! bundle con AOT, armar el `.app` sin `.xcodeproj`, y levantar un servidor de
-//! desarrollo que recarga la app al guardar.
+//! It does what the shell scripts used to do, but as a program: compile the
+//! bundle with AOT, put the `.app` together without an `.xcodeproj`, and stand
+//! up a dev server that reloads the app when you save.
 
 mod android;
 mod build;
@@ -17,7 +17,7 @@ mod workspace;
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
-#[command(name = "an", version, about = "Angular sobre vistas nativas", long_about = None)]
+#[command(name = "an", version, about = "Angular on native views", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -25,161 +25,164 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Compila una app a un bundle JS (ngc + esbuild).
+    /// Compiles an app into a JS bundle (ngc + esbuild).
     Build {
-        /// Directorio de la app. Por defecto, examples/hello-angular.
+        /// The app's directory. Defaults to examples/hello-angular.
         app: Option<String>,
-        /// Compila con ngDevMode desactivado y minificado.
+        /// Compiles with ngDevMode off, and minified.
         #[arg(long)]
         release: bool,
     },
-    /// Compila, arma el .app y lo lanza en el simulador de iOS.
+    /// Compiles, builds the .app and launches it in the iOS simulator.
     Ios {
         app: Option<String>,
-        /// Nombre del simulador.
-        #[arg(long, default_value = TELEFONO_POR_DEFECTO)]
+        /// The simulator's name.
+        #[arg(long, default_value = DEFAULT_PHONE)]
         device: String,
         #[arg(long)]
         release: bool,
-        /// Solo arma el .app, sin instalarlo. Compila el shell y los plugins,
-        /// que es lo que se puede comprobar sin simulador.
+        /// Only builds the .app, without installing it. It compiles the shell
+        /// and the plugins, which is what can be checked with no simulator.
         #[arg(long)]
         no_launch: bool,
     },
-    /// Compila, arma el .app de tvOS y lo lanza en el simulador del Apple TV.
+    /// Compiles, builds the tvOS .app and launches it in the Apple TV
+    /// simulator.
     ///
-    /// Necesita nightly con `rust-src`: `aarch64-apple-tvos-sim` es un target
-    /// de nivel 3 y su `std` se construye en el momento.
+    /// It needs nightly with `rust-src`: `aarch64-apple-tvos-sim` is a tier 3
+    /// target and its `std` is built on the spot.
     Tvos {
         app: Option<String>,
-        /// Nombre del simulador de Apple TV.
-        #[arg(long, default_value = TELE_POR_DEFECTO)]
+        /// The Apple TV simulator's name.
+        #[arg(long, default_value = DEFAULT_TV)]
         device: String,
         #[arg(long)]
         release: bool,
-        /// Solo arma el .app, sin instalarlo.
+        /// Only builds the .app, without installing it.
         #[arg(long)]
         no_launch: bool,
     },
-    /// Compila, arma el .app de visionOS y lo lanza en el simulador del visor.
+    /// Compiles, builds the visionOS .app and launches it in the headset
+    /// simulator.
     ///
-    /// Necesita nightly con `rust-src`: `aarch64-apple-visionos-sim` es un
-    /// target de nivel 3 y su `std` se construye en el momento.
+    /// It needs nightly with `rust-src`: `aarch64-apple-visionos-sim` is a
+    /// tier 3 target and its `std` is built on the spot.
     Visionos {
         app: Option<String>,
-        /// Nombre del simulador del visor.
-        #[arg(long, default_value = VISOR_POR_DEFECTO)]
+        /// The headset simulator's name.
+        #[arg(long, default_value = DEFAULT_HEADSET)]
         device: String,
         #[arg(long)]
         release: bool,
-        /// Solo arma el .app, sin instalarlo.
+        /// Only builds the .app, without installing it.
         #[arg(long)]
         no_launch: bool,
     },
-    /// No hay simulador: la app corre aquí mismo. Por defecto lleva el ejemplo
-    /// de los controles, que es el que enseña de un vistazo qué pinta AppKit y
-    /// qué no.
+    /// There is no simulator: the app runs right here. It defaults to the
+    /// controls example, the one that shows at a glance what AppKit draws and
+    /// what it does not.
     Macos {
         app: Option<String>,
         #[arg(long)]
         release: bool,
-        /// Solo arma el .app, sin lanzarlo.
+        /// Only builds the .app, without launching it.
         #[arg(long)]
         no_launch: bool,
     },
-    /// Compila, arma el .app del reloj y lo lanza en el simulador de watchOS.
+    /// Compiles, builds the watch .app and launches it in the watchOS
+    /// simulator.
     ///
-    /// Necesita nightly con `rust-src`: `aarch64-apple-watchos-sim` es un
-    /// target de nivel 3 y su `std` se construye en el momento.
+    /// It needs nightly with `rust-src`: `aarch64-apple-watchos-sim` is a
+    /// tier 3 target and its `std` is built on the spot.
     Watchos {
         app: Option<String>,
-        /// Nombre del simulador de reloj.
-        #[arg(long, default_value = RELOJ_POR_DEFECTO)]
+        /// The watch simulator's name.
+        #[arg(long, default_value = DEFAULT_WATCH)]
         device: String,
         #[arg(long)]
         release: bool,
     },
-    /// `an watchos` no es un `--watch` de `an ios`: cambia el manifiesto,
-    /// cambia el tema, cambia el ejemplo por defecto y cambia el aparato al
-    /// que va. Con un flag habría que repetir las cuatro cosas en cada
-    /// invocación.
+    /// `an watchos` is not a `--watch` on `an ios`: it changes the manifest,
+    /// it changes the theme, it changes the default example and it changes the
+    /// device it goes to. With a flag those four things would have to be
+    /// repeated on every invocation.
     Wearos {
         app: Option<String>,
         #[arg(long)]
         release: bool,
-        /// Solo arma el APK, sin instalarlo.
+        /// Only builds the APK, without installing it.
         #[arg(long)]
         no_launch: bool,
-        /// Número de serie del reloj (`adb devices`). Por defecto, el único
-        /// que haya con forma de reloj.
+        /// The watch's serial number (`adb devices`). Defaults to the only
+        /// watch-shaped one around.
         #[arg(long)]
         device: Option<String>,
     },
-    /// Compila, arma el APK y lo lanza en el emulador de Android.
+    /// Compiles, builds the APK and launches it in the Android emulator.
     Android {
         app: Option<String>,
         #[arg(long)]
         release: bool,
-        /// Solo arma el APK, sin instalarlo.
+        /// Only builds the APK, without installing it.
         #[arg(long)]
         no_launch: bool,
     },
-    /// Enseña los plugins de los que depende una app.
+    /// Shows the plugins an app depends on.
     ///
-    /// Con `--platform` además comprueba que todos cubran esa plataforma, que
-    /// es lo mismo que hace el build antes de compilar nada.
+    /// With `--platform` it also checks that they all cover that platform,
+    /// which is what the build does before compiling anything.
     Plugins {
         app: Option<String>,
         #[arg(long)]
         platform: Option<PlatformArg>,
     },
-    /// Servidor de desarrollo: vigila los ficheros y recarga la app al guardar.
+    /// Dev server: it watches the files and reloads the app when you save.
     Dev {
         app: Option<String>,
-        #[arg(long, default_value = TELEFONO_POR_DEFECTO)]
+        #[arg(long, default_value = DEFAULT_PHONE)]
         device: String,
         #[arg(long, default_value_t = 8420)]
         port: u16,
-        /// Lanza en el emulador de Android en vez de en el simulador de iOS.
+        /// Launches in the Android emulator instead of the iOS simulator.
         #[arg(long)]
         android: bool,
-        /// Lanza en el emulador de Wear OS en vez de en el del teléfono.
-        /// Arma el APK del reloj, no el del teléfono con otro destino.
+        /// Launches in the Wear OS emulator instead of the phone's. It builds
+        /// the watch APK, not the phone's aimed somewhere else.
         #[arg(long)]
         wearos: bool,
-        /// Lanza en el simulador del reloj en vez de en el del teléfono.
+        /// Launches in the watch simulator instead of the phone's.
         #[arg(long)]
         watchos: bool,
-        /// Lanza en el simulador del Apple TV en vez de en el del teléfono.
+        /// Launches in the Apple TV simulator instead of the phone's.
         #[arg(long)]
         tvos: bool,
-        /// Lanza en el simulador del visor en vez de en el del teléfono.
+        /// Launches in the headset simulator instead of the phone's.
         #[arg(long)]
         visionos: bool,
-        /// No lanza nada; solo sirve el bundle.
+        /// Launches nothing; it only serves the bundle.
         #[arg(long)]
         no_launch: bool,
     },
-    /// Prepara un proyecto Angular existente para compilar a nativo.
+    /// Gets an existing Angular project ready to compile to native.
     ///
-    /// Se ejecuta dentro del proyecto —uno de `ng new`— y le añade las
-    /// dependencias, el tsconfig del build nativo y un punto de entrada. No
-    /// toca nada de lo que ya haya.
+    /// It is run inside the project —one from `ng new`— and adds the
+    /// dependencies, the tsconfig for the native build and an entry point to
+    /// it. It touches nothing that is already there.
     Init {
-        /// Directorio del proyecto. Por defecto, el actual.
+        /// The project's directory. Defaults to the current one.
         dir: Option<String>,
-        /// Nombre de la app. Por defecto sale del `name` del package.json.
+        /// The app's name. Defaults to the `name` in package.json.
         #[arg(long)]
         name: Option<String>,
-        /// Identificador del paquete, p. ej. com.ejemplo.miapp.
+        /// The package identifier, e.g. com.example.myapp.
         #[arg(long)]
         id: Option<String>,
-        /// Reescribe lo que genera `an init` y reinstala los paquetes.
-        /// Nunca toca el código de la app.
+        /// Rewrites what `an init` generates and reinstalls the packages.
+        /// It never touches the app's code.
         #[arg(long)]
         force: bool,
     },
-    /// Añade una plataforma al proyecto: `an add ios`, `an add android`.
+    /// Adds a platform to the project: `an add ios`, `an add android`.
     Add {
         platform: String,
     },
@@ -200,21 +203,22 @@ impl From<PlatformArg> for plugins::Platform {
     }
 }
 
-/// Simuladores por defecto. `an dev --watchos` no lleva su propio `--device`:
-/// si el que hay es el del teléfono, es que nadie lo eligió, y lo que quiere
-/// es el reloj.
-const TELEFONO_POR_DEFECTO: &str = "iPhone 17 Pro";
-const RELOJ_POR_DEFECTO: &str = "Apple Watch Series 11 (46mm)";
-/// El Apple TV 4K de tercera generación, que es el que trae el runtime de
-/// serie. El otro que sale en la lista, «Apple TV», es el mismo a 1080p.
-const TELE_POR_DEFECTO: &str = "Apple TV 4K (3rd generation)";
-/// El único visor que hay: el runtime de visionOS trae un solo modelo.
-const VISOR_POR_DEFECTO: &str = "Apple Vision Pro";
+/// The default simulators. `an dev --watchos` has no `--device` of its own: if
+/// the one in hand is the phone's, then nobody chose it, and what is wanted is
+/// the watch.
+const DEFAULT_PHONE: &str = "iPhone 17 Pro";
+const DEFAULT_WATCH: &str = "Apple Watch Series 11 (46mm)";
+/// The third-generation Apple TV 4K, which is the one the runtime ships with.
+/// The other one on the list, «Apple TV», is the same thing at 1080p.
+const DEFAULT_TV: &str = "Apple TV 4K (3rd generation)";
+/// The only headset there is: the visionOS runtime ships one model.
+const DEFAULT_HEADSET: &str = "Apple Vision Pro";
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    // `an init` es el único que corre donde todavía no hay nada que descubrir:
-    // el proyecto no está inicializado, que es justo el motivo de ejecutarlo.
+    // `an init` is the only one that runs where there is nothing to discover
+    // yet: the project is not initialised, which is exactly why it is being
+    // run.
     if let Command::Init { dir, name, id, force } = &cli.command {
         return init::init(dir.as_deref(), name.as_deref(), id.as_deref(), *force);
     }
@@ -255,10 +259,10 @@ fn main() -> anyhow::Result<()> {
             release,
             no_launch,
         } => {
-            // El ejemplo por defecto del visor tampoco puede ser el del
-            // teléfono: la ventana de visionOS no tiene tamaño de pantalla y
-            // `hello-vision` es el que está escrito sin puntos fijos y sin
-            // fondo propio, que es lo que esa ventana pide.
+            // The headset's default example cannot be the phone's either: a
+            // visionOS window has no screen size, and `hello-vision` is the one
+            // written with no fixed points and no background of its own, which
+            // is what that window asks for.
             let app = workspace.app(Some(app.as_deref().unwrap_or("examples/hello-vision")))?;
             let found = plugins::discover(&workspace, &app)?;
             let bundle = build::bundle(&workspace, &app, release, &found)?;
@@ -276,10 +280,10 @@ fn main() -> anyhow::Result<()> {
             release,
             no_launch,
         } => {
-            // El ejemplo por defecto de la tele no es el de todos los demás:
-            // `hello-angular` está pensado para un teléfono y a tres metros del
-            // sofá no se lee. `hello-tv` además enseña lo único que no se puede
-            // enseñar en ningún otro sitio: que sin foco no hay pulsación.
+            // The TV's default example is not everybody else's: `hello-angular`
+            // is meant for a phone and cannot be read from three metres away on
+            // a sofa. `hello-tv` also shows the one thing that cannot be shown
+            // anywhere else: that without focus there is no press.
             let app = workspace.app(Some(app.as_deref().unwrap_or("examples/hello-tv")))?;
             let found = plugins::discover(&workspace, &app)?;
             let bundle = build::bundle(&workspace, &app, release, &found)?;
@@ -292,9 +296,9 @@ fn main() -> anyhow::Result<()> {
             ios::launch(&package, &device)
         }
         Command::Macos { app, release, no_launch } => {
-            // El ejemplo por defecto del escritorio no es el de todos los
-            // demás: `controls` enseña los controles del sistema uno detrás de
-            // otro, que es lo que hay que mirar para saber qué pinta este host.
+            // The desktop's default example is not everybody else's:
+            // `controls` shows the system controls one after another, which is
+            // what to look at to know what this host draws.
             let app = workspace.app(Some(app.as_deref().unwrap_or("examples/controls")))?;
             let found = plugins::discover(&workspace, &app)?;
             macos::reject_plugins(&found)?;
@@ -307,9 +311,9 @@ fn main() -> anyhow::Result<()> {
             macos::launch(&package)
         }
         Command::Watchos { app, device, release } => {
-            // El ejemplo por defecto del reloj no es el de todos los demás:
-            // `hello-angular` está pensado para un teléfono y en 205 puntos de
-            // ancho no se lee.
+            // The watch's default example is not everybody else's:
+            // `hello-angular` is meant for a phone and cannot be read at 205
+            // points wide.
             let app = workspace.app(Some(app.as_deref().unwrap_or("examples/hello-watch")))?;
             let found = plugins::discover(&workspace, &app)?;
             watchos::reject_plugins(&found)?;
@@ -330,9 +334,8 @@ fn main() -> anyhow::Result<()> {
             android::install_and_launch(&workspace, &apk, android::Form::Phone, None)
         }
         Command::Wearos { app, release, no_launch, device } => {
-            // Igual que en el reloj de Apple: el ejemplo por defecto no puede
-            // ser el del teléfono. En 227 puntos de ancho, y redondos, no se
-            // lee.
+            // Same as on the Apple watch: the default example cannot be the
+            // phone's. At 227 points wide, and round, it cannot be read.
             let app = workspace.app(Some(app.as_deref().unwrap_or("examples/hello-wear")))?;
             let found = plugins::discover(&workspace, &app)?;
             let bundle = build::bundle(&workspace, &app, release, &found)?;
@@ -355,39 +358,39 @@ fn main() -> anyhow::Result<()> {
             visionos,
             no_launch,
         } => {
-            // Igual que en `an wearos`: el ejemplo del teléfono no se lee en
-            // 227 puntos redondos, así que el reloj tiene el suyo por defecto.
+            // Same as in `an wearos`: the phone's example cannot be read at 227
+            // round points, so the watch gets its own by default.
             let app = workspace.app(if wearos {
                 Some(app.as_deref().unwrap_or("examples/hello-wear"))
             } else {
                 app.as_deref()
             })?;
             let found = plugins::discover(&workspace, &app)?;
-            // Si el `--device` sigue siendo el del teléfono es que nadie lo
-            // eligió, y lo que se quiere es el aparato que pide la bandera.
-            let elegido = |otro: &str| {
-                if device == TELEFONO_POR_DEFECTO {
-                    otro.to_owned()
+            // If `--device` is still the phone's, then nobody chose it, and
+            // what is wanted is the device the flag asks for.
+            let chosen = |other: &str| {
+                if device == DEFAULT_PHONE {
+                    other.to_owned()
                 } else {
                     device.clone()
                 }
             };
             let target = match (android, wearos, watchos, tvos, visionos) {
                 (true, _, _, _, _) => dev::Target::Android,
-                // El reloj de Android se identifica por su número de serie de
-                // `adb`, no por el nombre de un simulador, así que no pasa por
-                // `elegido`: sin `--device` lo elige preguntando la forma.
+                // An Android watch is identified by its `adb` serial number,
+                // not by a simulator's name, so it does not go through `chosen`:
+                // with no `--device` it picks one by asking for the shape.
                 (_, true, _, _, _) => dev::Target::Wear {
-                    device: (device != TELEFONO_POR_DEFECTO).then(|| device.clone()),
+                    device: (device != DEFAULT_PHONE).then(|| device.clone()),
                 },
                 (_, _, true, _, _) => dev::Target::WatchOs {
-                    device: elegido(RELOJ_POR_DEFECTO),
+                    device: chosen(DEFAULT_WATCH),
                 },
                 (_, _, _, true, _) => dev::Target::TvOs {
-                    device: elegido(TELE_POR_DEFECTO),
+                    device: chosen(DEFAULT_TV),
                 },
                 (_, _, _, _, true) => dev::Target::VisionOs {
-                    device: elegido(VISOR_POR_DEFECTO),
+                    device: chosen(DEFAULT_HEADSET),
                 },
                 _ => dev::Target::Ios { device },
             };
@@ -397,7 +400,7 @@ fn main() -> anyhow::Result<()> {
             dev::run(workspace, app, target, port, no_launch, found)
         }
         Command::Add { platform } => init::add(&workspace, &platform),
-        // Ya se atendió antes de descubrir el proyecto.
+        // Already handled before the project was discovered.
         Command::Init { .. } => unreachable!(),
     }
 }

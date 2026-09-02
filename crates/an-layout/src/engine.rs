@@ -1,7 +1,7 @@
-//! Árbol de layout: espejo del shadow tree, resuelto por taffy.
+//! The layout tree: a mirror of the shadow tree, resolved by taffy.
 //!
-//! Las claves son los ids que asigna JS (monotónicos, como los tags de Fabric),
-//! no los `taffy::NodeId`. El mapeo vive aquí y no sale de este crate.
+//! The keys are the ids JS assigns (monotonic, like Fabric's tags), not the
+//! `taffy::NodeId`s. The mapping lives here and never leaves this crate.
 
 use std::collections::HashMap;
 
@@ -11,7 +11,7 @@ use taffy::TaffyError;
 use crate::measure::{MeasureCtx, TextMeasurer};
 use crate::style::LayoutStyle;
 
-/// Rectángulo resuelto, relativo al padre, en puntos lógicos.
+/// A resolved rectangle, relative to the parent, in logical points.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Rect {
     pub x: f32,
@@ -67,16 +67,16 @@ impl LayoutEngine {
         Ok(())
     }
 
-    /// Adjunta o quita el contexto de medición. Un nodo con contexto es hoja:
-    /// taffy no baja de ahí aunque tenga hijos.
+    /// Attaches or removes the measuring context. A node with a context is a
+    /// leaf: taffy does not go below it, children or no children.
     pub fn set_measure(&mut self, id: u32, ctx: Option<MeasureCtx>) -> Result<(), LayoutError> {
         let node = self.node(id)?;
         self.tree.set_node_context(node, ctx)?;
         Ok(())
     }
 
-    /// Reemplaza la lista completa de hijos. El shadow tree ya conoce el orden
-    /// final, así que no merece la pena diferenciar insert/remove aquí.
+    /// Replaces the whole child list. The shadow tree already knows the final
+    /// order, so telling insert from remove here is not worth the trouble.
     pub fn set_children(&mut self, id: u32, children: &[u32]) -> Result<(), LayoutError> {
         let parent = self.node(id)?;
         let mut mapped = Vec::with_capacity(children.len());
@@ -104,11 +104,11 @@ impl LayoutEngine {
             width: AvailableSpace::Definite(viewport.0),
             height: AvailableSpace::Definite(viewport.1),
         };
-        // En taffy 0.14 la función de medida ya no recibe las medidas sueltas
-        // ni devuelve un tamaño: recibe la entrada entera del layout y
-        // devuelve su salida. `compute_leaf_layout` hace el trabajo de en
-        // medio —aplicar estilos, bordes y relleno— y solo nos pide el tamaño
-        // del contenido, que es lo que sabemos.
+        // In taffy 0.14 the measure function no longer takes the measurements
+        // loose nor returns a size: it takes the whole layout input and returns
+        // its output. `compute_leaf_layout` does the work in between —applying
+        // styles, borders and padding— and only asks us for the size of the
+        // content, which is the part we know.
         self.tree.compute_layout_with_measure(node, available, |inputs, _node_id, ctx, style| {
             taffy::compute_leaf_layout(inputs, style, |_, _| 0.0, |known, available| {
                 measure_leaf(known, available, ctx, measurer)
@@ -123,14 +123,14 @@ impl LayoutEngine {
         Ok(Rect { x: l.location.x, y: l.location.y, width: l.size.width, height: l.size.height })
     }
 
-    /// Tamaño que ocupan los hijos, que puede pasarse del nodo. Es lo que un
-    /// `UIScrollView` necesita como `contentSize`.
+    /// How much room the children take up, which may be more than the node
+    /// itself. It is what a `UIScrollView` needs as its `contentSize`.
     pub fn content_size(&self, id: u32) -> Result<(f32, f32), LayoutError> {
         let node = self.node(id)?;
         let l = self.tree.layout(node)?;
-        // En 0.14 esto es el rectángulo de desbordamiento desplazable, medido
-        // desde el origen del scroll: su borde derecho e inferior son justo lo
-        // que ocupa el contenido, que es lo que quiere un `UIScrollView`.
+        // In 0.14 this is the scrollable overflow rectangle, measured from the
+        // scroll origin: its right and bottom edges are exactly how much room
+        // the content takes, which is what a `UIScrollView` wants.
         Ok((l.scrollable_overflow_rect.right, l.scrollable_overflow_rect.bottom))
     }
 
@@ -153,7 +153,7 @@ fn measure_leaf(
     ctx: Option<&mut MeasureCtx>,
     measurer: &dyn TextMeasurer,
 ) -> taffy::Size<f32> {
-    // Si el layout ya fijó ambas dimensiones no hay nada que medir.
+    // If layout already pinned both dimensions there is nothing to measure.
     if let (Some(width), Some(height)) = (known.width, known.height) {
         return taffy::Size { width, height };
     }
@@ -163,10 +163,10 @@ fn measure_leaf(
 
     match ctx {
         MeasureCtx::Text { text, font } => {
-            // El mínimo intrínseco tiene su propia pregunta. Pedirlo como
-            // "ancho disponible cero" parece equivalente y no lo es: las dos
-            // plataformas contestan cero a eso, y entonces el texto se encoge
-            // a nada en cuanto nadie le impone un ancho.
+            // The intrinsic minimum gets a question of its own. Asking for it
+            // as "available width zero" looks equivalent and is not: both
+            // platforms answer zero to that, and then the text shrinks to
+            // nothing as soon as nobody imposes a width on it.
             let (w, h) = match (known.width, available.width) {
                 (None, AvailableSpace::MinContent) => {
                     measurer.measure_text_min_content(text, font)

@@ -1,13 +1,13 @@
 /**
- * `DOCUMENT` de mentira.
+ * A pretend `DOCUMENT`.
  *
- * Angular pide este token en sitios que no tienen nada que ver con el DOM
- * (sanitizador, `ApplicationRef`, errores de arranque). No se puede quitar,
- * pero sí se puede dejar inerte: cada método devuelve lo mínimo para no
- * romper, y nada de esto alcanza jamás a una vista nativa.
+ * Angular asks for this token in places that have nothing to do with the DOM
+ * (the sanitiser, `ApplicationRef`, bootstrap errors). It cannot be removed, but
+ * it can be left inert: every method returns the bare minimum not to break
+ * anything, and none of it ever reaches a native view.
  *
- * Si algún día un método de estos se llama de verdad y devuelve basura, el
- * fallo hay que arreglarlo en la plataforma, no aquí.
+ * If one of these methods ever really gets called and returns rubbish, the bug
+ * is to be fixed in the platform, not here.
  */
 export function createFakeDocument(): Document {
   const noop = () => {}

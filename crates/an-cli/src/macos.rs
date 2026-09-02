@@ -1,20 +1,21 @@
-//! Arma el `.app` de macOS y lo lanza.
+//! Builds the macOS `.app` and launches it.
 //!
-//! Lo mismo que hace `ios.rs` —sin `.xcodeproj`, `swiftc` enlazando contra el
-//! staticlib de Rust— con tres diferencias, y ninguna es cosmética:
+//! The same thing `ios.rs` does —no `.xcodeproj`, `swiftc` linking against
+//! Rust's staticlib— with three differences, and not one of them is cosmetic:
 //!
-//! 1. **No hay simulador.** Un `.app` de macOS se lanza en la máquina que lo
-//!    compiló, así que aquí no hay `simctl`, ni `bootstatus`, ni buscar un
-//!    dispositivo por nombre: se abre y ya. Es la única de las cuatro
-//!    plataformas de la que se puede hacer una captura sin arrancar nada más.
-//! 2. **Hay que terminar la instancia anterior.** En un simulador cada
-//!    lanzamiento reemplaza al de antes; aquí, si la app ya está corriendo,
-//!    `open` se limita a traer la ventana vieja al frente y parece que el
-//!    cambio no ha llegado. Es el mismo fallo que en iOS obliga a desinstalar
-//!    antes de instalar, con otra cara.
-//! 3. **Todavía no carga plugins.** Igual que el reloj: `an-macos` no tiene el
-//!    registro que sí tienen `an-ios` y `an-android`, así que el build se para
-//!    y lo dice en vez de dejar un módulo que se traga cada llamada.
+//! 1. **There is no simulator.** A macOS `.app` is launched on the machine that
+//!    compiled it, so there is no `simctl` here, no `bootstatus`, no looking a
+//!    device up by name: it opens and that is that. It is the only one of the
+//!    four platforms you can take a screenshot of without starting anything
+//!    else.
+//! 2. **The previous instance has to be killed.** In a simulator every launch
+//!    replaces the one before; here, if the app is already running, `open` does
+//!    nothing but bring the old window to the front and it looks as though the
+//!    change never landed. It is the same bug that forces an uninstall before
+//!    an install on iOS, wearing a different face.
+//! 3. **It does not load plugins yet.** Same as the watch: `an-macos` has none
+//!    of the registry `an-ios` and `an-android` do have, so the build stops and
+//!    says so instead of leaving a module that swallows every call.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -29,32 +30,33 @@ use crate::workspace::Workspace;
 const APP_NAME: &str = "AngularNativeMac";
 const BUNDLE_ID: &str = "dev.angularnative.playground.mac";
 const TARGET: &str = "aarch64-apple-darwin";
-/// Sonoma es lo más antiguo donde `NSView.displayLink(target:selector:)`
-/// existe, y ese es el reloj que usa el shell: en un Mac con varias pantallas
-/// a refrescos distintos, el bueno es el de la pantalla donde está la ventana,
-/// y solo la vista lo sabe.
+/// Sonoma is the oldest one where `NSView.displayLink(target:selector:)` exists,
+/// and that is the clock the shell uses: on a Mac with several screens at
+/// different refresh rates, the right one belongs to the screen the window is
+/// on, and only the view knows which that is.
 const DEPLOYMENT: &str = "14.0";
 
-/// Frameworks de los que depende `an-macos` además de AppKit, que lo trae
-/// Swift solo. Ver por qué hay que nombrarlos en `assemble`.
+/// Frameworks `an-macos` depends on besides AppKit, which Swift brings in on
+/// its own. See `assemble` for why they have to be named.
 const FRAMEWORKS: &[&str] = &["WebKit", "MapKit", "AVFoundation", "AVKit"];
 
 pub struct Package {
     pub dir: PathBuf,
 }
 
-/// Este host no carga plugins todavía. Se dice aquí y se para: armar el `.app`
-/// igualmente dejaría una app en la que el módulo no existe y cada llamada se
-/// rechaza en tiempo de ejecución, que es justo lo que este sistema no hace.
+/// This host does not load plugins yet. It is said here and it stops: building
+/// the `.app` anyway would leave an app in which the module does not exist and
+/// every call is turned down at runtime, which is exactly what this system does
+/// not do.
 pub fn reject_plugins(plugins: &[Plugin]) -> Result<()> {
     if plugins.is_empty() {
         return Ok(());
     }
-    let nombres: Vec<&str> = plugins.iter().map(|plugin| plugin.package.as_str()).collect();
+    let names: Vec<&str> = plugins.iter().map(|plugin| plugin.package.as_str()).collect();
     bail!(
         "esta app no se puede compilar para macOS: el host de escritorio todavía no carga \
          plugins, y depende de {}. Ver docs/plugins.md.",
-        nombres.join(", ")
+        names.join(", ")
     )
 }
 
@@ -67,10 +69,10 @@ pub fn assemble(
     let root = &workspace.root;
     let profile = if release { "release" } else { "debug" };
     let app_dir = root.join("build/macos").join(format!("{APP_NAME}.app"));
-    // Un `.app` de macOS no es plano como el de iOS: el ejecutable va en
-    // `Contents/MacOS`, el `Info.plist` en `Contents` y los recursos en
-    // `Contents/Resources`. Poner un `.app` de iPhone en un Mac tal cual da un
-    // bundle que Finder abre y `open` rechaza sin decir por qué.
+    // A macOS `.app` is not flat the way iOS's is: the executable goes in
+    // `Contents/MacOS`, the `Info.plist` in `Contents` and the resources in
+    // `Contents/Resources`. Dropping an iPhone `.app` on a Mac as-is gives a
+    // bundle Finder opens and `open` turns down without saying why.
     let contents = app_dir.join("Contents");
     let macos_dir = contents.join("MacOS");
     let resources = contents.join("Resources");
@@ -80,8 +82,8 @@ pub fn assemble(
     if release {
         cargo_args.push("--release");
     }
-    // QuickJS se compila con `cc`, que sin esto usa el mínimo del SDK y el
-    // enlazado con Swift avisa de la discrepancia.
+    // QuickJS is built with `cc`, which without this uses the SDK's minimum and
+    // the Swift link step complains about the mismatch.
     let status = Command::new("cargo")
         .args(&cargo_args)
         .env("MACOSX_DEPLOYMENT_TARGET", DEPLOYMENT)
@@ -98,8 +100,8 @@ pub fn assemble(
     std::fs::create_dir_all(&macos_dir)?;
     std::fs::create_dir_all(&resources)?;
 
-    // `shells/shared` trae lo que no depende de la plataforma —el cliente del
-    // servidor de desarrollo—, que compilan los tres shells de Apple.
+    // `shells/shared` brings what does not depend on the platform —the dev
+    // server's client—, compiled by all three Apple shells.
     let mut sources: Vec<String> = swift_sources(&root.join("shells/macos/Sources"))?;
     if sources.is_empty() {
         bail!("no hay fuentes Swift en shells/macos/Sources");
@@ -127,18 +129,18 @@ pub fn assemble(
         "-o".into(),
         macos_dir.join(APP_NAME).to_string_lossy().into_owned(),
     ];
-    // Los frameworks que usa el host, nombrados aquí y no solo en el Rust.
+    // The frameworks the host uses, named here and not only in the Rust.
     //
-    // Un `staticlib` de Rust **no arrastra sus dependencias nativas**: el
-    // `#[link(name = "…", kind = "framework")]` de `an-macos` documenta de qué
-    // depende cada módulo, pero el `.a` que sale no lleva nada que se lo diga
-    // al enlazador. Quien enlaza de verdad es este `swiftc`, y si aquí no
-    // están, la app se arma, se firma y arranca sin una sola queja: revienta
-    // más tarde, al montar la primera vista de esa clase, con un «class
-    // AVPlayerView could not be found» que no señala a ningún sitio.
+    // A Rust `staticlib` **does not drag its native dependencies along**:
+    // `an-macos`'s `#[link(name = "…", kind = "framework")]` documents what each
+    // module depends on, but the `.a` that comes out carries nothing that tells
+    // the linker. The one that really links is this `swiftc`, and if they are
+    // not here, the app builds, signs and starts without a single complaint: it
+    // blows up later, on mounting the first view of that class, with a «class
+    // AVPlayerView could not be found» that points nowhere.
     //
-    // La lista no se puede quedar atrás: `scripts/check-macos.py` la compara
-    // con los `#[link]` del crate.
+    // The list must not fall behind: `scripts/check-macos.py` compares it with
+    // the crate's `#[link]`s.
     for framework in FRAMEWORKS {
         args.push("-framework".into());
         args.push((*framework).into());
@@ -159,9 +161,9 @@ pub fn assemble(
         }
     }
 
-    // Sin firmar, macOS mata la app al primer `mmap` de código generado —que es
-    // lo que hace QuickJS— con un `Killed: 9` y ninguna explicación. Una firma
-    // ad-hoc es suficiente para desarrollo y no necesita cuenta de nadie.
+    // Unsigned, macOS kills the app on the first `mmap` of generated code
+    // —which is what QuickJS does— with a `Killed: 9` and no explanation. An
+    // ad-hoc signature is enough for development and needs nobody's account.
     let signed = Command::new("codesign")
         .args(["--force", "--sign", "-"])
         .arg(&app_dir)
@@ -175,8 +177,8 @@ pub fn assemble(
 }
 
 pub fn launch(package: &Package) -> Result<()> {
-    // Si ya hay una instancia, `open` traería la vieja al frente y el cambio
-    // parecería no haber llegado.
+    // If there is already an instance, `open` would bring the old one to the
+    // front and the change would look as though it had never landed.
     let _ = Command::new("killall").args(["-9", APP_NAME]).output();
 
     eprintln!("==> lanzando {}", package.dir.display());

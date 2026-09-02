@@ -1,10 +1,10 @@
-//! Props de estilo: nombres, valores y su proyección sobre `taffy::Style`.
+//! Style props: names, values, and how they project onto `taffy::Style`.
 
 use taffy::prelude::*;
 use taffy::style::{BoxSizing, Overflow};
 
-/// Prop de estilo soportada. Subconjunto flexbox al estilo React Native:
-/// sin cascada, sin herencia, sin selectores.
+/// A supported style prop. A flexbox subset in the React Native style: no
+/// cascade, no inheritance, no selectors.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum StyleKey {
     Display,
@@ -18,9 +18,9 @@ pub enum StyleKey {
     AlignItems,
     AlignSelf,
     AlignContent,
-    /// El atajo: `flex: N` es crecer N, encoger 1 y partir de cero. Es lo
-    /// que significa en CSS y en React Native, y es lo que casi todo el
-    /// mundo escribe en vez de las tres por separado.
+    /// The shorthand: `flex: N` means grow N, shrink 1 and start from zero.
+    /// That is what it means in CSS and in React Native, and it is what almost
+    /// everybody writes instead of the three separately.
     Flex,
     FlexGrow,
     FlexShrink,
@@ -66,11 +66,11 @@ pub enum StyleKey {
     ColumnGap,
 }
 
-/// `flex-direction` a `flexDirection`.
+/// `flex-direction` to `flexDirection`.
 ///
-/// Angular pasa los nombres de estilo a guiones antes de entregarlos, así que
-/// todo lo que llega por esa vía viene así aunque en la plantilla se escriba
-/// en camello.
+/// Angular turns style names into hyphenated ones before handing them over, so
+/// everything that comes in through that road arrives like this even when the
+/// template wrote it in camel case.
 pub fn camelize(name: &str) -> String {
     let mut camel = String::with_capacity(name.len());
     let mut upper_next = false;
@@ -88,9 +88,9 @@ pub fn camelize(name: &str) -> String {
 }
 
 impl StyleKey {
-    /// Acepta `flexDirection` y `flex-direction` indistintamente.
-    /// Devuelve `None` para props que no afectan al layout (color, fondo...);
-    /// esas viajan como props de host, no como estilo.
+    /// Takes `flexDirection` and `flex-direction` alike.
+    /// Returns `None` for props that do not affect layout (color, background
+    /// and friends); those travel as host props, not as style.
     pub fn from_name(name: &str) -> Option<Self> {
         let camel = camelize(name);
         use StyleKey::*;
@@ -147,7 +147,7 @@ impl StyleKey {
     }
 }
 
-/// Palabra clave de estilo ya resuelta. Se parsea una vez, al asignar.
+/// A style keyword, already resolved. It is parsed once, on assignment.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Keyword {
     None,
@@ -209,23 +209,23 @@ impl Keyword {
     }
 }
 
-/// Valor de una prop de estilo.
+/// The value of a style prop.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum StyleValue {
-    /// Vuelve al valor por defecto de la prop.
+    /// Falls back to the prop's default value.
     Unset,
     Auto,
-    /// Puntos lógicos (no píxeles físicos).
+    /// Logical points (not physical pixels).
     Points(f32),
-    /// Porcentaje en 0..100.
+    /// A percentage in 0..100.
     Percent(f32),
-    /// Escalar sin unidad: `flexGrow`, `aspectRatio`.
+    /// A unitless scalar: `flexGrow`, `aspectRatio`.
     Number(f32),
     Keyword(Keyword),
 }
 
 impl StyleValue {
-    /// Parsea lo que llega de JS ya normalizado a texto.
+    /// Parses what comes from JS, already normalised to text.
     /// `"12"`, `"12px"`, `"50%"`, `"auto"`, `"row"`.
     pub fn parse(raw: &str) -> Self {
         let raw = raw.trim();
@@ -294,8 +294,8 @@ impl StyleValue {
     }
 }
 
-/// `taffy::Style` con defaults propios (columna, no fila — como React Native)
-/// y aplicación prop a prop.
+/// `taffy::Style` with defaults of our own (column, not row — like React
+/// Native) and applied one prop at a time.
 #[derive(Clone, Debug)]
 pub struct LayoutStyle(pub Style);
 
@@ -311,8 +311,8 @@ impl Default for LayoutStyle {
 }
 
 impl LayoutStyle {
-    /// Aplica una prop. Devuelve `true` si el estilo cambió de verdad
-    /// (el llamante usa esto para no marcar layout sucio de balde).
+    /// Applies a prop. Returns `true` if the style really did change (the
+    /// caller uses this to avoid dirtying layout for nothing).
     pub fn set(&mut self, key: StyleKey, value: StyleValue) -> bool {
         let before = self.0.clone();
         self.apply(key, value);
@@ -446,17 +446,17 @@ fn set_dim(slot: &mut Dimension, value: StyleValue) {
     }
 }
 
-/// Los mínimos y máximos, que en taffy 0.14 ya no son `Dimension` sino
-/// `LengthPercentageAuto`. Es el mismo conjunto de valores con otro nombre.
+/// The minimums and maximums, which in taffy 0.14 are no longer `Dimension`
+/// but `LengthPercentageAuto`. Same set of values under a different name.
 ///
-/// Sin valor significa `auto`, no cero: un máximo de cero dejaría la vista sin
-/// tamaño, que es lo contrario de "no hay máximo".
+/// No value means `auto`, not zero: a maximum of zero would leave the view with
+/// no size at all, which is the opposite of "there is no maximum".
 fn set_min_max(slot: &mut LengthPercentageAuto, value: StyleValue) {
-    let resuelto = match value {
+    let resolved = match value {
         StyleValue::Unset => Some(LengthPercentageAuto::auto()),
-        otro => otro.length_percentage_auto(),
+        other => other.length_percentage_auto(),
     };
-    if let Some(v) = resuelto {
+    if let Some(v) = resolved {
         *slot = v;
     }
 }
@@ -527,8 +527,8 @@ fn to_justify(k: Option<Keyword>) -> Option<JustifyContent> {
     to_align_content(k)
 }
 
-/// `taffy::Style` no implementa `PartialEq`, así que comparamos el subconjunto
-/// que este renderer sabe escribir.
+/// `taffy::Style` does not implement `PartialEq`, so we compare the subset this
+/// renderer knows how to write.
 fn styles_equal(a: &Style, b: &Style) -> bool {
     a.display == b.display
         && a.position == b.position

@@ -1,63 +1,65 @@
-//! Props de host: todo lo que no es layout. Color, texto, fuente, `source`...
-//! El core no las interpreta salvo las que afectan a la medición.
+//! Host props: everything that is not layout. Color, text, font, `source`...
+//! The core does not interpret them, except the ones that affect measuring.
 
 use an_layout::FontSpec;
 
-/// Tipo de nodo. Se corresponde 1:1 con una primitiva nativa, salvo `RawText`,
-/// que es interno y nunca llega a montarse como vista.
+/// Node type. It maps 1:1 onto a native primitive, except for `RawText`, which
+/// is internal and never gets mounted as a view.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum NodeKind {
     View,
     Text,
-    /// Nodo de texto crudo creado por `Renderer2.createText()`.
+    /// Raw text node created by `Renderer2.createText()`.
     RawText,
     Image,
     ScrollView,
     TextInput,
-    /// Pila de pantallas. Es un contenedor normal de cara al layout —sus hijos
-    /// se apilan y ocupan todo— pero el host lo trata distinto: anima la
-    /// entrada y la salida, y engancha el gesto de volver atrás.
+    /// A stack of screens. As far as layout is concerned it is an ordinary
+    /// container —its children pile up and fill everything— but the host treats
+    /// it differently: it animates the way in and the way out, and hooks up the
+    /// back gesture.
     StackView,
-    /// Barra de pestañas del sistema.
+    /// The system tab bar.
     TabBar,
     Switch,
     Slider,
     ActivityIndicator,
     ProgressBar,
-    /// Botón del sistema, con su tipografía y su respuesta al toque.
+    /// A system button, with its own typeface and its own response to touch.
     Button,
-    /// Capa que se presenta encima de todo.
+    /// A layer presented on top of everything.
     Modal,
-    /// Diálogo del sistema. No ocupa sitio: se presenta encima de la app.
+    /// A system dialog. It takes up no room: it is presented over the app.
     Alert,
-    /// Icono del sistema: un SF Symbol en iOS, un drawable en Android. No se
-    /// empaqueta ningún juego de iconos: se piden por nombre y los dibuja la
-    /// plataforma, con el trazo que le toque a esa versión.
+    /// A system icon: an SF Symbol on iOS, a drawable on Android. No icon set
+    /// is bundled: they are asked for by name and drawn by the platform, with
+    /// whatever stroke that version happens to give them.
     Icon,
-    /// Elegir una de varias opciones a la vista. `UISegmentedControl` en iOS;
-    /// en Android no hay equivalente en la plataforma y se dibuja con vistas
-    /// del sistema, como la barra de pestañas.
+    /// Pick one of several options, all of them on screen. `UISegmentedControl`
+    /// on iOS; Android has no platform equivalent, so it is drawn out of system
+    /// views, like the tab bar.
     SegmentedControl,
-    /// Subir y bajar de uno en uno. `UIStepper` en iOS; en Android tampoco hay
-    /// y se arma con dos botones.
+    /// Up and down, one at a time. `UIStepper` on iOS; Android has none either,
+    /// so it is put together out of two buttons.
     Stepper,
-    /// Campo de búsqueda del sistema, con su lupa y su botón de borrar.
+    /// The system search field, with its magnifier and its clear button.
     SearchBar,
-    /// Elegir una de varias opciones de una lista que se despliega.
+    /// Pick one of several options from a list that drops down.
     Picker,
-    /// Selector de fecha y hora del sistema.
+    /// The system date and time picker.
     DatePicker,
-    /// Cabecera con título y botón de atrás.
+    /// A header with a title and a back button.
     NavigationBar,
-    /// Campo de texto de varias líneas. Es otra clase de vista y no una prop
-    /// del campo de una línea: en iOS son `UITextField` y `UITextView`, dos
-    /// controles distintos, y cambiar de uno a otro en marcha no es posible.
+    /// A multi-line text field. It is a different kind of view, not a prop on
+    /// the single-line one: on iOS they are `UITextField` and `UITextView`, two
+    /// separate controls, and swapping one for the other mid-flight is not a
+    /// thing you can do.
     TextEditor,
-    /// Navegador embebido.
+    /// An embedded browser.
     WebView,
-    /// Mapa.
+    /// A map.
     MapView,
-    /// Reproductor de vídeo.
+    /// A video player.
     VideoView,
 }
 
@@ -93,22 +95,23 @@ impl NodeKind {
         })
     }
 
-    /// `false` solo para nodos internos que no tienen vista nativa detrás.
+    /// `false` only for internal nodes with no native view behind them.
     pub fn is_mountable(self) -> bool {
         self != NodeKind::RawText
     }
 
-    /// Nodos hoja de cara al layout: su tamaño se mide, no se deriva de hijos.
+    /// Leaf nodes as far as layout is concerned: their size is measured, not
+    /// derived from children.
     ///
-    /// `TextInput` entra aquí para que un campo sin altura explícita ocupe lo
-    /// que ocupa su texto, en vez de colapsar a cero.
+    /// `TextInput` belongs here so that a field with no explicit height takes up
+    /// as much room as its text does, instead of collapsing to zero.
     pub fn is_measured_leaf(self) -> bool {
         matches!(self, NodeKind::Text | NodeKind::Image | NodeKind::TextInput)
             || self.is_control()
     }
 
-    /// Controles del sistema: los dibuja la plataforma y su tamaño natural lo
-    /// decide ella, no el framework.
+    /// System controls: the platform draws them, and the platform is what
+    /// decides their natural size, not the framework.
     pub fn is_control(self) -> bool {
         matches!(
             self,
@@ -128,7 +131,7 @@ impl NodeKind {
         )
     }
 
-    /// Nombre con el que el host reconoce el control al medirlo.
+    /// The name by which the host recognises the control when measuring it.
     pub fn control_name(self) -> &'static str {
         match self {
             NodeKind::TabBar => "TabBar",
@@ -148,36 +151,36 @@ impl NodeKind {
         }
     }
 
-    /// Se presenta encima de todo, fuera del flujo de su padre.
+    /// Presented on top of everything, outside its parent's flow.
     pub fn is_overlay(self) -> bool {
         matches!(self, NodeKind::Modal | NodeKind::Alert)
     }
 
-    /// No ocupa sitio en el layout: lo presenta el sistema por su cuenta.
+    /// Takes up no room in the layout: the system presents it on its own.
     pub fn is_dialog(self) -> bool {
         self == NodeKind::Alert
     }
 
-    /// Nodos cuyo contenido puede desbordar y necesita `contentSize`.
+    /// Nodes whose content can overflow and therefore need a `contentSize`.
     pub fn is_scrollable(self) -> bool {
         self == NodeKind::ScrollView
     }
 
-    /// Contenedores cuyos hijos entran y salen con animación.
+    /// Containers whose children come in and go out with an animation.
     pub fn is_stack(self) -> bool {
         self == NodeKind::StackView
     }
 }
 
-/// Valor de una prop de host. Deliberadamente pequeño: lo que cabe en el
-/// protocolo binario del puente sin serializar objetos arbitrarios.
+/// The value of a host prop. Deliberately small: whatever fits in the bridge's
+/// binary protocol without serialising arbitrary objects.
 #[derive(Clone, PartialEq, Debug)]
 pub enum PropValue {
     Null,
     Bool(bool),
     Number(f64),
     Str(String),
-    /// RGBA empaquetado, 8 bits por canal.
+    /// Packed RGBA, 8 bits per channel.
     Color(u32),
 }
 
@@ -198,7 +201,7 @@ impl PropValue {
     }
 }
 
-/// Extrae la fuente con la que hay que medir un `<Text>` de sus props.
+/// Pulls out of the props the font a `<Text>` has to be measured with.
 pub fn font_from_props(get: impl Fn(&str) -> Option<PropValue>) -> FontSpec {
     let mut font = FontSpec::default();
     if let Some(v) = get("fontSize").and_then(|v| v.as_f32()) {
@@ -235,7 +238,7 @@ pub fn font_from_props(get: impl Fn(&str) -> Option<PropValue>) -> FontSpec {
     font
 }
 
-/// Props que, al cambiar, obligan a volver a medir el nodo.
+/// Props that, when they change, force the node to be measured again.
 pub fn affects_measure(key: &str) -> bool {
     matches!(
         key,

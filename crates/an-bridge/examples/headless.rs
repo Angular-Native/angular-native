@@ -1,11 +1,14 @@
-//! Renderer sin pantalla: evalúa un bundle, avanza frames con un reloj falso e
-//! imprime el árbol resuelto.
+//! A screenless renderer: it evaluates a bundle, steps through frames on a fake
+//! clock and prints the resolved tree.
 //!
-//! Monta el pipeline entero salvo UIKit: shadow tree, layout, diff y cola de
-//! eventos. El host es de mentira, así que `onLayout` y el resto de eventos
-//! que produce el core funcionan igual que en el dispositivo.
+//! It stands up the whole pipeline except UIKit: shadow tree, layout, diff and
+//! the event queue. The host is a pretend one, so `onLayout` and the rest of the
+//! events the core produces behave exactly as they do on the device.
 //!
-//! Uso: cargo run -p an-bridge --example headless -- bundle.js [frames] [ms]
+//! Usage: cargo run -p an-bridge --example headless -- bundle.js [frames] [ms]
+
+// The strings this example prints are matched by `scripts/check-*.sh`, so they
+// stay in Spanish until those scripts are translated too.
 
 use std::collections::HashMap;
 
@@ -14,7 +17,8 @@ use an_bridge::{apply, JsRuntime, QuickJsRuntime};
 use an_core::{NaiveMeasurer, NodeId, NodeKind, PropValue, Rect};
 use an_host::{new_event_queue, HostEvent, HostRenderer, Renderer};
 
-/// Host que se limita a apuntar la estructura para poder imprimirla.
+/// A host that does nothing but write the structure down so it can be
+/// printed.
 #[derive(Default)]
 struct TreeRecorder {
     kinds: HashMap<NodeId, NodeKind>,
@@ -24,21 +28,22 @@ struct TreeRecorder {
     texts: HashMap<NodeId, String>,
     content: HashMap<NodeId, (f32, f32)>,
     root: Option<NodeId>,
-    /// Transformaciones aplicadas a cada vista. Van aparte del resto de props
-    /// porque se imprimen compuestas y con dos decimales: lo que se comprueba
-    /// de un arrastre es la cifra exacta que llegó.
+    /// The transforms applied to each view. They are kept apart from the rest
+    /// of the props because they are printed composed and to two decimals: what
+    /// gets checked about a drag is the exact figure that arrived.
     transforms: HashMap<NodeId, HashMap<String, f32>>,
-    /// Todo lo demás que el host recibió, tal cual.
+    /// Everything else the host was handed, exactly as it came.
     ///
-    /// Sin esto, una prop que llega bien y una que no llega se ven igual en el
-    /// volcado: no cambian ni el marco ni el texto. Apuntarlas es lo que
-    /// permite comprobar sin simulador que `[variant]` o `[ios]` viajaron.
+    /// Without this, a prop that arrives fine and one that never arrives look
+    /// identical in the dump: neither the frame nor the text changes. Writing
+    /// them down is what makes it possible to check, with no simulator, that
+    /// `[variant]` or `[ios]` travelled.
     props: HashMap<NodeId, HashMap<String, String>>,
     pressable: Vec<NodeId>,
     pannable: Vec<NodeId>,
     scrollable: Vec<NodeId>,
     backable: Vec<NodeId>,
-    /// Para poder afirmar que desplazarse no crea vistas.
+    /// So it can be claimed that scrolling creates no views.
     created: usize,
     destroyed: usize,
 }
@@ -61,9 +66,10 @@ impl HostRenderer for TreeRecorder {
         }
     }
     fn insert(&mut self, parent: NodeId, child: NodeId, index: u32) {
-        // Mover un nodo no lleva un `remove` delante: en las dos plataformas
-        // meter una vista en otro padre ya la saca de donde estaba. Aquí hay
-        // que hacerlo a mano o el nodo sale dos veces en el árbol.
+        // Moving a node does not come with a `remove` in front of it: on both
+        // platforms, putting a view into another parent already takes it out of
+        // where it was. Here it has to be done by hand or the node shows up
+        // twice in the tree.
         if let Some(previous) = self.parents.insert(child, parent) {
             if let Some(siblings) = self.order.get_mut(&previous) {
                 siblings.retain(|current| *current != child);
@@ -119,7 +125,7 @@ impl HostRenderer for TreeRecorder {
     }
 }
 
-/// Responde lo mismo que respondería iOS, con valores fijos.
+/// Answers what iOS would answer, with fixed values.
 struct FakeDevice;
 
 an_bridge::native_module! {
@@ -136,15 +142,15 @@ an_bridge::native_module! {
     }
 }
 
-/// Un plugin de mentira, con las respuestas escritas a mano.
+/// A pretend plugin, with its answers written out by hand.
 ///
-/// Los plugins de verdad son Swift y Java, y aquí no hay ni lo uno ni lo otro.
-/// Lo que sí se puede probar sin simulador es todo lo demás: que el módulo se
-/// registra con el nombre que dice su `package.json`, que la llamada llega, que
-/// la respuesta resuelve la promesa y que un método que no está declarado la
-/// rechaza en vez de tragársela.
+/// Real plugins are Swift and Java, and here there is neither. What can be
+/// tested with no simulator is everything else: that the module registers under
+/// the name its `package.json` gives it, that the call arrives, that the answer
+/// resolves the promise, and that a method that is not declared rejects it
+/// instead of swallowing it.
 ///
-/// Se declara con `AN_PLUGINS`, un JSON de `{ módulo: { método: respuesta } }`:
+/// It is declared with `AN_PLUGINS`, a JSON of `{ module: { method: answer } }`:
 ///
 /// ```text
 /// AN_PLUGINS='{"clipboard":{"read":"hola","write":null}}'
@@ -162,7 +168,8 @@ impl NativeModule for CannedPlugin {
     fn call(&mut self, method: &str, _args: serde_json::Value, respond: Responder) {
         match self.answers.get(method) {
             Some(value) => respond.resolve(value.clone()),
-            // Lo mismo que haría el plugin de verdad: decir qué método se pidió.
+            // The same thing the real plugin would do: say which method was
+            // asked for.
             None => respond.reject(format!(
                 "el plugin {} no tiene ninguna respuesta preparada para {method:?}",
                 self.name
@@ -171,7 +178,7 @@ impl NativeModule for CannedPlugin {
     }
 }
 
-/// Lee `AN_PLUGINS` y devuelve un módulo por cada plugin declarado.
+/// Reads `AN_PLUGINS` and returns one module per declared plugin.
 fn canned_plugins() -> Vec<CannedPlugin> {
     let Ok(raw) = std::env::var("AN_PLUGINS") else { return Vec::new() };
     let parsed: serde_json::Value = match serde_json::from_str(&raw) {
@@ -188,8 +195,8 @@ fn canned_plugins() -> Vec<CannedPlugin> {
     modules
         .iter()
         .map(|(name, answers)| CannedPlugin {
-            // Igual que en el puente de verdad: el nombre llega en tiempo de
-            // ejecución y `NativeModule::name` lo quiere `&'static str`.
+            // Same as in the real bridge: the name arrives at runtime and
+            // `NativeModule::name` wants it as a `&'static str`.
             name: Box::leak(name.clone().into_boxed_str()),
             answers: answers.as_object().cloned().unwrap_or_default(),
         })
@@ -206,21 +213,21 @@ fn main() {
     let step: f64 = args.next().and_then(|v| v.parse().ok()).unwrap_or(1000.0);
 
     let code = std::fs::read_to_string(&path).expect("no se pudo leer el bundle");
-    // `AN_HOT` apunta a un segundo bundle: el mismo ejemplo con algo cambiado.
-    // Se evalúa encima del primero para probar el refresco en caliente sin
-    // simulador ni servidor de desarrollo.
+    // `AN_HOT` points at a second bundle: the same example with something
+    // changed. It is evaluated on top of the first one to test hot refresh with
+    // neither a simulator nor a dev server.
     let hot = std::env::var("AN_HOT").ok();
-    // `AN_STACK` permite tantear el límite de pila que necesita una app.
+    // `AN_STACK` makes it possible to feel out the stack limit an app needs.
     let stack = std::env::var("AN_STACK")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(QuickJsRuntime::DEFAULT_STACK_SIZE);
     let mut js = QuickJsRuntime::with_options(std::rc::Rc::new(an_bridge::runtime::StderrLog), stack)
         .expect("no arrancó el motor JS");
-    // Un `device` de mentira: permite probar el camino completo de un módulo
-    // nativo —promesa en JS, registro, respuesta, resolución— sin simulador.
+    // A pretend `device`: it makes the whole path of a native module testable
+    // —promise in JS, registry, answer, resolution— with no simulator.
     js.register_module(Box::new(FakeDevice));
-    // Y los plugins que declare `AN_PLUGINS`, si los hay.
+    // And whatever plugins `AN_PLUGINS` declares, if any.
     for plugin in canned_plugins() {
         println!("-- plugin de mentira: {}", plugin.name);
         js.register_module(Box::new(plugin));
@@ -230,11 +237,11 @@ fn main() {
         std::process::exit(1);
     }
 
-    // El viewport. Por defecto el de un iPhone, que es donde corre la mayoría
-    // de los ejemplos; `AN_VIEWPORT=1920x1080` lo cambia sin recompilar nada.
-    // Una pantalla de tele no es un teléfono grande: con 393 puntos de ancho,
-    // una pantalla pensada para 1920 sale con todo apilado y partido, y una
-    // comprobación que la mire así no comprueba nada.
+    // The viewport. An iPhone's by default, which is where most of the examples
+    // run; `AN_VIEWPORT=1920x1080` changes it without recompiling anything. A TV
+    // screen is not a big phone: at 393 points wide, a screen designed for 1920
+    // comes out with everything stacked and broken, and a check looking at it
+    // that way checks nothing at all.
     let viewport = std::env::var("AN_VIEWPORT")
         .ok()
         .and_then(|raw| {
@@ -250,22 +257,22 @@ fn main() {
     let mut went_back = false;
     let mut panned = false;
     let mut before_back = (0usize, 0usize);
-    // Recuento en el momento justo antes de desplazar, para poder decir
-    // cuántas vistas costó el desplazamiento.
+    // The count taken right before scrolling, so it can be said how many views
+    // the scroll cost.
     let mut before_scroll = (0usize, 0usize);
 
     for frame in 0..frames {
         let now = frame as f64 * step;
 
-        // Los eventos que produjo el frame anterior —incluidos los `layout`
-        // que emite el core— entran antes que nada.
+        // The events the previous frame produced —including the `layout` ones
+        // the core emits— go in before anything else.
         let pending = renderer.drain_events();
         if !pending.is_empty() {
             js.dispatch_events(&pending).expect("despacho de eventos");
         }
 
-        // Cerca del final, cuando ya hubo toque y hay estado que perder, entra
-        // el bundle nuevo.
+        // Near the end, once there has been a tap and there is state to lose,
+        // the new bundle goes in.
         if let Some(other) = hot.as_ref() {
             if frame + 2 == frames {
                 let updated = std::fs::read_to_string(other).expect("no se pudo leer el bundle");
@@ -277,7 +284,7 @@ fn main() {
             }
         }
 
-        // A mitad de la ejecución, un toque en el primer nodo que escuche.
+        // Halfway through the run, a tap on the first node that is listening.
         if !tapped && frame >= frames / 2 {
             if let Some(target) = renderer.host().pressable.first().copied() {
                 println!("-- toque simulado en #{target}");
@@ -294,8 +301,8 @@ fn main() {
             }
         }
 
-        // Un frame después del toque, un desplazamiento largo: mueve la
-        // ventana entera y deja ver si la lista recicla o rehace.
+        // One frame after the tap, a long scroll: it moves the whole window and
+        // shows whether the list recycles or rebuilds.
         if !scrolled && frame >= frames / 2 {
             if let Some(target) = renderer.host().scrollable.first().copied() {
                 before_scroll = (renderer.host().created, renderer.host().destroyed);
@@ -313,10 +320,10 @@ fn main() {
             }
         }
 
-        // Un arrastre entero: empezar, mover y soltar. Los tres estados
-        // importan: quien mueve algo con el dedo actualiza en `move` y fija en
-        // `end`, y si solo llegase uno de los dos parecería que funciona hasta
-        // el segundo arrastre.
+        // A whole drag: begin, move and let go. All three states matter:
+        // whoever moves something with a finger updates on `move` and settles on
+        // `end`, and if only one of the two arrived it would look like it works
+        // until the second drag.
         if !panned && frame >= frames / 2 {
             let target = renderer.host().pannable.first().copied();
             if let Some(target) = target {
@@ -338,9 +345,9 @@ fn main() {
                         ],
                     }])
                     .expect("despacho de eventos");
-                    // Cada estado en su propio turno, y aplicando lo que salga:
-                    // en el dispositivo tampoco llegan los tres en el mismo
-                    // frame, y quien arrastra actualiza en cada uno.
+                    // Each state in its own turn, applying whatever comes out:
+                    // on the device the three do not arrive in the same frame
+                    // either, and whoever is dragging updates on every one.
                     let commands = js.tick(now).expect("turno de arrastre");
                     apply(&commands, &mut renderer).expect("búfer del arrastre");
                 }
@@ -348,8 +355,8 @@ fn main() {
             }
         }
 
-        // Cerca del final, el gesto de volver atrás: comprueba que la pila
-        // recupera la pantalla anterior en vez de rehacerla.
+        // Near the end, the back gesture: it checks that the stack brings the
+        // previous screen back rather than rebuilding it.
         if !went_back && frames > 3 && frame == frames - 2 {
             if let Some(target) = renderer.host().backable.first().copied() {
                 before_back = (renderer.host().created, renderer.host().destroyed);
@@ -415,11 +422,11 @@ fn print_node(host: &TreeRecorder, id: NodeId, depth: usize) {
         .get(&id)
         .map(|(w, h)| format!("  contenido {w:.0}x{h:.0}"))
         .unwrap_or_default();
-    // Las transformaciones se imprimen ordenadas: son un mapa, y sin ordenar
-    // la salida cambiaría de una ejecución a otra y no se podría comprobar.
-    // Las props se imprimen ordenadas por la misma razón que las
-    // transformaciones: son un mapa, y sin ordenar la salida cambiaría de una
-    // ejecución a otra y no habría nada que comprobar.
+    // The transforms are printed sorted: they are a map, and unsorted the
+    // output would change from one run to the next and could not be checked.
+    // The props are printed sorted for the same reason as the transforms: they
+    // are a map, and unsorted the output would change from one run to the next
+    // and there would be nothing to check.
     let props = host
         .props
         .get(&id)
@@ -458,8 +465,8 @@ fn print_node(host: &TreeRecorder, id: NodeId, depth: usize) {
     }
 }
 
-/// Una prop en una línea. Las cadenas largas se cortan: `items` de una barra
-/// de pestañas o el HTML de un navegador llenarían el volcado entero.
+/// One prop on one line. Long strings get cut: a tab bar's `items`, or a
+/// browser's HTML, would fill the entire dump.
 fn show_prop(value: &PropValue) -> String {
     match value {
         PropValue::Null => "null".to_owned(),

@@ -1,18 +1,18 @@
-//! Servidor de desarrollo.
+//! The dev server.
 //!
-//! Vigila los ficheros, recompila el bundle al guardar y avisa a la app por
-//! WebSocket. La app se descarga el bundle nuevo y se reinicia sobre la marcha,
-//! sin volver a pasar por Xcode ni por el simulador.
+//! It watches the files, rebuilds the bundle when you save and tells the app
+//! over a WebSocket. The app downloads the new bundle and restarts on the fly,
+//! with no second trip through Xcode or the simulator.
 //!
-//! La recarga es en caliente siempre que se pueda: el bundle de desarrollo va
-//! partido en dos mitades —el framework arriba, la app abajo— y solo se
-//! reevalúa la de abajo, encima de la que ya corre. Angular se queda con la
-//! instancia de cada componente y le cambia la definición, así que el estado
-//! sobrevive: sigues en la misma pantalla y con lo que llevaras escrito.
+//! The reload is a hot one whenever it can be: the development bundle is split
+//! in two halves —the framework on top, the app underneath— and only the bottom
+//! one is re-evaluated, on top of the one already running. Angular keeps each
+//! component's instance and swaps its definition, so the state survives: you are
+//! still on the same screen with whatever you had typed.
 //!
-//! Si lo que cambió está en la mitad de arriba, no hay refresco que valga —en
-//! el intérprete solo cabe una copia de Angular— y se reinicia entero. Lo mismo
-//! si el árbol de componentes ya no encaja. Ver
+//! If what changed is in the top half there is no refresh worth attempting —only
+//! one copy of Angular fits in the interpreter— and it restarts whole. Same if
+//! the component tree no longer lines up. See
 //! `packages/platform-native/src/hot-refresh.ts`.
 
 use std::path::PathBuf;
@@ -32,8 +32,8 @@ use crate::plugins::Plugin;
 use crate::workspace::Workspace;
 use crate::{build, ios, watchos};
 
-/// Los cambios llegan en ráfagas: guardar en un editor dispara varios eventos,
-/// y `ngc` escribe decenas de ficheros. Se espera a que amaine.
+/// Changes arrive in bursts: saving in an editor fires several events, and
+/// `ngc` writes dozens of files. It waits for things to die down.
 const DEBOUNCE: Duration = Duration::from_millis(250);
 
 #[derive(Clone)]
@@ -42,17 +42,17 @@ struct Server {
     reloads: broadcast::Sender<()>,
 }
 
-/// Dónde lanzar la app que se va a recargar.
+/// Where to launch the app that is going to be reloaded.
 pub enum Target {
     Ios { device: String },
     TvOs { device: String },
     VisionOs { device: String },
     WatchOs { device: String },
     Android,
-    /// El reloj de Android. Es el mismo emulador y el mismo servidor que
-    /// `Android`; lo que cambia es el manifiesto con el que se arma el APK y
-    /// la forma del aparato al que va, que son justo las dos cosas que no se
-    /// pueden deducir de la otra.
+    /// The Android watch. Same emulator and same server as `Android`; what
+    /// changes is the manifest the APK is built with and the shape of the device
+    /// it goes to, which are precisely the two things neither can be worked out
+    /// from the other.
     Wear { device: Option<String> },
 }
 
@@ -75,11 +75,11 @@ pub fn run(
     let (reloads, _) = broadcast::channel(8);
     let server = Server { bundle: Arc::new(tokio::sync::RwLock::new(source)), reloads };
 
-    // El emulador de Android no ve `localhost`: la máquina anfitriona es
-    // 10.0.2.2 desde dentro.
+    // The Android emulator cannot see `localhost`: the host machine is 10.0.2.2
+    // from in there.
     let url = match target {
-        // El simulador del reloj comparte la red del Mac igual que el del
-        // teléfono, así que le vale la misma dirección.
+        // The watch simulator shares the Mac's network the same way the
+        // phone's does, so the same address works for it.
         Target::Ios { .. }
         | Target::TvOs { .. }
         | Target::VisionOs { .. }
@@ -91,8 +91,9 @@ pub fn run(
         }
     };
 
-    // El puerto se abre antes de dar nada por bueno: si ya hay otro `an dev`
-    // corriendo, más vale decirlo aquí que arrancar a medias.
+    // The port is opened before anything is taken for granted: if there is
+    // another `an dev` already running, better to say so here than to start up
+    // halfway.
     let listener = runtime
         .block_on(tokio::net::TcpListener::bind(("127.0.0.1", port)))
         .with_context(|| format!("no se pudo abrir el puerto {port}"))?;
@@ -182,12 +183,12 @@ async fn serve_bundle(State(server): State<Server>) -> impl IntoResponse {
     ([("content-type", "application/javascript; charset=utf-8")], source)
 }
 
-/// Espera larga: el cliente pregunta y el servidor no contesta hasta que hay
-/// una recarga. Es para Android, donde la plataforma no trae cliente de
-/// WebSocket y meter OkHttp solo para esto no compensa.
+/// A long wait: the client asks and the server does not answer until there is a
+/// reload. It is for Android, where the platform ships no WebSocket client and
+/// pulling in OkHttp just for this is not worth it.
 ///
-/// Devuelve 204 al cabo de un rato para que la conexión no se quede colgada
-/// indefinidamente en un proxy o en el emulador.
+/// It returns a 204 after a while so the connection does not hang around for
+/// ever in a proxy or in the emulator.
 async fn wait_for_reload(State(server): State<Server>) -> impl IntoResponse {
     let mut reloads = server.reloads.subscribe();
     let waited = tokio::time::timeout(Duration::from_secs(30), reloads.recv()).await;
@@ -223,15 +224,15 @@ fn watch(
         let _ = tx.send(event);
     })?;
 
-    // `packages/` solo en el monorepo: ahí las fuentes del framework son las que
-    // se compilan. En un proyecto de fuera lo que se compila es la copia
-    // empaquetada que hay en su `node_modules`, así que vigilar el SDK
-    // provocaría recompilaciones que no cambian nada de lo que corre.
-    let mut vigilados = vec![workspace.root.join(app.join("src"))];
+    // `packages/` in the monorepo only: in there the framework's sources are
+    // what gets compiled. In a project from outside what gets compiled is the
+    // packaged copy in its `node_modules`, so watching the SDK would set off
+    // rebuilds that change nothing about what is running.
+    let mut watched = vec![workspace.root.join(app.join("src"))];
     if workspace.project.is_none() {
-        vigilados.push(workspace.root.join("packages"));
+        watched.push(workspace.root.join("packages"));
     }
-    for path in &vigilados {
+    for path in &watched {
         if path.is_dir() {
             watcher.watch(path, RecursiveMode::Recursive)?;
         }
@@ -241,8 +242,8 @@ fn watch(
     loop {
         let Ok(event) = rx.recv() else { break };
         let Ok(event) = event else { continue };
-        // Solo importan las fuentes: ignorar lo que el propio build escribe
-        // evitaría un bucle si algún día `build/` cayera dentro de lo vigilado.
+        // Only the sources matter: ignoring what the build itself writes would
+        // avoid a loop if `build/` ever fell inside what is watched.
         let relevant = event.paths.iter().any(|path| {
             matches!(
                 path.extension().and_then(|e| e.to_str()),
@@ -252,7 +253,7 @@ fn watch(
         if !relevant || last.elapsed() < DEBOUNCE {
             continue;
         }
-        // Vaciar la ráfaga antes de compilar, o se compila una vez por fichero.
+        // Drain the burst before compiling, or it compiles once per file.
         while rx.recv_timeout(DEBOUNCE).is_ok() {}
         last = Instant::now();
 
@@ -268,8 +269,9 @@ fn watch(
                 }
                 Err(error) => eprintln!("==> no se pudo leer el bundle: {error}"),
             },
-            // Un error de compilación no puede tirar el servidor: se informa y
-            // se sigue vigilando, que es lo que uno espera al equivocarse.
+            // A compilation error must not take the server down: it is reported
+            // and the watching goes on, which is what anyone expects after
+            // making a mistake.
             Err(error) => eprintln!("==> la compilación falló: {error}"),
         }
     }

@@ -1,8 +1,9 @@
-//! Shadow tree: la copia autoritativa del árbol de UI que vive en Rust.
+//! Shadow tree: the authoritative copy of the UI tree, the one that lives in
+//! Rust.
 //!
-//! JS asigna los ids (monotónicos) y manda mutaciones. El árbol las acumula sin
-//! tocar nada nativo. En `commit()` corre el layout y devuelve un `Frame` con
-//! las operaciones mínimas que el host tiene que aplicar.
+//! JS assigns the ids (monotonic) and sends mutations. The tree piles them up
+//! without touching anything native. On `commit()` it runs layout and returns a
+//! `Frame` with the smallest set of operations the host has to apply.
 
 use an_layout::{
     LayoutEngine, LayoutStyle, MeasureCtx, Rect, StyleKey, StyleValue, TextMeasurer,
@@ -10,57 +11,57 @@ use an_layout::{
 
 use crate::props::{affects_measure, font_from_props, NodeKind, PropValue};
 
-/// Id de nodo. Lo asigna el lado JS, igual que los tags de Fabric, para que
-/// crear un nodo no necesite viaje de ida y vuelta al core.
+/// Node id. The JS side assigns it, the same way Fabric does with tags, so
+/// that creating a node needs no round trip to the core.
 pub type NodeId = u32;
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
     UnknownNode(NodeId),
     DuplicateNode(NodeId),
-    /// Un id tan por delante de lo ya creado que no puede venir de JS.
-    /// Ver `HUECO_MAXIMO`.
+    /// An id so far ahead of what has been created that it cannot come from
+    /// JS. See `MAX_ID_GAP`.
     IdOutOfRange(NodeId),
-    /// Colgar un nodo de sí mismo o de uno de sus descendientes.
+    /// Hanging a node off itself, or off one of its own descendants.
     Cycle { parent: NodeId, child: NodeId },
-    /// Colgar de un padre nuevo un nodo que todavía cuelga de otro. Mudarlo es
-    /// darlo de baja primero; sin la baja el árbol queda con el hijo en dos
-    /// sitios y cada host se lo cree de una forma.
-    AlreadyAttached { parent: NodeId, child: NodeId, actual: NodeId },
+    /// Hanging off a new parent a node that still hangs off another one.
+    /// Moving it means detaching it first; without that detach the tree keeps
+    /// the child in two places and each host believes a different one.
+    AlreadyAttached { parent: NodeId, child: NodeId, current: NodeId },
     NoRoot,
     Layout(String),
 }
 
-/// Cuánto puede adelantarse un id a lo que ya se ha creado.
+/// How far ahead of what has already been created an id is allowed to run.
 ///
-/// La tabla de nodos se indexa por id, así que crear el nodo 1.000 reserva
-/// mil huecos aunque no exista ninguno de los anteriores. Con los ids que
-/// reparte JS —de uno en uno desde el 1— eso no pasa nunca; con un búfer
-/// estropeado sí, y un id cerca de `u32::MAX` pedía cuatro mil millones de
-/// huecos: el proceso lo mataba el sistema por falta de memoria, sin traza,
-/// sin error y sin pantalla. Un margen holgado deja pasar cualquier tráfico
-/// real y convierte lo otro en un error que se puede enseñar.
-const HUECO_MAXIMO: usize = 1024;
+/// The node table is indexed by id, so creating node 1,000 reserves a thousand
+/// slots even if none of the earlier ones exist. With the ids JS hands out
+/// —one at a time, starting at 1— that never happens; with a corrupted buffer
+/// it does, and an id anywhere near `u32::MAX` asked for four billion slots:
+/// the system killed the process for running out of memory, with no trace, no
+/// error and no screen. A generous margin lets any real traffic through and
+/// turns the other case into an error you can actually show someone.
+const MAX_ID_GAP: usize = 1024;
 
-/// Operación que el host debe aplicar sobre vistas nativas reales.
+/// An operation the host must apply to real native views.
 #[derive(Clone, Debug, PartialEq)]
 pub enum MountOp {
     Create { id: NodeId, kind: NodeKind },
     Destroy { id: NodeId },
-    /// `index` cuenta solo hermanos montables.
+    /// `index` counts mountable siblings only.
     Insert { parent: NodeId, child: NodeId, index: u32 },
     Remove { parent: NodeId, child: NodeId },
     SetProp { id: NodeId, key: String, value: PropValue },
     SetText { id: NodeId, text: String },
     SetListener { id: NodeId, event: String, enabled: bool },
-    /// Marco relativo al padre, en puntos lógicos.
+    /// Frame relative to the parent, in logical points.
     SetLayout { id: NodeId, frame: Rect },
-    /// Tamaño del contenido de un nodo scrollable, cuando desborda su marco.
+    /// Content size of a scrollable node, when it overflows its frame.
     SetContentSize { id: NodeId, width: f32, height: f32 },
     SetRoot { id: NodeId },
 }
 
-/// Resultado de un commit. Vacío = nada que hacer, el host no despierta.
+/// The result of a commit. Empty = nothing to do, the host never wakes up.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Frame {
     pub ops: Vec<MountOp>,
@@ -78,13 +79,13 @@ struct Node {
     children: Vec<NodeId>,
     style: LayoutStyle,
     props: Vec<(Box<str>, PropValue)>,
-    /// Solo para `RawText`.
+    /// `RawText` only.
     text: String,
     frame: Rect,
-    /// Solo para nodos scrollables.
+    /// Scrollable nodes only.
     content: (f32, f32),
-    /// `false` hasta el primer layout: fuerza un `SetLayout` inicial aunque
-    /// el marco calculado sea (0,0,0,0).
+    /// `false` until the first layout: forces an initial `SetLayout` even when
+    /// the frame that came out is (0,0,0,0).
     laid_out: bool,
 }
 
@@ -109,18 +110,18 @@ impl Node {
 }
 
 pub struct ShadowTree {
-    /// Indexado por id. `None` = hueco de un nodo destruido.
+    /// Indexed by id. `None` = the slot of a destroyed node.
     nodes: Vec<Option<Node>>,
-    /// Cuántos nodos se han llegado a crear, vivos o no. Es la referencia
-    /// contra la que se mide si un id viene demasiado adelantado.
+    /// How many nodes have ever been created, alive or not. It is the yardstick
+    /// an id is measured against to tell whether it comes too far ahead.
     created: usize,
     root: Option<NodeId>,
     layout: LayoutEngine,
-    /// Ops estructurales y de props, en orden de llegada.
+    /// Structural and prop ops, in arrival order.
     pending: Vec<MountOp>,
-    /// Padres cuya lista de hijos hay que resincronizar con taffy.
+    /// Parents whose child list has to be resynced with taffy.
     children_dirty: Vec<NodeId>,
-    /// Nodos hoja que hay que volver a medir.
+    /// Leaf nodes that have to be measured again.
     measure_dirty: Vec<NodeId>,
     needs_layout: bool,
 }
@@ -149,11 +150,11 @@ impl ShadowTree {
         self.root
     }
 
-    // ---------------------------------------------------------------- mutaciones
+    // ----------------------------------------------------------------- mutations
 
     pub fn create_node(&mut self, id: NodeId, kind: NodeKind) -> Result<(), Error> {
         let idx = id as usize;
-        if idx > self.created + HUECO_MAXIMO {
+        if idx > self.created + MAX_ID_GAP {
             return Err(Error::IdOutOfRange(id));
         }
         if idx >= self.nodes.len() {
@@ -164,13 +165,13 @@ impl ShadowTree {
         }
         self.created += 1;
         let mut node = Node::new(kind);
-        // Un ScrollView no se dimensiona por su contenido: para eso está el
-        // scroll. Sin estos defaults, una lista de cinco mil filas produce un
-        // ScrollView de 280.000 puntos de alto y el layout del padre revienta.
-        // Es lo mismo que hace React Native, donde los hijos de un ScrollView
-        // no cuentan para el tamaño del propio ScrollView.
-        // Una pila se comporta como un contenedor a pantalla completa: sus
-        // hijos van uno encima de otro, no en fila.
+        // A ScrollView is not sized by its content: that is what the scrolling
+        // is for. Without these defaults, a list of five thousand rows gives a
+        // ScrollView 280,000 points tall and the parent's layout blows up. It is
+        // what React Native does too, where a ScrollView's children do not count
+        // towards the size of the ScrollView itself.
+        // A stack behaves like a full-screen container: its children sit on top
+        // of one another, not in a row.
         if kind.is_stack() {
             node.style.set(StyleKey::Position, StyleValue::Keyword(an_layout::Keyword::Relative));
             node.style.set(StyleKey::Overflow, StyleValue::Keyword(an_layout::Keyword::Hidden));
@@ -178,8 +179,8 @@ impl ShadowTree {
             node.style.set(StyleKey::FlexBasis, StyleValue::Points(0.0));
             node.style.set(StyleKey::MinHeight, StyleValue::Points(0.0));
         }
-        // Un diálogo lo presenta el sistema encima de todo: no participa en
-        // el layout, así que se le quita del flujo y se le deja sin tamaño.
+        // A dialog is presented by the system on top of everything: it takes no
+        // part in layout, so it is pulled out of the flow and left with no size.
         if kind.is_dialog() {
             node.style.set(StyleKey::Position, StyleValue::Keyword(an_layout::Keyword::Absolute));
             node.style.set(StyleKey::Width, StyleValue::Points(0.0));
@@ -199,9 +200,9 @@ impl ShadowTree {
             self.pending.push(MountOp::Create { id, kind });
         }
         self.nodes[idx] = Some(node);
-        // Un control tiene tamaño propio desde que nace: sus props no dicen
-        // nada del tamaño, así que si no se marca aquí no se mide nunca y sale
-        // de cero.
+        // A control has a size of its own from the moment it is born: its props
+        // say nothing about size, so if it is not marked here it never gets
+        // measured and comes out at zero.
         if kind.is_control() {
             self.mark_measure_dirty(id);
         }
@@ -209,11 +210,11 @@ impl ShadowTree {
         Ok(())
     }
 
-    /// Destruye el nodo y todo su subárbol. El host recibe un `Destroy` por
-    /// nodo montable, hijos antes que padres.
-    /// Destruir es idempotente: un nodo que ya no está no es un error.
-    /// Angular puede mandar el borrado y la desvinculación en cualquier orden,
-    /// y un búfer que aborta a mitad deja la pantalla rota.
+    /// Destroys the node and its whole subtree. The host gets one `Destroy` per
+    /// mountable node, children before parents.
+    /// Destroying is idempotent: a node that is already gone is not an error.
+    /// Angular may send the removal and the detach in either order, and a buffer
+    /// that aborts halfway through leaves the screen broken.
     pub fn destroy_node(&mut self, id: NodeId) -> Result<(), Error> {
         if self.nodes.get(id as usize).and_then(Option::as_ref).is_none() {
             return Ok(());
@@ -253,53 +254,54 @@ impl ShadowTree {
         Ok(())
     }
 
-    /// Si `nodo` es el propio `posible_ancestro` o cuelga de él.
+    /// Whether `node` is `possible_ancestor` itself, or hangs off it.
     ///
-    /// Se sube por los padres y no se baja por los hijos porque la cadena hacia
-    /// arriba es la profundidad del árbol —unos pocos saltos— y la de abajo es
-    /// el subárbol entero.
-    fn desciende_de(&self, nodo: NodeId, posible_ancestro: NodeId) -> bool {
-        let mut actual = Some(nodo);
-        while let Some(id) = actual {
-            if id == posible_ancestro {
+    /// It climbs through the parents instead of descending through the children
+    /// because the chain upwards is the depth of the tree —a handful of hops—
+    /// and the one downwards is the entire subtree.
+    fn descends_from(&self, node: NodeId, possible_ancestor: NodeId) -> bool {
+        let mut current = Some(node);
+        while let Some(id) = current {
+            if id == possible_ancestor {
                 return true;
             }
-            actual = self.nodes.get(id as usize).and_then(Option::as_ref).and_then(|n| n.parent);
+            current = self.nodes.get(id as usize).and_then(Option::as_ref).and_then(|n| n.parent);
         }
         false
     }
 
-    /// `index` es la posición en la lista completa de hijos, incluidos los no
-    /// montables. La conversión al índice del host se hace aquí.
+    /// `index` is the position in the full list of children, non-mountable ones
+    /// included. The conversion to the host's index happens here.
     pub fn insert_child(&mut self, parent: NodeId, child: NodeId, index: usize) -> Result<(), Error> {
         self.node(parent)?;
         self.node(child)?;
-        // Un árbol con un ciclo deja de ser un árbol, y quien lo paga es el
-        // layout: recorre hijos hasta el fondo y aquí no hay fondo, así que se
-        // queda dando vueltas sin devolver nunca el frame. No hay traza, no hay
-        // error: la app se queda quieta. Angular nunca manda esto; un búfer con
-        // un bit volteado, sí.
-        if self.desciende_de(parent, child) {
+        // A tree with a cycle stops being a tree, and layout is the one that
+        // pays for it: it walks children all the way down, and down here there
+        // is no bottom, so it goes round and round and never hands back the
+        // frame. No trace, no error: the app just sits there. Angular never
+        // sends this; a buffer with one flipped bit does.
+        if self.descends_from(parent, child) {
             return Err(Error::Cycle { parent, child });
         }
-        // Colgar de un padre nuevo algo que ya cuelga de otro no es mudarlo:
-        // el hijo se queda en la lista de los dos y su `parent` apunta solo al
-        // último, así que el layout lo recorre dos veces y el frame lleva un
-        // `Insert` sin su `Remove`. Los tres hosts reaccionan distinto —UIKit
-        // y AppKit mueven la vista sin decir nada, `ViewGroup.addView` lanza y
-        // deja el subárbol sin montar—, o sea que el mismo árbol se ve de tres
-        // maneras. Mudar es dar de baja y volver a dar de alta, y eso lo manda
-        // JS, que es quien sabe de dónde sale.
-        if let Some(actual) = self.node(child)?.parent {
-            return Err(Error::AlreadyAttached { parent, child, actual });
+        // Hanging off a new parent something that already hangs off another one
+        // is not moving it: the child stays in both lists and its `parent`
+        // points only at the last one, so layout walks it twice and the frame
+        // carries an `Insert` with no `Remove`. The three hosts react
+        // differently —UIKit and AppKit move the view without a word,
+        // `ViewGroup.addView` throws and leaves the subtree unmounted—, so the
+        // same tree ends up looking like three different things. Moving is
+        // detaching and attaching again, and that call is JS's, because JS is
+        // the one who knows where it came from.
+        if let Some(current) = self.node(child)?.parent {
+            return Err(Error::AlreadyAttached { parent, child, current });
         }
         let index = index.min(self.node(parent)?.children.len());
         self.node_mut(parent)?.children.insert(index, child);
         self.node_mut(child)?.parent = Some(parent);
 
-        // Los hijos de una pila son pantallas: se superponen y ocupan todo.
-        // Es la definición de lo que hace una pila, no una preferencia de
-        // estilo, así que lo impone el core y no cada página.
+        // The children of a stack are screens: they overlap and they fill
+        // everything. That is the definition of what a stack does, not a styling
+        // preference, so the core imposes it and not each page.
         if self.node(parent)?.kind.is_stack() && self.node(child)?.kind.is_mountable() {
             for (key, value) in [
                 (StyleKey::Position, StyleValue::Keyword(an_layout::Keyword::Absolute)),
@@ -329,8 +331,8 @@ impl ShadowTree {
         Ok(())
     }
 
-    /// Igual que `destroy_node`: quitar algo que ya no cuelga de ahí no es un
-    /// error, es la misma situación final.
+    /// Same as `destroy_node`: taking away something that no longer hangs there
+    /// is not an error, it is the very same end state.
     pub fn remove_child(&mut self, parent: NodeId, child: NodeId) -> Result<(), Error> {
         let Ok(node) = self.node(parent) else { return Ok(()) };
         let Some(position) = node.children.iter().position(|c| *c == child) else {
@@ -348,17 +350,18 @@ impl ShadowTree {
         Ok(())
     }
 
-    /// `Renderer2.setStyle`. Nombre en camelCase o kebab-case; valor ya en texto.
+    /// `Renderer2.setStyle`. Name in camelCase or kebab-case; value already as
+    /// text.
     pub fn set_style(&mut self, id: NodeId, name: &str, value: &str) -> Result<(), Error> {
         let Some(key) = StyleKey::from_name(name) else {
-            // No es layout: viaja como prop de host (color, backgroundColor...).
+            // Not layout: it travels as a host prop (color, backgroundColor...).
             //
-            // Y con el nombre en camello, no como llegó. Angular pasa los
-            // nombres de estilo a guiones, así que `[style.fontSize]` llega
-            // aquí como `font-size`; mandarlo tal cual al host, que busca
-            // `fontSize`, era pedirle algo que nunca iba a reconocer. No
-            // fallaba: simplemente el texto se medía con una letra y se
-            // dibujaba con otra.
+            // And with the name in camel case, not as it arrived. Angular turns
+            // style names into hyphenated ones, so `[style.fontSize]` reaches
+            // here as `font-size`; forwarding that as-is to the host, which
+            // looks for `fontSize`, was asking it for something it was never
+            // going to recognise. Nothing failed: the text was simply measured
+            // with one font and drawn with another.
             let camel = an_layout::camelize(name);
             return self.set_prop(id, &camel, PropValue::Str(value.to_owned()));
         };
@@ -400,7 +403,7 @@ impl ShadowTree {
         Ok(())
     }
 
-    /// `Renderer2.setValue` sobre un nodo de texto.
+    /// `Renderer2.setValue` on a text node.
     pub fn set_text(&mut self, id: NodeId, text: &str) -> Result<(), Error> {
         let node = self.node_mut(id)?;
         if node.text == text {
@@ -415,9 +418,9 @@ impl ShadowTree {
         Ok(())
     }
 
-    /// Dar de baja un oyente de un nodo que ya no existe no es un error: es lo
-    /// que pasa siempre que se destruye una vista con suscripciones vivas, y
-    /// el orden en que llegan las dos cosas no está garantizado.
+    /// Dropping a listener from a node that no longer exists is not an error:
+    /// it is what happens every single time a view with live subscriptions is
+    /// destroyed, and the order the two things arrive in is not guaranteed.
     pub fn set_listener(&mut self, id: NodeId, event: &str, enabled: bool) -> Result<(), Error> {
         let Ok(node) = self.node(id) else { return Ok(()) };
         if !node.kind.is_mountable() {
@@ -429,15 +432,16 @@ impl ShadowTree {
 
     // ------------------------------------------------------------------- commit
 
-    /// Corre el layout y devuelve las operaciones para el host.
-    /// Es el único momento en que el árbol produce trabajo nativo.
+    /// Runs layout and returns the operations for the host.
+    /// It is the only moment at which the tree produces native work.
     pub fn commit(
         &mut self,
         viewport: (f32, f32),
         measurer: &dyn TextMeasurer,
     ) -> Result<Frame, Error> {
         let Some(root) = self.root else {
-            // Sin raíz solo tienen sentido las ops ya acumuladas.
+            // With no root, the only thing that makes sense is the ops already
+            // piled up.
             return Ok(Frame { ops: std::mem::take(&mut self.pending) });
         };
 
@@ -455,8 +459,8 @@ impl ShadowTree {
         Ok(Frame { ops })
     }
 
-    /// Sincroniza con taffy las listas de hijos que cambiaron, filtrando los
-    /// nodos que no participan en el layout.
+    /// Syncs to taffy the child lists that changed, filtering out the nodes
+    /// that take no part in layout.
     fn flush_children(&mut self) -> Result<(), Error> {
         let dirty = std::mem::take(&mut self.children_dirty);
         for parent in dirty {
@@ -482,8 +486,8 @@ impl ShadowTree {
         Ok(())
     }
 
-    /// Reconstruye el contexto de medición de las hojas sucias y emite el
-    /// `SetText` correspondiente al host.
+    /// Rebuilds the measuring context of the dirty leaves and emits the
+    /// matching `SetText` for the host.
     fn flush_measures(&mut self) -> Result<(), Error> {
         let dirty = std::mem::take(&mut self.measure_dirty);
         for id in dirty {
@@ -496,8 +500,8 @@ impl ShadowTree {
                     Some(MeasureCtx::Text { text, font })
                 }
                 NodeKind::TextInput => {
-                    // Un campo vacío tiene que seguir midiendo el alto de una
-                    // línea, así que se mide el marcador si no hay valor.
+                    // An empty field still has to measure one line tall, so the
+                    // placeholder is what gets measured when there is no value.
                     let text = node
                         .prop("value")
                         .and_then(|v| v.as_str().map(str::to_owned))
@@ -530,7 +534,7 @@ impl ShadowTree {
         Ok(())
     }
 
-    /// Recorre el árbol y emite `SetLayout` solo donde el marco cambió.
+    /// Walks the tree and emits `SetLayout` only where the frame changed.
     fn collect_layout(&mut self, root: NodeId, ops: &mut Vec<MountOp>) -> Result<(), Error> {
         let mut stack = vec![root];
         while let Some(id) = stack.pop() {
@@ -546,7 +550,7 @@ impl ShadowTree {
             } else {
                 (0.0, 0.0)
             };
-            let node = self.nodes[id as usize].as_mut().expect("comprobado arriba");
+            let node = self.nodes[id as usize].as_mut().expect("checked above");
             if !node.laid_out || node.frame != frame {
                 node.frame = frame;
                 node.laid_out = true;
@@ -556,16 +560,16 @@ impl ShadowTree {
                 node.content = content;
                 ops.push(MountOp::SetContentSize { id, width: content.0, height: content.1 });
             }
-            // En orden inverso para que el `pop` recorra en preorden:
-            // el host recibe siempre padres antes que hijos.
+            // In reverse order so that the `pop` walks it in preorder: the host
+            // always gets parents before children.
             stack.extend(children.into_iter().rev());
         }
         Ok(())
     }
 
-    // -------------------------------------------------------------------- utilidades
+    // --------------------------------------------------------------------- helpers
 
-    /// Índice entre hermanos montables, que es el que entiende el host.
+    /// Index among mountable siblings, which is the one the host understands.
     fn host_index(&self, parent: NodeId, logical_index: usize) -> Result<u32, Error> {
         let children = &self.node(parent)?.children;
         let mut host = 0_u32;
@@ -582,8 +586,8 @@ impl ShadowTree {
         Ok(host)
     }
 
-    /// Si el padre es un `<Text>`, cualquier cambio en sus hijos crudos obliga
-    /// a recomponer y remedir el texto.
+    /// If the parent is a `<Text>`, any change to its raw children forces the
+    /// text to be recomposed and measured again.
     fn mark_text_host(&mut self, parent: NodeId) {
         if self
             .nodes
@@ -607,7 +611,7 @@ impl ShadowTree {
         }
     }
 
-    /// Concatena el texto crudo del subárbol, en orden.
+    /// Concatenates the raw text of the subtree, in order.
     fn collect_text(&self, id: NodeId) -> String {
         let mut out = String::new();
         self.collect_text_into(id, &mut out);

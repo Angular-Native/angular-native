@@ -1,18 +1,18 @@
-//! Descubrimiento y enlazado de plugins.
+//! Finding plugins and linking them in.
 //!
-//! Un plugin es un paquete npm que además de TypeScript trae fuentes nativas.
-//! Aquí no hay nada que instalar ni ningún fichero aparte que mantener: lo que
-//! la app declara como dependencia es lo que se enlaza, y el manifiesto vive
-//! en el `package.json` del propio plugin.
+//! A plugin is an npm package that brings native sources along with its
+//! TypeScript. There is nothing to install here and no separate file to keep up
+//! to date: what the app declares as a dependency is what gets linked, and the
+//! manifest lives in the plugin's own `package.json`.
 //!
-//! Que esto quepa en un fichero es la ventaja de no tener `.xcodeproj` ni
-//! Gradle. En Capacitor esta parte es un script que edita el proyecto de Xcode
-//! y otro que escribe un `settings.gradle`; aquí es leer un JSON, añadir unas
-//! rutas a la línea de `swiftc` y escribir un fichero de registro.
+//! That this fits in one file is the payoff for having neither an `.xcodeproj`
+//! nor Gradle. In Capacitor this part is one script that edits the Xcode project
+//! and another that writes a `settings.gradle`; here it is reading a JSON,
+//! adding a few paths to the `swiftc` line and writing a registry file.
 //!
-//! Lo único que este módulo no hace nunca es callarse: un plugin que no cubre
-//! la plataforma que se está compilando detiene el build. Nunca sale una app
-//! con un método que se traga la llamada.
+//! The one thing this module never does is keep quiet: a plugin that does not
+//! cover the platform being compiled stops the build. An app never ships with a
+//! method that swallows the call.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -29,7 +29,7 @@ pub enum Platform {
 }
 
 impl Platform {
-    /// La clave dentro de `angularNative`.
+    /// Its key inside `angularNative`.
     fn key(self) -> &'static str {
         match self {
             Platform::Ios => "ios",
@@ -37,7 +37,7 @@ impl Platform {
         }
     }
 
-    /// La extensión de sus fuentes.
+    /// The extension its sources carry.
     fn extension(self) -> &'static str {
         match self {
             Platform::Ios => "swift",
@@ -53,29 +53,30 @@ impl Platform {
     }
 }
 
-/// La mitad nativa de un plugin para una plataforma.
+/// A plugin's native half for one platform.
 pub struct Native {
-    /// Directorio con las fuentes, absoluto.
+    /// The directory holding the sources, absolute.
     pub sources: PathBuf,
-    /// El tipo que implementa `AnPlugin`. En Android, con su paquete delante.
+    /// The type that implements `AnPlugin`. On Android, with its package in
+    /// front.
     pub register: String,
-    /// Lo que aporta al manifiesto de su plataforma.
+    /// What it contributes to its platform's manifest.
     pub contributes: Contributions,
 }
 
-/// Lo que un plugin aporta al manifiesto de la plataforma.
+/// What a plugin contributes to the platform's manifest.
 ///
-/// No comparten forma porque no son la misma cosa: una clave del `Info.plist`
-/// tiene valor y no tiene nombre de elemento, y un `<uses-permission>` es al
-/// revés. Un tipo común obligaría a inventar una traducción entre los dos, y
-/// esa traducción sería mentira en las dos direcciones.
+/// They do not share a shape because they are not the same thing: an
+/// `Info.plist` key has a value and no element name, and a `<uses-permission>`
+/// is the other way round. A common type would force a translation between the
+/// two to be invented, and that translation would be a lie in both directions.
 pub enum Contributions {
-    /// iOS: `angularNative.ios.plist` y `angularNative.ios.entitlements`.
+    /// iOS: `angularNative.ios.plist` and `angularNative.ios.entitlements`.
     ///
-    /// Los dos son diccionarios y se funden igual, pero acaban en ficheros
-    /// distintos del `.app` y sirven para cosas distintas: el `Info.plist`
-    /// dice lo que la app le cuenta al usuario, y los derechos, lo que el
-    /// sistema le deja hacer.
+    /// Both are dictionaries and both merge the same way, but they end up in
+    /// different files inside the `.app` and they are for different things: the
+    /// `Info.plist` says what the app tells the user, and the entitlements say
+    /// what the system lets it do.
     Ios {
         plist: BTreeMap<String, Value>,
         entitlements: BTreeMap<String, Value>,
@@ -84,15 +85,15 @@ pub enum Contributions {
     Manifest(ManifestEntries),
 }
 
-/// Los elementos que un plugin mete en el `AndroidManifest.xml`.
+/// The elements a plugin puts into the `AndroidManifest.xml`.
 #[derive(Default)]
 pub struct ManifestEntries {
-    /// `<uses-permission android:name="…"/>`. Es un conjunto: pedir dos veces
-    /// el mismo permiso es pedirlo una.
+    /// `<uses-permission android:name="…"/>`. It is a set: asking twice for the
+    /// same permission is asking once.
     pub permissions: BTreeSet<String>,
-    /// `<uses-feature android:name="…" android:required="…"/>`, del nombre al
-    /// `required`. Aquí sí puede haber choque: dos plugins que pidan la misma
-    /// característica, uno obligatoria y otro no, no dicen lo mismo.
+    /// `<uses-feature android:name="…" android:required="…"/>`, from the name to
+    /// the `required`. Here there can be a clash: two plugins asking for the
+    /// same feature, one required and one not, are not saying the same thing.
     pub features: BTreeMap<String, bool>,
 }
 
@@ -102,24 +103,24 @@ impl ManifestEntries {
     }
 }
 
-/// Una entrada del manifiesto con el paquete que la pidió.
+/// A manifest entry along with the package that asked for it.
 ///
-/// El dueño no es un adorno: cuando dos plugins piden lo mismo con valores
-/// distintos, lo único que sirve para arreglarlo es saber cuáles son.
+/// The owner is not decoration: when two plugins ask for the same thing with
+/// different values, the only thing that helps is knowing which two they are.
 pub struct Contributed {
     pub value: Value,
     pub package: String,
 }
 
 pub struct Plugin {
-    /// El nombre npm, que es como lo declaró la app.
+    /// The npm name, which is how the app declared it.
     pub package: String,
-    /// Raíz del paquete, absoluta y resuelta (los enlaces de los workspaces de
-    /// npm apuntan al directorio de verdad).
+    /// The package's root, absolute and resolved (npm's workspace links point at
+    /// the real directory).
     pub dir: PathBuf,
-    /// El nombre con el que JS lo invoca.
+    /// The name JS calls it by.
     pub module: String,
-    /// El `.ts` que exporta su API, si la trae en fuente.
+    /// The `.ts` that exports its API, if it ships one in source.
     pub entry: Option<PathBuf>,
     pub ios: Option<Native>,
     pub android: Option<Native>,
@@ -133,68 +134,68 @@ impl Plugin {
         }
     }
 
-    /// Qué plataformas cubre, para enseñarlo.
+    /// Which platforms it covers, for showing.
     pub fn coverage(&self) -> String {
-        let mut cubiertas: Vec<&str> = Vec::new();
+        let mut covered: Vec<&str> = Vec::new();
         if self.ios.is_some() {
-            cubiertas.push("ios");
+            covered.push("ios");
         }
         if self.android.is_some() {
-            cubiertas.push("android");
+            covered.push("android");
         }
-        if cubiertas.is_empty() {
+        if covered.is_empty() {
             return "ninguna".to_owned();
         }
-        cubiertas.join(" + ")
+        covered.join(" + ")
     }
 }
 
-/// Los plugins de una app: sus dependencias que traen manifiesto.
+/// An app's plugins: those of its dependencies that carry a manifest.
 ///
-/// El orden es el alfabético del nombre de módulo, no el del `package.json`:
-/// un `HashMap` de npm no promete orden y el fichero de registro generado
-/// cambiaría entre ejecuciones sin que cambie nada.
+/// The order is alphabetical by module name, not the `package.json`'s: an npm
+/// `HashMap` promises no order and the generated registry file would change from
+/// one run to the next without anything having changed.
 pub fn discover(workspace: &Workspace, app: &Path) -> Result<Vec<Plugin>> {
     let app_dir = workspace.root.join(app);
     let manifest = app_dir.join("package.json");
     let Ok(text) = std::fs::read_to_string(&manifest) else {
-        // Una app no tiene por qué ser un paquete npm. Si no lo es, no tiene
-        // dependencias, así que no tiene plugins.
+        // An app does not have to be an npm package. If it is not, it has no
+        // dependencies, so it has no plugins.
         return Ok(Vec::new());
     };
     let parsed: Value = serde_json::from_str(&text)
         .with_context(|| format!("{} no es JSON válido", manifest.display()))?;
 
-    let mut por_modulo: BTreeMap<String, Plugin> = BTreeMap::new();
+    let mut by_module: BTreeMap<String, Plugin> = BTreeMap::new();
     let dependencies = parsed.get("dependencies").and_then(Value::as_object);
     for name in dependencies.into_iter().flatten().map(|(name, _)| name) {
         let Some(dir) = resolve_package(workspace, &app_dir, name) else {
-            // No es cosa nuestra que falte una dependencia cualquiera: eso lo
-            // dirá `ngc`. Solo nos interesan las que existen y son plugins.
+            // A missing ordinary dependency is not our business: `ngc` will say
+            // so. Only the ones that exist and are plugins matter here.
             continue;
         };
         let Some(plugin) = read_manifest(name, &dir)? else {
             continue;
         };
-        if let Some(previo) = por_modulo.insert(plugin.module.clone(), plugin) {
-            let module = previo.module;
+        if let Some(previous) = by_module.insert(plugin.module.clone(), plugin) {
+            let module = previous.module;
             bail!(
                 "dos plugins dicen llamarse {module:?}: {} y otro. \
                  El nombre de módulo tiene que ser único en la app.",
-                previo.package
+                previous.package
             );
         }
     }
-    Ok(por_modulo.into_values().collect())
+    Ok(by_module.into_values().collect())
 }
 
-/// Resuelve un paquete como lo haría Node: primero el `node_modules` de la
-/// app, después el de la raíz —que es donde npm pone los de los workspaces—.
+/// Resolves a package the way Node would: the app's `node_modules` first, then
+/// the root's —which is where npm puts the workspace ones—.
 ///
-/// La raíz solo cuenta en el monorepo. Para un proyecto de fuera, el
-/// `node_modules` del SDK no es un sitio del que su app pueda depender: enlazar
-/// desde ahí un plugin que su `package.json` no declara sería enlazar algo que
-/// en la máquina de al lado no está.
+/// The root only counts inside the monorepo. For a project from outside, the
+/// SDK's `node_modules` is not a place its app can depend on: linking a plugin
+/// from there that its `package.json` does not declare would be linking
+/// something that is not on the machine next door.
 fn resolve_package(workspace: &Workspace, app_dir: &Path, name: &str) -> Option<PathBuf> {
     let mut bases: Vec<&Path> = vec![app_dir];
     if workspace.project.is_none() {
@@ -203,15 +204,15 @@ fn resolve_package(workspace: &Workspace, app_dir: &Path, name: &str) -> Option<
     for base in bases {
         let candidate = base.join("node_modules").join(name);
         if candidate.join("package.json").is_file() {
-            // Los workspaces de npm son enlaces; interesa el directorio real,
-            // que es el que está dentro del repo y el que `ngc` compila.
+            // npm's workspaces are links; what matters is the real directory,
+            // the one inside the repo and the one `ngc` compiles.
             return candidate.canonicalize().ok().or(Some(candidate));
         }
     }
     None
 }
 
-/// Lee el manifiesto de un paquete. `Ok(None)` si no es un plugin.
+/// Reads a package's manifest. `Ok(None)` if it is not a plugin.
 fn read_manifest(package: &str, dir: &Path) -> Result<Option<Plugin>> {
     let manifest = dir.join("package.json");
     let text = std::fs::read_to_string(&manifest)
@@ -259,18 +260,18 @@ fn read_manifest(package: &str, dir: &Path) -> Result<Option<Plugin>> {
     }))
 }
 
-/// El nombre de módulo viaja tal cual hasta un literal de Swift y de Java. Se
-/// comprueba aquí para que un nombre raro dé un error legible en vez de un
-/// fallo de compilación dentro de un fichero generado.
+/// The module name travels untouched all the way to a Swift literal and a Java
+/// one. It is checked here so that an odd name gives a readable error rather
+/// than a compilation failure inside a generated file.
 fn check_module_name(module: &str, manifest: &Path) -> Result<()> {
-    let valido = module
+    let valid = module
         .chars()
         .next()
         .is_some_and(|first| first.is_ascii_lowercase())
         && module
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '-');
-    if !valido {
+    if !valid {
         bail!(
             "{}: angularNative.module es {module:?}; tiene que empezar por minúscula \
              y llevar solo letras, cifras y guiones",
@@ -341,16 +342,15 @@ fn read_native(
     }))
 }
 
-/// `angularNative.ios.plist`: las claves que este plugin necesita en el
-/// `Info.plist`.
+/// `angularNative.ios.plist`: the keys this plugin needs in the `Info.plist`.
 ///
-/// Sin esto, un plugin de Face ID compila, se instala y mata la app la primera
-/// vez que se autentica: iOS exige `NSFaceIDUsageDescription` y sin ella no
-/// avisa, cierra. Que el plugin declare aquí lo que necesita es lo que impide
-/// que el que lo instala tenga que saberlo.
+/// Without this, a Face ID plugin compiles, installs and kills the app the first
+/// time it authenticates: iOS demands `NSFaceIDUsageDescription` and without it
+/// there is no warning, it just closes. The plugin declaring here what it needs
+/// is what saves whoever installs it from having to know.
 fn read_dict(
     declared: Option<&Value>,
-    seccion: &str,
+    section: &str,
     manifest: &Path,
 ) -> Result<BTreeMap<String, Value>> {
     let Some(declared) = declared else {
@@ -358,26 +358,26 @@ fn read_dict(
     };
     let declared = declared.as_object().with_context(|| {
         format!(
-            "{}: angularNative.ios.{seccion} tiene que ser un objeto",
+            "{}: angularNative.ios.{section} tiene que ser un objeto",
             manifest.display()
         )
     })?;
     let mut entries = BTreeMap::new();
     for (key, value) in declared {
-        // La clave viaja a `plutil -replace`, que trata el punto como
-        // separador de camino: `a.b` no sería una clave llamada «a.b» sino la
-        // «b» de dentro de la «a». Ninguna clave del sistema lleva punto, así
-        // que se para aquí en vez de escribir en un sitio que nadie pidió.
+        // The key travels on to `plutil -replace`, which treats the dot as a
+        // path separator: `a.b` would not be a key called «a.b» but the «b»
+        // inside the «a». No system key has a dot in it, so it stops here rather
+        // than writing somewhere nobody asked for.
         if key.is_empty() || key.contains('.') {
             bail!(
-                "{}: angularNative.ios.{seccion} tiene la clave {key:?}; solo se admiten claves de \
+                "{}: angularNative.ios.{section} tiene la clave {key:?}; solo se admiten claves de \
                  primer nivel y sin puntos",
                 manifest.display()
             );
         }
         if !plist_value_ok(value) {
             bail!(
-                "{}: angularNative.ios.{seccion}[{key:?}] es {value}; solo se admiten cadenas, \
+                "{}: angularNative.ios.{section}[{key:?}] es {value}; solo se admiten cadenas, \
                  booleanos, números y listas de cadenas. Un diccionario anidado todavía no se \
                  funde. Ver docs/plugins.md.",
                 manifest.display()
@@ -388,9 +388,9 @@ fn read_dict(
     Ok(entries)
 }
 
-/// Lo que se sabe escribir en el plist con `plutil -replace … -json`, y nada
-/// más. Aceptar un diccionario aquí y fundirlo mal más tarde sería peor que
-/// no aceptarlo.
+/// What can be written into the plist with `plutil -replace … -json`, and
+/// nothing more. Accepting a dictionary here and merging it badly later would be
+/// worse than not accepting it at all.
 fn plist_value_ok(value: &Value) -> bool {
     match value {
         Value::String(_) | Value::Bool(_) | Value::Number(_) => true,
@@ -399,7 +399,7 @@ fn plist_value_ok(value: &Value) -> bool {
     }
 }
 
-/// `angularNative.android.manifest`: permisos y características.
+/// `angularNative.android.manifest`: permissions and features.
 fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<ManifestEntries> {
     let Some(declared) = declared else {
         return Ok(ManifestEntries::default());
@@ -411,47 +411,47 @@ fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<Ma
         )
     })?;
     let mut entries = ManifestEntries::default();
-    for (clave, valor) in declared {
-        match clave.as_str() {
+    for (key, value) in declared {
+        match key.as_str() {
             "uses-permission" => {
-                let lista = valor.as_array().with_context(|| {
+                let list = value.as_array().with_context(|| {
                     format!(
                         "{}: angularNative.android.manifest[\"uses-permission\"] tiene que ser \
                          una lista de nombres",
                         manifest.display()
                     )
                 })?;
-                for nombre in lista {
-                    let nombre = nombre.as_str().with_context(|| {
+                for name in list {
+                    let name = name.as_str().with_context(|| {
                         format!(
-                            "{}: los permisos son cadenas, y hay un {nombre}",
+                            "{}: los permisos son cadenas, y hay un {name}",
                             manifest.display()
                         )
                     })?;
-                    entries.permissions.insert(nombre.to_owned());
+                    entries.permissions.insert(name.to_owned());
                 }
             }
             "uses-feature" => {
-                let objeto = valor.as_object().with_context(|| {
+                let object = value.as_object().with_context(|| {
                     format!(
                         "{}: angularNative.android.manifest[\"uses-feature\"] tiene que ser un \
                          objeto de nombre a si es obligatoria",
                         manifest.display()
                     )
                 })?;
-                for (nombre, required) in objeto {
+                for (name, required) in object {
                     let required = required.as_bool().with_context(|| {
                         format!(
-                            "{}: uses-feature[{nombre:?}] tiene que ser true o false, que es lo \
+                            "{}: uses-feature[{name:?}] tiene que ser true o false, que es lo \
                              que vale android:required",
                             manifest.display()
                         )
                     })?;
-                    entries.features.insert(nombre.clone(), required);
+                    entries.features.insert(name.clone(), required);
                 }
             }
-            otro => bail!(
-                "{}: angularNative.android.manifest no sabe de {otro:?}; de momento solo se \
+            other => bail!(
+                "{}: angularNative.android.manifest no sabe de {other:?}; de momento solo se \
                  aportan \"uses-permission\" y \"uses-feature\". Ver docs/plugins.md.",
                 manifest.display()
             ),
@@ -460,20 +460,21 @@ fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<Ma
     Ok(entries)
 }
 
-/// Exige que todos los plugins cubran la plataforma que se va a compilar.
+/// Demands that every plugin cover the platform about to be compiled.
 ///
-/// Esta es la regla que da sentido al resto. Un plugin de iOS metido en un APK
-/// no puede acabar en un método que devuelve `undefined` y una pantalla que no
-/// hace nada: se para el build y se dice qué falta y en qué paquete.
+/// This is the rule that gives the rest its point. An iOS plugin dropped into an
+/// APK must not end up as a method that returns `undefined` and a screen that
+/// does nothing: the build stops and says what is missing and in which package.
 pub fn require(plugins: &[Plugin], platform: Platform) -> Result<()> {
-    let faltan: Vec<&Plugin> = plugins
+    let missing: Vec<&Plugin> = plugins
         .iter()
         .filter(|plugin| plugin.native(platform).is_none())
         .collect();
-    if faltan.is_empty() {
-        // Lo que aportan al manifiesto se funde aquí y no al escribirlo: así
-        // un choque entre dos plugins sale en `an plugins --platform ios`, sin
-        // gastar medio minuto de `swiftc` para acabar diciendo lo mismo.
+    if missing.is_empty() {
+        // What they contribute to the manifest is merged here and not when it is
+        // written: that way a clash between two plugins turns up in
+        // `an plugins --platform ios`, without burning half a minute of `swiftc`
+        // only to say the same thing.
         match platform {
             Platform::Ios => {
                 plist_entries(plugins)?;
@@ -488,10 +489,10 @@ pub fn require(plugins: &[Plugin], platform: Platform) -> Result<()> {
     let mut message = format!(
         "esta app no se puede compilar para {}: {} de sus plugins no lo cubre{}\n",
         platform.label(),
-        faltan.len(),
-        if faltan.len() == 1 { "" } else { "n" }
+        missing.len(),
+        if missing.len() == 1 { "" } else { "n" }
     );
-    for plugin in &faltan {
+    for plugin in &missing {
         message.push_str(&format!(
             "  · {} (módulo {:?}) solo trae {}\n",
             plugin.package,
@@ -508,32 +509,33 @@ pub fn require(plugins: &[Plugin], platform: Platform) -> Result<()> {
     bail!(message)
 }
 
-/// Funde las claves del `Info.plist` que piden todos los plugins.
+/// Merges the `Info.plist` keys all the plugins ask for.
 pub fn plist_entries(plugins: &[Plugin]) -> Result<BTreeMap<String, Contributed>> {
     merge_dicts(plugins, "el Info.plist", |plist, _| plist)
 }
 
-/// Funde los derechos que piden todos los plugins.
+/// Merges the entitlements all the plugins ask for.
 ///
-/// Los derechos son lo que le permite a la app pedirle algo al sistema: sin
-/// `keychain-access-groups`, Keychain Services contesta `errSecMissingEntitlement`
-/// y no guarda nada. Ese error no lo ve nadie hasta que la app corre, y para
-/// entonces parece un fallo del llavero y no una firma que faltaba.
+/// Entitlements are what lets the app ask the system for something: without
+/// `keychain-access-groups`, Keychain Services answers
+/// `errSecMissingEntitlement` and saves nothing. Nobody sees that error until
+/// the app runs, and by then it looks like a keychain bug and not a signature
+/// that was missing.
 pub fn entitlement_entries(plugins: &[Plugin]) -> Result<BTreeMap<String, Contributed>> {
     merge_dicts(plugins, "los derechos", |_, entitlements| entitlements)
 }
 
-/// La fusión que comparten los dos.
+/// The merge both of them share.
 ///
-/// Dos plugins que piden la misma clave con el **mismo** valor no son un
-/// problema: dicen lo mismo, y se escribe una vez. Con valores distintos no
-/// hay forma honrada de elegir —quedarse con el primero por orden alfabético
-/// o por orden de dependencia sería decidir en silencio qué texto le sale al
-/// usuario en el diálogo del sistema—, así que se para el build.
+/// Two plugins asking for the same key with the **same** value are no problem:
+/// they are saying the same thing, and it gets written once. With different
+/// values there is no honest way to choose —keeping the first one by alphabetical
+/// order or by dependency order would be silently deciding what text the user
+/// gets in the system's dialog— so the build stops.
 fn merge_dicts<'a>(
     plugins: &'a [Plugin],
-    que: &str,
-    elegir: fn(
+    what: &str,
+    pick: fn(
         &'a BTreeMap<String, Value>,
         &'a BTreeMap<String, Value>,
     ) -> &'a BTreeMap<String, Value>,
@@ -542,13 +544,13 @@ fn merge_dicts<'a>(
     for plugin in plugins {
         let Some(native) = plugin.ios.as_ref() else { continue };
         let Contributions::Ios { plist, entitlements } = &native.contributes else { continue };
-        for (key, value) in elegir(plist, entitlements) {
-            if let Some(previo) = merged.get(key) {
-                if &previo.value != value {
-                    bail!(choque(
-                        &format!("la clave {key:?} de {que}"),
-                        &previo.package,
-                        &previo.value.to_string(),
+        for (key, value) in pick(plist, entitlements) {
+            if let Some(previous) = merged.get(key) {
+                if &previous.value != value {
+                    bail!(clash(
+                        &format!("la clave {key:?} de {what}"),
+                        &previous.package,
+                        &previous.value.to_string(),
                         &plugin.package,
                         &value.to_string(),
                     ));
@@ -564,15 +566,15 @@ fn merge_dicts<'a>(
     Ok(merged)
 }
 
-/// Lo mismo para el `AndroidManifest.xml`.
+/// The same thing for the `AndroidManifest.xml`.
 ///
-/// Los permisos son un conjunto y no pueden chocar: `USE_BIOMETRIC` pedido dos
-/// veces es `USE_BIOMETRIC`. Las características sí, porque llevan valor:
-/// obligatoria y opcional no son la misma petición, y la diferencia decide si
-/// Google Play enseña la app en un aparato sin ese sensor.
+/// Permissions are a set and cannot clash: `USE_BIOMETRIC` asked for twice is
+/// `USE_BIOMETRIC`. Features can, because they carry a value: required and
+/// optional are not the same request, and the difference decides whether Google
+/// Play shows the app on a device without that sensor.
 pub fn manifest_entries(plugins: &[Plugin]) -> Result<ManifestEntries> {
     let mut merged = ManifestEntries::default();
-    let mut duenos: BTreeMap<String, String> = BTreeMap::new();
+    let mut owners: BTreeMap<String, String> = BTreeMap::new();
     for plugin in plugins {
         let Some(native) = plugin.android.as_ref() else {
             continue;
@@ -580,51 +582,51 @@ pub fn manifest_entries(plugins: &[Plugin]) -> Result<ManifestEntries> {
         let Contributions::Manifest(entries) = &native.contributes else {
             continue;
         };
-        for permiso in &entries.permissions {
-            merged.permissions.insert(permiso.clone());
+        for permission in &entries.permissions {
+            merged.permissions.insert(permission.clone());
         }
-        for (nombre, required) in &entries.features {
-            if let Some(previo) = merged.features.get(nombre) {
-                if previo != required {
-                    let dueno = duenos
-                        .get(nombre)
+        for (name, required) in &entries.features {
+            if let Some(previous) = merged.features.get(name) {
+                if previous != required {
+                    let owner = owners
+                        .get(name)
                         .map(String::as_str)
                         .unwrap_or("otro plugin");
-                    bail!(choque(
-                        &format!("la característica {nombre:?} del AndroidManifest.xml"),
-                        dueno,
-                        &format!("android:required=\"{previo}\""),
+                    bail!(clash(
+                        &format!("la característica {name:?} del AndroidManifest.xml"),
+                        owner,
+                        &format!("android:required=\"{previous}\""),
                         &plugin.package,
                         &format!("android:required=\"{required}\""),
                     ));
                 }
                 continue;
             }
-            merged.features.insert(nombre.clone(), *required);
-            duenos.insert(nombre.clone(), plugin.package.clone());
+            merged.features.insert(name.clone(), *required);
+            owners.insert(name.clone(), plugin.package.clone());
         }
     }
     Ok(merged)
 }
 
-/// El mensaje de dos plugins que piden lo mismo con valores distintos.
+/// The message for two plugins asking for the same thing with different values.
 ///
-/// Dice los dos paquetes y los dos valores porque es lo único con lo que se
-/// puede arreglar: quien lo lee no escribió ninguno de los dos.
-fn choque(que: &str, uno: &str, valor_uno: &str, otro: &str, valor_otro: &str) -> String {
+/// It names both packages and both values because that is the only thing anyone
+/// can fix it with: whoever reads it wrote neither of the two.
+fn clash(what: &str, one: &str, one_value: &str, other: &str, other_value: &str) -> String {
     format!(
-        "dos plugins piden {que} con valores distintos:\n\
-         \x20 · {uno}\n\
-         \x20     {valor_uno}\n\
-         \x20 · {otro}\n\
-         \x20     {valor_otro}\n\n\
+        "dos plugins piden {what} con valores distintos:\n\
+         \x20 · {one}\n\
+         \x20     {one_value}\n\
+         \x20 · {other}\n\
+         \x20     {other_value}\n\n\
          Solo puede quedar uno, y elegirlo por orden sería decidir en silencio \
          algo que se ve en pantalla.\n\
          O los dos plugins se ponen de acuerdo, o la app se queda con uno de los dos."
     )
 }
 
-/// Las fuentes nativas de un plugin para una plataforma, en orden estable.
+/// A plugin's native sources for one platform, in a stable order.
 pub fn sources(plugin: &Plugin, platform: Platform) -> Result<Vec<String>> {
     let native = plugin
         .native(platform)
@@ -639,9 +641,10 @@ pub fn sources(plugin: &Plugin, platform: Platform) -> Result<Vec<String>> {
         }
     }
     if !kotlin.is_empty() {
-        // Aquí no hay Gradle, y sin Gradle no hay `kotlinc` que valga: el shell
-        // de Android es Java y se compila con `javac` contra `android.jar`.
-        // Decirlo es mejor que compilar el APK sin esos ficheros dentro.
+        // There is no Gradle here, and without Gradle there is no `kotlinc`
+        // worth having: the Android shell is Java and it is compiled with `javac`
+        // against `android.jar`. Saying so beats building the APK without those
+        // files in it.
         bail!(
             "{}: {} lleva fuentes Kotlin y todavía no se compilan; el lado Android \
              de un plugin es Java. Ver docs/plugins.md.",
@@ -664,10 +667,10 @@ pub fn sources(plugin: &Plugin, platform: Platform) -> Result<Vec<String>> {
         .collect())
 }
 
-/// El registro que enlaza los plugins con el shell de iOS.
+/// The registry that wires the plugins to the iOS shell.
 ///
-/// Se genera siempre, aunque no haya ninguno: el shell lo llama sin
-/// condiciones, y un `install()` vacío es más fácil de leer que un `#if`.
+/// It is always generated, even when there are none: the shell calls it
+/// unconditionally, and an empty `install()` reads better than an `#if`.
 pub fn generate_ios(plugins: &[Plugin], out: &Path) -> Result<PathBuf> {
     let mut code = String::from(
         "// Generado por `an` al armar el .app. No editar: se reescribe en cada build.\n\
@@ -682,7 +685,7 @@ pub fn generate_ios(plugins: &[Plugin], out: &Path) -> Result<PathBuf> {
     for plugin in plugins {
         let native = plugin
             .native(Platform::Ios)
-            .expect("require() ya lo comprobó");
+            .expect("require() already checked it");
         code.push_str(&format!(
             "        AnPluginRegistry.register({:?}, {}())\n",
             plugin.module, native.register
@@ -696,7 +699,7 @@ pub fn generate_ios(plugins: &[Plugin], out: &Path) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// El mismo registro, para el shell de Android.
+/// The same registry, for the Android shell.
 pub fn generate_android(plugins: &[Plugin], out: &Path) -> Result<PathBuf> {
     let mut code = String::from(
         "// Generado por `an` al armar el APK. No editar: se reescribe en cada build.\n\
@@ -714,7 +717,7 @@ pub fn generate_android(plugins: &[Plugin], out: &Path) -> Result<PathBuf> {
     for plugin in plugins {
         let native = plugin
             .native(Platform::Android)
-            .expect("require() ya lo comprobó");
+            .expect("require() already checked it");
         code.push_str(&format!(
             "        AnPluginRegistry.register({:?}, new {}());\n",
             plugin.module, native.register
@@ -729,16 +732,15 @@ pub fn generate_android(plugins: &[Plugin], out: &Path) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// Los `--alias` de esbuild para que el import del paquete apunte al JS que
-/// acaba de salir de `ngc`.
+/// esbuild's `--alias`es, so that the package's import points at the JS that has
+/// just come out of `ngc`.
 ///
-/// Solo para los plugins que traen su API en TypeScript dentro del repo: uno
-/// publicado en npm ya viene compilado, y entonces esbuild lo resuelve por
-/// `node_modules` como cualquier otra dependencia y aquí no hay nada que
-/// hacer.
+/// Only for plugins that bring their API in TypeScript inside the repo: one
+/// published on npm arrives compiled, and then esbuild resolves it through
+/// `node_modules` like any other dependency and there is nothing to do here.
 pub fn aliases(workspace: &Workspace, js_dir: &Path, plugins: &[Plugin]) -> Vec<String> {
-    // Los directorios de los plugins vienen resueltos; la raíz puede no
-    // estarlo, y entonces el prefijo no casaría.
+    // The plugins' directories come already resolved; the root may not be, and
+    // then the prefix would not match.
     let root = workspace.source_root();
     plugins
         .iter()
@@ -747,8 +749,8 @@ pub fn aliases(workspace: &Workspace, js_dir: &Path, plugins: &[Plugin]) -> Vec<
             if entry.extension().and_then(|e| e.to_str()) != Some("ts") {
                 return None;
             }
-            // `ngc` conserva la estructura de directorios bajo el `rootDir` del
-            // tsconfig, que en las apps de este repo es la raíz.
+            // `ngc` keeps the directory structure under the tsconfig's
+            // `rootDir`, which in this repo's apps is the root.
             let relative = entry.strip_prefix(&root).ok()?;
             let compiled = js_dir.join(relative).with_extension("js");
             Some(format!("--alias={}={}", plugin.package, compiled.display()))
@@ -756,11 +758,11 @@ pub fn aliases(workspace: &Workspace, js_dir: &Path, plugins: &[Plugin]) -> Vec<
         .collect()
 }
 
-/// Lista los plugins de una app por la salida estándar.
+/// Lists an app's plugins on standard output.
 ///
-/// La ruta no es un adorno: un paquete npm puede venir del repo o de
-/// `node_modules`, y cuando algo no cuadra lo primero que se quiere saber es
-/// cuál de los dos se enlazó.
+/// The path is not decoration: an npm package can come from the repo or from
+/// `node_modules`, and when something does not add up the first thing anyone
+/// wants to know is which of the two got linked.
 pub fn list(workspace: &Workspace, plugins: &[Plugin]) {
     if plugins.is_empty() {
         println!("esta app no depende de ningún plugin");

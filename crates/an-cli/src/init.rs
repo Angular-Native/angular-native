@@ -1,22 +1,23 @@
-//! `an init` y `an add`: llevar angular-native a un proyecto Angular ajeno.
+//! `an init` and `an add`: bringing angular-native to somebody else's Angular
+//! project.
 //!
-//! La idea es la de `ng add` o `npx cap init`: alguien tiene su proyecto de
-//! `ng new` y quiere llevarlo al móvil sin aprenderse la estructura de este
-//! repositorio. Después de `an init`, en su proyecto hay cuatro cosas nuevas y
-//! todas se pueden leer en un minuto: el manifiesto `angular-native.json`, un
-//! tsconfig para el build nativo, un punto de entrada y un componente raíz.
+//! The idea is `ng add`'s, or `npx cap init`'s: somebody has their `ng new`
+//! project and wants to take it to a phone without learning this repository's
+//! layout. After `an init` there are four new things in their project and all
+//! four can be read in a minute: the `angular-native.json` manifest, a tsconfig
+//! for the native build, an entry point and a root component.
 //!
-//! Dos reglas gobiernan este módulo:
+//! Two rules govern this module:
 //!
-//!   · **Ningún fichero del usuario se pisa.** Lo que ya existe se deja y se
-//!     dice que se ha dejado. `--force` reescribe solo lo que generamos
-//!     nosotros, nunca el código de la app.
-//!   · **O termina, o no ha empezado.** Todo lo que puede fallar —que esto sea
-//!     un proyecto Angular, que el SDK esté entero, que npm instale— se
-//!     comprueba y se hace antes de escribir el manifiesto, que va el último.
-//!     Si algo se tuerce, `angular-native.json` no llega a existir, `an` sigue
-//!     diciendo que el proyecto no está inicializado, y volver a ejecutar
-//!     `an init` es seguro.
+//!   · **No file of the user's is overwritten.** What is already there is left
+//!     alone, and it says it was left alone. `--force` rewrites only what we
+//!     generate, never the app's code.
+//!   · **Either it finishes or it never started.** Everything that can fail
+//!     —that this is an Angular project, that the SDK is whole, that npm
+//!     installs— is checked and done before the manifest is written, and the
+//!     manifest goes last. If something goes wrong, `angular-native.json` never
+//!     comes into existence, `an` goes on saying the project is not initialised,
+//!     and running `an init` again is safe.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -27,64 +28,64 @@ use serde_json::Value;
 use crate::ios::Family;
 use crate::workspace::{self, Project, Workspace, MARKER};
 
-/// Los paquetes del framework que un proyecto de fuera necesita, con el
-/// directorio del que salen dentro del SDK.
+/// The framework packages a project from outside needs, with the directory they
+/// come from inside the SDK.
 ///
-/// En este orden: `platform-native` importa `StackView` de `primitives`, así
-/// que necesita sus `.d.ts` ya escritos para compilar.
-const PAQUETES: [(&str, &str); 2] = [
+/// In this order: `platform-native` imports `StackView` from `primitives`, so it
+/// needs its `.d.ts` already written in order to compile.
+const PACKAGES: [(&str, &str); 2] = [
     ("@angular-native/primitives", "primitives"),
     ("@angular-native/platform", "platform-native"),
 ];
 
 pub fn init(dir: Option<&str>, name: Option<&str>, id: Option<&str>, force: bool) -> Result<()> {
     let root = match dir {
-        Some(dir) => workspace::absoluta(dir),
+        Some(dir) => workspace::absolute(dir),
         None => std::env::current_dir().context("no se pudo leer el directorio actual")?,
     };
     let sdk = workspace::sdk_root()?;
 
-    // ---- Todo lo que puede decir que no, antes de tocar nada -------------
-    comprobar_angular(&root)?;
-    let ya = root.join(MARKER).is_file();
-    if ya && !force {
+    // ---- Everything that can say no, before anything is touched ----------
+    check_angular(&root)?;
+    let already = root.join(MARKER).is_file();
+    if already && !force {
         eprintln!("==> {} ya está inicializado; solo se añade lo que falte", root.display());
     }
 
-    let previo = ya.then(|| Project::read(&root)).transpose()?;
-    let app_name = match (name, &previo) {
+    let previous = already.then(|| Project::read(&root)).transpose()?;
+    let app_name = match (name, &previous) {
         (Some(name), _) => name.to_owned(),
-        (None, Some(previo)) => previo.name.clone(),
-        (None, None) => nombre_de_app(&root)?,
+        (None, Some(previous)) => previous.name.clone(),
+        (None, None) => app_name_from_package_json(&root)?,
     };
-    let bundle_id = match (id, &previo) {
+    let bundle_id = match (id, &previous) {
         (Some(id), _) => id.to_owned(),
-        (None, Some(previo)) => previo.bundle_id.clone(),
+        (None, Some(previous)) => previous.bundle_id.clone(),
         (None, None) => format!("dev.angularnative.{}", slug(&app_name)),
     };
-    comprobar_identificador(&bundle_id)?;
-    let entry = previo
+    check_identifier(&bundle_id)?;
+    let entry = previous
         .as_ref()
-        .map(|previo| previo.entry.clone())
+        .map(|previous| previous.entry.clone())
         .unwrap_or_else(|| PathBuf::from("src/main.native.ts"));
-    let plataformas = previo.map(|previo| previo.platforms).unwrap_or_default();
+    let platforms_list = previous.map(|previous| previous.platforms).unwrap_or_default();
 
     eprintln!("==> proyecto Angular en {}", root.display());
     eprintln!("==> SDK de angular-native en {}", sdk.display());
 
-    // ---- Dependencias ----------------------------------------------------
-    asegurar_compilador(&root)?;
-    instalar_paquetes(&sdk, &root, force)?;
+    // ---- Dependencies ----------------------------------------------------
+    ensure_compiler(&root)?;
+    install_packages(&sdk, &root, force)?;
 
-    // ---- Ficheros --------------------------------------------------------
-    escribir(&root.join(".angular-native/tsconfig.json"), &tsconfig(&entry), force)?;
-    escribir(&root.join(&entry), PUNTO_DE_ENTRADA, false)?;
-    escribir(&root.join("src/app/app-native.ts"), &componente_raiz(&app_name), false)?;
-    ignorar(&root)?;
+    // ---- Files -----------------------------------------------------------
+    write_file(&root.join(".angular-native/tsconfig.json"), &tsconfig(&entry), force)?;
+    write_file(&root.join(&entry), ENTRY_POINT, false)?;
+    write_file(&root.join("src/app/app-native.ts"), &root_component(&app_name), false)?;
+    extend_gitignore(&root)?;
 
-    // Y el manifiesto el último: es lo que hace que el proyecto cuente como
-    // inicializado.
-    escribir_manifiesto(&root, &app_name, &bundle_id, &entry, &plataformas)?;
+    // And the manifest last: it is what makes the project count as
+    // initialised.
+    write_project_manifest(&root, &app_name, &bundle_id, &entry, &platforms_list)?;
 
     eprintln!();
     eprintln!("Listo. {app_name} ({bundle_id})");
@@ -104,13 +105,13 @@ pub fn init(dir: Option<&str>, name: Option<&str>, id: Option<&str>, force: bool
 
 /// `an add ios`, `an add tvos`, `an add visionos`, `an add android`.
 ///
-/// Crea lo único que un proyecto necesita tener suyo de cada plataforma: el
-/// fichero de configuración nativo. El resto —el `.app`, el APK— es producto
-/// del build, se rehace entero en cada compilación y vive en
-/// `.angular-native/build`, que está en el `.gitignore`.
+/// It creates the one thing a project needs to own for each platform: the native
+/// configuration file. The rest —the `.app`, the APK— is a product of the build,
+/// gets rebuilt from scratch on every compilation and lives in
+/// `.angular-native/build`, which is in the `.gitignore`.
 pub fn add(workspace: &Workspace, platform: &str) -> Result<()> {
     let project = workspace.project()?;
-    let (dir, fichero, contenido) = match platform {
+    let (dir, file_name, contents) = match platform {
         "ios" => (
             "ios",
             "Info.plist",
@@ -129,21 +130,21 @@ pub fn add(workspace: &Workspace, platform: &str) -> Result<()> {
         "android" => (
             "android",
             "AndroidManifest.xml",
-            manifiesto(workspace, &project.name)?,
+            android_manifest(workspace, &project.name)?,
         ),
-        otra => bail!(
-            "no sé añadir {otra:?}. `an add` conoce ios, tvos, visionos y android; \
+        other => bail!(
+            "no sé añadir {other:?}. `an add` conoce ios, tvos, visionos y android; \
              las demás plataformas todavía no tienen nada que el proyecto deba guardar."
         ),
     };
 
-    let path = project.root.join(dir).join(fichero);
+    let path = project.root.join(dir).join(file_name);
     if path.is_file() {
         eprintln!("==> {} ya existe; no se toca", path.display());
     } else {
-        escribir(&path, &contenido, false)?;
+        write_file(&path, &contents, false)?;
     }
-    registrar_plataforma(&project.root, platform)?;
+    register_platform(&project.root, platform)?;
     eprintln!();
     eprintln!(
         "{} es tuyo a partir de ahora: `an` lo copia al build y no lo reescribe nunca.\n\
@@ -155,21 +156,21 @@ pub fn add(workspace: &Workspace, platform: &str) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Comprobaciones
+// Checks
 // ---------------------------------------------------------------------------
 
-fn comprobar_angular(root: &Path) -> Result<()> {
+fn check_angular(root: &Path) -> Result<()> {
     if !root.is_dir() {
         bail!("{} no existe", root.display());
     }
-    let mut faltan: Vec<&str> = Vec::new();
+    let mut missing: Vec<&str> = Vec::new();
     if !root.join("angular.json").is_file() {
-        faltan.push("angular.json");
+        missing.push("angular.json");
     }
-    if !workspace::depende_de_angular(root) {
-        faltan.push("@angular/core en las dependencias del package.json");
+    if !workspace::depends_on_angular(root) {
+        missing.push("@angular/core en las dependencias del package.json");
     }
-    if faltan.is_empty() {
+    if missing.is_empty() {
         return Ok(());
     }
     bail!(
@@ -177,21 +178,21 @@ fn comprobar_angular(root: &Path) -> Result<()> {
          `an init` se ejecuta dentro de un proyecto ya creado; si aún no lo tienes:\n\
          \x20   npx @angular/cli new mi-app",
         root.display(),
-        faltan.join(" y ")
+        missing.join(" y ")
     )
 }
 
-/// Un identificador de paquete que iOS y Android acepten. Los dos son
-/// exigentes y ninguno de los dos se queja pronto: Android falla al instalar y
-/// iOS al firmar, media hora después.
-fn comprobar_identificador(id: &str) -> Result<()> {
-    let partes: Vec<&str> = id.split('.').collect();
-    let valido = partes.len() >= 2
-        && partes.iter().all(|parte| {
-            parte.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-                && parte.chars().all(|c| c.is_ascii_alphanumeric())
+/// A package identifier both iOS and Android will accept. Both are fussy and
+/// neither complains early: Android fails on install and iOS on signing, half an
+/// hour later.
+fn check_identifier(id: &str) -> Result<()> {
+    let parts: Vec<&str> = id.split('.').collect();
+    let valid = parts.len() >= 2
+        && parts.iter().all(|part| {
+            part.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+                && part.chars().all(|c| c.is_ascii_alphanumeric())
         });
-    if !valido {
+    if !valid {
         bail!(
             "{id:?} no vale como identificador de app: tienen que ser al menos dos tramos \
              separados por puntos, cada uno empezando por letra y sin guiones ni subrayados. \
@@ -201,28 +202,29 @@ fn comprobar_identificador(id: &str) -> Result<()> {
     Ok(())
 }
 
-/// `ngc` es quien compila las plantillas, y es del proyecto, no del SDK: así la
-/// app se compila contra la versión de Angular que el usuario tiene instalada.
+/// `ngc` is what compiles the templates, and it belongs to the project, not to
+/// the SDK: that way the app is compiled against the version of Angular the user
+/// has installed.
 ///
-/// Se busca subiendo por los directorios, que es lo que hará `npx` cuando llegue
-/// el momento de ejecutarlo. En un monorepo con workspaces los binarios están
-/// arriba y no en el paquete, y exigirlo aquí abajo sería instalar una segunda
-/// copia sin necesidad.
-fn asegurar_compilador(root: &Path) -> Result<()> {
-    if hay_ngc(root) {
+/// It is looked for by climbing up the directories, which is what `npx` will do
+/// when the time comes to run it. In a monorepo with workspaces the binaries are
+/// up top and not in the package, and demanding it down here would install a
+/// second copy for nothing.
+fn ensure_compiler(root: &Path) -> Result<()> {
+    if has_ngc(root) {
         return Ok(());
     }
     eprintln!("==> falta @angular/compiler-cli; instalándolo");
     npm(root, &["install", "--save-dev", "--no-audit", "--no-fund", "@angular/compiler-cli"])
         .context("no se pudo instalar @angular/compiler-cli")?;
-    if !hay_ngc(root) {
+    if !has_ngc(root) {
         bail!("npm terminó bien pero sigue sin haber un node_modules/.bin/ngc alcanzable");
     }
     Ok(())
 }
 
-fn hay_ngc(desde: &Path) -> bool {
-    let mut dir = desde.to_owned();
+fn has_ngc(from: &Path) -> bool {
+    let mut dir = from.to_owned();
     loop {
         if dir.join("node_modules/.bin/ngc").exists() {
             return true;
@@ -233,43 +235,43 @@ fn hay_ngc(desde: &Path) -> bool {
     }
 }
 
-/// Deja `@angular-native/primitives` y `@angular-native/platform` instalados en
-/// el proyecto.
+/// Leaves `@angular-native/primitives` and `@angular-native/platform` installed
+/// in the project.
 ///
-/// Los dos son paquetes de este repositorio y todavía no están publicados en
-/// npm. De las tres maneras de meterlos en un proyecto de fuera:
+/// Both are packages from this repository and neither is published on npm yet.
+/// Of the three ways of getting them into a project from outside:
 ///
-///   · una **ruta local** (`file:../angular-native/packages/primitives`) es la
-///     más cómoda de escribir y la peor de todas: npm la instala como enlace
-///     simbólico, la ruta es la del disco de quien ejecutó `an init`, y el
-///     `package-lock.json` que se commitea no le sirve a nadie más.
-///   · un **tarball vendorizado** —`npm pack`, dentro del proyecto, con
-///     versión— es una copia exacta de lo que el SDK tenía ese día. Se commitea
-///     con el proyecto, `npm ci` lo reinstala sin red y sin el SDK delante, y
-///     el build no se puede desincronizar del framework sin que alguien lo vea
-///     en un diff.
-///   · **publicarlos en npm** es lo que hará falta el día que esto salga del
-///     cajón, y entonces solo cambia el especificador: en `node_modules` queda
-///     exactamente lo mismo, así que nada de lo que hay por encima se entera.
+///   · a **local path** (`file:../angular-native/packages/primitives`) is the
+///     easiest to write and the worst of the three: npm installs it as a
+///     symlink, the path belongs to the disk of whoever ran `an init`, and the
+///     `package-lock.json` that gets committed is no use to anybody else.
+///   · a **vendored tarball** —`npm pack`, inside the project, with a version—
+///     is an exact copy of what the SDK held that day. It is committed with the
+///     project, `npm ci` reinstalls it with no network and no SDK in sight, and
+///     the build cannot drift away from the framework without somebody seeing it
+///     in a diff.
+///   · **publishing them on npm** is what will be needed the day this comes out
+///     of the drawer, and then only the specifier changes: what lands in
+///     `node_modules` is exactly the same, so nothing above it finds out.
 ///
-/// Elegido el segundo. Y lo que se empaqueta no son las fuentes: son los dos
-/// paquetes **compilados**, con sus `.d.ts` y en modo parcial, que es como se
-/// publica cualquier librería de Angular. No es un capricho de pureza —
-/// TypeScript no emite JavaScript para las fuentes que encuentra bajo
-/// `node_modules`, las da por librería externa ya compilada, así que meter ahí
-/// los `.ts` produce un bundle al que le falta medio framework y ni `ngc` ni
-/// esbuild dicen nada—. Compilarlos primero convierte ese silencio en el caso
-/// normal: se resuelven como cualquier otra dependencia y el Angular Linker de
-/// `scripts/bundle.mjs` hace el resto.
+/// The second one won. And what gets packed is not the sources: it is the two
+/// **compiled** packages, with their `.d.ts` and in partial mode, which is how
+/// any Angular library is published. This is not purity for its own sake —
+/// TypeScript emits no JavaScript for sources it finds under `node_modules`, it
+/// takes them for an external library already compiled, so putting the `.ts`
+/// files in there produces a bundle missing half the framework and neither `ngc`
+/// nor esbuild says a word—. Compiling them first turns that silence back into
+/// the ordinary case: they resolve like any other dependency and the Angular
+/// Linker in `scripts/bundle.mjs` does the rest.
 ///
-/// Se compilan con el `ngc` del proyecto, no con el del SDK: así los `.d.ts` y
-/// las declaraciones parciales salen de la misma versión de Angular contra la
-/// que se compila la app.
-fn instalar_paquetes(sdk: &Path, root: &Path, force: bool) -> Result<()> {
-    let instalados = PAQUETES
+/// They are compiled with the project's `ngc`, not the SDK's: that way the
+/// `.d.ts` files and the partial declarations come out of the same version of
+/// Angular the app is compiled against.
+fn install_packages(sdk: &Path, root: &Path, force: bool) -> Result<()> {
+    let installed = PACKAGES
         .iter()
-        .all(|(nombre, _)| root.join("node_modules").join(nombre).join("package.json").is_file());
-    if instalados && !force {
+        .all(|(name, _)| root.join("node_modules").join(name).join("package.json").is_file());
+    if installed && !force {
         eprintln!("==> los paquetes del framework ya están instalados");
         return Ok(());
     }
@@ -278,52 +280,52 @@ fn instalar_paquetes(sdk: &Path, root: &Path, force: bool) -> Result<()> {
     std::fs::create_dir_all(&vendor)?;
     let staging = root.join(".angular-native/build/packages");
     let mut tarballs: Vec<String> = Vec::new();
-    for (nombre, corto) in PAQUETES {
-        let origen = sdk.join("packages").join(corto);
-        if !origen.join("src/public-api.ts").is_file() {
-            bail!("el SDK no trae {nombre}: falta {}", origen.join("src/public-api.ts").display());
+    for (name, short) in PACKAGES {
+        let source = sdk.join("packages").join(short);
+        if !source.join("src/public-api.ts").is_file() {
+            bail!("el SDK no trae {name}: falta {}", source.join("src/public-api.ts").display());
         }
-        let destino = staging.join(corto);
-        let _ = std::fs::remove_dir_all(&destino);
-        std::fs::create_dir_all(&destino)?;
+        let destination = staging.join(short);
+        let _ = std::fs::remove_dir_all(&destination);
+        std::fs::create_dir_all(&destination)?;
 
-        eprintln!("==> compilando {nombre}");
-        std::fs::write(destino.join("tsconfig.json"), tsconfig_paquete(&origen, &staging))?;
-        npm(root, &["exec", "--", "ngc", "-p", &destino.join("tsconfig.json").to_string_lossy()])
-            .with_context(|| format!("no se pudo compilar {nombre}"))?;
-        let api = destino.join("dist/public-api.js");
+        eprintln!("==> compilando {name}");
+        std::fs::write(destination.join("tsconfig.json"), package_tsconfig(&source, &staging))?;
+        npm(root, &["exec", "--", "ngc", "-p", &destination.join("tsconfig.json").to_string_lossy()])
+            .with_context(|| format!("no se pudo compilar {name}"))?;
+        let api = destination.join("dist/public-api.js");
         if !api.is_file() {
             bail!("`ngc` terminó bien pero no dejó {}", api.display());
         }
-        std::fs::write(destino.join("package.json"), package_json(nombre, &origen)?)?;
+        std::fs::write(destination.join("package.json"), package_json(name, &source)?)?;
 
-        // `npm pack` escribe el nombre del fichero por la salida estándar, y es
-        // el único sitio donde está la versión: componerlo aquí a mano sería
-        // adivinar.
-        let salida = capturar(
+        // `npm pack` writes the file's name on standard output, and that is the
+        // only place the version lives: putting it together by hand here would
+        // be guesswork.
+        let output = capture(
             root,
             "npm",
             &[
                 "pack",
-                &destino.to_string_lossy(),
+                &destination.to_string_lossy(),
                 "--pack-destination",
                 &vendor.to_string_lossy(),
                 "--silent",
             ],
         )
-        .with_context(|| format!("no se pudo empaquetar {nombre}"))?;
-        let fichero = salida
+        .with_context(|| format!("no se pudo empaquetar {name}"))?;
+        let file_name = output
             .lines()
-            .rfind(|linea| linea.trim().ends_with(".tgz"))
-            .with_context(|| format!("npm pack no dijo qué fichero escribió para {nombre}"))?
+            .rfind(|line| line.trim().ends_with(".tgz"))
+            .with_context(|| format!("npm pack no dijo qué fichero escribió para {name}"))?
             .trim()
             .to_owned();
-        if !vendor.join(&fichero).is_file() {
-            bail!("npm pack dijo haber escrito {fichero}, pero no está en {}", vendor.display());
+        if !vendor.join(&file_name).is_file() {
+            bail!("npm pack dijo haber escrito {file_name}, pero no está en {}", vendor.display());
         }
-        // Relativa: es lo que acaba en el `package.json` del usuario, y una ruta
-        // absoluta solo valdría en esta máquina.
-        tarballs.push(format!("file:.angular-native/vendor/{fichero}"));
+        // Relative: it is what ends up in the user's `package.json`, and an
+        // absolute path would only work on this machine.
+        tarballs.push(format!("file:.angular-native/vendor/{file_name}"));
     }
 
     eprintln!("==> npm install {}", tarballs.join(" "));
@@ -331,22 +333,22 @@ fn instalar_paquetes(sdk: &Path, root: &Path, force: bool) -> Result<()> {
     args.extend(tarballs.iter().map(String::as_str));
     npm(root, &args).context("no se pudieron instalar los paquetes del framework")?;
 
-    for (nombre, _) in PAQUETES {
-        let dir = root.join("node_modules").join(nombre);
+    for (name, _) in PACKAGES {
+        let dir = root.join("node_modules").join(name);
         if !dir.join("package.json").is_file() {
-            bail!("npm terminó bien pero {nombre} no está instalado");
+            bail!("npm terminó bien pero {name} no está instalado");
         }
     }
     Ok(())
 }
 
-/// El tsconfig con el que se compila uno de los paquetes del framework.
+/// The tsconfig one of the framework's packages is compiled with.
 ///
-/// `compilationMode: partial` es lo que hace que esto sea una librería
-/// publicable: los decoradores quedan como declaraciones `ɵɵngDeclare*` que
-/// resuelve el Angular Linker al empaquetar, en vez de código atado a la
-/// versión exacta del compilador.
-fn tsconfig_paquete(origen: &Path, staging: &Path) -> String {
+/// `compilationMode: partial` is what makes this a publishable library: the
+/// decorators are left as `ɵɵngDeclare*` declarations that the Angular Linker
+/// resolves at packaging time, instead of code tied to the compiler's exact
+/// version.
+fn package_tsconfig(source: &Path, staging: &Path) -> String {
     let primitives = staging.join("primitives/dist/public-api.d.ts");
     format!(
         r#"{{
@@ -375,16 +377,16 @@ fn tsconfig_paquete(origen: &Path, staging: &Path) -> String {
   }}
 }}
 "#,
-        src = origen.join("src").display(),
-        api = origen.join("src/public-api.ts").display(),
+        src = source.join("src").display(),
+        api = source.join("src/public-api.ts").display(),
         primitives = primitives.display()
     )
 }
 
-/// El `package.json` del paquete empaquetado. La versión y los peers salen del
-/// que hay en el SDK: son el mismo paquete, solo que compilado.
-fn package_json(nombre: &str, origen: &Path) -> Result<String> {
-    let manifest = origen.join("package.json");
+/// The packed package's `package.json`. The version and the peers come from the
+/// one in the SDK: it is the same package, only compiled.
+fn package_json(name: &str, source: &Path) -> Result<String> {
+    let manifest = source.join("package.json");
     let text = std::fs::read_to_string(&manifest)
         .with_context(|| format!("no se pudo leer {}", manifest.display()))?;
     let parsed: Value = serde_json::from_str(&text)
@@ -399,7 +401,7 @@ fn package_json(nombre: &str, origen: &Path) -> Result<String> {
         .unwrap_or_else(|| Value::Object(Default::default()));
     Ok(format!(
         r#"{{
-  "name": "{nombre}",
+  "name": "{name}",
   "version": "{version}",
   "type": "module",
   "main": "dist/public-api.js",
@@ -413,54 +415,54 @@ fn package_json(nombre: &str, origen: &Path) -> Result<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Ficheros
+// Files
 // ---------------------------------------------------------------------------
 
-/// Escribe un fichero. Si ya existe y no se pidió reescribirlo, se deja y se
-/// dice.
-fn escribir(path: &Path, contenido: &str, force: bool) -> Result<()> {
-    let corta = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+/// Writes a file. If it already exists and no rewrite was asked for, it is left
+/// alone and that is said out loud.
+fn write_file(path: &Path, contents: &str, force: bool) -> Result<()> {
+    let short_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     if path.is_file() && !force {
-        eprintln!("    ya estaba  {corta}  ({})", path.display());
+        eprintln!("    ya estaba  {short_name}  ({})", path.display());
         return Ok(());
     }
-    if let Some(padre) = path.parent() {
-        std::fs::create_dir_all(padre)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(path, contenido)
+    std::fs::write(path, contents)
         .with_context(|| format!("no se pudo escribir {}", path.display()))?;
-    eprintln!("    escrito     {corta}  ({})", path.display());
+    eprintln!("    escrito     {short_name}  ({})", path.display());
     Ok(())
 }
 
-fn escribir_manifiesto(
+fn write_project_manifest(
     root: &Path,
     name: &str,
     bundle_id: &str,
     entry: &Path,
     platforms: &[String],
 ) -> Result<()> {
-    let plataformas = platforms
+    let platforms_list = platforms
         .iter()
         .map(|p| format!("\"{p}\""))
         .collect::<Vec<_>>()
         .join(", ");
-    let contenido = format!(
+    let contents = format!(
         r#"{{
   "app": {{
     "name": "{name}",
     "bundleId": "{bundle_id}",
     "entry": "{entry}"
   }},
-  "platforms": [{plataformas}]
+  "platforms": [{platforms_list}]
 }}
 "#,
         entry = entry.display()
     );
-    escribir(&root.join(MARKER), &contenido, true)
+    write_file(&root.join(MARKER), &contents, true)
 }
 
-fn registrar_plataforma(root: &Path, platform: &str) -> Result<()> {
+fn register_platform(root: &Path, platform: &str) -> Result<()> {
     let project = Project::read(root)?;
     if project.platforms.iter().any(|p| p == platform) {
         return Ok(());
@@ -468,49 +470,49 @@ fn registrar_plataforma(root: &Path, platform: &str) -> Result<()> {
     let mut platforms = project.platforms.clone();
     platforms.push(platform.to_owned());
     platforms.sort();
-    escribir_manifiesto(root, &project.name, &project.bundle_id, &project.entry, &platforms)
+    write_project_manifest(root, &project.name, &project.bundle_id, &project.entry, &platforms)
 }
 
-/// Añade al `.gitignore` lo único que angular-native genera y no es fuente.
+/// Adds to the `.gitignore` the one thing angular-native generates that is not a
+/// source.
 ///
-/// Solo `.angular-native/build`. El tsconfig y los tarballs de
-/// `.angular-native/vendor` sí se commitean: el primero es configuración y el
-/// segundo es lo que hace que `npm ci` reinstale exactamente los mismos
-/// paquetes del framework en la máquina de al lado.
-fn ignorar(root: &Path) -> Result<()> {
+/// Only `.angular-native/build`. The tsconfig and the tarballs in
+/// `.angular-native/vendor` do get committed: the first is configuration and the
+/// second is what makes `npm ci` reinstall exactly the same framework packages
+/// on the machine next door.
+fn extend_gitignore(root: &Path) -> Result<()> {
     let path = root.join(".gitignore");
-    let actual = std::fs::read_to_string(&path).unwrap_or_default();
-    let linea = "/.angular-native/build/";
-    if actual.lines().any(|l| l.trim() == linea) {
+    let current = std::fs::read_to_string(&path).unwrap_or_default();
+    let line = "/.angular-native/build/";
+    if current.lines().any(|l| l.trim() == line) {
         eprintln!("    ya estaba  .gitignore");
         return Ok(());
     }
-    let mut nuevo = actual;
-    if !nuevo.is_empty() && !nuevo.ends_with('\n') {
-        nuevo.push('\n');
+    let mut updated = current;
+    if !updated.is_empty() && !updated.ends_with('\n') {
+        updated.push('\n');
     }
-    nuevo.push_str(&format!(
-        "\n# angular-native: el .app, el APK y el JS compilado se rehacen enteros.\n{linea}\n"
+    updated.push_str(&format!(
+        "\n# angular-native: el .app, el APK y el JS compilado se rehacen enteros.\n{line}\n"
     ));
-    std::fs::write(&path, nuevo)
+    std::fs::write(&path, updated)
         .with_context(|| format!("no se pudo escribir {}", path.display()))?;
     eprintln!("    ampliado    .gitignore");
     Ok(())
 }
 
 // ---------------------------------------------------------------------------
-// Plantillas
+// Templates
 // ---------------------------------------------------------------------------
 
-/// El tsconfig del build nativo.
+/// The tsconfig for the native build.
 ///
-/// No es el del proyecto web y no puede serlo: aquí no hay DOM, la app entra
-/// por otro fichero, y `paths` tiene que mandar los dos paquetes del framework
-/// a su TypeScript y no al `main` del `package.json`.
+/// It is not the web project's and it cannot be: there is no DOM here, the app
+/// comes in through a different file, and `paths` has to send both framework
+/// packages to their TypeScript and not to the `package.json`'s `main`.
 ///
-/// Los dos paquetes del framework no llevan `paths`: están instalados y
-/// compilados en `node_modules`, y se resuelven como cualquier otra
-/// dependencia.
+/// The two framework packages carry no `paths`: they are installed and compiled
+/// in `node_modules`, and they resolve like any other dependency.
 fn tsconfig(entry: &Path) -> String {
     format!(
         r#"// Generado por `an init`. Es el tsconfig del build nativo: `ngc` lo usa para
@@ -547,7 +549,7 @@ fn tsconfig(entry: &Path) -> String {
     )
 }
 
-const PUNTO_DE_ENTRADA: &str = r#"// El arranque de la app nativa. El de la web sigue siendo src/main.ts.
+const ENTRY_POINT: &str = r#"// El arranque de la app nativa. El de la web sigue siendo src/main.ts.
 import { bootstrapNativeApplication } from '@angular-native/platform'
 
 import { AppNative } from './app/app-native'
@@ -557,7 +559,7 @@ bootstrapNativeApplication(AppNative).catch((error) => {
 })
 "#;
 
-fn componente_raiz(name: &str) -> String {
+fn root_component(name: &str) -> String {
     format!(
         r#"import {{ ChangeDetectionStrategy, Component, signal }} from '@angular/core'
 import {{ NATIVE_PRIMITIVES }} from '@angular-native/primitives'
@@ -604,34 +606,34 @@ export class AppNative {{
     )
 }
 
-/// El `Info.plist` del proyecto, sacado del que usa el shell.
+/// The project's `Info.plist`, taken from the one the shell uses.
 ///
-/// Se parte del del SDK para no tener dos copias de la misma lista de claves,
-/// y solo se cambian las tres que identifican a la app. Si el del SDK deja de
-/// llevar los valores que se esperan, se para: un plist a medio sustituir
-/// produce una app que se instala y no abre.
+/// It starts from the SDK's so as not to keep two copies of the same list of
+/// keys, and only the three that identify the app are changed. If the SDK's
+/// stops carrying the values expected, it stops: a half-substituted plist
+/// produces an app that installs and does not open.
 fn plist(
     workspace: &Workspace,
     family: Family,
     name: &str,
     bundle_id: &str,
 ) -> Result<String> {
-    // El nombre y el identificador que lleva el plist del shell son los del
-    // monorepo con el adorno de la familia puesto; los del proyecto se adornan
-    // igual, y así el que sale de aquí ya pasa la comprobación que hace el
-    // build. Los dos sufijos salen del mismo sitio, `Family::suffix`, para que
-    // no puedan separarse.
+    // The name and the identifier the shell's plist carries are the monorepo's
+    // with the family's decoration on; the project's get decorated the same way,
+    // and so what comes out of here already passes the check the build does.
+    // Both suffixes come from the same place, `Family::suffix`, so they cannot
+    // drift apart.
     let (name_suffix, id_suffix) = family.suffix();
-    let origen = workspace.root.join(match family {
+    let source = workspace.root.join(match family {
         Family::Ios => "shells/ios/Resources/Info.plist",
         Family::TvOs => "shells/tvos/Resources/Info.plist",
         Family::VisionOs => "shells/visionos/Resources/Info.plist",
     });
-    let texto = std::fs::read_to_string(&origen)
-        .with_context(|| format!("no se pudo leer {}", origen.display()))?;
-    let texto = sustituir(
-        &texto,
-        &origen,
+    let text = std::fs::read_to_string(&source)
+        .with_context(|| format!("no se pudo leer {}", source.display()))?;
+    let text = substitute(
+        &text,
+        &source,
         &[
             (
                 &format!("<string>AngularNative{name_suffix}</string>"),
@@ -645,63 +647,63 @@ fn plist(
             ),
         ],
     )?;
-    // El comentario va después de la declaración XML, que tiene que ir primera.
-    Ok(anteponer(&texto, CABECERA_PLIST))
+    // The comment goes after the XML declaration, which has to come first.
+    Ok(prepend(&text, PLIST_HEADER))
 }
 
-/// El `AndroidManifest.xml` del proyecto, sacado del del shell.
+/// The project's `AndroidManifest.xml`, taken from the shell's.
 ///
-/// El `package` se queda como está —ahí viven las clases del shell— y lo que
-/// cambia es la etiqueta. El identificador con el que Android instala la app
-/// sale de `app.bundleId` y lo aplica `aapt2` al enlazar.
-fn manifiesto(workspace: &Workspace, name: &str) -> Result<String> {
-    let origen = workspace.root.join("shells/android/AndroidManifest.xml");
-    let texto = std::fs::read_to_string(&origen)
-        .with_context(|| format!("no se pudo leer {}", origen.display()))?;
-    let texto = sustituir(
-        &texto,
-        &origen,
+/// The `package` stays as it is —that is where the shell's classes live— and
+/// what changes is the label. The identifier Android installs the app under
+/// comes from `app.bundleId` and `aapt2` applies it at link time.
+fn android_manifest(workspace: &Workspace, name: &str) -> Result<String> {
+    let source = workspace.root.join("shells/android/AndroidManifest.xml");
+    let text = std::fs::read_to_string(&source)
+        .with_context(|| format!("no se pudo leer {}", source.display()))?;
+    let text = substitute(
+        &text,
+        &source,
         &[("android:label=\"AngularNative\"", &format!("android:label=\"{name}\""), 1)],
     )?;
-    // El comentario va después de la declaración XML, que tiene que ir primera.
-    Ok(anteponer(&texto, CABECERA_MANIFIESTO))
+    // The comment goes after the XML declaration, which has to come first.
+    Ok(prepend(&text, MANIFEST_HEADER))
 }
 
-/// Mete un comentario justo detrás de la declaración XML. Delante no puede ir
-/// nada: un `<?xml?>` que no sea lo primero del fichero no es XML válido, y
-/// `plutil` rechaza el plist entero.
-fn anteponer(texto: &str, cabecera: &str) -> String {
-    match texto.split_once('\n') {
-        Some((declaracion, resto)) => format!("{declaracion}\n{cabecera}{resto}"),
-        None => format!("{cabecera}{texto}"),
+/// Slots a comment in right behind the XML declaration. Nothing can go in front
+/// of it: an `<?xml?>` that is not the first thing in the file is not valid XML,
+/// and `plutil` turns the whole plist down.
+fn prepend(text: &str, header: &str) -> String {
+    match text.split_once('\n') {
+        Some((declaration, rest)) => format!("{declaration}\n{header}{rest}"),
+        None => format!("{header}{text}"),
     }
 }
 
-/// Sustituye, comprobando cuántas veces tenía que aparecer cada cosa.
-fn sustituir(texto: &str, origen: &Path, cambios: &[(&str, &str, usize)]) -> Result<String> {
-    let mut salida = texto.to_owned();
-    for (busca, pon, veces) in cambios {
-        let encontradas = salida.matches(busca).count();
-        if encontradas != *veces {
+/// Substitutes, checking how many times each thing was supposed to appear.
+fn substitute(text: &str, source: &Path, changes: &[(&str, &str, usize)]) -> Result<String> {
+    let mut output = text.to_owned();
+    for (needle, replacement, times) in changes {
+        let found = output.matches(needle).count();
+        if found != *times {
             bail!(
-                "{}: se esperaba encontrar {busca:?} {veces} vez/veces y aparece {encontradas}. \
+                "{}: se esperaba encontrar {needle:?} {times} vez/veces y aparece {found}. \
                  El shell ha cambiado y esta plantilla se ha quedado atrás.",
-                origen.display()
+                source.display()
             );
         }
-        salida = salida.replace(busca, pon);
+        output = output.replace(needle, replacement);
     }
-    Ok(salida)
+    Ok(output)
 }
 
-const CABECERA_PLIST: &str = "<!--\n  \
+const PLIST_HEADER: &str = "<!--\n  \
     Creado por `an add`. A partir de aquí es tuyo: `an` lo copia dentro del\n  \
     .app en cada compilación y no lo reescribe nunca.\n\n  \
     CFBundleExecutable y CFBundleIdentifier tienen que seguir coincidiendo con\n  \
     app.name y app.bundleId de angular-native.json. Si dejan de coincidir, el\n  \
     build se para y lo dice.\n-->\n";
 
-const CABECERA_MANIFIESTO: &str = "<!--\n  \
+const MANIFEST_HEADER: &str = "<!--\n  \
     Creado por `an add android`. A partir de aquí es tuyo: aquí van los permisos\n  \
     y lo que la app declare.\n\n  \
     El atributo package no se cambia: es el paquete de las clases del shell. El\n  \
@@ -709,40 +711,40 @@ const CABECERA_MANIFIESTO: &str = "<!--\n  \
     angular-native.json.\n-->\n";
 
 // ---------------------------------------------------------------------------
-// Menudencias
+// Odds and ends
 // ---------------------------------------------------------------------------
 
-/// El nombre de la app, sacado del `package.json`. Acaba siendo el del
-/// ejecutable dentro del `.app` y el que se lee bajo el icono, así que se
-/// convierte a PascalCase: `mi-app` es «MiApp».
-fn nombre_de_app(root: &Path) -> Result<String> {
+/// The app's name, taken from the `package.json`. It ends up being the
+/// executable's inside the `.app` and the one read under the icon, so it is
+/// turned into PascalCase: `mi-app` is «MiApp».
+fn app_name_from_package_json(root: &Path) -> Result<String> {
     let manifest = root.join("package.json");
     let text = std::fs::read_to_string(&manifest)
         .with_context(|| format!("no se pudo leer {}", manifest.display()))?;
     let parsed: Value = serde_json::from_str(&text)
         .with_context(|| format!("{} no es JSON válido", manifest.display()))?;
-    let crudo = parsed
+    let raw = parsed
         .get("name")
         .and_then(Value::as_str)
         .with_context(|| format!("{}: falta name", manifest.display()))?;
-    let nombre: String = crudo
+    let name: String = raw
         .rsplit('/')
         .next()
-        .unwrap_or(crudo)
+        .unwrap_or(raw)
         .split(|c: char| !c.is_ascii_alphanumeric())
-        .filter(|parte| !parte.is_empty())
-        .map(|parte| {
-            let mut chars = parte.chars();
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
             match chars.next() {
-                Some(primera) => primera.to_ascii_uppercase().to_string() + chars.as_str(),
+                Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
                 None => String::new(),
             }
         })
         .collect();
-    if nombre.is_empty() {
-        bail!("{}: del name {crudo:?} no sale ningún nombre de app; pasa --name", manifest.display());
+    if name.is_empty() {
+        bail!("{}: del name {raw:?} no sale ningún nombre de app; pasa --name", manifest.display());
     }
-    Ok(nombre)
+    Ok(name)
 }
 
 fn slug(name: &str) -> String {
@@ -753,7 +755,7 @@ fn npm(cwd: &Path, args: &[&str]) -> Result<()> {
     crate::build::run_in(cwd, "npm", args, "npm falló")
 }
 
-fn capturar(cwd: &Path, program: &str, args: &[&str]) -> Result<String> {
+fn capture(cwd: &Path, program: &str, args: &[&str]) -> Result<String> {
     let output = Command::new(program)
         .args(args)
         .current_dir(cwd)

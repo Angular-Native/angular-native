@@ -1,9 +1,9 @@
-//! Arma el APK y lo lleva al emulador.
+//! Builds the APK and takes it to the emulator.
 //!
-//! Sin Gradle, por el mismo motivo que iOS va sin `.xcodeproj`: las
-//! herramientas del SDK ya hacen todo el trabajo y el proceso cabe en un
-//! fichero que se puede leer entero. `javac` compila, `d8` dexa, `aapt2` enlaza
-//! el manifiesto, y el resto es un zip firmado.
+//! No Gradle, for the same reason iOS goes without an `.xcodeproj`: the SDK's
+//! tools already do all the work and the process fits in a file you can read end
+//! to end. `javac` compiles, `d8` dexes, `aapt2` links the manifest, and the
+//! rest is a signed zip.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -14,18 +14,18 @@ use anyhow::{Context, Result, bail};
 use crate::plugins::{self, Platform, Plugin};
 use crate::workspace::Workspace;
 
-/// El paquete Java del shell. No cambia: es el de `shells/android/java`, y va
-/// escrito en cada `package dev.angularnative;`. Lo que sí cambia por proyecto
-/// es el identificador de la aplicación, y para eso está
-/// `--rename-manifest-package`, que reescribe el manifiesto y deja las clases
-/// donde estaban.
+/// The shell's Java package. It does not change: it is the one in
+/// `shells/android/java`, written out in every `package dev.angularnative;`.
+/// What does change per project is the application identifier, and that is what
+/// `--rename-manifest-package` is for: it rewrites the manifest and leaves the
+/// classes where they were.
 const PACKAGE: &str = "dev.angularnative";
 const ACTIVITY: &str = "dev.angularnative.MainActivity";
 const ABI: &str = "arm64-v8a";
 const RUST_TARGET: &str = "aarch64-linux-android";
 
-/// Teléfono o reloj. Los dos son Android y comparten host; lo que cambia
-/// es el manifiesto y en qué aparato se instala.
+/// Phone or watch. Both are Android and both share a host; what changes is the
+/// manifest and which device it gets installed on.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Form {
     Phone,
@@ -33,9 +33,9 @@ pub enum Form {
 }
 
 impl Form {
-    /// El manifiesto de cada forma. No es un fichero con condicionales porque
-    /// el formato no tiene ninguno: `aapt2` no sabe de variantes.
-    /// El nombre suelto, para encontrar el que ponga un proyecto de fuera.
+    /// Each form's manifest. It is not one file with conditionals because the
+    /// format has none: `aapt2` knows nothing about variants.
+    /// The bare name, for finding the one a project from outside puts there.
     fn manifest_name(self) -> &'static str {
         match self {
             Form::Phone => "AndroidManifest.xml",
@@ -50,8 +50,8 @@ impl Form {
         }
     }
 
-    /// Cómo se llama esto cuando hay que decirlo por pantalla.
-    pub fn nombre(self) -> &'static str {
+    /// What to call this when it has to be said on screen.
+    pub fn label(self) -> &'static str {
         match self {
             Form::Phone => "teléfono",
             Form::Watch => "reloj",
@@ -99,7 +99,8 @@ impl Sdk {
     }
 }
 
-/// Devuelve el subdirectorio de nombre más alto, que es la versión más nueva.
+/// Returns the subdirectory with the highest name, which is the newest
+/// version.
 fn newest_dir(parent: &Path) -> Option<PathBuf> {
     let mut entries: Vec<PathBuf> = std::fs::read_dir(parent)
         .ok()?
@@ -111,7 +112,7 @@ fn newest_dir(parent: &Path) -> Option<PathBuf> {
     entries.pop()
 }
 
-/// Desde el emulador, la máquina anfitriona no es `localhost`.
+/// From inside the emulator, the host machine is not `localhost`.
 pub const EMULATOR_HOST: &str = "10.0.2.2";
 
 pub fn assemble(
@@ -122,8 +123,8 @@ pub fn assemble(
     plugins: &[Plugin],
     form: Form,
 ) -> Result<PathBuf> {
-    // Antes de compilar nada: si algún plugin no trae su parte de Android, el
-    // build se para aquí y dice cuál.
+    // Before compiling anything: if some plugin does not bring its Android
+    // half, the build stops here and says which one.
     plugins::require(plugins, Platform::Android)?;
     let sdk = Sdk::discover()?;
     let root = &workspace.root;
@@ -158,9 +159,9 @@ pub fn assemble(
         staging.join(format!("lib/{ABI}/liban_android.so")),
     )?;
     std::fs::copy(bundle, staging.join("assets/main.js"))?;
-    // Los iconos de Material. Van en la app y no en la plataforma porque el
-    // juego que trae Android —`android.R.drawable`— está congelado desde 2011
-    // por compatibilidad: no es el de Material 3 ni se parece.
+    // The Material icons. They go in the app and not in the platform because the
+    // set Android ships —`android.R.drawable`— has been frozen since 2011 for
+    // compatibility: it is not Material 3's and does not resemble it.
     for asset in ["material-symbols.ttf", "material-symbols.codepoints"] {
         std::fs::copy(
             root.join("shells/android/assets").join(asset),
@@ -172,21 +173,22 @@ pub fn assemble(
         std::fs::write(staging.join("assets/dev-server.txt"), url)?;
     }
 
-    // Las librerías de Android —Material y todo lo que arrastra— vienen
-    // resueltas y con sus recursos ya compilados por
-    // `scripts/prepare-android-deps.py`. Aquí solo se leen las listas.
+    // The Android libraries —Material and everything it drags along— arrive
+    // resolved and with their resources already compiled by
+    // `scripts/prepare-android-deps.py`. All that happens here is reading the
+    // lists.
     let vendor = root.join("vendor/android/build");
-    let leer_lista = |nombre: &str| -> Vec<String> {
-        std::fs::read_to_string(vendor.join(nombre))
+    let read_list = |name: &str| -> Vec<String> {
+        std::fs::read_to_string(vendor.join(name))
             .unwrap_or_default()
             .lines()
-            .filter(|linea| !linea.trim().is_empty())
+            .filter(|line| !line.trim().is_empty())
             .map(str::to_owned)
             .collect()
     };
-    let jars = leer_lista("classpath.txt");
-    let recursos = leer_lista("resources.txt");
-    let paquetes = leer_lista("packages.txt");
+    let jars = read_list("classpath.txt");
+    let resources = read_list("resources.txt");
+    let packages = read_list("packages.txt");
     if jars.is_empty() {
         bail!(
             "faltan las dependencias de Android; ejecuta \
@@ -194,9 +196,9 @@ pub fn assemble(
         );
     }
 
-    // Los recursos propios del shell —el tema de la app— se compilan aquí y no
-    // en `prepare-android-deps.py` porque son nuestros y cambian; los de las
-    // librerías no cambian nunca y por eso aquellos se cachean.
+    // The shell's own resources —the app's theme— are compiled here and not in
+    // `prepare-android-deps.py` because they are ours and they change; the
+    // libraries' never change, which is why those get cached.
     eprintln!("==> aapt2 compile (recursos del shell)");
     let app_res = out.join("shell-res.zip");
     let _ = std::fs::remove_file(&app_res);
@@ -213,25 +215,26 @@ pub fn assemble(
         "aapt2 compile de los recursos del shell falló",
     )?;
 
-    // El enlace de recursos va antes que `javac`: de aquí salen las clases
-    // `R` que las librerías necesitan para encontrar sus propios recursos.
+    // Linking the resources comes before `javac`: this is where the `R` classes
+    // the libraries need to find their own resources come from.
     eprintln!("==> aapt2 link");
     let unsigned = out.join("unsigned.apk");
-    let generado = out.join("gen");
-    let _ = std::fs::remove_dir_all(&generado);
-    std::fs::create_dir_all(&generado)?;
-    // El manifiesto del proyecto pisa al del shell si lo hay: es lo que escribe
-    // `an add android`, y a partir de ahí es del usuario. Tiene que seguir
-    // declarando el paquete del shell, porque ahí están las clases; el
-    // identificador de la aplicación lo pone `--rename-manifest-package`.
+    let generated = out.join("gen");
+    let _ = std::fs::remove_dir_all(&generated);
+    std::fs::create_dir_all(&generated)?;
+    // The project's manifest overrides the shell's if there is one: it is what
+    // `an add android` writes, and from then on it belongs to the user. It has
+    // to go on declaring the shell's package, because that is where the classes
+    // are; the application identifier is put there by
+    // `--rename-manifest-package`.
     let manifest = workspace
         .overlay("android", form.manifest_name())
         .unwrap_or_else(|| root.join(form.manifest()));
-    comprobar_manifiesto(&manifest)?;
-    // Y el que se le pasa a `aapt2` es el del proyecto más lo que piden los
-    // plugins. El original no se toca: es del usuario.
+    check_manifest(&manifest)?;
+    // And the one handed to `aapt2` is the project's plus whatever the plugins
+    // ask for. The original is left alone: it is the user's.
     let manifest =
-        escribir_manifiesto(&manifest, &out.join("AndroidManifest.merged.xml"), plugins)?;
+        write_manifest(&manifest, &out.join("AndroidManifest.merged.xml"), plugins)?;
     let mut link: Vec<String> = vec![
         "link".into(),
         "-I".into(),
@@ -239,31 +242,31 @@ pub fn assemble(
         "--manifest".into(),
         manifest.to_string_lossy().into_owned(),
         "--java".into(),
-        generado.to_string_lossy().into_owned(),
-        // Cada librería quiere su propia clase `R`, y sus identificadores no
-        // pueden ser constantes: se resuelven al enlazar la app.
+        generated.to_string_lossy().into_owned(),
+        // Every library wants an `R` class of its own, and its identifiers
+        // cannot be constants: they are resolved when the app is linked.
         "--extra-packages".into(),
-        paquetes.join(":"),
+        packages.join(":"),
         "--non-final-ids".into(),
-        // Los recursos de las librerías se solapan a propósito —unas
-        // redefinen estilos de otras— y sin esto aapt2 lo toma por un error.
+        // The libraries' resources overlap on purpose —some redefine others'
+        // styles— and without this aapt2 takes it for an error.
         "--auto-add-overlay".into(),
         "-o".into(),
         unsigned.to_string_lossy().into_owned(),
     ];
-    // En el monorepo el identificador ya es el del manifiesto y no hay nada que
-    // renombrar; renombrarlo igualmente cambiaría el paquete instalado sin que
-    // nadie lo haya pedido.
+    // In the monorepo the identifier is already the manifest's and there is
+    // nothing to rename; renaming it anyway would change the installed package
+    // without anybody having asked.
     if application_id != PACKAGE {
         link.push("--rename-manifest-package".into());
         link.push(application_id.clone());
     }
-    for recurso in &recursos {
+    for resource in &resources {
         link.push("-R".into());
-        link.push(recurso.clone());
+        link.push(resource.clone());
     }
-    // Los del shell van los últimos: `--auto-add-overlay` deja que lo de aquí
-    // redefina lo que traigan las librerías, y no al revés.
+    // The shell's go last: `--auto-add-overlay` lets what is here redefine
+    // whatever the libraries bring, and not the other way round.
     link.push("-R".into());
     link.push(app_res.to_string_lossy().into_owned());
     run(
@@ -287,26 +290,26 @@ pub fn assemble(
     if sources.is_empty() {
         bail!("no hay fuentes Java en shells/android");
     }
-    // Los plugins: sus fuentes Java y el registro que las engancha. Todo entra
-    // en la misma invocación de `javac` que el shell, así que un plugin ve
-    // `AnPlugin` y `AnPluginCall` sin classpath adicional.
+    // The plugins: their Java sources and the registry that hooks them up. It
+    // all goes into the same `javac` invocation as the shell, so a plugin sees
+    // `AnPlugin` and `AnPluginCall` with no extra classpath.
     for plugin in plugins {
-        let aportadas = plugins::sources(plugin, Platform::Android)?;
+        let contributed = plugins::sources(plugin, Platform::Android)?;
         eprintln!(
             "==> plugin {} ({} fuentes Java)",
             plugin.module,
-            aportadas.len()
+            contributed.len()
         );
-        sources.extend(aportadas);
+        sources.extend(contributed);
     }
     sources.push(
         plugins::generate_android(plugins, &out.join("gen-plugins"))?
             .to_string_lossy()
             .into_owned(),
     );
-    // `--release` en vez de `-source/-target`: con los modernos, javac
-    // rechaza `-bootclasspath`, y aquí hace falta compilar contra android.jar
-    // y no contra el JDK.
+    // `--release` instead of `-source/-target`: with the modern ones javac turns
+    // `-bootclasspath` down, and here the compilation has to go against
+    // android.jar and not against the JDK.
     let mut classpath = vec![sdk.android_jar.to_string_lossy().into_owned()];
     classpath.extend(jars.iter().cloned());
     let mut javac: Vec<String> = vec![
@@ -321,9 +324,9 @@ pub fn assemble(
         classes.to_string_lossy().into_owned(),
     ];
     javac.extend(sources);
-    // Las clases `R` que acaba de escribir aapt2, una por paquete.
+    // The `R` classes aapt2 has just written, one per package.
     javac.extend(
-        walk(&generado)
+        walk(&generated)
             .into_iter()
             .filter(|path| path.extension().is_some_and(|e| e == "java"))
             .map(|path| path.to_string_lossy().into_owned()),
@@ -348,20 +351,20 @@ pub fn assemble(
         d8.push("--release".into());
     }
     d8.extend(class_files);
-    // Y las librerías: sus clases tienen que acabar en el mismo dex.
+    // And the libraries: their classes have to end up in the same dex.
     d8.extend(jars.iter().cloned());
     run(root, &sdk.tool("d8").to_string_lossy(), &d8, "d8 falló")?;
 
     eprintln!("==> firma");
-    // `aapt2` solo mete el manifiesto: el dex, la biblioteca nativa y los
-    // assets se añaden al zip después, con las rutas que espera Android.
-    // Con las librerías de Material dentro, `d8` parte el dex en varios:
-    // `classes.dex`, `classes2.dex`… Desde API 21 Android los carga todos, pero
-    // hay que meterlos todos en el zip.
+    // `aapt2` only puts the manifest in: the dex, the native library and the
+    // assets are added to the zip afterwards, at the paths Android expects.
+    // With the Material libraries in there, `d8` splits the dex into several:
+    // `classes.dex`, `classes2.dex`… Since API 21 Android loads them all, but
+    // they all have to go into the zip.
     let mut dexes: Vec<String> = std::fs::read_dir(&staging)?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|nombre| nombre.starts_with("classes") && nombre.ends_with(".dex"))
+        .filter(|name| name.starts_with("classes") && name.ends_with(".dex"))
         .collect();
     dexes.sort();
     if dexes.is_empty() {
@@ -407,9 +410,9 @@ pub fn assemble(
     )?;
 
     let keystore = debug_keystore()?;
-    // Un nombre por forma: los dos APK llevan el mismo paquete, y si
-    // compartieran fichero, armar el del reloj dejaría al del teléfono
-    // apuntando a un APK que ya no es el suyo.
+    // One name per form: both APKs carry the same package, and if they shared a
+    // file, building the watch's would leave the phone's pointing at an APK that
+    // is no longer its own.
     let apk = out.join(match form {
         Form::Phone => format!("{app_name}.apk"),
         Form::Watch => format!("{app_name}-wear.apk"),
@@ -440,12 +443,12 @@ pub fn assemble(
     Ok(apk)
 }
 
-/// El identificador con el que Android instala la app.
+/// The identifier Android installs the app under.
 ///
-/// En un proyecto de fuera es el `app.bundleId`, el mismo que en iOS. En el
-/// monorepo es el paquete del shell tal cual: aquí no hay proyecto que
-/// consultar y cambiarlo movería de sitio la app de ejemplo que ya está
-/// instalada en el emulador de todo el mundo.
+/// In a project from outside it is the `app.bundleId`, the same one as on iOS.
+/// In the monorepo it is the shell's package as-is: there is no project to
+/// consult here and changing it would move the example app already installed in
+/// everybody's emulator.
 fn application_id(workspace: &Workspace) -> String {
     match &workspace.project {
         Some(project) => project.bundle_id.clone(),
@@ -453,132 +456,133 @@ fn application_id(workspace: &Workspace) -> String {
     }
 }
 
-/// Escribe el manifiesto que ve `aapt2`: el del proyecto más los permisos y
-/// las características que piden los plugins.
+/// Writes the manifest `aapt2` sees: the project's plus the permissions and
+/// features the plugins ask for.
 ///
-/// El fichero de partida no se toca nunca. Es del usuario —lo escribe `an add
-/// android` y a partir de ahí es suyo—, y un build que edita fuentes deja al
-/// siguiente sin saber qué escribió él y qué escribió la herramienta.
+/// The file it starts from is never touched. It is the user's —`an add android`
+/// writes it and from then on it is theirs—, and a build that edits sources
+/// leaves the next person unable to tell what they wrote from what the tool
+/// wrote.
 ///
-/// Lo que ya declare la app no se repite: `aapt2` acepta dos
-/// `<uses-permission>` iguales, pero un manifiesto con la misma línea dos
-/// veces es un manifiesto que nadie sabe leer.
-fn escribir_manifiesto(base: &Path, destino: &Path, plugins: &[Plugin]) -> Result<PathBuf> {
-    let entradas = plugins::manifest_entries(plugins)?;
-    let texto = std::fs::read_to_string(base)
+/// Anything the app already declares is not repeated: `aapt2` accepts two
+/// identical `<uses-permission>`s, but a manifest with the same line twice is a
+/// manifest nobody can read.
+fn write_manifest(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result<PathBuf> {
+    let entries = plugins::manifest_entries(plugins)?;
+    let text = std::fs::read_to_string(base)
         .with_context(|| format!("no se pudo leer {}", base.display()))?;
-    if entradas.is_empty() {
+    if entries.is_empty() {
         return Ok(base.to_owned());
     }
 
-    let mut lineas = String::new();
-    let ya_permisos = nombres_declarados(&texto, "uses-permission");
-    for permiso in &entradas.permissions {
-        if ya_permisos.contains_key(permiso) {
-            // La app ya lo pide. No hay nada que decidir: un permiso no tiene
-            // valor, así que pedirlo dos veces es pedirlo una.
+    let mut lines = String::new();
+    let existing_permissions = declared_names(&text, "uses-permission");
+    for permission in &entries.permissions {
+        if existing_permissions.contains_key(permission) {
+            // The app already asks for it. There is nothing to decide: a
+            // permission carries no value, so asking twice is asking once.
             continue;
         }
-        eprintln!("==> AndroidManifest.xml: uses-permission {permiso}");
-        lineas.push_str(&format!(
-            "    <uses-permission android:name=\"{permiso}\" />\n"
+        eprintln!("==> AndroidManifest.xml: uses-permission {permission}");
+        lines.push_str(&format!(
+            "    <uses-permission android:name=\"{permission}\" />\n"
         ));
     }
-    let ya_features = nombres_declarados(&texto, "uses-feature");
-    for (nombre, required) in &entradas.features {
-        if let Some(actual) = ya_features.get(nombre) {
-            let declarado = actual.as_deref().unwrap_or("true");
-            if declarado != required.to_string() {
+    let existing_features = declared_names(&text, "uses-feature");
+    for (name, required) in &entries.features {
+        if let Some(current) = existing_features.get(name) {
+            let declared = current.as_deref().unwrap_or("true");
+            if declared != required.to_string() {
                 eprintln!(
-                    "==> AndroidManifest.xml: {nombre} ya la declara la app con \
-                     android:required=\"{declarado}\"; se queda la suya"
+                    "==> AndroidManifest.xml: {name} ya la declara la app con \
+                     android:required=\"{declared}\"; se queda la suya"
                 );
             }
             continue;
         }
-        eprintln!("==> AndroidManifest.xml: uses-feature {nombre} (required={required})");
-        lineas.push_str(&format!(
-            "    <uses-feature android:name=\"{nombre}\" android:required=\"{required}\" />\n"
+        eprintln!("==> AndroidManifest.xml: uses-feature {name} (required={required})");
+        lines.push_str(&format!(
+            "    <uses-feature android:name=\"{name}\" android:required=\"{required}\" />\n"
         ));
     }
 
-    let salida = if lineas.is_empty() {
-        texto
+    let output = if lines.is_empty() {
+        text
     } else {
-        // Delante de `<application>`, que es donde van en cualquier manifiesto
-        // y donde el que lo abra los va a buscar.
-        let corte = texto.find("<application").with_context(|| {
+        // In front of `<application>`, which is where they go in any manifest
+        // and where whoever opens it will go looking for them.
+        let cut = text.find("<application").with_context(|| {
             format!(
                 "{}: no encuentro <application>, y ahí es donde van los permisos",
                 base.display()
             )
         })?;
-        // Hasta el principio de su línea, para no partir la sangría.
-        let corte = texto[..corte]
+        // Back to the start of its line, so as not to break the indentation.
+        let cut = text[..cut]
             .rfind('\n')
-            .map(|salto| salto + 1)
-            .unwrap_or(corte);
+            .map(|newline| newline + 1)
+            .unwrap_or(cut);
         format!(
             "{}    <!-- De los plugins. Lo escribe `an` al armar el APK. -->\n{}\n{}",
-            &texto[..corte],
-            lineas.trim_end(),
-            &texto[corte..]
+            &text[..cut],
+            lines.trim_end(),
+            &text[cut..]
         )
     };
-    if let Some(padre) = destino.parent() {
-        std::fs::create_dir_all(padre)?;
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(destino, salida)
-        .with_context(|| format!("no se pudo escribir {}", destino.display()))?;
-    Ok(destino.to_owned())
+    std::fs::write(destination, output)
+        .with_context(|| format!("no se pudo escribir {}", destination.display()))?;
+    Ok(destination.to_owned())
 }
 
-/// Los `android:name` de un tipo de elemento del manifiesto, con su
-/// `android:required` si lo lleva.
+/// The `android:name`s of one kind of manifest element, with their
+/// `android:required` if they carry one.
 ///
-/// Se busca elemento a elemento y no por texto suelto: `contains` sobre la
-/// línea entera fallaría en cuanto alguien pusiera los atributos en otro orden
-/// o partiera el elemento en varias líneas, y el fallo sería un permiso
-/// repetido, no un error.
-fn nombres_declarados(texto: &str, elemento: &str) -> BTreeMap<String, Option<String>> {
-    let mut encontrados = BTreeMap::new();
-    let abre = format!("<{elemento}");
-    let mut resto = texto;
-    while let Some(inicio) = resto.find(&abre) {
-        resto = &resto[inicio + abre.len()..];
-        let Some(fin) = resto.find('>') else { break };
-        let atributos = &resto[..fin];
-        if let Some(nombre) = atributo(atributos, "android:name") {
-            encontrados.insert(nombre, atributo(atributos, "android:required"));
+/// It goes element by element and not by loose text: a `contains` over the whole
+/// line would fail the moment somebody put the attributes in another order or
+/// split the element across several lines, and the failure would be a repeated
+/// permission, not an error.
+fn declared_names(text: &str, element: &str) -> BTreeMap<String, Option<String>> {
+    let mut found = BTreeMap::new();
+    let opening = format!("<{element}");
+    let mut rest = text;
+    while let Some(start) = rest.find(&opening) {
+        rest = &rest[start + opening.len()..];
+        let Some(end) = rest.find('>') else { break };
+        let attributes = &rest[..end];
+        if let Some(name) = attribute(attributes, "android:name") {
+            found.insert(name, attribute(attributes, "android:required"));
         }
-        resto = &resto[fin..];
+        rest = &rest[end..];
     }
-    encontrados
+    found
 }
 
-/// El valor de un atributo entrecomillado dentro de un elemento.
-fn atributo(atributos: &str, nombre: &str) -> Option<String> {
-    let inicio = atributos.find(nombre)? + nombre.len();
-    let resto = atributos[inicio..].trim_start();
-    let resto = resto.strip_prefix('=')?.trim_start();
-    let comilla = resto.chars().next()?;
-    if comilla != '"' && comilla != '\'' {
+/// The value of a quoted attribute inside an element.
+fn attribute(attributes: &str, name: &str) -> Option<String> {
+    let start = attributes.find(name)? + name.len();
+    let rest = attributes[start..].trim_start();
+    let rest = rest.strip_prefix('=')?.trim_start();
+    let quote = rest.chars().next()?;
+    if quote != '"' && quote != '\'' {
         return None;
     }
-    let resto = &resto[comilla.len_utf8()..];
-    let fin = resto.find(comilla)?;
-    Some(resto[..fin].to_owned())
+    let rest = &rest[quote.len_utf8()..];
+    let end = rest.find(quote)?;
+    Some(rest[..end].to_owned())
 }
 
-/// Que el manifiesto siga declarando el paquete del shell.
+/// That the manifest still declares the shell's package.
 ///
-/// Si alguien lo cambia a mano, `javac` compila igual —las clases llevan su
-/// `package` dentro— pero Android no encuentra la actividad y la app no abre.
-/// Vale más pararlo aquí.
-fn comprobar_manifiesto(manifest: &Path) -> Result<()> {
-    let texto = std::fs::read_to_string(manifest)
+/// If somebody changes it by hand, `javac` compiles just the same —the classes
+/// carry their `package` inside them— but Android cannot find the activity and
+/// the app does not open. Better to stop it here.
+fn check_manifest(manifest: &Path) -> Result<()> {
+    let text = std::fs::read_to_string(manifest)
         .with_context(|| format!("no se pudo leer {}", manifest.display()))?;
-    if !texto.contains(&format!("package=\"{PACKAGE}\"")) {
+    if !text.contains(&format!("package=\"{PACKAGE}\"")) {
         bail!(
             "{}: el manifiesto tiene que declarar package=\"{PACKAGE}\", que es donde están \
              las clases del shell.\n\
@@ -590,15 +594,15 @@ fn comprobar_manifiesto(manifest: &Path) -> Result<()> {
     Ok(())
 }
 
-/// El almacén de claves de depuración estándar. Si no existe, se crea: es el
-/// mismo que genera Android Studio, con la contraseña de siempre.
+/// The standard debug keystore. If it does not exist it is created: it is the
+/// same one Android Studio generates, with the usual password.
 fn debug_keystore() -> Result<PathBuf> {
     let path =
         PathBuf::from(std::env::var("HOME").unwrap_or_default()).join(".android/debug.keystore");
     if path.is_file() {
         return Ok(path);
     }
-    std::fs::create_dir_all(path.parent().expect("tiene padre"))?;
+    std::fs::create_dir_all(path.parent().expect("it has a parent"))?;
     let status = Command::new("keytool")
         .args([
             "-genkeypair",
@@ -628,68 +632,69 @@ fn debug_keystore() -> Result<PathBuf> {
 }
 
 fn devices(adb: &Path) -> Result<Vec<(String, Form)>> {
-    let salida = Command::new(adb)
+    let output = Command::new(adb)
         .args(["devices"])
         .output()
         .context("no se pudo ejecutar adb devices")?;
-    if !salida.status.success() {
+    if !output.status.success() {
         bail!("adb devices falló");
     }
-    let listado = String::from_utf8_lossy(&salida.stdout);
-    let mut encontrados = Vec::new();
-    for linea in listado.lines().skip(1) {
-        let mut campos = linea.split_whitespace();
-        let (Some(serial), Some("device")) = (campos.next(), campos.next()) else {
+    let listing = String::from_utf8_lossy(&output.stdout);
+    let mut found = Vec::new();
+    for line in listing.lines().skip(1) {
+        let mut fields = line.split_whitespace();
+        let (Some(serial), Some("device")) = (fields.next(), fields.next()) else {
             continue;
         };
         let props = Command::new(adb)
             .args(["-s", serial, "shell", "getprop", "ro.build.characteristics"])
             .output()
             .with_context(|| format!("no se pudo preguntar por {serial}"))?;
-        let forma = if String::from_utf8_lossy(&props.stdout).contains("watch") {
+        let form = if String::from_utf8_lossy(&props.stdout).contains("watch") {
             Form::Watch
         } else {
             Form::Phone
         };
-        encontrados.push((serial.to_owned(), forma));
+        found.push((serial.to_owned(), form));
     }
-    Ok(encontrados)
+    Ok(found)
 }
 
-/// Elige a qué aparato va el APK.
+/// Picks which device the APK goes to.
 ///
-/// Sin esto, `adb install` a secas se planta en cuanto hay más de un emulador
-/// arrancado, y con un teléfono y un reloj a la vez —que es lo normal en
-/// cuanto se trabaja en los dos— eso es siempre. Peor: si acertara por
-/// casualidad, el APK del reloj acabaría en el teléfono sin que nada lo dijera.
+/// Without this, a bare `adb install` refuses to move the moment there is more
+/// than one emulator running, and with a phone and a watch at once —which is the
+/// normal state of affairs as soon as you work on both— that is always. Worse:
+/// if it happened to guess right, the watch's APK would end up on the phone
+/// without a word from anyone.
 fn pick_device(adb: &Path, form: Form) -> Result<String> {
-    let encontrados = devices(adb)?;
-    let candidatos: Vec<&String> = encontrados
+    let found = devices(adb)?;
+    let candidates: Vec<&String> = found
         .iter()
-        .filter(|(_, forma)| *forma == form)
+        .filter(|(_, shape)| *shape == form)
         .map(|(serial, _)| serial)
         .collect();
-    match candidatos.as_slice() {
-        [uno] => Ok((*uno).clone()),
-        [] if encontrados.is_empty() => bail!(
+    match candidates.as_slice() {
+        [one] => Ok((*one).clone()),
+        [] if found.is_empty() => bail!(
             "no hay ningún aparato conectado; arranca un emulador de {} \
              (`emulator -avd <nombre>`)",
-            form.nombre()
+            form.label()
         ),
         [] => bail!(
             "no hay ningún aparato con forma de {}; lo que hay es: {}",
-            form.nombre(),
-            encontrados
+            form.label(),
+            found
                 .iter()
-                .map(|(serial, forma)| format!("{serial} ({})", forma.nombre()))
+                .map(|(serial, shape)| format!("{serial} ({})", shape.label()))
                 .collect::<Vec<_>>()
                 .join(", ")
         ),
-        varios => bail!(
+        several => bail!(
             "hay {} aparatos con forma de {}: {}. Elige con --device",
-            varios.len(),
-            form.nombre(),
-            varios
+            several.len(),
+            form.label(),
+            several
                 .iter()
                 .map(|s| s.as_str())
                 .collect::<Vec<_>>()
@@ -698,30 +703,30 @@ fn pick_device(adb: &Path, form: Form) -> Result<String> {
     }
 }
 
-/// Comprueba que el aparato que pidió `--device` existe y es de la forma que
-/// se está armando.
+/// Checks that the device `--device` asked for exists and has the shape of the
+/// one being built.
 ///
-/// Dejar pasar un serial cualquiera sería peor que no tener la opción: el APK
-/// del reloj entra sin quejarse en un teléfono, arranca y pinta, y lo único
-/// que no hace es ser una app de reloj. Es el fallo que solo se ve al
-/// publicarla.
+/// Letting any old serial through would be worse than not having the option at
+/// all: the watch's APK goes onto a phone without complaint, starts and draws,
+/// and the only thing it does not do is be a watch app. It is the kind of
+/// failure you only see once you publish.
 fn check_device(adb: &Path, serial: &str, form: Form) -> Result<String> {
-    let encontrados = devices(adb)?;
-    match encontrados.iter().find(|(s, _)| s == serial) {
-        Some((s, forma)) if *forma == form => Ok(s.clone()),
-        Some((_, forma)) => bail!(
+    let found = devices(adb)?;
+    match found.iter().find(|(s, _)| s == serial) {
+        Some((s, shape)) if *shape == form => Ok(s.clone()),
+        Some((_, shape)) => bail!(
             "{serial} tiene forma de {}, y esto es un APK de {}",
-            forma.nombre(),
-            form.nombre()
+            shape.label(),
+            form.label()
         ),
         None => bail!(
             "no hay ningún aparato {serial}; lo que hay es: {}",
-            if encontrados.is_empty() {
+            if found.is_empty() {
                 "nada".to_owned()
             } else {
-                encontrados
+                found
                     .iter()
-                    .map(|(s, forma)| format!("{s} ({})", forma.nombre()))
+                    .map(|(s, shape)| format!("{s} ({})", shape.label()))
                     .collect::<Vec<_>>()
                     .join(", ")
             }
@@ -738,17 +743,18 @@ pub fn install_and_launch(
     let sdk = Sdk::discover()?;
     let adb = sdk.adb();
     let application_id = application_id(workspace);
-    // A qué aparato va, decidido antes de tocar nada. Sin el `-s`, `adb` elige
-    // por su cuenta: con uno solo acierta siempre, y en cuanto hay dos se
-    // planta —o, si el otro está sin autorizar, ni siquiera se planta y manda
-    // el APK del reloj al teléfono.
+    // Which device it goes to, settled before anything is touched. Without the
+    // `-s`, `adb` picks for itself: with one it always gets it right, and the
+    // moment there are two it refuses to move —or, if the other one is
+    // unauthorised, it does not even refuse and sends the watch's APK to the
+    // phone.
     let serial = match device {
-        Some(pedido) => check_device(&adb, pedido, form)?,
+        Some(asked_for) => check_device(&adb, asked_for, form)?,
         None => pick_device(&adb, form)?,
     };
     eprintln!("==> instalando en {serial}");
-    // Mismo motivo que en iOS: instalar sobre una app en marcha no recarga el
-    // bundle nuevo.
+    // Same reason as on iOS: installing over a running app does not reload the
+    // new bundle.
     let _ = Command::new(&adb)
         .args(["-s", &serial, "shell", "am", "force-stop", &application_id])
         .output();
@@ -761,9 +767,9 @@ pub fn install_and_launch(
     run(
         workspace,
         &adb.to_string_lossy(),
-        // La actividad conserva el paquete del shell aunque la aplicación se
-        // llame de otra forma: `--rename-manifest-package` cualifica los
-        // nombres de clase con el paquete original.
+        // The activity keeps the shell's package even when the application is
+        // called something else: `--rename-manifest-package` qualifies the class
+        // names with the original package.
         &[
             "-s",
             &serial,

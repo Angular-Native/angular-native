@@ -1,4 +1,4 @@
-//! El pipeline completo sin plataforma: mutaciones, layout y diff.
+//! The whole pipeline with no platform under it: mutations, layout and diff.
 
 use an_core::props::PropValue;
 use an_core::{MountOp, NaiveMeasurer, NodeKind, ShadowTree};
@@ -12,7 +12,7 @@ fn frame_of(ops: &[MountOp], id: u32) -> Option<an_core::Rect> {
     })
 }
 
-/// Raíz que ocupa el viewport, con dos hijos en fila de ancho fijo.
+/// A root that fills the viewport, with two fixed-width children in a row.
 fn build_row() -> ShadowTree {
     let mut tree = ShadowTree::new();
     tree.create_node(1, NodeKind::View).unwrap();
@@ -32,7 +32,7 @@ fn build_row() -> ShadowTree {
 }
 
 #[test]
-fn resuelve_flexbox_en_fila() {
+fn resolves_flexbox_in_a_row() {
     let mut tree = build_row();
     let frame = tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
 
@@ -44,15 +44,15 @@ fn resuelve_flexbox_en_fila() {
 }
 
 #[test]
-fn commit_sin_cambios_no_produce_ops() {
+fn a_commit_with_no_changes_produces_no_ops() {
     let mut tree = build_row();
     assert!(!tree.commit(VIEWPORT, &NaiveMeasurer).unwrap().is_empty());
     let second = tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
-    assert!(second.is_empty(), "commit idempotente, salió {:?}", second.ops);
+    assert!(second.is_empty(), "commit is idempotent, out came {:?}", second.ops);
 }
 
 #[test]
-fn solo_reemite_el_nodo_que_cambia() {
+fn only_the_node_that_changed_is_re_emitted() {
     let mut tree = build_row();
     tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
 
@@ -67,13 +67,13 @@ fn solo_reemite_el_nodo_que_cambia() {
             _ => None,
         })
         .collect();
-    // La raíz no se mueve: solo cambian los dos hijos.
+    // The root does not move: only the two children change.
     assert_eq!(touched, vec![2, 3]);
     assert_eq!(frame_of(&frame.ops, 3).unwrap().x, 80.0);
 }
 
 #[test]
-fn el_texto_determina_el_alto() {
+fn the_text_is_what_sets_the_height() {
     let mut tree = ShadowTree::new();
     tree.create_node(1, NodeKind::View).unwrap();
     tree.create_node(2, NodeKind::Text).unwrap();
@@ -81,7 +81,7 @@ fn el_texto_determina_el_alto() {
     tree.set_style(1, "width", "100").unwrap();
     tree.set_style(1, "height", "100%").unwrap();
     tree.set_prop(2, "fontSize", PropValue::Number(20.0)).unwrap();
-    tree.set_text(3, "una frase bastante larga que obliga a partir en varias lineas")
+    tree.set_text(3, "a fairly long sentence that has to be broken over several lines")
         .unwrap();
     tree.insert_child(2, 3, 0).unwrap();
     tree.insert_child(1, 2, 0).unwrap();
@@ -89,20 +89,20 @@ fn el_texto_determina_el_alto() {
 
     let frame = tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
     let text = frame_of(&frame.ops, 2).unwrap();
-    assert!(text.height > 20.0 * 1.25, "debe ocupar más de una línea: {text:?}");
+    assert!(text.height > 20.0 * 1.25, "it has to take more than one line: {text:?}");
     assert!(text.width <= 100.0);
 
-    // El host recibe el texto ya concatenado, no los nodos crudos.
+    // The host gets the text already concatenated, not the raw nodes.
     assert!(frame.ops.iter().any(|op| matches!(
         op,
-        MountOp::SetText { id: 2, text } if text.starts_with("una frase")
+        MountOp::SetText { id: 2, text } if text.starts_with("a fairly long")
     )));
-    // Un `RawText` nunca se monta.
+    // A `RawText` never gets mounted.
     assert!(!frame.ops.iter().any(|op| matches!(op, MountOp::Create { id: 3, .. })));
 }
 
 #[test]
-fn indice_de_host_ignora_nodos_no_montables() {
+fn the_host_index_ignores_non_mountable_nodes() {
     let mut tree = ShadowTree::new();
     tree.create_node(1, NodeKind::View).unwrap();
     tree.create_node(2, NodeKind::RawText).unwrap();
@@ -118,7 +118,7 @@ fn indice_de_host_ignora_nodos_no_montables() {
 }
 
 #[test]
-fn destruir_baja_el_subarbol_de_hijos_a_padres() {
+fn destroying_takes_the_subtree_down_from_children_to_parents() {
     let mut tree = build_row();
     tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
     tree.create_node(4, NodeKind::View).unwrap();
@@ -139,15 +139,16 @@ fn destruir_baja_el_subarbol_de_hijos_a_padres() {
     assert!(frame.ops.iter().any(|op| matches!(op, MountOp::Remove { parent: 1, child: 3 })));
 }
 
-/// Un estilo que no es de layout viaja como prop de host, y **en camello**.
+/// A style that is not a layout one travels as a host prop, and **in camel
+/// case**.
 ///
-/// Angular pasa los nombres de estilo a guiones antes de entregarlos, así que
-/// `[style.fontSize]` llega aquí como `font-size`. Mandarlo tal cual al host,
-/// que busca `fontSize`, era pedirle algo que nunca iba a reconocer: no
-/// fallaba nada, el texto simplemente se medía con una letra y se dibujaba con
-/// otra.
+/// Angular turns style names into hyphenated ones before handing them over, so
+/// `[style.fontSize]` reaches here as `font-size`. Forwarding that as-is to the
+/// host, which looks for `fontSize`, was asking it for something it was never
+/// going to recognise: nothing failed, the text was simply measured in one font
+/// and drawn in another.
 #[test]
-fn estilo_no_reconocido_viaja_como_prop_de_host_en_camello() {
+fn an_unrecognised_style_travels_as_a_host_prop_in_camel_case() {
     let mut tree = ShadowTree::new();
     tree.create_node(1, NodeKind::View).unwrap();
     tree.set_style(1, "background-color", "#ff0000").unwrap();
