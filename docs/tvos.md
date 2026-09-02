@@ -203,15 +203,20 @@ sin más.
 ./scripts/tv-remote.sh menu                # el «atrás» del mando
 ```
 
-Tiene dos condiciones que no se pueden esquivar y que el script comprueba antes
-de mandar nada, porque si no la pulsación se va a la aplicación que estuviera
-delante:
+Tiene tres condiciones que no se pueden esquivar y que el script comprueba
+antes de mandar nada, porque si no la pulsación se va a otro sitio y no se
+entera nadie:
 
 - **La pantalla del Mac no puede estar bloqueada.** Con la sesión bloqueada
   ninguna aplicación se puede traer al frente y las teclas no llegan a ningún
   sitio. `CGSSessionScreenIsLocked` lo dice, y el script se para ahí.
 - **Simulator tiene que quedarse en primer plano.** Es una limitación real de
   este camino: mientras el script corre, el teclado es suyo.
+- **La ventana del Apple TV tiene que ser la que tiene el foco dentro de
+  Simulator.** Con un iPhone abierto a la vez, las teclas se las lleva la
+  ventana que estuviera delante —que es otro simulador— y en el del Apple TV no
+  pasa absolutamente nada. El script levanta la ventana por su título y
+  comprueba que se quedó con el foco; `AN_TV_WINDOW` cambia con qué la busca.
 
 ## Qué falta
 
