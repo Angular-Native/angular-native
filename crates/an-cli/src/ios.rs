@@ -13,13 +13,15 @@ use crate::build::run;
 use crate::plugins::{self, Platform, Plugin};
 use crate::workspace::Workspace;
 
-const APP_NAME: &str = "AngularNative";
-const BUNDLE_ID: &str = "dev.angularnative.playground";
 const TARGET: &str = "aarch64-apple-ios-sim";
 const DEPLOYMENT: &str = "17.0";
 
 pub struct Package {
     pub dir: PathBuf,
+    /// El identificador con el que `simctl` instala, lanza y desinstala. Sale
+    /// del proyecto: dos apps distintas no pueden compartirlo o cada una
+    /// desinstalaría a la otra.
+    pub bundle_id: String,
 }
 
 /// `dev_server` es la URL del servidor de desarrollo, si lo hay. Se escribe
@@ -37,7 +39,18 @@ pub fn assemble(
     plugins::require(plugins, Platform::Ios)?;
     let root = &workspace.root;
     let profile = if release { "release" } else { "debug" };
-    let app_dir = root.join("build/ios").join(format!("{APP_NAME}.app"));
+    let app_name = workspace.app_name();
+    let bundle_id = workspace.bundle_id();
+    let out = workspace.build_dir().join("ios");
+    let app_dir = out.join(format!("{app_name}.app"));
+    // El `Info.plist` del proyecto pisa al del shell si lo hay: es lo que
+    // escribe `an add ios`, y a partir de ahí es del usuario. Se comprueba antes
+    // de compilar nada: son medio minuto de `cargo` y de `swiftc` que no hay por
+    // qué gastar para acabar diciendo que el nombre no cuadra.
+    let plist = workspace
+        .overlay("ios", "Info.plist")
+        .unwrap_or_else(|| root.join("shells/ios/Resources/Info.plist"));
+    comprobar_plist(&plist, &app_name, &bundle_id)?;
 
     eprintln!("==> core Rust ({profile})");
     let mut cargo_args = vec!["build", "--target", TARGET, "-p", "an-ios"];
@@ -78,12 +91,12 @@ pub fn assemble(
         sources.extend(aportadas);
     }
     sources.push(
-        plugins::generate_ios(plugins, &root.join("build/ios/generated"))?
+        plugins::generate_ios(plugins, &out.join("generated"))?
             .to_string_lossy()
             .into_owned(),
     );
 
-    let lib_dir = root.join("target").join(TARGET).join(profile);
+    let lib_dir = workspace.target_dir().join(TARGET).join(profile);
     let mut args: Vec<String> = vec![
         "swiftc".into(),
         "-sdk".into(),
@@ -102,7 +115,7 @@ pub fn assemble(
         "-Xclang-linker".into(),
         sdk,
         "-o".into(),
-        app_dir.join(APP_NAME).to_string_lossy().into_owned(),
+        app_dir.join(&app_name).to_string_lossy().into_owned(),
     ];
     if release {
         args.push("-O".into());
@@ -111,7 +124,7 @@ pub fn assemble(
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     run(workspace, "xcrun", &borrowed, "el enlazado del shell falló")?;
 
-    std::fs::copy(root.join("shells/ios/Resources/Info.plist"), app_dir.join("Info.plist"))?;
+    std::fs::copy(&plist, app_dir.join("Info.plist"))?;
     std::fs::copy(bundle, app_dir.join("main.js"))?;
     match dev_server {
         Some(url) => std::fs::write(app_dir.join("dev-server.txt"), url)?,
@@ -120,7 +133,36 @@ pub fn assemble(
         }
     }
 
-    Ok(Package { dir: app_dir })
+    Ok(Package { dir: app_dir, bundle_id })
+}
+
+/// Que el `Info.plist` diga lo mismo que el proyecto.
+///
+/// `CFBundleExecutable` tiene que ser el nombre del binario que se acaba de
+/// enlazar, y `CFBundleIdentifier` el mismo con el que luego se instala. Si
+/// alguien cambia `app.name` en `angular-native.json` y no toca el plist, la
+/// app se instala y al abrirla desaparece sin decir nada: iOS busca un
+/// ejecutable que no está. Es exactamente el fallo silencioso que no puede
+/// pasar, así que se compara aquí.
+fn comprobar_plist(plist: &Path, app_name: &str, bundle_id: &str) -> Result<()> {
+    for (clave, esperado) in
+        [("CFBundleExecutable", app_name), ("CFBundleIdentifier", bundle_id)]
+    {
+        let leido = capture(
+            "plutil",
+            &["-extract", clave, "raw", "-o", "-", &plist.to_string_lossy()],
+        )
+        .with_context(|| format!("{}: no se pudo leer {clave}", plist.display()))?;
+        if leido != esperado {
+            bail!(
+                "{}: {clave} es {leido:?} y el proyecto dice {esperado:?}.\n\
+                 O se corrige el plist, o se corrige angular-native.json; \
+                 con los dos distintos la app se instala y no abre.",
+                plist.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Los `.swift` de un directorio, en orden estable: `read_dir` los devuelve en
@@ -163,10 +205,10 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
     // Los dos comandos fallan si no había nada, que es lo normal la primera
     // vez, así que se descarta su salida.
     let _ = Command::new("xcrun")
-        .args(["simctl", "terminate", &udid, BUNDLE_ID])
+        .args(["simctl", "terminate", &udid, &package.bundle_id])
         .output();
     let _ = Command::new("xcrun")
-        .args(["simctl", "uninstall", &udid, BUNDLE_ID])
+        .args(["simctl", "uninstall", &udid, &package.bundle_id])
         .output();
     let install = Command::new("xcrun")
         .args(["simctl", "install", &udid])
@@ -178,7 +220,7 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
     }
 
     let launch = Command::new("xcrun")
-        .args(["simctl", "launch", &udid, BUNDLE_ID])
+        .args(["simctl", "launch", &udid, &package.bundle_id])
         .status()
         .context("no se pudo lanzar la app")?;
     if !launch.success() {

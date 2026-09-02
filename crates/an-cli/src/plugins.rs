@@ -379,11 +379,10 @@ pub fn generate_android(plugins: &[Plugin], out: &Path) -> Result<PathBuf> {
 /// publicado en npm ya viene compilado, y entonces esbuild lo resuelve por
 /// `node_modules` como cualquier otra dependencia y aquí no hay nada que
 /// hacer.
-pub fn aliases(workspace: &Workspace, app: &Path, plugins: &[Plugin]) -> Vec<String> {
-    let js_dir = workspace.root.join("build/js").join(Workspace::name(app));
+pub fn aliases(workspace: &Workspace, js_dir: &Path, plugins: &[Plugin]) -> Vec<String> {
     // Los directorios de los plugins vienen resueltos; la raíz puede no
     // estarlo, y entonces el prefijo no casaría.
-    let root = workspace.root.canonicalize().unwrap_or_else(|_| workspace.root.clone());
+    let root = workspace.source_root();
     plugins
         .iter()
         .filter_map(|plugin| {
@@ -410,7 +409,7 @@ pub fn list(workspace: &Workspace, plugins: &[Plugin]) {
         println!("esta app no depende de ningún plugin");
         return;
     }
-    let root = workspace.root.canonicalize().unwrap_or_else(|_| workspace.root.clone());
+    let root = workspace.source_root();
     for plugin in plugins {
         let dir = plugin.dir.strip_prefix(&root).unwrap_or(&plugin.dir);
         println!(

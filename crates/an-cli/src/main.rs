@@ -7,6 +7,7 @@
 mod android;
 mod build;
 mod dev;
+mod init;
 mod ios;
 mod plugins;
 mod watchos;
@@ -91,6 +92,29 @@ enum Command {
         #[arg(long)]
         no_launch: bool,
     },
+    /// Prepara un proyecto Angular existente para compilar a nativo.
+    ///
+    /// Se ejecuta dentro del proyecto —uno de `ng new`— y le añade las
+    /// dependencias, el tsconfig del build nativo y un punto de entrada. No
+    /// toca nada de lo que ya haya.
+    Init {
+        /// Directorio del proyecto. Por defecto, el actual.
+        dir: Option<String>,
+        /// Nombre de la app. Por defecto sale del `name` del package.json.
+        #[arg(long)]
+        name: Option<String>,
+        /// Identificador del paquete, p. ej. com.ejemplo.miapp.
+        #[arg(long)]
+        id: Option<String>,
+        /// Reescribe lo que genera `an init` y reinstala los paquetes.
+        /// Nunca toca el código de la app.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Añade una plataforma al proyecto: `an add ios`, `an add android`.
+    Add {
+        platform: String,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -116,6 +140,11 @@ const RELOJ_POR_DEFECTO: &str = "Apple Watch Series 11 (46mm)";
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    // `an init` es el único que corre donde todavía no hay nada que descubrir:
+    // el proyecto no está inicializado, que es justo el motivo de ejecutarlo.
+    if let Command::Init { dir, name, id, force } = &cli.command {
+        return init::init(dir.as_deref(), name.as_deref(), id.as_deref(), *force);
+    }
     let workspace = workspace::Workspace::discover()?;
 
     match cli.command {
@@ -187,5 +216,8 @@ fn main() -> anyhow::Result<()> {
             }
             dev::run(workspace, app, target, port, no_launch, found)
         }
+        Command::Add { platform } => init::add(&workspace, &platform),
+        // Ya se atendió antes de descubrir el proyecto.
+        Command::Init { .. } => unreachable!(),
     }
 }

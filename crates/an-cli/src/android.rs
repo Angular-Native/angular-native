@@ -13,6 +13,11 @@ use anyhow::{bail, Context, Result};
 use crate::plugins::{self, Platform, Plugin};
 use crate::workspace::Workspace;
 
+/// El paquete Java del shell. No cambia: es el de `shells/android/java`, y va
+/// escrito en cada `package dev.angularnative;`. Lo que sí cambia por proyecto
+/// es el identificador de la aplicación, y para eso está
+/// `--rename-manifest-package`, que reescribe el manifiesto y deja las clases
+/// donde estaban.
 const PACKAGE: &str = "dev.angularnative";
 const ACTIVITY: &str = "dev.angularnative.MainActivity";
 const ABI: &str = "arm64-v8a";
@@ -84,7 +89,9 @@ pub fn assemble(
     let sdk = Sdk::discover()?;
     let root = &workspace.root;
     let profile = if release { "release" } else { "debug" };
-    let out = root.join("build/android");
+    let app_name = workspace.app_name();
+    let application_id = application_id(workspace);
+    let out = workspace.build_dir().join("android");
     let staging = out.join("apk");
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(staging.join("assets"))?;
@@ -104,7 +111,7 @@ pub fn assemble(
         bail!("la compilación del core para Android falló");
     }
     std::fs::copy(
-        root.join("target").join(RUST_TARGET).join(profile).join("liban_android.so"),
+        workspace.target_dir().join(RUST_TARGET).join(profile).join("liban_android.so"),
         staging.join(format!("lib/{ABI}/liban_android.so")),
     )?;
     std::fs::copy(bundle, staging.join("assets/main.js"))?;
@@ -151,12 +158,20 @@ pub fn assemble(
     let generado = out.join("gen");
     let _ = std::fs::remove_dir_all(&generado);
     std::fs::create_dir_all(&generado)?;
+    // El manifiesto del proyecto pisa al del shell si lo hay: es lo que escribe
+    // `an add android`, y a partir de ahí es del usuario. Tiene que seguir
+    // declarando el paquete del shell, porque ahí están las clases; el
+    // identificador de la aplicación lo pone `--rename-manifest-package`.
+    let manifest = workspace
+        .overlay("android", "AndroidManifest.xml")
+        .unwrap_or_else(|| root.join("shells/android/AndroidManifest.xml"));
+    comprobar_manifiesto(&manifest)?;
     let mut link: Vec<String> = vec![
         "link".into(),
         "-I".into(),
         sdk.android_jar.to_string_lossy().into_owned(),
         "--manifest".into(),
-        root.join("shells/android/AndroidManifest.xml").to_string_lossy().into_owned(),
+        manifest.to_string_lossy().into_owned(),
         "--java".into(),
         generado.to_string_lossy().into_owned(),
         // Cada librería quiere su propia clase `R`, y sus identificadores no
@@ -170,6 +185,13 @@ pub fn assemble(
         "-o".into(),
         unsigned.to_string_lossy().into_owned(),
     ];
+    // En el monorepo el identificador ya es el del manifiesto y no hay nada que
+    // renombrar; renombrarlo igualmente cambiaría el paquete instalado sin que
+    // nadie lo haya pedido.
+    if application_id != PACKAGE {
+        link.push("--rename-manifest-package".into());
+        link.push(application_id.clone());
+    }
     for recurso in &recursos {
         link.push("-R".into());
         link.push(recurso.clone());
@@ -297,7 +319,7 @@ pub fn assemble(
     )?;
 
     let keystore = debug_keystore()?;
-    let apk = out.join("AngularNative.apk");
+    let apk = out.join(format!("{app_name}.apk"));
     let _ = std::fs::remove_file(&apk);
     run(
         root,
@@ -322,6 +344,39 @@ pub fn assemble(
     let size = std::fs::metadata(&apk)?.len();
     eprintln!("==> {} MB en {}", size / (1024 * 1024), apk.display());
     Ok(apk)
+}
+
+/// El identificador con el que Android instala la app.
+///
+/// En un proyecto de fuera es el `app.bundleId`, el mismo que en iOS. En el
+/// monorepo es el paquete del shell tal cual: aquí no hay proyecto que
+/// consultar y cambiarlo movería de sitio la app de ejemplo que ya está
+/// instalada en el emulador de todo el mundo.
+fn application_id(workspace: &Workspace) -> String {
+    match &workspace.project {
+        Some(project) => project.bundle_id.clone(),
+        None => PACKAGE.to_owned(),
+    }
+}
+
+/// Que el manifiesto siga declarando el paquete del shell.
+///
+/// Si alguien lo cambia a mano, `javac` compila igual —las clases llevan su
+/// `package` dentro— pero Android no encuentra la actividad y la app no abre.
+/// Vale más pararlo aquí.
+fn comprobar_manifiesto(manifest: &Path) -> Result<()> {
+    let texto = std::fs::read_to_string(manifest)
+        .with_context(|| format!("no se pudo leer {}", manifest.display()))?;
+    if !texto.contains(&format!("package=\"{PACKAGE}\"")) {
+        bail!(
+            "{}: el manifiesto tiene que declarar package=\"{PACKAGE}\", que es donde están \
+             las clases del shell.\n\
+             El identificador de la aplicación no se pone aquí: sale de app.bundleId en \
+             angular-native.json.",
+            manifest.display()
+        );
+    }
+    Ok(())
 }
 
 /// El almacén de claves de depuración estándar. Si no existe, se crea: es el
@@ -363,10 +418,11 @@ fn debug_keystore() -> Result<PathBuf> {
 pub fn install_and_launch(workspace: &Workspace, apk: &Path) -> Result<()> {
     let sdk = Sdk::discover()?;
     let adb = sdk.adb();
+    let application_id = application_id(workspace);
     eprintln!("==> instalando");
     // Mismo motivo que en iOS: instalar sobre una app en marcha no recarga el
     // bundle nuevo.
-    let _ = Command::new(&adb).args(["shell", "am", "force-stop", PACKAGE]).output();
+    let _ = Command::new(&adb).args(["shell", "am", "force-stop", &application_id]).output();
     run(
         workspace,
         &adb.to_string_lossy(),
@@ -376,7 +432,10 @@ pub fn install_and_launch(workspace: &Workspace, apk: &Path) -> Result<()> {
     run(
         workspace,
         &adb.to_string_lossy(),
-        &["shell", "am", "start", "-n", &format!("{PACKAGE}/{ACTIVITY}")],
+        // La actividad conserva el paquete del shell aunque la aplicación se
+        // llame de otra forma: `--rename-manifest-package` cualifica los
+        // nombres de clase con el paquete original.
+        &["shell", "am", "start", "-n", &format!("{application_id}/{ACTIVITY}")],
         "no se pudo lanzar la app",
     )?;
     Ok(())
