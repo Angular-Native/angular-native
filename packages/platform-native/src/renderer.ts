@@ -14,14 +14,6 @@ import {
 import { KNOWN_STYLES } from './style-names'
 
 /**
- * `Renderer2` over native primitives.
- *
- * This class is the entire seam between Angular and the core: templates compiled
- * by AOT emit instructions that end up here, so an Angular template works
- * untouched — the only thing that changes is that the elements are `<an-view>`
- * and `<an-text>` instead of `<div>` and `<span>`.
- */
-/**
  * Text props that in CSS would be styles and here are not.
  *
  * A font's size and weight are not box styling: layout needs them to measure and
@@ -86,6 +78,14 @@ function warnUnknownStyle(name: string): void {
   )
 }
 
+/**
+ * `Renderer2` over native primitives.
+ *
+ * This class is the entire seam between Angular and the core: templates compiled
+ * by AOT emit instructions that end up here, so an Angular template works
+ * untouched — the only thing that changes is that the elements are `<an-view>`
+ * and `<an-text>` instead of `<div>` and `<span>`.
+ */
 export class NativeRenderer extends Renderer2 {
   /** Classes accumulated per node, so they can be sent to the core together. */
   private readonly classes = new WeakMap<NativeNode, Set<string>>()

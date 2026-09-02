@@ -122,11 +122,16 @@ function indexAt(metrics: Metrics, offset: number): number {
  *
  * ```html
  * <an-virtual-list [items]="rows()" [itemHeight]="64" [style.flexGrow]="'1'">
- * <an-virtual-list [items]="rows()" [itemHeight]="rowHeight" [style.flexGrow]="'1'">
  *   <ng-template let-row let-i="index">
  *     <an-text>{{ i }}: {{ row.name }}</an-text>
  *   </ng-template>
  * </an-virtual-list>
+ * ```
+ *
+ * With rows of differing heights, `itemHeight` takes a function instead:
+ *
+ * ```html
+ * <an-virtual-list [items]="rows()" [itemHeight]="rowHeight" [style.flexGrow]="'1'">
  * ```
  */
 @Component({

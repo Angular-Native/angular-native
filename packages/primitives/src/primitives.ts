@@ -69,7 +69,6 @@ export interface NativeTextEvent {
   value: string
 }
 
-/** A view's resolved frame, relative to its parent and in points. */
 /**
  * A turn of the watch's digital crown.
  *
@@ -86,6 +85,7 @@ export interface NativeCrownEvent {
   velocity: number
 }
 
+/** A view's resolved frame, relative to its parent and in points. */
 export interface NativeLayoutEvent {
   x: number
   y: number
@@ -935,13 +935,6 @@ export interface NativeTabSelectEvent {
   index: number
 }
 
-/**
- * The system tab bar.
- *
- * It is the real bar —`UITabBar` on iOS— and not a row of views imitating one:
- * it inherits its typeface, its translucent background and its behaviour with
- * large accessibility text.
- */
 /** What iOS's bar has and Material's does not. */
 export type IosTabBarProps = {
   /**
@@ -953,6 +946,13 @@ export type IosTabBarProps = {
 
 const TAB_BAR_IOS = platformKeys('an-tab-bar', 'ios', ['translucent'])
 
+/**
+ * The system tab bar.
+ *
+ * It is the real bar —`UITabBar` on iOS— and not a row of views imitating one:
+ * it inherits its typeface, its translucent background and its behaviour with
+ * large accessibility text.
+ */
 @Directive({ selector: 'an-tab-bar' })
 export class TabBar extends NativeVisual {
   constructor() {
