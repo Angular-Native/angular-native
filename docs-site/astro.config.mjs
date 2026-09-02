@@ -41,6 +41,11 @@ export default defineConfig({
           items: [{ autogenerate: { directory: 'platforms' } }]
         },
         {
+          label: 'Accessibility',
+          translations: { es: 'Accesibilidad' },
+          items: [{ autogenerate: { directory: 'accessibility' } }]
+        },
+        {
           label: 'Extending it',
           translations: { es: 'Extenderlo' },
           items: [{ autogenerate: { directory: 'extending' } }]
