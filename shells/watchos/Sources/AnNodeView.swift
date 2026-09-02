@@ -109,12 +109,26 @@ struct AnNodeView: View {
                     dispatch: dispatch,
                     crownFocus: crownFocus
                 )
-                .transition(.asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading)))
+                .transition(deslizamiento)
             }
         }
         .frame(width: node.width, height: node.height, alignment: .topLeading)
+        .background(background)
         .clipped()
         .animation(.easeOut(duration: 0.25), value: node.children?.last?.id)
+    }
+
+    /// Por dónde entra y sale una pantalla.
+    ///
+    /// El sentido lo dice `[transition]`, que lo pone quien navega: es el único
+    /// que sabe si se avanza o se retrocede. Con `none` no se anima nada, que
+    /// es lo que hace falta al montar la primera pantalla.
+    private var deslizamiento: AnyTransition {
+        switch node.transition {
+        case "pop": .asymmetric(insertion: .move(edge: .leading), removal: .move(edge: .trailing))
+        case "none": .identity
+        default: .asymmetric(insertion: .move(edge: .trailing), removal: .move(edge: .leading))
+        }
     }
 
     /// El `ScrollView` sí es el de SwiftUI: el desplazamiento con la corona

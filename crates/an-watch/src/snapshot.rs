@@ -151,6 +151,10 @@ pub struct Node {
     pub buttons: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub presentation: Option<String>,
+    /// `StackView`: hacia dónde va la próxima transición. Lo decide quien
+    /// navega, que es el único que sabe si se avanza o se retrocede.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transition: Option<String>,
 
     /// Solo en `ScrollView`, y solo cuando el contenido desborda.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -400,6 +404,7 @@ fn node(host: &WatchHost, id: NodeId, overlays: &mut Vec<Node>) -> Option<Node> 
         message: string_of(host, id, "message"),
         buttons: strings_of(host, id, "buttons"),
         presentation: string_of(host, id, "presentation"),
+        transition: string_of(host, id, "transition"),
         content_width: content.map(|c| c.0),
         content_height: content.map(|c| c.1),
         listens,
@@ -512,6 +517,12 @@ fn reads(kind: NodeKind, key: &str) -> bool {
     if key.starts_with("ios:") || key.starts_with("android:") {
         return true;
     }
+    // La marca que Angular le pone a la raíz. No sale de ninguna plantilla y no
+    // la mira ningún host, así que avisar de ella sería avisar en todas las
+    // apps de algo que nadie escribió.
+    if key == "ng-version" {
+        return true;
+    }
     match kind {
         NodeKind::Text => matches!(
             key,
@@ -552,6 +563,7 @@ fn reads(kind: NodeKind, key: &str) -> bool {
         NodeKind::Alert => matches!(key, "visible" | "title" | "message" | "buttons" | "sheet"),
         NodeKind::Modal => matches!(key, "visible" | "presentation"),
         NodeKind::ScrollView => matches!(key, "scrollEnabled" | "showsScrollIndicator"),
+        NodeKind::StackView => key == "transition",
         // Lo que el reloj no pinta ya se avisó entero por su tipo: repetir sus
         // props sería decir dos veces lo mismo.
         other => unsupported(other).is_some(),

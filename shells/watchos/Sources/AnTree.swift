@@ -126,6 +126,7 @@ struct AnNode: Decodable, Identifiable, Equatable {
     let message: String?
     let buttons: [String]?
     let presentation: String?
+    let transition: String?
 
     let contentWidth: Double?
     let contentHeight: Double?

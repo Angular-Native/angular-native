@@ -210,7 +210,22 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
       [buttons]="respuestas"
       (select)="responde($event)"></an-alert>
 
-    <an-modal [visible]="hoja()" [presentation]="'sheet'" (dismiss)="hoja.set(false)">
+    <!--
+      Absoluto y a pantalla completa. Un an-modal es un nodo normal de cara al
+      layout, así que si se deja en el flujo se come su trozo de la columna
+      —en un reloj, la mitad de la pantalla— aunque no esté visible. El marco
+      que se le dé aquí es además el tamaño con el que taffy coloca lo de
+      dentro, y una hoja del reloj ocupa la pantalla entera.
+    -->
+    <an-modal
+      [style.position]="'absolute'"
+      [style.top]="'0'"
+      [style.left]="'0'"
+      [style.width]="'100%'"
+      [style.height]="'100%'"
+      [visible]="hoja()"
+      [presentation]="'sheet'"
+      (dismiss)="hoja.set(false)">
       <an-view
         [style.width]="'100%'"
         [style.height]="'100%'"
