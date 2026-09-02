@@ -24,6 +24,7 @@ use std::process::Command;
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
+use crate::ios::Family;
 use crate::workspace::{self, Project, Workspace, MARKER};
 
 /// Los paquetes del framework que un proyecto de fuera necesita, con el
@@ -101,7 +102,7 @@ pub fn init(dir: Option<&str>, name: Option<&str>, id: Option<&str>, force: bool
     Ok(())
 }
 
-/// `an add ios` / `an add android`.
+/// `an add ios`, `an add tvos`, `an add android`.
 ///
 /// Crea lo único que un proyecto necesita tener suyo de cada plataforma: el
 /// fichero de configuración nativo. El resto —el `.app`, el APK— es producto
@@ -113,7 +114,12 @@ pub fn add(workspace: &Workspace, platform: &str) -> Result<()> {
         "ios" => (
             "ios",
             "Info.plist",
-            plist(workspace, &project.name, &project.bundle_id)?,
+            plist(workspace, Family::Ios, &project.name, &project.bundle_id)?,
+        ),
+        "tvos" => (
+            "tvos",
+            "Info.plist",
+            plist(workspace, Family::TvOs, &project.name, &project.bundle_id)?,
         ),
         "android" => (
             "android",
@@ -121,7 +127,7 @@ pub fn add(workspace: &Workspace, platform: &str) -> Result<()> {
             manifiesto(workspace, &project.name)?,
         ),
         otra => bail!(
-            "no sé añadir {otra:?}. `an add` conoce ios y android; \
+            "no sé añadir {otra:?}. `an add` conoce ios, tvos y android; \
              las demás plataformas todavía no tienen nada que el proyecto deba guardar."
         ),
     };
@@ -599,18 +605,36 @@ export class AppNative {{
 /// y solo se cambian las tres que identifican a la app. Si el del SDK deja de
 /// llevar los valores que se esperan, se para: un plist a medio sustituir
 /// produce una app que se instala y no abre.
-fn plist(workspace: &Workspace, name: &str, bundle_id: &str) -> Result<String> {
-    let origen = workspace.root.join("shells/ios/Resources/Info.plist");
+fn plist(
+    workspace: &Workspace,
+    family: Family,
+    name: &str,
+    bundle_id: &str,
+) -> Result<String> {
+    // El nombre y el identificador que lleva el plist del shell son los del
+    // monorepo con el adorno de la familia puesto; los del proyecto se adornan
+    // igual, y así el que sale de aquí ya pasa la comprobación que hace el
+    // build. Los dos sufijos salen del mismo sitio, `Family::suffix`, para que
+    // no puedan separarse.
+    let (name_suffix, id_suffix) = family.suffix();
+    let origen = workspace.root.join(match family {
+        Family::Ios => "shells/ios/Resources/Info.plist",
+        Family::TvOs => "shells/tvos/Resources/Info.plist",
+    });
     let texto = std::fs::read_to_string(&origen)
         .with_context(|| format!("no se pudo leer {}", origen.display()))?;
     let texto = sustituir(
         &texto,
         &origen,
         &[
-            ("<string>AngularNative</string>", &format!("<string>{name}</string>"), 2),
             (
-                "<string>dev.angularnative.playground</string>",
-                &format!("<string>{bundle_id}</string>"),
+                &format!("<string>AngularNative{name_suffix}</string>"),
+                &format!("<string>{name}{name_suffix}</string>"),
+                2,
+            ),
+            (
+                &format!("<string>dev.angularnative.playground{id_suffix}</string>"),
+                &format!("<string>{bundle_id}{id_suffix}</string>"),
                 1,
             ),
         ],
@@ -665,7 +689,7 @@ fn sustituir(texto: &str, origen: &Path, cambios: &[(&str, &str, usize)]) -> Res
 }
 
 const CABECERA_PLIST: &str = "<!--\n  \
-    Creado por `an add ios`. A partir de aquí es tuyo: `an` lo copia dentro del\n  \
+    Creado por `an add`. A partir de aquí es tuyo: `an` lo copia dentro del\n  \
     .app en cada compilación y no lo reescribe nunca.\n\n  \
     CFBundleExecutable y CFBundleIdentifier tienen que seguir coincidiendo con\n  \
     app.name y app.bundleId de angular-native.json. Si dejan de coincidir, el\n  \

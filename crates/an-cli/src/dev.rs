@@ -45,6 +45,7 @@ struct Server {
 /// Dónde lanzar la app que se va a recargar.
 pub enum Target {
     Ios { device: String },
+    TvOs { device: String },
     WatchOs { device: String },
     Android,
 }
@@ -73,7 +74,9 @@ pub fn run(
     let url = match target {
         // El simulador del reloj comparte la red del Mac igual que el del
         // teléfono, así que le vale la misma dirección.
-        Target::Ios { .. } | Target::WatchOs { .. } => format!("http://127.0.0.1:{port}"),
+        Target::Ios { .. } | Target::TvOs { .. } | Target::WatchOs { .. } => {
+            format!("http://127.0.0.1:{port}")
+        }
         Target::Android => format!("http://{}:{port}", crate::android::EMULATOR_HOST),
     };
 
@@ -99,7 +102,25 @@ pub fn run(
     if !no_launch {
         match &target {
             Target::Ios { device } => {
-                let package = ios::assemble(&workspace, &bundle_path, false, Some(&url), &plugins)?;
+                let package = ios::assemble(
+                    &workspace,
+                    ios::Family::Ios,
+                    &bundle_path,
+                    false,
+                    Some(&url),
+                    &plugins,
+                )?;
+                ios::launch(&package, device)?;
+            }
+            Target::TvOs { device } => {
+                let package = ios::assemble(
+                    &workspace,
+                    ios::Family::TvOs,
+                    &bundle_path,
+                    false,
+                    Some(&url),
+                    &plugins,
+                )?;
                 ios::launch(&package, device)?;
             }
             Target::WatchOs { device } => {

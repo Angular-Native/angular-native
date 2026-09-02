@@ -46,10 +46,21 @@ enum Command {
         #[arg(long)]
         no_launch: bool,
     },
-    /// Compila, arma el .app del reloj y lo lanza en el simulador de watchOS.
+    /// Compila, arma el .app de tvOS y lo lanza en el simulador del Apple TV.
     ///
-    /// Necesita nightly con `rust-src`: `aarch64-apple-watchos-sim` es un
-    /// target de nivel 3 y su `std` se construye en el momento.
+    /// Necesita nightly con `rust-src`: `aarch64-apple-tvos-sim` es un target
+    /// de nivel 3 y su `std` se construye en el momento.
+    Tvos {
+        app: Option<String>,
+        /// Nombre del simulador de Apple TV.
+        #[arg(long, default_value = TELE_POR_DEFECTO)]
+        device: String,
+        #[arg(long)]
+        release: bool,
+        /// Solo arma el .app, sin instalarlo.
+        #[arg(long)]
+        no_launch: bool,
+    },
     /// No hay simulador: la app corre aquí mismo. Por defecto lleva el ejemplo
     /// de los controles, que es el que enseña de un vistazo qué pinta AppKit y
     /// qué no.
@@ -120,6 +131,9 @@ enum Command {
         /// Lanza en el simulador del reloj en vez de en el del teléfono.
         #[arg(long)]
         watchos: bool,
+        /// Lanza en el simulador del Apple TV en vez de en el del teléfono.
+        #[arg(long)]
+        tvos: bool,
         /// No lanza nada; solo sirve el bundle.
         #[arg(long)]
         no_launch: bool,
@@ -169,6 +183,9 @@ impl From<PlatformArg> for plugins::Platform {
 /// es el reloj.
 const TELEFONO_POR_DEFECTO: &str = "iPhone 17 Pro";
 const RELOJ_POR_DEFECTO: &str = "Apple Watch Series 11 (46mm)";
+/// El Apple TV 4K de tercera generación, que es el que trae el runtime de
+/// serie. El otro que sale en la lista, «Apple TV», es el mismo a 1080p.
+const TELE_POR_DEFECTO: &str = "Apple TV 4K (3rd generation)";
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -200,7 +217,29 @@ fn main() -> anyhow::Result<()> {
             let app = workspace.app(app.as_deref())?;
             let found = plugins::discover(&workspace, &app)?;
             let bundle = build::bundle(&workspace, &app, release, &found)?;
-            let package = ios::assemble(&workspace, &bundle, release, None, &found)?;
+            let package =
+                ios::assemble(&workspace, ios::Family::Ios, &bundle, release, None, &found)?;
+            if no_launch {
+                println!("{}", package.dir.display());
+                return Ok(());
+            }
+            ios::launch(&package, &device)
+        }
+        Command::Tvos {
+            app,
+            device,
+            release,
+            no_launch,
+        } => {
+            // El ejemplo por defecto de la tele no es el de todos los demás:
+            // `hello-angular` está pensado para un teléfono y a tres metros del
+            // sofá no se lee. `hello-tv` además enseña lo único que no se puede
+            // enseñar en ningún otro sitio: que sin foco no hay pulsación.
+            let app = workspace.app(Some(app.as_deref().unwrap_or("examples/hello-tv")))?;
+            let found = plugins::discover(&workspace, &app)?;
+            let bundle = build::bundle(&workspace, &app, release, &found)?;
+            let package =
+                ios::assemble(&workspace, ios::Family::TvOs, &bundle, release, None, &found)?;
             if no_launch {
                 println!("{}", package.dir.display());
                 return Ok(());
@@ -260,17 +299,33 @@ fn main() -> anyhow::Result<()> {
             }
             android::install_and_launch(&workspace, &apk, android::Form::Watch, device.as_deref())
         }
-        Command::Dev { app, device, port, android, watchos, no_launch } => {
+        Command::Dev {
+            app,
+            device,
+            port,
+            android,
+            watchos,
+            tvos,
+            no_launch,
+        } => {
             let app = workspace.app(app.as_deref())?;
             let found = plugins::discover(&workspace, &app)?;
-            let target = match (android, watchos) {
-                (true, _) => dev::Target::Android,
-                (_, true) => dev::Target::WatchOs {
-                    device: if device == TELEFONO_POR_DEFECTO {
-                        RELOJ_POR_DEFECTO.to_owned()
-                    } else {
-                        device
-                    },
+            // Si el `--device` sigue siendo el del teléfono es que nadie lo
+            // eligió, y lo que se quiere es el aparato que pide la bandera.
+            let elegido = |otro: &str| {
+                if device == TELEFONO_POR_DEFECTO {
+                    otro.to_owned()
+                } else {
+                    device.clone()
+                }
+            };
+            let target = match (android, watchos, tvos) {
+                (true, _, _) => dev::Target::Android,
+                (_, true, _) => dev::Target::WatchOs {
+                    device: elegido(RELOJ_POR_DEFECTO),
+                },
+                (_, _, true) => dev::Target::TvOs {
+                    device: elegido(TELE_POR_DEFECTO),
                 },
                 _ => dev::Target::Ios { device },
             };

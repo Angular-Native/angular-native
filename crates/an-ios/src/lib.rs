@@ -40,7 +40,10 @@ mod modal;
 mod modules;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod video;
-#[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+/// El navegador embebido no existe en tvOS: WebKit no forma parte de su SDK.
+/// El módulo entero sale del binario, y no solo por la clase: su `#[link]`
+/// haría que el enlazado buscase un framework que en ese SDK no está.
+#[cfg(any(target_os = "ios", target_os = "visionos"))]
 mod web;
 
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
