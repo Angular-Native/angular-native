@@ -113,8 +113,46 @@ Desde la plantilla no se declara nada. `an-scroll-view` la escucha, y `(scroll)`
 sale igual que si el dedo la hubiera arrastrado, con lo cual `an-virtual-list`
 —que se apoya en el mismo scroll— también se recorre con la corona sin tocarla.
 
-Lo que **no** hace hoy: alimentar un `an-slider` o un `an-stepper`. Eso pide un
-evento propio en las primitivas, y las primitivas no se tocaron en esta tanda.
+### Y en crudo, para lo que no es desplazar
+
+Desplazar es lo que casi siempre se quiere, pero no siempre: subir un volumen,
+mover una hora, pasar de pantalla. Para eso está `(crown)`, que es la misma
+salida que usa el reloj de Apple —la puso él en `packages/primitives`— y que
+aquí entrega el host de Android:
+
+```html
+<an-view (crown)="gira($event)" (crownIdle)="parado()"> … </an-view>
+```
+
+| clave | qué es |
+|---|---|
+| `delta` | las muescas que ha girado desde el aviso anterior |
+| `offset` | el acumulado desde que empezó este giro |
+| `velocity` | muescas por segundo, con signo |
+
+Cuatro diferencias con el reloj de Apple, y las cuatro son de la plataforma:
+
+- **Van muescas, no puntos.** Lo que da el sistema es el eje de una rueda de
+  ratón; convertirlo a píxeles es lo que hace el desplazable, y hacerlo también
+  aquí sería inventarse una escala que la plantilla no pidió.
+- **El `offset` cuenta desde que empezó el giro**, no desde que la vista tomó
+  el foco. En watchOS el foco se ve —hay un realce—; en Android una vista que
+  toma el foco no cambia de aspecto, así que ese origen no lo podría ver nadie.
+- **`(crownIdle)` lo cuenta el host**, porque el sistema no manda ningún final:
+  manda muescas y calla. Un cuarto de segundo de silencio es el corte.
+- **Sobre un `an-scroll-view`, la corona hace las dos cosas.** El oyente se
+  consulta antes que el desplazamiento, así que quedarse el evento habría
+  parado la lista por el mero hecho de escucharla. Se avisa a la plantilla y se
+  deja seguir: `examples/hello-wear` enseña los puntos desplazados y las
+  muescas giradas a la vez, del mismo giro.
+
+Fuera de un reloj, `(crown)` se dice al suscribirse y no dispara: en un
+teléfono no hay ninguna rueda que girar, y una salida que no salta nunca sin
+que nadie lo diga es peor que no tenerla.
+
+Lo que **no** hace hoy: mover un `an-slider` o un `an-stepper` por sí sola. La
+corona llega a la plantilla y la plantilla puede mover el valor; lo que no hay
+es un control que la tome del sistema, como sí hace watchOS con los suyos.
 
 ## 4. Lo que no va en un reloj
 
@@ -248,8 +286,14 @@ Los dos eran de todas las plataformas. Los encontró el reloj.
 
 ## Qué falta
 
-- **La corona como fuente de valor, no solo de desplazamiento.** Alimentar un
-  `an-slider` o un `an-stepper` pide una salida nueva en `packages/primitives`.
+- **Que la corona mueva un control.** `(crown)` llega a la plantilla y con eso
+  se puede mover un valor a mano, pero un `an-slider` o un `an-stepper` no la
+  toman del sistema como hacen los de watchOS: allí basta con que tengan el
+  foco. Aquí habría que llevarles el foco y el eje, y eso es de la primitiva.
+- **`NativeCrownEvent` no se puede importar.** El tipo existe en
+  `packages/primitives` pero su `public-api` todavía no lo saca, así que
+  `examples/hello-wear` escribe la forma a mano. Es una línea, y es de quien
+  lleva las primitivas.
 - **`an-text-input`.** Se monta y abre el teclado del sistema, pero no se ha
   comprobado que el flujo de entrada de Wear —dictado y garabateo— devuelva el
   texto por donde el host lo espera.

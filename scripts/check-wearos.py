@@ -133,6 +133,30 @@ for exigido, motivo in [
 if not re.search(r'if \(watch\) \{\s*\n\s*scroll\.enableRotary\(\);', host):
     fallos.append('  FALLO AnHost enciende la corona fuera de un reloj (o no la enciende)')
 
+# Y la corona en crudo, que es la otra mitad: desplazar no es lo único que se
+# hace con ella. La salida vive en `packages/primitives` y la ponen los dos
+# relojes; si el host de Android deja de entregarla, la plantilla se suscribe a
+# algo que no dispara y nadie se entera, que es el fallo que este documento
+# lleva entero intentando evitar.
+cuerpo_corona = re.search(r'private void setCrown\((.*?)\n    \}', host, re.S)
+if not cuerpo_corona:
+    fallos.append('  FALLO AnHost no entrega (crown): la salida existe y aquí no llega')
+else:
+    corona = cuerpo_corona.group(1)
+    if 'if (!watch)' not in corona:
+        fallos.append('  FALLO AnHost entrega (crown) fuera de un reloj, donde no hay corona')
+    if 'Log.e' not in corona:
+        fallos.append(
+            '  FALLO fuera del reloj, (crown) se descarta en silencio en vez de decirlo'
+        )
+if 'crownIdle' not in host:
+    fallos.append(
+        '  FALLO falta (crownIdle): el sistema manda muescas y calla, así que el final '
+        'lo tiene que contar el host'
+    )
+if not re.search(r'setOnGenericMotionListener\(this\)', host):
+    fallos.append('  FALLO la corona en crudo no escucha por el camino de los eventos genéricos')
+
 # 5. El margen de la pantalla redonda. Es geometría, no gusto: el lado del
 #    cuadrado inscrito es d/√2. Una constante a ojo pasaría desapercibida.
 if '(1 - 1 / Math.sqrt(2)) / 2' not in host:
@@ -187,5 +211,6 @@ print(
     'coinciden en Java y en docs/wearos.md'
 )
 print('  ok   la corona llega por onGenericMotionEvent y solo en el reloj')
+print('  ok   (crown) y (crownIdle) los entrega el host, y fuera del reloj lo dicen')
 print('  ok   el APK va al aparato con forma de reloj, y cada adb lleva su -s')
 print('  ok   el margen de la pantalla redonda es el cuadrado inscrito')

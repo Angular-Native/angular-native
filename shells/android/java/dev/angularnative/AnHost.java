@@ -176,6 +176,19 @@ public final class AnHost {
     /** Los gestos activos de cada vista, uno por vista que tenga alguno. */
     private final java.util.HashMap<Integer, Gestures> gestures = new java.util.HashMap<>();
 
+    /** Las vistas que escuchan la corona, una por vista que la pida. */
+    private final SparseArray<Crown> crowns = new SparseArray<>();
+
+    /**
+     * Cuánto silencio cuenta como «ha dejado de girar».
+     *
+     * La corona no manda un evento de fin: manda muescas y calla. Doscientos
+     * cincuenta milisegundos son largos para un giro seguido —el emulador
+     * manda las muescas de una vuelta en menos de cien— y cortos para que
+     * `(crownIdle)` no parezca que llega tarde.
+     */
+    private static final long CROWN_IDLE_MS = 250;
+
     /**
      * Si esto es un reloj con Wear OS.
      *
@@ -607,6 +620,13 @@ public final class AnHost {
         modals.remove(id);
         mapCenters.remove(id);
         gestures.remove(Integer.valueOf(id));
+        Crown crown = crowns.get(id);
+        if (crown != null) {
+            // El aviso de «ha parado» está encolado en la vista: sin quitarlo,
+            // se dispara sobre un nodo que ya no existe.
+            crown.detach();
+            crowns.remove(id);
+        }
         scrollContent.remove(id);
         watchers.remove(id);
         transitions.remove(id);
@@ -679,6 +699,10 @@ public final class AnHost {
 
     public void clearAll() {
         container.removeAllViews();
+        for (int i = 0; i < crowns.size(); i++) {
+            crowns.valueAt(i).detach();
+        }
+        crowns.clear();
         views.clear();
         scrollContent.clear();
         unsupported.clear();
@@ -2181,9 +2205,168 @@ public final class AnHost {
             }
             return;
         }
+        if ("crown".equals(event) || "crownIdle".equals(event)) {
+            setCrown(id, view, event, enabled);
+            return;
+        }
         Gestures gestures = gestureFor(id, view, event, enabled);
         if (gestures != null) {
             gestures.set(event, enabled);
+        }
+    }
+
+    /** Ya se dijo una vez que en un teléfono no hay corona; no hace falta más. */
+    private boolean crownWarned;
+
+    /**
+     * La corona sobre una vista cualquiera.
+     *
+     * Fuera de un reloj esto no existe, y una salida que no dispara nunca es
+     * exactamente lo que no se quiere: se dice al suscribirse, que es cuando
+     * hay alguien mirando, y no cuando el evento no llega, que es nunca.
+     */
+    private void setCrown(int id, View view, String event, boolean enabled) {
+        if (!watch) {
+            if (enabled && !crownWarned) {
+                crownWarned = true;
+                android.util.Log.e(
+                        "angular-native",
+                        "`(" + event + ")` no se puede entregar en este Android: la corona es del"
+                                + " reloj y aquí no hay ninguna rueda que girar, así que esta"
+                                + " salida no dispararía nunca");
+            }
+            return;
+        }
+        Crown crown = crowns.get(id);
+        if (!enabled) {
+            if (crown == null) {
+                return;
+            }
+            crown.wants(event, false);
+            if (!crown.wanted()) {
+                crown.detach();
+                crowns.remove(id);
+            }
+            return;
+        }
+        if (crown == null) {
+            crown = new Crown(id, view);
+            crowns.put(id, crown);
+            crown.attach();
+        }
+        crown.wants(event, true);
+    }
+
+    /**
+     * La corona digital de Wear OS sobre una vista que no es un desplazable.
+     *
+     * `AnScrollView` ya la escucha para desplazarse; esto es la otra mitad: que
+     * una plantilla pueda pedirla para lo suyo —subir un valor, pasar de
+     * pantalla— sobre cualquier `an-view`.
+     *
+     * Lo que llega del sistema son muescas de rueda, no puntos: es el mismo
+     * eje que mueve un ratón. Se mandan tal cual, sin convertir a píxeles, que
+     * es lo que hace el desplazable: aquí no se está desplazando nada, y
+     * convertir sería inventarse una escala que la plantilla no pidió.
+     *
+     * El `offset` cuenta desde que empezó el giro y no desde que la vista tomó
+     * el foco, que es lo que hace el reloj de Apple. La diferencia es que allí
+     * el foco se ve —hay un realce— y aquí no: una vista de Android que toma
+     * el foco no cambia de aspecto, así que «desde que lo tomó» sería un
+     * origen que nadie puede ver. Desde que se empieza a girar sí.
+     */
+    private final class Crown implements View.OnGenericMotionListener {
+
+        private final int id;
+        private final View view;
+        /** Si la plantilla escucha `(crown)`. */
+        private boolean turning;
+        /** Si escucha `(crownIdle)`. */
+        private boolean idle;
+        /** Muescas acumuladas desde que empezó este giro. */
+        private float offset;
+        /** Cuándo llegó la muesca anterior de este giro, o 0 si es la primera. */
+        private long previous;
+
+        private final Runnable stopped =
+                new Runnable() {
+                    @Override
+                    public void run() {
+                        offset = 0;
+                        previous = 0;
+                        // «Ha dejado de girar» es una cosa distinta de «ha
+                        // girado nada», así que va como su propio evento y no
+                        // como un `crown` con delta cero. Igual que en el reloj
+                        // de Apple.
+                        if (idle && runtime != null) {
+                            runtime.dispatchGesture(id, "crownIdle", "", "", new float[0]);
+                        }
+                    }
+                };
+
+        Crown(int id, View view) {
+            this.id = id;
+            this.view = view;
+        }
+
+        void wants(String event, boolean enabled) {
+            if ("crown".equals(event)) {
+                turning = enabled;
+            } else {
+                idle = enabled;
+            }
+        }
+
+        boolean wanted() {
+            return turning || idle;
+        }
+
+        void attach() {
+            // La corona va a la vista que tiene el foco, y una vista normal no
+            // lo pide sola: sin esto el sistema manda las muescas a quien lo
+            // tenga —normalmente a nadie— y la salida no dispara nunca, sin
+            // error ninguno. Es lo mismo que hace `AnScrollView.enableRotary`.
+            view.setFocusable(true);
+            view.setFocusableInTouchMode(true);
+            view.requestFocus();
+            view.setOnGenericMotionListener(this);
+        }
+
+        void detach() {
+            view.setOnGenericMotionListener(null);
+            view.removeCallbacks(stopped);
+        }
+
+        @Override
+        public boolean onGenericMotion(View v, android.view.MotionEvent event) {
+            if (event.getAction() != android.view.MotionEvent.ACTION_SCROLL
+                    || !event.isFromSource(android.view.InputDevice.SOURCE_ROTARY_ENCODER)) {
+                return false;
+            }
+            float delta = event.getAxisValue(android.view.MotionEvent.AXIS_SCROLL);
+            offset += delta;
+            long now = event.getEventTime();
+            // Muescas por segundo. La primera de un giro no tiene con qué
+            // compararse: cero es la respuesta honesta, y no una velocidad
+            // enorme salida de dividir por el hueco que había antes de empezar.
+            float velocity = previous == 0 || now <= previous ? 0f : delta * 1000f / (now - previous);
+            previous = now;
+            if (turning && runtime != null) {
+                runtime.dispatchGesture(
+                        id,
+                        "crown",
+                        "",
+                        "delta,offset,velocity",
+                        new float[] {delta, offset, velocity});
+            }
+            view.removeCallbacks(stopped);
+            view.postDelayed(stopped, CROWN_IDLE_MS);
+            // Un desplazable usa la corona para desplazarse, y este oyente se
+            // consulta antes que su `onGenericMotionEvent`: quedarse el evento
+            // pararía la lista por el mero hecho de escucharla. Se avisa a la
+            // plantilla y se deja seguir. En cualquier otra vista no hay nadie
+            // detrás a quien dejarle la muesca.
+            return !(v instanceof AnScrollView);
         }
     }
 

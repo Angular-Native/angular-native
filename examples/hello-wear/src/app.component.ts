@@ -17,7 +17,9 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
  *
  * 2. **Se recorre con la corona.** Eso no se declara: `an-scroll-view` la
  *    escucha en el reloj, y `(scroll)` sale igual que si el dedo la hubiera
- *    arrastrado.
+ *    arrastrado. Y si además se quiere la corona en crudo —para subir un
+ *    valor, no para desplazar—, `(crown)` la trae en muescas sin que la lista
+ *    deje de moverse.
  *
  * Las medidas son de esfera. La pantalla del emulador son 227 puntos, y el
  * cuadrado que cabe dentro son 160: un `fontSize` de 28 no entra.
@@ -41,7 +43,9 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
         <an-scroll-view
         [style.width]="'100%'"
         [style.flexGrow]="'1'"
-        (scroll)="alto.set(Math.round($event.y))">
+        (scroll)="alto.set(Math.round($event.y))"
+        (crown)="girar($event)"
+        (crownIdle)="girando.set(false)">
         <an-view [style.width]="'100%'" [style.gap]="'6'" [style.paddingBottom]="'8'">
           <an-text [fontSize]="16" [fontWeight]="'bold'" [color]="'#f4f7ff'">
             angular-native
@@ -49,6 +53,10 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
 
           <an-text [fontSize]="11" [color]="'#9fb0d4'">
             Gira la corona: {{ alto() }} pt.
+          </an-text>
+
+          <an-text [fontSize]="11" [color]="girando() ? '#f59e0b' : '#64748b'">
+            {{ muescas().toFixed(1) }} muescas{{ girando() ? ' · girando' : '' }}
           </an-text>
 
           @for (fila of filas; track fila.numero) {
@@ -83,6 +91,31 @@ export class AppComponent {
 
   /** La fila tocada, para que se vea que el dedo también sigue valiendo. */
   readonly marcada = signal(0)
+
+  /**
+   * Lo que lleva girado la corona, en muescas.
+   *
+   * No es lo mismo que `alto()`, que son los puntos que se ha desplazado la
+   * lista: una muesca son unos cuarenta puntos, y quien quiera la corona para
+   * otra cosa —un volumen, una hora— quiere la muesca y no el desplazamiento
+   * que el sistema hizo con ella.
+   */
+  readonly muescas = signal(0)
+
+  /** Si está girando ahora mismo. Lo cierra `(crownIdle)`. */
+  readonly girando = signal(false)
+
+  /**
+   * El tipo va escrito aquí y no importado: `NativeCrownEvent` existe en
+   * `packages/primitives` pero su `public-api` todavía no lo saca, así que por
+   * nombre no se puede pedir. La forma es la misma, que es lo que comprueba
+   * TypeScript, y la plantilla ya lo tipa sola porque la salida sí está
+   * declarada.
+   */
+  girar(event: { delta: number; offset: number; velocity: number }): void {
+    this.muescas.set(event.offset)
+    this.girando.set(true)
+  }
 
   readonly filas = [
     { numero: 1, texto: 'una' },
