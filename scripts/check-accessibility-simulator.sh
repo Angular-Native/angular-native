@@ -150,5 +150,7 @@ absent 'label="Three unread messages"' \
   'the grouped row is one stop, not a container with more inside'
 
 echo "       the tree that was read is in build/macos/accessibility-tree-ios.txt"
+echo "       the simulator is left open: close it before running check-macos.sh, whose"
+echo "       pointer test needs its own window at the front"
 
 exit "$fail"
