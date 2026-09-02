@@ -8,6 +8,7 @@ mod android;
 mod build;
 mod dev;
 mod ios;
+mod macos;
 mod plugins;
 mod watchos;
 mod workspace;
@@ -41,6 +42,19 @@ enum Command {
         release: bool,
         /// Solo arma el .app, sin instalarlo. Compila el shell y los plugins,
         /// que es lo que se puede comprobar sin simulador.
+        #[arg(long)]
+        no_launch: bool,
+    },
+    /// Compila, arma el .app de escritorio y lo lanza en este Mac.
+    ///
+    /// No hay simulador: la app corre aquí mismo. Por defecto lleva el ejemplo
+    /// de los controles, que es el que enseña de un vistazo qué pinta AppKit y
+    /// qué no.
+    Macos {
+        app: Option<String>,
+        #[arg(long)]
+        release: bool,
+        /// Solo arma el .app, sin lanzarlo.
         #[arg(long)]
         no_launch: bool,
     },
@@ -87,6 +101,9 @@ enum Command {
         /// Lanza en el simulador del reloj en vez de en el del teléfono.
         #[arg(long)]
         watchos: bool,
+        /// Lanza como app de escritorio en este Mac.
+        #[arg(long)]
+        macos: bool,
         /// No lanza nada; solo sirve el bundle.
         #[arg(long)]
         no_launch: bool,
@@ -146,6 +163,21 @@ fn main() -> anyhow::Result<()> {
             }
             ios::launch(&package, &device)
         }
+        Command::Macos { app, release, no_launch } => {
+            // El ejemplo por defecto del escritorio no es el de todos los
+            // demás: `controls` enseña los controles del sistema uno detrás de
+            // otro, que es lo que hay que mirar para saber qué pinta este host.
+            let app = workspace.app(Some(app.as_deref().unwrap_or("examples/controls")))?;
+            let found = plugins::discover(&workspace, &app)?;
+            macos::reject_plugins(&found)?;
+            let bundle = build::bundle(&workspace, &app, release, &found)?;
+            let package = macos::assemble(&workspace, &bundle, release, None)?;
+            if no_launch {
+                println!("{}", package.dir.display());
+                return Ok(());
+            }
+            macos::launch(&package)
+        }
         Command::Watchos { app, device, release } => {
             // El ejemplo por defecto del reloj no es el de todos los demás:
             // `hello-angular` está pensado para un teléfono y en 205 puntos de
@@ -168,9 +200,13 @@ fn main() -> anyhow::Result<()> {
             }
             android::install_and_launch(&workspace, &apk)
         }
-        Command::Dev { app, device, port, android, watchos, no_launch } => {
+        Command::Dev { app, device, port, android, watchos, macos, no_launch } => {
             let app = workspace.app(app.as_deref())?;
             let found = plugins::discover(&workspace, &app)?;
+            if macos {
+                macos::reject_plugins(&found)?;
+                return dev::run(workspace, app, dev::Target::MacOs, port, no_launch, found);
+            }
             let target = match (android, watchos) {
                 (true, _) => dev::Target::Android,
                 (_, true) => dev::Target::WatchOs {

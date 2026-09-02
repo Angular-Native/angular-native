@@ -65,11 +65,16 @@ cargo an dev --android        # lo mismo, en el emulador de Android
 cargo an ios                  # una sola vez, sin vigilar
 cargo an android              # APK, emulador y lanzamiento
 cargo an watchos              # reloj: .app de watchOS y simulador
+cargo an macos                # escritorio: .app de macOS, en esta misma máquina
+cargo an dev --macos          # lo mismo, vigilando y con refresco en caliente
 cargo an build --release      # solo el bundle: 276 KB frente a 1,3 MB en debug
 ```
 
 El reloj pide nightly: `aarch64-apple-watchos-sim` es un target de nivel 3 y su
 `std` se construye en el momento. Ver [docs/watchos.md](docs/watchos.md).
+
+El escritorio no pide nada: `aarch64-apple-darwin` es la máquina, así que no hay
+simulador que arrancar ni aparato que buscar. Ver [docs/macos.md](docs/macos.md).
 
 Todo va por el mismo binario, `an`. No hay `.xcodeproj` ni Gradle: las
 herramientas de cada SDK ya hacen el trabajo y el proceso cabe en un fichero
@@ -138,6 +143,7 @@ cargo test                    # solo el núcleo Rust
 ./scripts/check-styles.sh     # que las dos listas de nombres de estilo no se separen
 ./scripts/check-kinds.sh      # que la etiqueta, la primitiva y el código digan lo mismo
 ./scripts/check-watchos.sh    # el modelo del reloj y su compilación cruzada
+./scripts/check-macos.sh      # el .app de escritorio, arrancado de verdad y con captura
 cargo run -p an-bridge --example headless -- build/bundle/hello-angular/main.js 6
 ```
 
@@ -157,7 +163,8 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
 | `an-ios` | Host UIKit, medición, controles, animaciones y superficie C |
 | `an-android` | Host JNI, medición con `StaticLayout` y puntos de entrada JNI |
 | `an-watch` | Host watchOS: el árbol reflejado en un modelo que pinta SwiftUI |
-| `an-cli` | La herramienta `an`: build, ios, android, watchos, plugins y servidor de desarrollo |
+| `an-macos` | Host AppKit: `NSView` por nodo, controles del sistema y superficie C |
+| `an-cli` | La herramienta `an`: build, ios, android, watchos, macos, plugins y servidor de desarrollo |
 
 | Paquete npm | Qué hace |
 |---|---|
@@ -243,6 +250,15 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   en caliente. No es un port del host de iOS: watchOS no tiene jerarquía de
   `UIView`, así que el árbol se refleja en un modelo que redibuja SwiftUI. El
   porqué y lo que falta, en [docs/watchos.md](docs/watchos.md).
+
+- **En el escritorio faltan tres primitivas y el gesto de deslizar.** macOS monta
+  veintidós de las veinticinco: se quedan fuera `an-navigation-bar` —la cabecera
+  de un Mac es la barra de título de la ventana, y dibujar otra dentro sería
+  pintar dos—, `an-map-view` y `an-video-view`, que no están portadas. AppKit
+  tampoco tiene reconocedor de deslizamiento, así que `(swipeLeft)` y sus tres
+  hermanos avisan al suscribirse en vez de no llegar nunca. El menú de la app lo
+  pone el shell y no se expone a Angular. Todo ello, en
+  [docs/macos.md](docs/macos.md).
 
 ## Desarrollo
 

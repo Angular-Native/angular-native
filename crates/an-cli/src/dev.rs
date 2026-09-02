@@ -30,7 +30,7 @@ use tokio::sync::broadcast;
 
 use crate::plugins::Plugin;
 use crate::workspace::Workspace;
-use crate::{build, ios, watchos};
+use crate::{build, ios, macos, watchos};
 
 /// Los cambios llegan en ráfagas: guardar en un editor dispara varios eventos,
 /// y `ngc` escribe decenas de ficheros. Se espera a que amaine.
@@ -46,6 +46,9 @@ struct Server {
 pub enum Target {
     Ios { device: String },
     WatchOs { device: String },
+    /// App de escritorio en este mismo Mac. No hay simulador que arrancar, así
+    /// que el ciclo de guardar y ver el cambio es el más corto de los tres.
+    MacOs,
     Android,
 }
 
@@ -71,9 +74,11 @@ pub fn run(
     // El emulador de Android no ve `localhost`: la máquina anfitriona es
     // 10.0.2.2 desde dentro.
     let url = match target {
-        // El simulador del reloj comparte la red del Mac igual que el del
-        // teléfono, así que le vale la misma dirección.
-        Target::Ios { .. } | Target::WatchOs { .. } => format!("http://127.0.0.1:{port}"),
+        // El Mac y el simulador del reloj comparten la red de la máquina
+        // igual que el del teléfono, así que les vale la misma dirección.
+        Target::Ios { .. } | Target::WatchOs { .. } | Target::MacOs => {
+            format!("http://127.0.0.1:{port}")
+        }
         Target::Android => format!("http://{}:{port}", crate::android::EMULATOR_HOST),
     };
 
@@ -105,6 +110,10 @@ pub fn run(
             Target::WatchOs { device } => {
                 let package = watchos::assemble(&workspace, &bundle_path, false, Some(&url))?;
                 watchos::launch(&package, device)?;
+            }
+            Target::MacOs => {
+                let package = macos::assemble(&workspace, &bundle_path, false, Some(&url))?;
+                macos::launch(&package)?;
             }
             Target::Android => {
                 let apk =

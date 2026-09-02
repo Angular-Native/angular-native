@@ -32,6 +32,9 @@ cargo test --quiet 2>&1 | tail -1
 "$ROOT/scripts/check-watchos.sh"
 
 echo
+"$ROOT/scripts/check-macos.sh"
+
+echo
 "$ROOT/scripts/check-plugins.sh"
 
 echo
