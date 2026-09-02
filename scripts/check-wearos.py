@@ -147,6 +147,34 @@ if 'AndroidManifest.wear.xml' not in cli:
 if 'ro.build.characteristics' not in cli:
     fallos.append('  FALLO el CLI no distingue un reloj de un teléfono al instalar')
 
+# 7. Y que ese aparato llegue a `adb`.
+#
+#    Preguntar por el texto no basta, y esto lo aprendió el propio comprobador:
+#    `ro.build.characteristics` estaba en el fichero, en una función que no
+#    llamaba nadie. `install_and_launch` recibía la forma y el `--device` y no
+#    usaba ninguno de los dos. Con dos aparatos arrancados, `adb` se planta; con
+#    un teléfono solo, el APK del reloj se instala en el teléfono, arranca y
+#    pinta, y nadie dice nada.
+cuerpo_instalar = re.search(r'pub fn install_and_launch\((.*?)\n\}\n', cli, re.S)
+if not cuerpo_instalar:
+    fallos.append('  FALLO no encuentro install_and_launch en el CLI')
+else:
+    instalar = cuerpo_instalar.group(1)
+    if 'pick_device' not in instalar:
+        fallos.append(
+            '  FALLO install_and_launch no elige aparato: manda el APK al que adb quiera'
+        )
+    for orden, motivo in [
+        ('install', 'instalar'),
+        ('start', 'lanzar'),
+        ('force-stop', 'parar la app anterior'),
+    ]:
+        for argumentos in re.findall(r'\[([^\[\]]*"' + orden + r'"[^\[\]]*)\]', instalar):
+            if '"-s"' not in argumentos:
+                fallos.append(
+                    f'  FALLO {motivo} sin `-s`: va al aparato que elija adb, no al elegido'
+                )
+
 for linea in fallos:
     print(linea)
 if fallos:
@@ -159,4 +187,5 @@ print(
     'coinciden en Java y en docs/wearos.md'
 )
 print('  ok   la corona llega por onGenericMotionEvent y solo en el reloj')
+print('  ok   el APK va al aparato con forma de reloj, y cada adb lleva su -s')
 print('  ok   el margen de la pantalla redonda es el cuadrado inscrito')
