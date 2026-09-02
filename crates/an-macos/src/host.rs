@@ -333,6 +333,9 @@ pub struct AppKitHost {
         ),
     >,
     listeners: HashMap<(NodeId, String), crate::events::AttachedListener>,
+    /// El rol que AppKit le dio a cada vista y el estado que pidió la
+    /// plantilla. Ver `accessibility.rs`.
+    accessibility: crate::accessibility::Accessibility,
     /// Lo que ya se avisó, para no repetirlo sesenta veces por segundo.
     warned: HashSet<String>,
     events: EventQueue,
@@ -373,6 +376,7 @@ impl AppKitHost {
             dirty_title: false,
             cursors: HashMap::new(),
             listeners: HashMap::new(),
+            accessibility: crate::accessibility::Accessibility::new(),
             warned: HashSet::new(),
             events,
         }
@@ -933,6 +937,7 @@ impl HostRenderer for AppKitHost {
         self.videos.remove(&id);
         self.video_playing.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
+        self.accessibility.forget(id);
     }
 
     fn insert(&mut self, parent: NodeId, child: NodeId, index: u32) {
@@ -1049,6 +1054,14 @@ impl HostRenderer for AppKitHost {
                 if let Some(t) = &text {
                     unsafe { native.setIdentifier(Some(&NSString::from_str(t))) };
                 }
+            }
+            // Las seis del contrato, todas juntas en `accessibility.rs`: el
+            // rol y el estado se escriben con propiedades distintas del
+            // protocolo NSAccessibility, pero `checked` acaba en el valor y
+            // eso obliga a saber si la plantilla puso uno.
+            _ if crate::accessibility::handles(key) => {
+                let kind_name = format!("{kind:?}");
+                self.accessibility.apply(id, &native, &kind_name, key, value);
             }
 
             // --- geometría propia de la vista

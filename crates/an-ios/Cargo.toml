@@ -42,6 +42,10 @@ objc2-quartz-core = { version = "0.3", default-features = false, features = ["st
 objc2-ui-kit = { version = "0.3", default-features = false, features = [
   "std", "objc2-core-foundation", "objc2-quartz-core", "objc2-core-graphics",
   "UIFontDescriptor", "UIAccessibilityIdentification",
+  # Las seis props de accesibilidad del contrato. `UIAccessibility` es la
+  # categoría sobre `NSObject` con la etiqueta, la pista y el valor;
+  # `UIAccessibilityConstants`, los traits, que es donde encaja el rol.
+  "UIAccessibility", "UIAccessibilityConstants",
   "UIView", "UILabel", "UIImageView", "UIImage", "UIColor", "UIFont",
   "UIResponder", "UIScreen", "UIScrollView", "UITextField", "UIControl",
   "UISwitch", "UISlider", "UIActivityIndicatorView", "UIProgressView", "UIButton",

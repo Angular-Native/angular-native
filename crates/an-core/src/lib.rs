@@ -9,6 +9,7 @@
 //! El commit es el único punto donde corre el layout, y el `Frame` que sale
 //! contiene solo lo que cambió de verdad.
 
+pub mod accessibility;
 pub mod color;
 pub mod icons;
 pub mod props;

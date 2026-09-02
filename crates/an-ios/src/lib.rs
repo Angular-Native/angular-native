@@ -5,6 +5,8 @@
 //! `MainThreadMarker` de objc2 lo hace explícito en el tipo.
 
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+mod accessibility;
+#[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod alert;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod color;

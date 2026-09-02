@@ -490,6 +490,11 @@ pub struct UikitHost {
     /// que poder quitarlas: un `@if` que desmonta su rama destruye la vista,
     /// pero un `(press)` que deja de estar bindeado no.
     listeners: HashMap<(NodeId, String), crate::events::AttachedListener>,
+    /// Rol y estado de accesibilidad de cada nodo, y los traits que la vista
+    /// traía del sistema. Van juntos porque `accessibilityTraits` es una
+    /// máscara: escribir un bit obliga a saber los demás. Ver
+    /// `accessibility.rs`.
+    accessibility: crate::accessibility::Accessibility,
     events: EventQueue,
 }
 
@@ -537,6 +542,7 @@ impl UikitHost {
             modals: HashMap::new(),
             dirty_modals: Vec::new(),
             listeners: HashMap::new(),
+            accessibility: crate::accessibility::Accessibility::new(),
             events,
         }
     }
@@ -1306,6 +1312,7 @@ impl HostRenderer for UikitHost {
         self.stepper_values.remove(&id);
         self.modals.remove(&id);
         self.listeners.retain(|(node, _), _| *node != id);
+        self.accessibility.forget(id);
     }
 
     fn insert(&mut self, parent: NodeId, child: NodeId, index: u32) {
@@ -1825,6 +1832,15 @@ impl HostRenderer for UikitHost {
                 if let Some(t) = &text {
                     native.setAccessibilityIdentifier(Some(&NSString::from_str(t)));
                 }
+            }
+            // Las seis del contrato. Van todas juntas a `accessibility.rs`
+            // porque no son seis props independientes: el rol y el estado
+            // acaban en la misma máscara de bits, y `checked` acaba en el
+            // valor solo si la plantilla no puso uno.
+            _ if crate::accessibility::handles(key) => {
+                let kind = format!("{:?}", view.kind());
+                let native = native.retain();
+                self.accessibility.apply(self.mtm, id, &native, &kind, key, value);
             }
             "color" => {
                 let Some(color) = text.as_deref().and_then(crate::color::to_uicolor) else {

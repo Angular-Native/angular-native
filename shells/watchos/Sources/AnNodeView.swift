@@ -35,6 +35,12 @@ struct AnNodeView: View {
         content
             .frame(width: node.width, height: node.height)
             .position(x: node.x + node.width / 2, y: node.y + node.height / 2)
+            // La accesibilidad va aquí y no en cada `case` de `content` por lo
+            // mismo que el marco: es de todo nodo, no de un tipo. Un `Toggle`
+            // ya trae su etiqueta y su rasgo del sistema, y lo que hay dentro
+            // solo se pone encima si la plantilla lo puso de verdad; de eso se
+            // encarga `AnAccessibility`.
+            .anAccessibility(node)
     }
 
     @ViewBuilder
