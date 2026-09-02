@@ -32,7 +32,7 @@ check() { # <0 ok, 1 bad> <what was being checked>
   if [ "$1" -eq 0 ]; then
     echo "  ok   $2"
   else
-    echo "  FALLO $2"
+    echo "  FAIL  $2"
     fail=1
   fi
 }
@@ -52,7 +52,7 @@ fi
 AX_DUMP="$ROOT/build/macos/ax-dump"
 mkdir -p "$ROOT/build/macos"
 if ! swiftc -O "$ROOT/scripts/ax-dump.swift" -o "$AX_DUMP" 2>/dev/null; then
-  echo "  FALLO the accessibility walker does not compile"
+  echo "  FAIL  the accessibility walker does not compile"
   swiftc -O "$ROOT/scripts/ax-dump.swift" -o "$AX_DUMP" 2>&1 | head -20
   exit 1
 fi
@@ -68,7 +68,7 @@ BUILD_LOG="$(mktemp)"
 if cargo an ios examples/a11y >"$BUILD_LOG" 2>&1; then
   echo "  ok   the example builds, installs and launches in the simulator"
 else
-  echo "  FALLO the example did not get as far as running"
+  echo "  FAIL  the example did not get as far as running"
   tail -30 "$BUILD_LOG"
   rm -f "$BUILD_LOG"
   exit 1
@@ -77,7 +77,7 @@ rm -f "$BUILD_LOG"
 
 SIM_PID="$(pgrep -f 'Simulator.app/Contents/MacOS/Simulator' | head -1 || true)"
 if [ -z "$SIM_PID" ]; then
-  echo "  FALLO Simulator.app is not running, so there is no tree to read"
+  echo "  FAIL  Simulator.app is not running, so there is no tree to read"
   exit 1
 fi
 
@@ -100,7 +100,7 @@ done
 if [ "$(sed -n '/iOSContentGroup/,/AXToolbar/p' "$TREE" | wc -l)" -gt 3 ]; then
   echo "  ok   the simulator publishes the app's tree to a process outside it"
 else
-  echo "  FALLO nothing came back from the simulator's accessibility tree"
+  echo "  FAIL  nothing came back from the simulator's accessibility tree"
   exit 1
 fi
 

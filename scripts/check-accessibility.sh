@@ -46,7 +46,7 @@ check() { # <0 ok, 1 bad> <what was being checked>
   if [ "$1" -eq 0 ]; then
     echo "  ok   $2"
   else
-    echo "  FALLO $2"
+    echo "  FAIL  $2"
     fail=1
   fi
 }
@@ -164,7 +164,7 @@ if SDK="$(xcrun --sdk watchsimulator --show-sdk-path 2>/dev/null)" && [ -n "$SDK
       shells/watchos/Sources/*.swift shells/shared/*.swift 2>/dev/null; then
     echo "  ok   the watch shell type-checks, accessibility modifiers included"
   else
-    echo "  FALLO the watch shell does not type-check"
+    echo "  FAIL  the watch shell does not type-check"
     xcrun swiftc -typecheck -sdk "$SDK" \
       -target arm64-apple-watchos11.0-simulator \
       -parse-as-library \
@@ -190,7 +190,7 @@ fi
 AX_DUMP="$ROOT/build/macos/ax-dump"
 mkdir -p "$ROOT/build/macos"
 if ! swiftc -O "$ROOT/scripts/ax-dump.swift" -o "$AX_DUMP" 2>/dev/null; then
-  echo "  FALLO the accessibility walker does not compile"
+  echo "  FAIL  the accessibility walker does not compile"
   swiftc -O "$ROOT/scripts/ax-dump.swift" -o "$AX_DUMP" 2>&1 | head -20
   exit 1
 fi
@@ -209,7 +209,7 @@ BUILD_LOG="$(mktemp)"
 if cargo an macos examples/a11y --no-launch >"$BUILD_LOG" 2>&1; then
   echo "  ok   the accessibility example builds into the .app"
 else
-  echo "  FALLO the accessibility example does not build"
+  echo "  FAIL  the accessibility example does not build"
   tail -30 "$BUILD_LOG"
   rm -f "$BUILD_LOG"
   exit 1
@@ -256,7 +256,7 @@ done
 if [ "$(window_rows)" -gt 8 ]; then
   echo "  ok   the app publishes an accessibility tree to a process outside it"
 else
-  echo "  FALLO nothing came back from the accessibility tree"
+  echo "  FAIL  nothing came back from the accessibility tree"
   tail -20 "$RUN_LOG"
   exit 1
 fi
