@@ -41,6 +41,9 @@ echo
 "$ROOT/scripts/check-android-java.sh"
 
 echo
+"$ROOT/scripts/check-wearos.sh"
+
+echo
 echo "== compilación cruzada"
 for target in aarch64-apple-ios-sim aarch64-linux-android; do
   case "$target" in

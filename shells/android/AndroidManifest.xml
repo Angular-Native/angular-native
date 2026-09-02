@@ -15,10 +15,13 @@
       aspecto que el fabricante mantiene al día, que no es lo mismo: los
       componentes de Material 3 —la barra de navegación, los botones— no están
       en la plataforma y necesitan su tema para dibujarse bien.
+
+      El estilo concreto vive en `res/values/styles.xml`, no aquí: el reloj
+      necesita atributos propios y los dos temas se declaran juntos.
     -->
     <application
         android:label="AngularNative"
-        android:theme="@style/Theme.Material3.DayNight.NoActionBar"
+        android:theme="@style/Theme.AngularNative"
         android:hardwareAccelerated="true"
         android:extractNativeLibs="true"
         android:usesCleartextTraffic="true">

@@ -13,10 +13,20 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 echo "== shell Java de Android"
-APK="$(cargo an android examples/controls --no-launch 2>/dev/null | tail -1)"
+# La salida va a un fichero y no a /dev/null: con `set -e` y `pipefail`, un
+# fallo de compilación dentro de un `$(...)` mata el script sin imprimir nada
+# y el comprobador se queda callado, que es justo lo que no puede pasar.
+LOG="$(mktemp)"
+trap 'rm -f "$LOG"' EXIT
+if ! cargo an android examples/controls --no-launch >"$LOG" 2>&1; then
+  echo "  FALLO el APK no llegó a armarse"
+  tail -30 "$LOG"
+  exit 1
+fi
+APK="$(tail -1 "$LOG")"
 if [ ! -f "$APK" ]; then
   echo "  FALLO el APK no llegó a armarse"
-  cargo an android examples/controls --no-launch 2>&1 | tail -30
+  tail -30 "$LOG"
   exit 1
 fi
 echo "  ok   javac compila AnHost y compañía contra Material 3"

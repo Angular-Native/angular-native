@@ -230,9 +230,21 @@ fn main() {
         std::process::exit(1);
     }
 
+    // El viewport. Por defecto el de un iPhone, que es donde corre la mayoría
+    // de los ejemplos; `AN_VIEWPORT=1920x1080` lo cambia sin recompilar nada.
+    // Una pantalla de tele no es un teléfono grande: con 393 puntos de ancho,
+    // una pantalla pensada para 1920 sale con todo apilado y partido, y una
+    // comprobación que la mire así no comprueba nada.
+    let viewport = std::env::var("AN_VIEWPORT")
+        .ok()
+        .and_then(|raw| {
+            let (w, h) = raw.split_once('x')?;
+            Some((w.trim().parse::<f32>().ok()?, h.trim().parse::<f32>().ok()?))
+        })
+        .unwrap_or((393.0, 852.0));
+
     let events = new_event_queue();
-    let mut renderer =
-        Renderer::new(TreeRecorder::default(), NaiveMeasurer, (393.0, 852.0), events);
+    let mut renderer = Renderer::new(TreeRecorder::default(), NaiveMeasurer, viewport, events);
     let mut tapped = false;
     let mut scrolled = false;
     let mut went_back = false;

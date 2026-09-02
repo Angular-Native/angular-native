@@ -233,6 +233,9 @@ enum HostView {
     Date(Retained<objc2_ui_kit::UIDatePicker>),
     Area(Retained<objc2_ui_kit::UITextView>),
     Nav(Retained<objc2_ui_kit::UINavigationBar>),
+    /// tvOS no la tiene: WebKit no forma parte de su SDK, así que ni el
+    /// enlazado la encontraría. Ver `family.rs`.
+    #[cfg(not(target_os = "tvos"))]
     Web(Retained<crate::web::WKWebView>),
     Map(Retained<crate::map::MKMapView>),
     Video(Retained<UIView>),
@@ -262,6 +265,7 @@ impl HostView {
             HostView::Date(v) => v,
             HostView::Area(v) => v,
             HostView::Nav(v) => v,
+            #[cfg(not(target_os = "tvos"))]
             HostView::Web(v) => v,
             HostView::Map(v) => v,
             HostView::Video(v) => v,
@@ -291,6 +295,7 @@ impl HostView {
             HostView::Date(_) => NodeKind::DatePicker,
             HostView::Area(_) => NodeKind::TextEditor,
             HostView::Nav(_) => NodeKind::NavigationBar,
+            #[cfg(not(target_os = "tvos"))]
             HostView::Web(_) => NodeKind::WebView,
             HostView::Map(_) => NodeKind::MapView,
             HostView::Video(_) => NodeKind::VideoView,
@@ -1072,6 +1077,26 @@ impl UikitHost {
 impl HostRenderer for UikitHost {
     fn create(&mut self, id: NodeId, kind: NodeKind) {
         let mtm = self.mtm;
+
+        // Lo que esta familia de UIKit no trae, antes del `match`.
+        //
+        // El problema de un `<an-switch>` en tvOS no es cómo configurarlo: es
+        // que `UISwitch` no está en el sistema, y pedirle la clase a objc2
+        // aborta el proceso ahí mismo. Se dice en el log —una vez— y se deja
+        // una vista vacía marcada, para que el árbol tenga dónde colgar a los
+        // hijos del nodo y el resto de la pantalla no se descoloque. El
+        // medidor no conoce ese control, así que la caja mide cero: el hueco
+        // se ve, que es lo que tiene que pasar.
+        if let Some(porque) = crate::family::missing_kind(kind) {
+            crate::family::report(&format!("{kind:?}"), porque);
+            let hueco = UIView::new(mtm);
+            let marca = NSString::from_str(&format!("an-unsupported:{kind:?}"));
+            hueco.setAccessibilityIdentifier(Some(&marca));
+            hueco.setTranslatesAutoresizingMaskIntoConstraints(true);
+            self.views.insert(id, HostView::View(hueco));
+            return;
+        }
+
         let view = match kind {
             NodeKind::Text => {
                 let label = UILabel::new(mtm);
@@ -1181,6 +1206,7 @@ impl HostRenderer for UikitHost {
                 let bar = objc2_ui_kit::UINavigationBar::new(mtm);
                 HostView::Nav(bar)
             }
+            #[cfg(not(target_os = "tvos"))]
             NodeKind::WebView => {
                 let web = crate::web::WKWebView::new(mtm);
                 HostView::Web(web)
@@ -1213,6 +1239,17 @@ impl HostRenderer for UikitHost {
                 };
                 HostView::Date(picker)
             }
+            // Aquí cae `View`, que es la primitiva que la gente hace
+            // pulsable con `(press)`. En tvOS no puede ser una `UIView`
+            // cualquiera: `canBecomeFocused` solo se cambia heredando, y sin
+            // eso el mando no llega nunca a esa vista. Ver `focus.rs`.
+            #[cfg(target_os = "tvos")]
+            _ => HostView::View(Retained::into_super(crate::focus::FocusableView::new(
+                mtm,
+                id,
+                self.events.clone(),
+            ))),
+            #[cfg(not(target_os = "tvos"))]
             _ => HostView::View(UIView::new(mtm)),
         };
         // Quién manda sobre el marco.
@@ -1520,7 +1557,9 @@ impl HostRenderer for UikitHost {
                 let HostView::Area(area) = view else { return };
                 unsafe { area.setEditable(!matches!(value, PropValue::Bool(false))) };
             }
-            // --- navegador embebido
+            // --- navegador embebido. No existe en tvOS: sin WebKit no hay
+            // vista que cargar, y el nodo ni siquiera se creó.
+            #[cfg(not(target_os = "tvos"))]
             "url" if matches!(view, HostView::Web(_)) => {
                 let HostView::Web(web) = view else { return };
                 let Some(raw) = text.as_deref() else { return };
@@ -1532,6 +1571,7 @@ impl HostRenderer for UikitHost {
                 let request = unsafe { objc2_foundation::NSURLRequest::requestWithURL(&url) };
                 let _ = web.loadRequest(&request);
             }
+            #[cfg(not(target_os = "tvos"))]
             "html" if matches!(view, HostView::Web(_)) => {
                 let HostView::Web(web) = view else { return };
                 let _ = web.loadHTMLString_baseURL(
@@ -2094,6 +2134,13 @@ impl HostRenderer for UikitHost {
                 }
             }
             // --- scroll
+            //
+            // Tirar para recargar es de iOS: `UIRefreshControl` no está en el
+            // SDK de tvOS. En una tele no hay de dónde tirar, así que la prop
+            // no tiene a quién hablarle. Se avisa al suscribirse, en
+            // `events::attach`, y no aquí: repetirlo en cada cambio de valor
+            // llenaría el log del mismo aviso.
+            #[cfg(not(target_os = "tvos"))]
             "refreshing" => {
                 // El control lo trajo la suscripción a `refresh`: si nadie
                 // escucha, no hay nada que parar.

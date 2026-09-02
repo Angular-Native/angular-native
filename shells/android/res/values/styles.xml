@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Los temas de la app.
+
+  Vivían en el manifiesto, apuntando directamente a un estilo de Material.
+  Con dos formas —teléfono y reloj— eso ya no vale: el reloj necesita
+  atributos que solo se pueden poner en un estilo propio, así que los dos
+  temas se declaran aquí y cada manifiesto elige el suyo.
+-->
+<resources>
+
+    <!--
+      El del teléfono. Sigue siendo Material 3 sin barra de acción, que es
+      exactamente lo que decía el manifiesto antes: la pantalla la dibuja la
+      app entera y el layout ya reserva el hueco de la barra de estado.
+    -->
+    <style name="Theme.AngularNative" parent="Theme.Material3.DayNight.NoActionBar" />
+
+    <!--
+      El del reloj.
+
+      Wear OS no tiene modo claro que merezca la pena: la pantalla es OLED y
+      lo que no se pinta no consume, así que el fondo negro no es una
+      preferencia estética sino batería. Por eso aquí es `Dark` fijo y no
+      `DayNight`.
+
+      `windowSwipeToDismiss` es el «atrás» del reloj: no hay botón, se
+      arrastra desde el borde izquierdo. Los temas de Wear del sistema
+      —`Theme.DeviceDefault`— lo traen puesto; los de Material 3, que están
+      pensados para el teléfono, no. Sin esta línea la app se queda sin forma
+      de salir, y el usuario no tiene dónde equivocarse: simplemente no pasa
+      nada.
+
+      No se usa `Theme.DeviceDefault` directamente, que es lo que recomienda
+      Google para una app de Wear con vistas, porque `MainActivity` es una
+      `AppCompatActivity` y AppCompat se niega a arrancar sobre un tema que no
+      descienda de `Theme.AppCompat`. Es la misma Activity para las dos
+      formas, y partirla en dos por el tema costaría más de lo que arregla.
+    -->
+    <style name="Theme.AngularNative.Wear" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:windowSwipeToDismiss">true</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+
+</resources>

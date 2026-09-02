@@ -176,10 +176,52 @@ public final class AnHost {
     /** Los gestos activos de cada vista, uno por vista que tenga alguno. */
     private final java.util.HashMap<Integer, Gestures> gestures = new java.util.HashMap<>();
 
+    /**
+     * Si esto es un reloj con Wear OS.
+     *
+     * Se le pregunta al sistema y no al manifiesto: el APK del reloj declara
+     * `android.hardware.type.watch`, pero el del teléfono se puede instalar en
+     * un reloj —es lo primero que se prueba— y entonces el manifiesto miente y
+     * el sistema no.
+     */
+    private final boolean watch;
+
+    /**
+     * Si la pantalla es redonda.
+     *
+     * No es lo mismo que ser un reloj: los hay cuadrados, y una tele o un
+     * coche podrían no serlo. Lo que importa para el layout es la forma.
+     */
+    private final boolean round;
+
+    /**
+     * Cuánto hay que apartarse del borde de una pantalla redonda para caber
+     * en el cuadrado más grande que cabe dentro de la circunferencia.
+     *
+     * Sale de la geometría y no de una preferencia: el lado del cuadrado
+     * inscrito es `d/√2`, así que sobra `d·(1 - 1/√2)` repartido entre los dos
+     * lados. Es la misma cifra que usa `BoxInsetLayout` de androidx.wear, que
+     * es el contenedor que Google da para esto; aquí no se puede usar tal cual
+     * porque colocaría a los hijos por su cuenta y el layout lo lleva taffy.
+     *
+     * Que la esquina de una pantalla redonda no exista no lo dice ninguna API:
+     * el sistema dice que es redonda —`isScreenRound`— y el margen se deduce.
+     */
+    private static final float ROUND_INSET = (float) ((1 - 1 / Math.sqrt(2)) / 2);
+
     public AnHost(Context context, AnViewGroup container) {
         this.context = context;
         this.container = container;
         this.density = context.getResources().getDisplayMetrics().density;
+        this.watch =
+                context.getPackageManager()
+                        .hasSystemFeature(android.content.pm.PackageManager.FEATURE_WATCH);
+        this.round = context.getResources().getConfiguration().isScreenRound();
+    }
+
+    /** Lo consulta la Activity para decidir cosas que son suyas. */
+    public boolean isWatch() {
+        return watch;
     }
 
     public void attachRuntime(AnRuntime runtime) {
@@ -192,8 +234,117 @@ public final class AnHost {
 
     // ------------------------------------------------------------ estructura
 
+    /**
+     * Las primitivas que en un reloj no se montan, y por qué.
+     *
+     * No es una lista de «esto todavía no está»: es de cosas que en Wear OS no
+     * existen o que, existiendo, no caben. Un `an-tab-bar` sí se puede
+     * construir con Material en una pantalla de 227 puntos redondos —saldría—,
+     * pero sale mal: las pestañas se comen la mitad del alto y los rótulos se
+     * cortan. Dejarlo salir mal es exactamente lo que no se quiere.
+     *
+     * Devuelve el motivo, o `null` si la primitiva sí va.
+     */
+    private static String noVaEnElReloj(int kind) {
+        switch (kind) {
+            case KIND_TABBAR:
+                return "Wear OS no tiene barra de pestañas: se navega deslizando"
+                        + " y con la corona, no con pestañas abajo";
+            case KIND_SEGMENTED:
+                return "un control segmentado no cabe a lo ancho de una esfera";
+            case KIND_NAV:
+                return "un reloj no tiene barra de navegación: arriba va la hora"
+                        + " del sistema, y el «atrás» es el deslizamiento desde"
+                        + " el borde";
+            case KIND_SEARCH:
+                return "en el reloj buscar no es un campo dentro de la pantalla,"
+                        + " sino la pantalla de entrada del sistema —dictado,"
+                        + " garabateo o teclado—";
+            case KIND_WEB:
+                return "Wear OS no lleva WebView: no hay ningún paquete que"
+                        + " implemente android.webkit en el sistema";
+            case KIND_DATE:
+                return "el selector de fecha de la plataforma es un calendario"
+                        + " de teléfono; en el reloj la fecha se elige a pantalla"
+                        + " completa";
+            case KIND_SELECT:
+                return "un desplegable abre un menú anclado, y en una esfera no"
+                        + " hay sitio donde anclarlo";
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * La etiqueta con la que se escribe cada una de las que no van.
+     *
+     * Se devuelve la etiqueta —`an-tab-bar`— y no el nombre del núcleo
+     * —`TabBar`— porque el que lee el error escribió la etiqueta, y es lo que
+     * va a buscar en su plantilla.
+     */
+    private static String kindName(int kind) {
+        switch (kind) {
+            case KIND_TABBAR:
+                return "an-tab-bar";
+            case KIND_SEGMENTED:
+                return "an-segmented-control";
+            case KIND_NAV:
+                return "an-navigation-bar";
+            case KIND_SEARCH:
+                return "an-search-bar";
+            case KIND_WEB:
+                return "an-web-view";
+            case KIND_DATE:
+                return "an-date-picker";
+            case KIND_SELECT:
+                return "an-select";
+            default:
+                return "kind " + kind;
+        }
+    }
+
+    /**
+     * Lo que se monta en lugar de una primitiva que no va.
+     *
+     * Un hueco vacío haría que el fallo se pareciera a un error de layout, que
+     * es lo último que uno mira. Se pinta el nombre para que se vea dónde está
+     * y se escribe el motivo en el log para que se lea entero. Es el mismo
+     * trato que le da el host de watchOS.
+     */
+    /**
+     * Los nodos que salieron como marca de «esto aquí no va».
+     *
+     * Sin esta lista, la marca no se lee: es un `TextView`, así que el
+     * `[color]` y el `[title]` de la primitiva que sustituye se le aplican
+     * igual y acaba pintando el rótulo del control que no existe, con su
+     * color, como si funcionara. Justo lo contrario de lo que hace falta.
+     */
+    private final java.util.Set<Integer> unsupported = new java.util.HashSet<>();
+
+    private View unsupportedMarker(String tag, String motivo) {
+        android.util.Log.e("angular-native", tag + " no se monta en el reloj: " + motivo);
+        TextView marker = new TextView(context);
+        marker.setText(tag);
+        marker.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 11);
+        marker.setTextColor(0xFFFF6B6B);
+        marker.setGravity(Gravity.CENTER);
+        marker.setIncludeFontPadding(false);
+        marker.setBackgroundColor(0x33FF6B6B);
+        return marker;
+    }
+
     public void createView(int id, int kind) {
         View view;
+        if (watch) {
+            String motivo = noVaEnElReloj(kind);
+            if (motivo != null) {
+                view = unsupportedMarker(kindName(kind), motivo);
+                view.setLayoutParams(new AnViewGroup.Frame());
+                views.put(id, view);
+                unsupported.add(id);
+                return;
+            }
+        }
         switch (kind) {
             case KIND_TEXT: {
                 TextView text = new TextView(context);
@@ -321,6 +472,11 @@ public final class AnHost {
             }
             case KIND_SCROLL: {
                 AnScrollView scroll = new AnScrollView(context);
+                // La corona es la forma normal de recorrer una lista en el
+                // reloj; el dedo tapa la pantalla que se está mirando.
+                if (watch) {
+                    scroll.enableRotary();
+                }
                 AnViewGroup content = new AnViewGroup(context);
                 // El contenido lo mide el ScrollView, no nosotros, y un
                 // ScrollView es un FrameLayout por dentro: exige sus propios
@@ -444,6 +600,7 @@ public final class AnHost {
             ((ViewGroup) view.getParent()).removeView(view);
         }
         views.remove(id);
+        unsupported.remove(id);
         animations.remove(id);
         buttonVariants.remove(id);
         buttonColors.remove(id);
@@ -524,6 +681,7 @@ public final class AnHost {
         container.removeAllViews();
         views.clear();
         scrollContent.clear();
+        unsupported.clear();
     }
 
     // ----------------------------------------------------------------- layout
@@ -934,6 +1092,25 @@ public final class AnHost {
             bottom = bars.bottom / density;
             left = bars.left / density;
         }
+        if (round) {
+            // En una pantalla redonda las esquinas no existen. El sistema no
+            // las cuenta como márgenes —`WindowInsets` da cero— porque no hay
+            // nada del sistema ahí: sencillamente no hay pantalla. Lo que se
+            // coloque en la esquina no sale recortado con un aviso, sale sin
+            // pintarse y sin que nadie diga nada, que es peor.
+            //
+            // Va por el mismo camino que el notch a propósito: para la app es
+            // la misma pregunta —«¿hasta dónde puedo pintar?»— y `an-safe-area`
+            // ya la contesta en las tres plataformas. Un evento nuevo sería
+            // una segunda forma de saber lo mismo.
+            android.util.DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+            float side = Math.min(metrics.widthPixels, metrics.heightPixels) / density;
+            float inset = side * ROUND_INSET;
+            top = Math.max(top, inset);
+            right = Math.max(right, inset);
+            bottom = Math.max(bottom, inset);
+            left = Math.max(left, inset);
+        }
         if (previous[0] == top && previous[1] == right && previous[2] == bottom && previous[3] == left) {
             return;
         }
@@ -960,14 +1137,17 @@ public final class AnHost {
 
     public void setText(int id, String text) {
         View view = views.get(id);
-        if (view instanceof TextView) {
+        if (view instanceof TextView && !unsupported.contains(id)) {
             ((TextView) view).setText(text);
         }
     }
 
     public void setProp(int id, String key, String value) {
         View view = views.get(id);
-        if (view == null) {
+        // La marca de «esto aquí no va» conserva lo suyo: si dejara que le
+        // pintaran encima el color y el fondo de la primitiva que sustituye,
+        // se disfrazaría de la primitiva que no está.
+        if (view == null || unsupported.contains(id)) {
             return;
         }
         switch (key) {
@@ -1851,7 +2031,9 @@ public final class AnHost {
 
     public void setListener(int id, String event, boolean enabled) {
         View view = views.get(id);
-        if (view == null) {
+        // Un oyente sobre una primitiva que no se montó no puede quedarse
+        // esperando en silencio: nunca llegaría nada. Ya se dijo al crearla.
+        if (view == null || unsupported.contains(id)) {
             return;
         }
         if ("refresh".equals(event) && view instanceof AnScrollView) {

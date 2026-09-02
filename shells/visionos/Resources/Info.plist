@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>AngularNativeVision</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.angularnative.playground.vision</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>AngularNativeVision</string>
+    <key>CFBundleDisplayName</key>
+    <string>angular-native</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.0.1</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>MinimumOSVersion</key>
+    <string>1.0</string>
+    <!-- 7 es el visor. -->
+    <key>UIDeviceFamily</key>
+    <array>
+        <integer>7</integer>
+    </array>
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>arm64</string>
+    </array>
+    <!--
+      El ciclo de vida por escenas, que en visionOS no es opcional.
+
+      En iOS una app puede seguir naciendo por el camino viejo: el delegado
+      crea una ventana del tamaño de la pantalla y ya. Aquí no hay pantalla
+      —`UIScreen` está marcado `API_UNAVAILABLE(visionos)`—, así que la ventana
+      solo puede salir de un `UIWindowScene`, y el sistema solo crea uno si
+      este manifiesto declara quién lo va a atender.
+
+      `SceneDelegate` es el nombre en Objective-C, el que le pone `@objc` a la
+      clase de Swift. Si no coincidiera, la escena se conectaría, nadie crearía
+      la ventana y la app arrancaría en negro sin un solo error.
+    -->
+    <key>UIApplicationSceneManifest</key>
+    <dict>
+        <!--
+          Una ventana y no varias. El árbol de nodos tiene una raíz y un
+          viewport: dos escenas serían dos raíces, y eso no está hecho.
+        -->
+        <key>UIApplicationSupportsMultipleScenes</key>
+        <false/>
+        <key>UISceneConfigurations</key>
+        <dict>
+            <key>UIWindowSceneSessionRoleApplication</key>
+            <array>
+                <dict>
+                    <key>UISceneConfigurationName</key>
+                    <string>Default Configuration</string>
+                    <key>UISceneDelegateClassName</key>
+                    <string>SceneDelegate</string>
+                </dict>
+            </array>
+        </dict>
+    </dict>
+    <!-- El servidor de desarrollo habla HTTP plano contra localhost. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+</dict>
+</plist>

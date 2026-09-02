@@ -13,9 +13,17 @@ mod controls;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod events;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+mod family;
+#[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod ffi;
+/// El motor de foco solo existe en tvOS: es la plataforma sin toques.
+#[cfg(target_os = "tvos")]
+mod focus;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod host;
+/// El realce de la mirada solo existe en visionOS.
+#[cfg(target_os = "visionos")]
+mod hover;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod icons;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]

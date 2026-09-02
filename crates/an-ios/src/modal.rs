@@ -13,10 +13,11 @@ use an_core::NodeId;
 use an_host::{push_event, EventQueue, HostEvent};
 use objc2::rc::Retained;
 use objc2::MainThreadMarker;
-use objc2_ui_kit::{
-    UIModalPresentationStyle, UIModalTransitionStyle,
-    UISheetPresentationControllerDetent, UIView, UIViewController,
-};
+use objc2_ui_kit::{UIModalPresentationStyle, UIModalTransitionStyle, UIView, UIViewController};
+// La hoja con topes es de iOS: `UISheetPresentationController` está marcado
+// `API_UNAVAILABLE(tvos)`. Una tele no tiene medio pantalla que arrastrar.
+#[cfg(not(target_os = "tvos"))]
+use objc2_ui_kit::UISheetPresentationControllerDetent;
 
 #[derive(Default)]
 pub struct ModalState {
@@ -59,11 +60,29 @@ impl ModalState {
 
         let controller = UIViewController::new(mtm);
         controller.setView(Some(content));
+        // En tvOS no hay hoja: la presentación modal cubre la pantalla y ya.
+        // Se dice una vez, porque un `[sheet]` que se ignora en silencio es
+        // una plantilla que se ve distinta sin que nadie sepa por qué.
+        #[cfg(target_os = "tvos")]
+        let sheet = if self.sheet {
+            crate::family::report(
+                "<an-modal [sheet]>",
+                "UISheetPresentationController no está en el SDK: el modal cubre la pantalla \
+                 entera, que es como se presenta en una tele",
+            );
+            false
+        } else {
+            false
+        };
+        #[cfg(not(target_os = "tvos"))]
+        let sheet = self.sheet;
+
         unsafe {
-            if self.sheet {
+            if sheet {
                 controller.setModalPresentationStyle(UIModalPresentationStyle::PageSheet);
                 // Los topes son los del sistema: media pantalla y entera, con
                 // su tirador y su gesto de bajar para cerrar.
+                #[cfg(not(target_os = "tvos"))]
                 if let Some(sheet) = controller.sheetPresentationController() {
                     let detents = objc2_foundation::NSArray::from_retained_slice(&[
                         UISheetPresentationControllerDetent::mediumDetent(mtm),

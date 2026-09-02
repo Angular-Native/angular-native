@@ -47,9 +47,11 @@ pub enum Target {
     Ios { device: String },
     WatchOs { device: String },
     /// App de escritorio en este mismo Mac. No hay simulador que arrancar, así
-    /// que el ciclo de guardar y ver el cambio es el más corto de los tres.
+    /// que el ciclo de guardar y ver el cambio es el más corto de los cuatro.
     MacOs,
-    Android,
+    /// Teléfono o reloj: el mismo host y el mismo servidor, distinto
+    /// manifiesto y distinto aparato.
+    Android { form: crate::android::Form },
 }
 
 pub fn run(
@@ -74,12 +76,12 @@ pub fn run(
     // El emulador de Android no ve `localhost`: la máquina anfitriona es
     // 10.0.2.2 desde dentro.
     let url = match target {
-        // El Mac y el simulador del reloj comparten la red de la máquina
-        // igual que el del teléfono, así que les vale la misma dirección.
+        // El Mac y los dos simuladores comparten la red de la máquina, así que
+        // les vale la misma dirección.
         Target::Ios { .. } | Target::WatchOs { .. } | Target::MacOs => {
             format!("http://127.0.0.1:{port}")
         }
-        Target::Android => format!("http://{}:{port}", crate::android::EMULATOR_HOST),
+        Target::Android { .. } => format!("http://{}:{port}", crate::android::EMULATOR_HOST),
     };
 
     // El puerto se abre antes de dar nada por bueno: si ya hay otro `an dev`
@@ -104,7 +106,17 @@ pub fn run(
     if !no_launch {
         match &target {
             Target::Ios { device } => {
-                let package = ios::assemble(&workspace, &bundle_path, false, Some(&url), &plugins)?;
+                // `an dev` solo cubre iOS de las tres familias de UIKit.
+                //
+                // No es que tvOS y visionOS no puedan: comparten shell, y el
+                // `DevClient` que se suscribe a las recargas ya va dentro del
+                // `.app` que arma `ios::assemble` para las tres. Lo que falta
+                // es haberlo visto funcionar, y sin runtime de simulador para
+                // ninguna de las dos eso no se puede comprobar. Enchufarlas
+                // aquí sería ofrecer un ciclo de desarrollo que nadie ha visto
+                // recargar nunca. Ver docs/tvos.md.
+                let package =
+                    ios::assemble(&workspace, ios::Family::Ios, &bundle_path, false, Some(&url), &plugins)?;
                 ios::launch(&package, device)?;
             }
             Target::WatchOs { device } => {
@@ -115,10 +127,16 @@ pub fn run(
                 let package = macos::assemble(&workspace, &bundle_path, false, Some(&url))?;
                 macos::launch(&package)?;
             }
-            Target::Android => {
-                let apk =
-                    crate::android::assemble(&workspace, &bundle_path, false, Some(&url), &plugins)?;
-                crate::android::install_and_launch(&workspace, &apk)?;
+            Target::Android { form } => {
+                let apk = crate::android::assemble(
+                    &workspace,
+                    &bundle_path,
+                    false,
+                    Some(&url),
+                    &plugins,
+                    *form,
+                )?;
+                crate::android::install_and_launch(&workspace, &apk, *form, None)?;
             }
         }
     }

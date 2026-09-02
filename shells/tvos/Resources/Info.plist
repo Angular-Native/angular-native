@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>AngularNativeTV</string>
+    <key>CFBundleIdentifier</key>
+    <string>dev.angularnative.playground.tv</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>AngularNativeTV</string>
+    <key>CFBundleDisplayName</key>
+    <string>angular-native</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.0.1</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>MinimumOSVersion</key>
+    <string>17.0</string>
+    <!--
+      3 es el Apple TV. Aquí no se pone también el 1 y el 2 como en iOS: un
+      bundle de tvOS no corre en un teléfono, y decir que sí solo consigue que
+      el error llegue más tarde.
+    -->
+    <key>UIDeviceFamily</key>
+    <array>
+        <integer>3</integer>
+    </array>
+    <!--
+      Ni `LSRequiresIPhoneOS` ni `UILaunchScreen` ni
+      `UISupportedInterfaceOrientations`: las tres son del teléfono. Una tele no
+      gira, y su pantalla de arranque no es un storyboard sino la imagen de la
+      capa superior, que es cosa del catálogo de assets.
+    -->
+    <key>UIRequiredDeviceCapabilities</key>
+    <array>
+        <string>arm64</string>
+    </array>
+    <!-- El servidor de desarrollo habla HTTP plano contra localhost. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+    <!--
+      Sin esto la app se instala y se lanza, pero sale en la parrilla sin
+      icono: `CFBundleIcons` de tvOS apunta a un icono en capas y a la imagen
+      de la balda de arriba, y las dos viven en un catálogo de assets
+      compilado con `actool`. Aquí no hay ninguno todavía, así que la clave se
+      queda fuera a propósito en vez de apuntar a un nombre que no existe. Ver
+      docs/tvos.md.
+    -->
+</dict>
+</plist>

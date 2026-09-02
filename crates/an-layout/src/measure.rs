@@ -99,7 +99,13 @@ pub trait TextMeasurer {
             "SegmentedControl" => (320.0, 32.0),
             "Stepper" => (94.0, 32.0),
             "SearchBar" => (320.0, 56.0),
-            "Select" => (140.0, 44.0),
+            // El desplegable, con el nombre que usa el núcleo. La etiqueta se
+            // llama `<an-select>` desde que las etiquetas llevan prefijo, pero
+            // lo que llega aquí es `NodeKind::control_name()`, y eso sigue
+            // diciendo `Picker`. Mientras puso "Select" no lo reconocía nadie
+            // y el desplegable medía cero: sin error, sin traza, y visible
+            // solo si la plantilla no le daba un alto explícito.
+            "Picker" => (140.0, 44.0),
             "DatePicker" => (200.0, 44.0),
             "NavigationBar" => (320.0, 44.0),
             _ => (0.0, 0.0),

@@ -17,12 +17,19 @@ use objc2_foundation::NSObjectProtocol;
 use objc2_ui_kit::{
     UITabBarController, UITabBarControllerDelegate, UIViewController,
     UIControl, UIControlEvents, UIGestureRecognizer, UIGestureRecognizerState,
-    UILongPressGestureRecognizer, UIPanGestureRecognizer, UIPinchGestureRecognizer, UIRectEdge,
-    UIRefreshControl, UIRotationGestureRecognizer, UIScreenEdgePanGestureRecognizer, UIScrollView,
+    UILongPressGestureRecognizer, UIPanGestureRecognizer, UIPinchGestureRecognizer,
+    UIRotationGestureRecognizer, UIScrollView,
     UIScrollViewDelegate, UISlider, UISwipeGestureRecognizer,
     UISwipeGestureRecognizerDirection, UISwitch, UITabBar, UITapGestureRecognizer, UITextField,
     UIView,
 };
+// El arrastre desde el borde y el control de recarga son de iOS: el SDK los
+// marca `API_UNAVAILABLE(tvos, visionos)` y `API_UNAVAILABLE(tvos)`. Ver
+// `family.rs` y la parte de `attach` que los sustituye.
+#[cfg(not(any(target_os = "tvos", target_os = "visionos")))]
+use objc2_ui_kit::{UIRectEdge, UIScreenEdgePanGestureRecognizer};
+#[cfg(not(target_os = "tvos"))]
+use objc2_ui_kit::UIRefreshControl;
 
 fn emit(queue: &EventQueue, target: NodeId, name: &str, payload: Vec<(String, PropValue)>) {
     push_event(queue, HostEvent { target, name: name.to_owned(), payload });
@@ -428,6 +435,7 @@ impl ScrollDelegate {
 
 impl AttachedListener {
     /// El control de recarga del sistema, si esta suscripción lo trajo.
+    #[cfg(not(target_os = "tvos"))]
     pub fn refresh_control(&self) -> Option<&UIRefreshControl> {
         match self {
             AttachedListener::Refresh { control, .. } => Some(control),
@@ -454,10 +462,18 @@ pub enum AttachedListener {
     Tabs {
         _delegate: Retained<TabDelegate>,
     },
+    /// Tirar para recargar. No existe en tvOS: `UIRefreshControl` no está en
+    /// su SDK, y sin toques tampoco habría de dónde tirar.
+    #[cfg(not(target_os = "tvos"))]
     Refresh {
         _target: Retained<ControlTarget>,
         control: Retained<UIRefreshControl>,
     },
+    /// Una vista que solo quiere saber cuándo la mira el mando. No lleva
+    /// reconocedor: el aviso lo da la propia vista al recibir el foco, y esto
+    /// solo existe para poder apagarlo al darse de baja.
+    #[cfg(target_os = "tvos")]
+    Focus,
 }
 
 impl AttachedListener {
@@ -482,9 +498,16 @@ impl AttachedListener {
                 let scroll = scroll.cast::<UIScrollView>();
                 unsafe { (*scroll).setDelegate(None) };
             }
+            #[cfg(not(target_os = "tvos"))]
             AttachedListener::Refresh { .. } => {
                 let scroll: *const UIView = view;
                 unsafe { (*scroll.cast::<UIScrollView>()).setRefreshControl(None) };
+            }
+            #[cfg(target_os = "tvos")]
+            AttachedListener::Focus => {
+                if let Some(focusable) = crate::focus::focusable(view) {
+                    focusable.set_wants_focus(false);
+                }
             }
             AttachedListener::Tabs { .. } => {
                 let bar: *const UIView = view;
@@ -503,6 +526,23 @@ fn continuous_gesture(
     node: NodeId,
     queue: &EventQueue,
 ) -> Option<(Retained<UIGestureRecognizer>, Retained<GestureTarget>)> {
+    // Pellizcar y girar piden dos dedos a la vez. La superficie del mando de
+    // tvOS es de un solo toque y el SDK lo dice sin rodeos: las dos clases
+    // están marcadas `API_UNAVAILABLE(tvos)`. Pedirle la clase a objc2 aquí
+    // cerraría la app, así que se dice y no se engancha nada.
+    //
+    // `pan` y los cuatro `swipe` sí siguen: la superficie del mando manda
+    // toques indirectos y UIKit los reconoce igual que los del dedo.
+    #[cfg(target_os = "tvos")]
+    if matches!(event, "pinch" | "rotate") {
+        crate::family::report(
+            &format!("({event})"),
+            "el mando tiene una superficie de un solo toque, y UIPinchGestureRecognizer y \
+             UIRotationGestureRecognizer no están en el SDK",
+        );
+        return None;
+    }
+
     let (action, name): (Sel, &'static str) = match event {
         "pan" => (sel!(handlePan:), "pan"),
         "longPress" => (sel!(handleLongPress:), "longPress"),
@@ -523,12 +563,18 @@ fn continuous_gesture(
             )
         }),
         "longPress" => Retained::into_super(unsafe {
-            UILongPressGestureRecognizer::initWithTarget_action(
+            let largo = UILongPressGestureRecognizer::initWithTarget_action(
                 UILongPressGestureRecognizer::alloc(mtm),
                 Some(&target),
                 Some(action),
-            )
+            );
+            // En una tele mantener pulsado es mantener el botón central, no
+            // dejar el dedo quieto sobre la pantalla.
+            #[cfg(target_os = "tvos")]
+            crate::focus::allow_press(&largo, crate::focus::SELECT);
+            largo
         }),
+        #[cfg(not(target_os = "tvos"))]
         "pinch" => Retained::into_super(unsafe {
             UIPinchGestureRecognizer::initWithTarget_action(
                 UIPinchGestureRecognizer::alloc(mtm),
@@ -536,6 +582,7 @@ fn continuous_gesture(
                 Some(action),
             )
         }),
+        #[cfg(not(target_os = "tvos"))]
         "rotate" => Retained::into_super(unsafe {
             UIRotationGestureRecognizer::initWithTarget_action(
                 UIRotationGestureRecognizer::alloc(mtm),
@@ -641,6 +688,19 @@ pub fn attach(
 
     // Tirar para recargar. En iOS lo dibuja el sistema: se le engancha un
     // `UIRefreshControl` al scroll y él pone la ruedecilla y la animación.
+    //
+    // En tvOS no: la clase no está en el SDK, y aunque estuviera no hay dedo
+    // que tire. Se dice y no se engancha nada, en vez de dejar un `(refresh)`
+    // que no se dispara jamás.
+    #[cfg(target_os = "tvos")]
+    if kind == NodeKind::ScrollView && event == "refresh" {
+        crate::family::report(
+            "(refresh)",
+            "UIRefreshControl no está en el SDK, y en una tele no hay de dónde tirar",
+        );
+        return None;
+    }
+    #[cfg(not(target_os = "tvos"))]
     if kind == NodeKind::ScrollView && event == "refresh" {
         let target = ControlTarget::new(mtm, node, queue);
         let control = UIRefreshControl::new(mtm);
@@ -687,6 +747,11 @@ pub fn attach(
         return Some(AttachedListener::Scroll { _delegate: delegate });
     }
 
+    // Volver atrás. Es el mismo evento en las tres familias y el mismo gesto
+    // en ninguna: `UIScreenEdgePanGestureRecognizer` está marcado
+    // `API_UNAVAILABLE(tvos, visionos)`, y con razón —una tele no tiene borde
+    // que arrastrar y una ventana volumétrica tampoco—.
+    #[cfg(not(any(target_os = "tvos", target_os = "visionos")))]
     if kind == NodeKind::StackView && event == "back" {
         // El gesto de sistema: arrastrar desde el borde izquierdo. Aquí solo
         // se avisa; deshacer la navegación es cosa del router.
@@ -706,6 +771,42 @@ pub fn attach(
         });
     }
 
+    // En tvOS el «atrás» del sistema es el botón de menú del mando. No es una
+    // traducción nuestra del gesto: es el botón que la plataforma reserva para
+    // eso, y una app de tvOS que no responda a él se siente rota.
+    #[cfg(target_os = "tvos")]
+    if kind == NodeKind::StackView && event == "back" {
+        let target = GestureTarget::new(mtm, node, "back", queue);
+        let recognizer = unsafe {
+            UITapGestureRecognizer::initWithTarget_action(
+                UITapGestureRecognizer::alloc(mtm),
+                Some(&target),
+                Some(GestureTarget::action()),
+            )
+        };
+        crate::focus::allow_press(&recognizer, crate::focus::MENU);
+        view.addGestureRecognizer(&recognizer);
+        return Some(AttachedListener::Gesture {
+            recognizer: Retained::into_super(recognizer),
+            _target: target,
+        });
+    }
+
+    // visionOS no tiene ningún gesto del sistema para volver: la ventana se
+    // cierra por su barra, y dentro de la app el camino de vuelta es un botón
+    // que ponga la plantilla. Se dice, porque un `(back)` que nunca llega es
+    // exactamente lo que este proyecto no debe dejar pasar.
+    #[cfg(target_os = "visionos")]
+    if kind == NodeKind::StackView && event == "back" {
+        crate::family::report(
+            "(back)",
+            "no hay gesto de volver: UIScreenEdgePanGestureRecognizer no está en el SDK y la \
+             ventana no tiene bordes que arrastrar. El camino de vuelta tiene que ser un botón \
+             de la plantilla",
+        );
+        return None;
+    }
+
     // Gestos continuos y de dirección. Cada uno lleva su reconocedor: UIKit
     // ya resuelve entre ellos quién gana cuando compiten.
     if let Some(recognizer) = continuous_gesture(mtm, event, node, &queue) {
@@ -713,6 +814,29 @@ pub fn attach(
         view.setUserInteractionEnabled(true);
         view.addGestureRecognizer(&recognizer);
         return Some(AttachedListener::Gesture { recognizer, _target: target });
+    }
+
+    // En tvOS, `(focus)` y `(blur)` sobre una vista sin pulsación: la vista
+    // avisa sola cuando el mando llega a ella, pero solo si se declara
+    // enfocable, y una que no escucha nada más no tiene reconocedor que lo
+    // delate. Ver `focus.rs`.
+    #[cfg(target_os = "tvos")]
+    if matches!(event, "focus" | "blur") {
+        return match crate::focus::focusable(view) {
+            Some(focusable) => {
+                focusable.set_wants_focus(true);
+                Some(AttachedListener::Focus)
+            }
+            None => {
+                crate::family::report(
+                    &format!("({event}) sobre <{kind:?}>"),
+                    "solo <an-view> puede recibir el foco del mando: el resto de primitivas son \
+                     UILabel, UIImageView y controles, y canBecomeFocused solo se cambia \
+                     heredando. Envuélvelo en un <an-view>",
+                );
+                None
+            }
+        };
     }
 
     let (name, taps): (&'static str, usize) = match event {
@@ -734,6 +858,38 @@ pub fn attach(
     // UILabel y UIImageView vienen con la interacción apagada de fábrica:
     // sin esto el gesto se registra y no se dispara nunca.
     view.setUserInteractionEnabled(true);
+
+    // tvOS: sin foco no hay pulsación.
+    //
+    // El reconocedor se engancha igual que en iOS y no falla nada, pero el
+    // botón central solo llega a la vista que el motor de foco tenga
+    // seleccionada. Una `UIView` responde `NO` a `canBecomeFocused`, así que
+    // el mando no puede pararse en ella nunca y `(press)` no se dispara jamás.
+    // No hay error, no hay aviso del sistema: no pasa nada. Por eso `an-view`
+    // se crea en tvOS como `AnFocusableView`, que responde que sí en cuanto
+    // tiene un gesto encima —justo el que se está enganchando aquí—.
+    #[cfg(target_os = "tvos")]
+    {
+        crate::focus::allow_press(&recognizer, crate::focus::SELECT);
+        match crate::focus::focusable(view) {
+            Some(focusable) => focusable.allow_interaction(),
+            None => crate::family::report(
+                &format!("({event}) sobre <{kind:?}>"),
+                "en una tele solo se puede pulsar lo que el mando puede enfocar, y de las \
+                 primitivas solo <an-view> y los controles del sistema lo son. Envuélvelo en \
+                 un <an-view> y ponle ahí el (press)",
+            ),
+        }
+    }
+
+    // visionOS: el usuario apunta con la mirada, y sin realce no ve a qué.
+    //
+    // Lo dibuja el sistema fuera del proceso, pero solo si la vista lo pide:
+    // `hoverStyle` vale `nil` de fábrica. Los controles lo traen puesto; una
+    // `UIView` con `(press)`, no.
+    #[cfg(target_os = "visionos")]
+    crate::hover::mark_pressable(mtm, view);
+
     view.addGestureRecognizer(&recognizer);
 
     Some(AttachedListener::Gesture {

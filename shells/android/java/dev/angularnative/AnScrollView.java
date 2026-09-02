@@ -5,7 +5,9 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.view.InputDevice;
 import android.view.MotionEvent;
+import android.view.ViewConfiguration;
 import android.widget.ScrollView;
 
 /**
@@ -60,6 +62,71 @@ public final class AnScrollView extends ScrollView {
 
     public void setScrollEnabled(boolean enabled) {
         this.scrollEnabled = enabled;
+    }
+
+    /**
+     * Deja que la corona del reloj desplace esta vista.
+     *
+     * Los eventos de la corona llegan a la vista que tiene el foco, y una lista
+     * no lo pide sola: sin `setFocusableInTouchMode` el sistema los manda a
+     * quien sea que lo tenga —normalmente a nadie— y la corona no hace nada,
+     * sin error ninguno.
+     *
+     * Se enciende solo en el reloj y no siempre: en un teléfono, una vista
+     * scrollable que pide el foco al tocarla se lo quita al `EditText` que
+     * hubiera debajo, y eso sí se nota.
+     */
+    public void enableRotary() {
+        rotary = true;
+        setFocusable(true);
+        setFocusableInTouchMode(true);
+    }
+
+    private boolean rotary;
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (rotary) {
+            requestFocus();
+        }
+    }
+
+    /**
+     * La corona giratoria.
+     *
+     * No es un toque: llega como `ACTION_SCROLL` desde `SOURCE_ROTARY_ENCODER`,
+     * por el camino de los eventos genéricos y no por el de los táctiles, que
+     * es por lo que `onTouchEvent` nunca la vio. El valor de `AXIS_SCROLL` va
+     * en muescas de rueda, no en píxeles: lo que las convierte es el factor de
+     * desplazamiento del sistema, el mismo que usa un ratón.
+     *
+     * El signo se invierte porque la corona hacia arriba devuelve valores
+     * positivos y bajar por la lista es aumentar `scrollY`.
+     */
+    @Override
+    public boolean onGenericMotionEvent(MotionEvent event) {
+        if (rotary
+                && event.getAction() == MotionEvent.ACTION_SCROLL
+                && event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)) {
+            float notches = event.getAxisValue(MotionEvent.AXIS_SCROLL);
+            float pixels =
+                    -notches * ViewConfiguration.get(getContext()).getScaledVerticalScrollFactor();
+            // `scrollBy` no recorta por sí solo; sin el tope, la corona sigue
+            // «desplazando» una lista que ya se acabó y el evento `scroll` que
+            // sale de aquí contaría un desplazamiento que no ocurrió.
+            int max = Math.max(0, contentHeight() - getHeight());
+            int destino = Math.min(max, Math.max(0, getScrollY() + Math.round(pixels)));
+            if (destino != getScrollY()) {
+                scrollTo(0, destino);
+            }
+            return true;
+        }
+        return super.onGenericMotionEvent(event);
+    }
+
+    private int contentHeight() {
+        return getChildCount() > 0 ? getChildAt(0).getHeight() : 0;
     }
 
     /**

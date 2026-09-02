@@ -18,6 +18,37 @@ const ACTIVITY: &str = "dev.angularnative.MainActivity";
 const ABI: &str = "arm64-v8a";
 const RUST_TARGET: &str = "aarch64-linux-android";
 
+/// Para qué clase de aparato se arma el APK.
+///
+/// Un reloj con Wear OS corre `android.view.View` como cualquier teléfono, así
+/// que el core, la biblioteca nativa y las 4.500 líneas de Java son las mismas
+/// y esto no parte el build en dos: lo único que cambia es el manifiesto, que
+/// es donde se declara la forma del aparato y el tema que le toca.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Form {
+    Phone,
+    Watch,
+}
+
+impl Form {
+    /// El manifiesto de cada forma. No es un fichero con condicionales porque
+    /// el formato no tiene ninguno: `aapt2` no sabe de variantes.
+    fn manifest(self) -> &'static str {
+        match self {
+            Form::Phone => "shells/android/AndroidManifest.xml",
+            Form::Watch => "shells/android/AndroidManifest.wear.xml",
+        }
+    }
+
+    /// Cómo se llama esto cuando hay que decirlo por pantalla.
+    pub fn nombre(self) -> &'static str {
+        match self {
+            Form::Phone => "teléfono",
+            Form::Watch => "reloj",
+        }
+    }
+}
+
 pub struct Sdk {
     pub root: PathBuf,
     pub build_tools: PathBuf,
@@ -77,6 +108,7 @@ pub fn assemble(
     release: bool,
     dev_server: Option<&str>,
     plugins: &[Plugin],
+    form: Form,
 ) -> Result<PathBuf> {
     // Antes de compilar nada: si algún plugin no trae su parte de Android, el
     // build se para aquí y dice cuál.
@@ -144,19 +176,42 @@ pub fn assemble(
         );
     }
 
+    // Los recursos propios del shell: los dos temas, uno por forma. Se
+    // compilan aquí y no en `prepare-android-deps.py` porque son nuestros y
+    // cambian; los de las librerías no cambian nunca y por eso se cachean.
+    eprintln!("==> aapt2 compile (recursos del shell)");
+    let app_res = out.join("shell-res.zip");
+    let _ = std::fs::remove_file(&app_res);
+    run(
+        root,
+        &sdk.tool("aapt2").to_string_lossy(),
+        &[
+            "compile",
+            "--dir",
+            &root.join("shells/android/res").to_string_lossy(),
+            "-o",
+            &app_res.to_string_lossy(),
+        ],
+        "aapt2 compile de los recursos del shell falló",
+    )?;
+
     // El enlace de recursos va antes que `javac`: de aquí salen las clases
     // `R` que las librerías necesitan para encontrar sus propios recursos.
-    eprintln!("==> aapt2 link");
+    eprintln!("==> aapt2 link ({})", form.nombre());
     let unsigned = out.join("unsigned.apk");
     let generado = out.join("gen");
     let _ = std::fs::remove_dir_all(&generado);
     std::fs::create_dir_all(&generado)?;
+    let manifest = root.join(form.manifest());
+    if !manifest.is_file() {
+        bail!("no encuentro el manifiesto {}", manifest.display());
+    }
     let mut link: Vec<String> = vec![
         "link".into(),
         "-I".into(),
         sdk.android_jar.to_string_lossy().into_owned(),
         "--manifest".into(),
-        root.join("shells/android/AndroidManifest.xml").to_string_lossy().into_owned(),
+        manifest.to_string_lossy().into_owned(),
         "--java".into(),
         generado.to_string_lossy().into_owned(),
         // Cada librería quiere su propia clase `R`, y sus identificadores no
@@ -174,6 +229,10 @@ pub fn assemble(
         link.push("-R".into());
         link.push(recurso.clone());
     }
+    // Los nuestros van al final: con `--auto-add-overlay`, el último gana, y
+    // un tema de la app tiene que poder pisar al de la librería.
+    link.push("-R".into());
+    link.push(app_res.to_string_lossy().into_owned());
     run(root, &sdk.tool("aapt2").to_string_lossy(), &link, "aapt2 link falló")?;
 
     eprintln!("==> shell Java");
@@ -297,7 +356,13 @@ pub fn assemble(
     )?;
 
     let keystore = debug_keystore()?;
-    let apk = out.join("AngularNative.apk");
+    // Un nombre por forma: los dos APK llevan el mismo paquete y si
+    // compartieran fichero, armar el del reloj dejaría al del teléfono
+    // apuntando a un APK que ya no es el suyo.
+    let apk = out.join(match form {
+        Form::Phone => "AngularNative.apk",
+        Form::Watch => "AngularNative-wear.apk",
+    });
     let _ = std::fs::remove_file(&apk);
     run(
         root,
@@ -360,26 +425,106 @@ fn debug_keystore() -> Result<PathBuf> {
     Ok(path)
 }
 
-pub fn install_and_launch(workspace: &Workspace, apk: &Path) -> Result<()> {
+pub fn install_and_launch(
+    workspace: &Workspace,
+    apk: &Path,
+    form: Form,
+    device: Option<&str>,
+) -> Result<()> {
     let sdk = Sdk::discover()?;
     let adb = sdk.adb();
-    eprintln!("==> instalando");
+    let serial = match device {
+        Some(pedido) => pedido.to_owned(),
+        None => pick_device(&adb, form)?,
+    };
+    eprintln!("==> instalando en {serial}");
     // Mismo motivo que en iOS: instalar sobre una app en marcha no recarga el
     // bundle nuevo.
-    let _ = Command::new(&adb).args(["shell", "am", "force-stop", PACKAGE]).output();
+    let _ =
+        Command::new(&adb).args(["-s", &serial, "shell", "am", "force-stop", PACKAGE]).output();
     run(
         workspace,
         &adb.to_string_lossy(),
-        &["install", "-r", &apk.to_string_lossy()],
+        &["-s", &serial, "install", "-r", &apk.to_string_lossy()],
         "adb install falló",
     )?;
     run(
         workspace,
         &adb.to_string_lossy(),
-        &["shell", "am", "start", "-n", &format!("{PACKAGE}/{ACTIVITY}")],
+        &["-s", &serial, "shell", "am", "start", "-n", &format!("{PACKAGE}/{ACTIVITY}")],
         "no se pudo lanzar la app",
     )?;
     Ok(())
+}
+
+/// Los aparatos que `adb` ve ahora mismo, con su forma.
+///
+/// La forma se pregunta al aparato y no se adivina por el nombre del AVD:
+/// `ro.build.characteristics` lleva `watch` en cualquier imagen de Wear OS, y
+/// es lo mismo que mira el sistema.
+fn devices(adb: &Path) -> Result<Vec<(String, Form)>> {
+    let salida = Command::new(adb)
+        .args(["devices"])
+        .output()
+        .context("no se pudo ejecutar adb devices")?;
+    if !salida.status.success() {
+        bail!("adb devices falló");
+    }
+    let listado = String::from_utf8_lossy(&salida.stdout);
+    let mut encontrados = Vec::new();
+    for linea in listado.lines().skip(1) {
+        let mut campos = linea.split_whitespace();
+        let (Some(serial), Some("device")) = (campos.next(), campos.next()) else { continue };
+        let props = Command::new(adb)
+            .args(["-s", serial, "shell", "getprop", "ro.build.characteristics"])
+            .output()
+            .with_context(|| format!("no se pudo preguntar por {serial}"))?;
+        let forma = if String::from_utf8_lossy(&props.stdout).contains("watch") {
+            Form::Watch
+        } else {
+            Form::Phone
+        };
+        encontrados.push((serial.to_owned(), forma));
+    }
+    Ok(encontrados)
+}
+
+/// Elige a qué aparato va el APK.
+///
+/// Sin esto, `adb install` a secas se planta en cuanto hay más de un emulador
+/// arrancado, y con un teléfono y un reloj a la vez —que es lo normal en
+/// cuanto se trabaja en los dos— eso es siempre. Peor: si acertara por
+/// casualidad, el APK del reloj acabaría en el teléfono sin que nada lo dijera.
+fn pick_device(adb: &Path, form: Form) -> Result<String> {
+    let encontrados = devices(adb)?;
+    let candidatos: Vec<&String> = encontrados
+        .iter()
+        .filter(|(_, forma)| *forma == form)
+        .map(|(serial, _)| serial)
+        .collect();
+    match candidatos.as_slice() {
+        [uno] => Ok((*uno).clone()),
+        [] if encontrados.is_empty() => bail!(
+            "no hay ningún aparato conectado; arranca un emulador de {} \
+             (`emulator -avd <nombre>`)",
+            form.nombre()
+        ),
+        [] => bail!(
+            "no hay ningún aparato con forma de {}; lo que hay es: {}",
+            form.nombre(),
+            encontrados
+                .iter()
+                .map(|(serial, forma)| format!("{serial} ({})", forma.nombre()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        varios => bail!(
+            "hay {} aparatos con forma de {}: {}. Elige con --device",
+            varios.len(),
+            form.nombre(),
+            varios.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+        ),
+    }
 }
 
 fn walk(dir: &Path) -> Vec<PathBuf> {

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.angularnative">
+
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      Sin esto el APK es el del teléfono y el reloj lo trata como tal: la
+      Play Store no lo ofrece para el reloj y el sistema no aplica ninguna de
+      sus reglas de forma. Es la declaración que convierte un APK de Android
+      en un APK de Wear OS, y por eso el manifiesto es otro fichero y no una
+      línea condicional del de siempre.
+    -->
+    <uses-feature android:name="android.hardware.type.watch" android:required="true" />
+
+    <!--
+      La corona. Se declara como no obligatoria porque los relojes cuadrados
+      de Wear no siempre la traen, y una app que solo se pueda desplazar con
+      ella no debería negarse a instalarse en los que no la tienen: el dedo
+      sigue funcionando.
+    -->
+    <uses-feature
+        android:name="android.hardware.rotaryencoder.lowres"
+        android:required="false" />
+
+    <application
+        android:label="AngularNative"
+        android:theme="@style/Theme.AngularNative.Wear"
+        android:hardwareAccelerated="true"
+        android:extractNativeLibs="true"
+        android:usesCleartextTraffic="true">
+
+        <!--
+          Que la app no necesita un teléfono emparejado para funcionar. Sin
+          esta clave, Wear OS asume que es la mitad de una app de teléfono y
+          la esconde del lanzador si no encuentra la otra mitad.
+        -->
+        <meta-data
+            android:name="com.google.android.wearable.standalone"
+            android:value="true" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -9,7 +9,20 @@ final class RootViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .black
+
+        #if os(visionOS)
+            // Transparente, no negro.
+            //
+            // La ventana de visionOS ya trae un fondo: el cristal que dibuja el
+            // sistema por detrás de la app, con su desenfoque y su sombra sobre
+            // la habitación de verdad. Pintar negro encima lo tapa entero y
+            // deja una losa opaca flotando en el salón. Lo que se vea de fondo
+            // lo decide la plantilla con `[backgroundColor]`, y lo que no
+            // pinte nada deja pasar el cristal.
+            view.backgroundColor = .clear
+        #else
+            view.backgroundColor = .black
+        #endif
 
         // Antes de crear el runtime: el core construye un módulo nativo por
         // plugin al arrancar el motor, y lo que se registre después no entra.
