@@ -29,6 +29,14 @@
 //! template writing `accessibilityRole="link"` on an `an-button` is saying
 //! this reads as a link, not as "link, button".
 //!
+//! **A role is not enough to be read.** A `UIView` is not an accessibility
+//! element by default, and traits on a view that is not an element reach no
+//! reader: VoiceOver never stops there. It shows up the moment the tree is
+//! walked from outside —a plain `an-view` with `accessibilityRole="slider"`
+//! and nothing else comes back as nothing at all— so a real role also makes
+//! the view an element, unless the template said `accessible="false"`, in
+//! which case the template wins.
+//!
 //! **What UIKit does not have is said out loud.** The contract's vocabulary is
 //! longer than the trait set in three places —`radio`, `expanded` and `busy`—
 //! and none of the three is rounded to the trait next door: it goes out
@@ -82,6 +90,14 @@ pub struct Accessibility {
     /// asked for or one we put there for the state. With it, what the template
     /// wrote is never overwritten.
     explicit_value: HashSet<NodeId>,
+    /// What `[accessible]` said, where it said anything. `None` is not the
+    /// same as `Some(false)`: the first leaves the decision to the role, the
+    /// second is the template taking it.
+    accessible: HashMap<NodeId, bool>,
+    /// Whether the view was an accessibility element before anyone touched it.
+    /// A `UIButton` already is; an `an-view` is not. It is what comes back
+    /// when the template stops asking for anything.
+    base_element: HashMap<NodeId, bool>,
 }
 
 impl Accessibility {
@@ -96,6 +112,8 @@ impl Accessibility {
         self.role.remove(&id);
         self.state.remove(&id);
         self.explicit_value.remove(&id);
+        self.accessible.remove(&id);
+        self.base_element.remove(&id);
     }
 
     /// Applies one of the six. `kind` is only used so a warning can say which
@@ -162,6 +180,7 @@ impl Accessibility {
                     }
                 }
                 self.write_traits(mtm, id, view, kind);
+                self.write_element(mtm, id, view);
             }
             "accessibilityState" => {
                 let raw = value.as_str().unwrap_or("{}");
@@ -190,21 +209,38 @@ impl Accessibility {
             // which is what decorative content needs: without
             // `accessibilityElementsHidden` the children would still be stops,
             // and hiding only the parent hides nothing.
-            "accessible" => match flag(value) {
-                Some(true) => {
-                    view.setIsAccessibilityElement(true, mtm);
-                    view.setAccessibilityElementsHidden(false, mtm);
-                }
-                Some(false) => {
-                    view.setIsAccessibilityElement(false, mtm);
-                    view.setAccessibilityElementsHidden(true, mtm);
-                }
-                None => {
-                    view.setAccessibilityElementsHidden(false, mtm);
-                }
-            },
+            "accessible" => {
+                match flag(value) {
+                    Some(on) => self.accessible.insert(id, on),
+                    None => self.accessible.remove(&id),
+                };
+                self.write_element(mtm, id, view);
+            }
             _ => {}
         }
+    }
+
+    /// Whether this view is a stop for the reader, and whether its own are.
+    ///
+    /// Three things can decide it, in this order: what `[accessible]` said,
+    /// which always wins because it is the prop that exists to say exactly
+    /// this; a real role, which is a statement that the view is something, and
+    /// something gets read; and, failing both, whatever the view already was.
+    fn write_element(&mut self, mtm: MainThreadMarker, id: NodeId, view: &Retained<UIView>) {
+        let base = *self
+            .base_element
+            .entry(id)
+            .or_insert_with(|| view.isAccessibilityElement(mtm));
+        let has_role = self.role.get(&id).is_some_and(|r| trait_of(*r).is_some());
+
+        let (element, hidden) = match self.accessible.get(&id).copied() {
+            Some(true) => (true, false),
+            Some(false) => (false, true),
+            None if has_role => (true, false),
+            None => (base, false),
+        };
+        view.setIsAccessibilityElement(element, mtm);
+        view.setAccessibilityElementsHidden(hidden, mtm);
     }
 
     /// Rebuilds the whole mask. It is the only way to write one trait without

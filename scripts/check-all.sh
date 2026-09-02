@@ -44,6 +44,10 @@ cargo test --quiet 2>&1 | tail -1
 
 echo
 "$ROOT/scripts/check-macos.sh"
+
+echo
+"$ROOT/scripts/check-accessibility.sh"
+
 "$ROOT/scripts/check-external.sh"
 
 echo

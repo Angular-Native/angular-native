@@ -5,19 +5,29 @@
 //! "selected" at once—; here a role is *one* string, a view has exactly one,
 //! and what in UIKit are state traits are separate properties of the
 //! `NSAccessibility` protocol: `setAccessibilityEnabled:`,
-//! `setAccessibilitySelected:`, `setAccessibilityExpanded:`. That is why this
-//! file rebuilds no mask and the iOS one does.
+//! `setAccessibilitySelected:`, `setAccessibilityExpanded:`.
 //!
-//! What it does share with iOS is the rule of not overwriting what is already
+//! **A role is not enough to be read.** This is the part that only showed up
+//! once the tree was walked from outside: AppKit publishes a view to an
+//! assistive client only if it is an accessibility element, and an `NSView` is
+//! not one by default. A plain `an-view` given `accessibilityRole="slider"`
+//! and nothing else came back from the walk as *nothing at all* — the role was
+//! set, the reader never saw it. So a real role also makes the view an
+//! element, unless the template said `accessible="false"`, in which case the
+//! template wins.
+//!
+//! Because of that the six props are not six independent writes: the role, the
+//! state and `accessible` decide together what the view publishes. Rather than
+//! ordering them —props of one frame arrive in whatever order the template
+//! wrote them— everything is kept and everything is rewritten on every change,
+//! which is what the iOS host does with its mask and for the same reason.
+//!
+//! What it shares with iOS is the rule of not overwriting what is already
 //! right. An `NSButton` arrives with role `AXButton` and with its title as
 //! label, both put there by AppKit; an `NSSwitch`, with `AXCheckBox` and
-//! subrole `AXSwitch`. Writing over that without looking would make what was
-//! there worse. So:
-//!
-//! - an empty label **removes** ours instead of writing an empty one, and then
-//!   the system's comes back;
-//! - the system role is read and kept the first time it has to be overwritten,
-//!   and comes back when the template says `none` or drops the prop.
+//! subrole `AXSwitch`. So an empty label **removes** ours instead of writing
+//! an empty one —and then the system's comes back— and the system role is
+//! saved the first time it has to be overwritten, and returns with `none`.
 //!
 //! **And what AppKit does not have is said out loud.** `summary` has no role
 //! —it is a VoiceOver-on-iOS idea, the element that sums a screen up— and
@@ -52,15 +62,39 @@ pub fn handles(key: &str) -> bool {
     )
 }
 
+/// What the template asked for on one node, and what the system had there
+/// before anyone asked for anything.
+struct Entry {
+    role: Option<Role>,
+    state: State,
+    /// What `[accessible]` said. `None` is "said nothing", which is not the
+    /// same as `Some(false)`.
+    accessible: Option<bool>,
+    /// Whether the value sitting on the view was written by the template.
+    /// `checked` only fills a value nobody claimed.
+    explicit_value: bool,
+    /// Whether the template ever said anything about the role, and about the
+    /// state.
+    ///
+    /// Without these, a node that only sets `[accessibilityState]` would still
+    /// have its role written —with the very role AppKit gave it, which sounds
+    /// harmless and is not: writing a role at all replaces AppKit's own
+    /// computation with a fixed answer, and a view whose role was pinned to
+    /// nothing drops out of the tree and takes its window with it. That is not
+    /// a guess; it is what the outside walk showed, and it is the difference
+    /// between "we set the same value" and "we did not touch it".
+    role_touched: bool,
+    state_touched: bool,
+    /// The role and the element flag AppKit gave the view, read the first time
+    /// either was about to be overwritten. They are what comes back when the
+    /// template stops asking.
+    base_role: Option<Retained<NSAccessibilityRole>>,
+    base_element: bool,
+}
+
 #[derive(Default)]
 pub struct Accessibility {
-    /// The role AppKit gave the view, saved the first time one is about to be
-    /// written over it. It is what comes back with `none`.
-    base: HashMap<NodeId, Option<Retained<NSAccessibilityRole>>>,
-    /// Nodes whose value was written by the template: `checked` does not
-    /// overwrite it.
-    explicit_value: HashSet<NodeId>,
-    state: HashMap<NodeId, State>,
+    nodes: HashMap<NodeId, Entry>,
 }
 
 impl Accessibility {
@@ -69,9 +103,7 @@ impl Accessibility {
     }
 
     pub fn forget(&mut self, id: NodeId) {
-        self.base.remove(&id);
-        self.explicit_value.remove(&id);
-        self.state.remove(&id);
+        self.nodes.remove(&id);
     }
 
     pub fn apply(
@@ -83,117 +115,158 @@ impl Accessibility {
         value: &PropValue,
     ) {
         let text = value.as_str().filter(|s| !s.is_empty());
+        // The label and the hint interact with nothing, so they are written
+        // where they arrive. The other four are settled together below.
         match key {
             "accessibilityLabel" => {
                 view.setAccessibilityLabel(text.map(NSString::from_str).as_deref());
+                return;
             }
             // The hint on iOS is the help on macOS: both are what is read
             // *after* the name and only when the name is not enough. AppKit
-            // has no other: `AXHelp` is the one the help tag shows and the one
+            // has no other: `AXHelp` is what the help tag shows and what
             // VoiceOver announces last.
             "accessibilityHint" => {
                 view.setAccessibilityHelp(text.map(NSString::from_str).as_deref());
+                return;
             }
+            _ => {}
+        }
+
+        let entry = self.nodes.entry(id).or_insert_with(|| Entry {
+            role: None,
+            state: State::default(),
+            accessible: None,
+            explicit_value: false,
+            role_touched: false,
+            state_touched: false,
+            base_role: view.accessibilityRole(),
+            base_element: view.isAccessibilityElement(),
+        });
+
+        match key {
             "accessibilityValue" => match text {
                 Some(v) => {
-                    self.explicit_value.insert(id);
+                    entry.explicit_value = true;
                     let value = NSString::from_str(v);
                     unsafe { view.setAccessibilityValue(Some(&value)) };
                 }
+                None => entry.explicit_value = false,
+            },
+            "accessibilityRole" => match text {
+                Some(raw) => match Role::parse(raw) {
+                    Some(role) => {
+                        entry.role = Some(role);
+                        entry.role_touched = true;
+                    }
+                    None => {
+                        warn_once(
+                            &format!("role:{raw}"),
+                            &format!(
+                                "`[accessibilityRole]=\"{raw}\"` on <{kind}> is none of the roles \
+                                 in the contract; the role stays as it was"
+                            ),
+                        );
+                        return;
+                    }
+                },
                 None => {
-                    self.explicit_value.remove(&id);
-                    unsafe { view.setAccessibilityValue(None) };
-                    self.write_state_value(id, view);
+                    entry.role = None;
+                    entry.role_touched = true;
                 }
             },
-            "accessibilityRole" => {
-                let role = match text {
-                    Some(raw) => match Role::parse(raw) {
-                        Some(role) => Some(role),
-                        None => {
-                            warn_once(
-                                &format!("role:{raw}"),
-                                &format!(
-                                    "`[accessibilityRole]=\"{raw}\"` on <{kind}> is none of the \
-                                     roles in the contract; the role stays as it was"
-                                ),
-                            );
-                            return;
-                        }
-                    },
-                    None => None,
-                };
-                self.write_role(id, view, kind, role);
-            }
             "accessibilityState" => {
                 let raw = value.as_str().unwrap_or("{}");
                 let (state, unknown) = parse_state(raw);
-                for entry in unknown {
+                for u in unknown {
                     warn_once(
-                        &format!("state:{}", entry.key),
+                        &format!("state:{}", u.key),
                         &format!(
                             "`[accessibilityState]` on <{kind}> carries `{}: {}`, which is not in \
                              the contract; that key was not applied",
-                            entry.key, entry.value
+                            u.key, u.value
                         ),
                     );
                 }
-                if state.is_empty() {
-                    self.state.remove(&id);
-                } else {
-                    self.state.insert(id, state);
-                }
-                self.write_state(view, kind, &state);
-                self.write_state_value(id, view);
+                entry.state = state;
+                entry.state_touched = true;
             }
-            "accessible" => match flag(value) {
-                Some(true) => view.setAccessibilityElement(true),
-                Some(false) => {
-                    // Dropping the element does not hide its own: AppKit keeps
-                    // publishing the children, and a decorative view with
-                    // three labels inside would still be three stops. Emptying
-                    // the children list is what cuts the whole branch, which
-                    // is what the contract asks for.
-                    view.setAccessibilityElement(false);
-                    unsafe { view.setAccessibilityChildren(Some(&NSArray::new())) };
-                }
-                None => unsafe { view.setAccessibilityChildren(None) },
-            },
-            _ => {}
+            "accessible" => entry.accessible = flag(value),
+            _ => return,
         }
+
+        self.write(id, view, kind);
     }
 
-    /// Writes the role, saving first the one the view had.
-    fn write_role(&mut self, id: NodeId, view: &Retained<NSView>, kind: &str, role: Option<Role>) {
-        let base =
-            self.base.entry(id).or_insert_with(|| view.accessibilityRole()).clone();
+    /// Writes everything the four interacting props add up to.
+    ///
+    /// Whole and not in pieces because they decide together: the role settles
+    /// what the view *is*, `accessible` settles whether it is a stop and
+    /// whether its own are, and the state settles how it reads. Writing one at
+    /// a time would make the outcome depend on the order the template happened
+    /// to list them in.
+    fn write(&mut self, id: NodeId, view: &Retained<NSView>, kind: &str) {
+        let Some(entry) = self.nodes.get(&id) else { return };
 
-        // `none` and "said nothing" are the same thing: hand the view back the
-        // role AppKit gave it.
-        let Some(role) = role.filter(|r| *r != Role::None) else {
-            view.setAccessibilityRole(base.as_deref());
-            view.setAccessibilitySubrole(None);
-            return;
-        };
+        // --- the role
+        //
+        // Only if the template ever said anything about it. Writing back the
+        // role AppKit already had is not a no-op: it pins it.
+        if entry.role_touched {
+            match entry.role.filter(|r| *r != Role::None) {
+                None => {
+                    view.setAccessibilityRole(entry.base_role.as_deref());
+                    view.setAccessibilitySubrole(None);
+                }
+                Some(role) => match role_of(role) {
+                    Some((name, subrole)) => {
+                        view.setAccessibilityRole(Some(name));
+                        view.setAccessibilitySubrole(subrole);
+                    }
+                    None => {
+                        warn_once(
+                            &format!("role-without-role:{}", role.name()),
+                            &format!(
+                                "`[accessibilityRole]=\"{}\"` on <{kind}>: AppKit has no role \
+                                 for that, so it is not applied. The one the system gave it stays",
+                                role.name()
+                            ),
+                        );
+                    }
+                },
+            }
+        }
 
-        let Some((role_name, subrole)) = role_of(role) else {
-            warn_once(
-                &format!("role-without-role:{}", role.name()),
-                &format!(
-                    "`[accessibilityRole]=\"{}\"` on <{kind}>: AppKit has no role for that, so it \
-                     is not applied. The one the system gave it stays",
-                    role.name()
-                ),
-            );
-            return;
-        };
+        // --- whether it is a stop at all
+        //
+        // A role the template asked for and AppKit can honour is a statement
+        // that this is something, and something is read: that is what makes
+        // the view an element. `accessible` overrules it in both directions,
+        // because it is the prop that exists to say exactly this. And with
+        // neither of the two, nothing is written: an element flag pinned to
+        // the value it already had is still a pin.
+        let has_role = entry.role.filter(|r| *r != Role::None).and_then(role_of).is_some();
+        match entry.accessible {
+            Some(explicit) => view.setAccessibilityElement(explicit),
+            None if has_role => view.setAccessibilityElement(true),
+            None if entry.role_touched => view.setAccessibilityElement(entry.base_element),
+            None => {}
+        }
 
-        view.setAccessibilityRole(Some(role_name));
-        view.setAccessibilitySubrole(subrole);
-    }
+        // --- and whether its own are stops too
+        //
+        // Both `true` and `false` cut the branch, and that is not a
+        // coincidence: `true` says "this is **one** element", so what is
+        // inside stops being separate stops, and `false` says "this is
+        // decorative", so it stops too. Dropping the element on its own would
+        // not do it — AppKit keeps publishing the children, and a decorative
+        // view with a label inside would still be a stop.
+        if entry.accessible.is_some() {
+            unsafe { view.setAccessibilityChildren(Some(&NSArray::new())) };
+        }
 
-    /// The three states AppKit knows how to say, each with its own property.
-    fn write_state(&self, view: &Retained<NSView>, kind: &str, state: &State) {
+        // --- how it reads
+        let state = entry.state;
         if let Some(disabled) = state.disabled {
             view.setAccessibilityEnabled(!disabled);
         }
@@ -217,25 +290,26 @@ impl Accessibility {
                 ),
             );
         }
-    }
 
-    /// `checked` in AppKit's shape: the value, as a number.
-    ///
-    /// It is what a macOS checkbox does —an `NSButton` of switch type
-    /// publishes `AXValue` 0, 1 or 2— and that is why the halfway one fits
-    /// here and does not fit in UIKit. Only written if the template set no
-    /// value.
-    fn write_state_value(&self, id: NodeId, view: &Retained<NSView>) {
-        if self.explicit_value.contains(&id) {
-            return;
+        // --- `checked`, in AppKit's shape: the value, as a number
+        //
+        // It is what a macOS checkbox does —an `NSButton` of switch type
+        // publishes `AXValue` 0, 1 or 2— and that is why the halfway one fits
+        // here and does not fit in UIKit. Only written over a value nobody
+        // claimed: what the template wrote always wins.
+        if entry.state_touched && !entry.explicit_value {
+            match state.checked {
+                Some(checked) => {
+                    let number = NSNumber::new_i64(match checked {
+                        Checked::No => 0,
+                        Checked::Yes => 1,
+                        Checked::Mixed => 2,
+                    });
+                    unsafe { view.setAccessibilityValue(Some(&number)) };
+                }
+                None => unsafe { view.setAccessibilityValue(None) },
+            }
         }
-        let Some(checked) = self.state.get(&id).and_then(|s| s.checked) else { return };
-        let number = NSNumber::new_i64(match checked {
-            Checked::No => 0,
-            Checked::Yes => 1,
-            Checked::Mixed => 2,
-        });
-        unsafe { view.setAccessibilityValue(Some(&number)) };
     }
 }
 
