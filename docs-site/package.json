@@ -1,0 +1,17 @@
+{
+  "name": "angular-native-docs",
+  "version": "1.0.0",
+  "description": "",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "keywords": [],
+  "type": "module",
+  "dependencies": {
+    "@astrojs/starlight": "^0.41.11",
+    "astro": "^7.2.10"
+  },
+  "private": true
+}

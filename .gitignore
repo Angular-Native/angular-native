@@ -1,7 +1,9 @@
 target/
-# Sin la barra: en un worktree lo normal es enlazarlo al del repo principal en
-# vez de instalarlo otra vez, y un enlace no es un directorio para git.
+# Sin la barra para que valga a cualquier profundidad: hay uno en la raíz y
+# otro en `docs-site`, que trae su propio Astro y no comparte nada con el
+# framework.
 node_modules
+.astro/
 dist/
 .DS_Store
 *.xcuserdatad/
