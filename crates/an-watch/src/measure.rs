@@ -53,10 +53,23 @@ impl TextMeasurer for WatchMeasurer {
         let Some((width, height)) = self.controls.get(name).copied() else {
             return (0.0, 0.0);
         };
-        // En una pantalla de 40 mm un botón que no ocupe el ancho entero se ve
-        // mal y es difícil de acertar con el dedo, así que se estira. Es la
-        // convención del propio watchOS.
-        let stretches = matches!(name, "Button" | "Slider" | "ProgressBar" | "SegmentedControl");
+        // En una pantalla de 40 mm un control que no ocupe el ancho entero se
+        // ve mal y es difícil de acertar con el dedo, así que se estira. Es la
+        // convención del propio watchOS: sus filas van de borde a borde.
+        //
+        // El `Icon` no está: su tamaño lo fija la plantilla con `[size]`, y
+        // estirarlo daría un símbolo del ancho de la pantalla.
+        let stretches = matches!(
+            name,
+            "Button"
+                | "Slider"
+                | "ProgressBar"
+                | "SegmentedControl"
+                | "Switch"
+                | "Stepper"
+                | "Picker"
+                | "DatePicker"
+        );
         match available_width {
             Some(available) if stretches && available.is_finite() => (available, height),
             _ => (width, height),

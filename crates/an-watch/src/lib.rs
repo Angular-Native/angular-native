@@ -103,7 +103,7 @@ mod tests {
         let button = &root.children[1];
         assert_eq!(button.kind, "Button");
         assert_eq!(button.text.as_deref(), Some("pulsa"));
-        assert!(button.pressable, "la plantilla puso un (press)");
+        assert!(button.listens.iter().any(|e| e == "press"), "la plantilla puso un (press)");
     }
 
     /// Un nodo que se va tiene que irse también de la foto, y la revisión tiene

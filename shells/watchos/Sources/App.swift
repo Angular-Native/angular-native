@@ -13,6 +13,12 @@ struct AngularNativeWatchApp: App {
 
 struct RootView: View {
     @State private var runtime = AnRuntime()
+    /// Quién tiene la corona.
+    ///
+    /// El foco de watchOS es uno solo y la corona va con él, así que se lleva
+    /// en la raíz y se pasa hacia abajo: si cada nodo tuviera el suyo, cada uno
+    /// creería tenerla y ninguno la tendría.
+    @FocusState private var crownTarget: UInt32?
 
     var body: some View {
         // `GeometryReader` da el tamaño real de la pantalla del modelo que sea
@@ -21,17 +27,35 @@ struct RootView: View {
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 if let root = runtime.tree.root {
-                    AnNodeView(node: root) { target, name in
-                        runtime.dispatch(target, name)
-                    }
+                    AnNodeView(
+                        node: root,
+                        controls: runtime.controls,
+                        dispatch: runtime.dispatch,
+                        crownFocus: $crownTarget
+                    )
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
+            .anOverlays(
+                runtime.tree.overlays,
+                controls: runtime.controls,
+                dispatch: runtime.dispatch,
+                crownFocus: $crownTarget
+            )
             .onAppear {
                 runtime.start(width: geometry.size.width, height: geometry.size.height)
             }
             .onChange(of: geometry.size) { _, size in
                 runtime.setViewport(width: size.width, height: size.height)
+            }
+            // La corona se le da al primer nodo que la pide, en orden de
+            // pintado. Se recalcula cuando cambia el árbol y no en cada `body`:
+            // recorrerlo dentro de una recomposición sería recorrerlo varias
+            // veces por frame.
+            .onChange(of: runtime.tree.root) { _, root in
+                if let objetivo = anPrimerNodoConCorona(root), crownTarget == nil {
+                    crownTarget = objetivo
+                }
             }
         }
         // El reloj no tiene barras que respetar como el iPhone: la app ocupa la

@@ -18,6 +18,7 @@ use std::ffi::{c_char, CStr, CString};
 use std::time::Duration;
 
 use an_bridge::{QuickJsRuntime, Request, RuntimeWorker};
+use an_core::PropValue;
 use an_host::{drain_events, new_event_queue, EventQueue, MountSide, ShadowSide};
 
 use crate::host::WatchHost;
@@ -245,22 +246,72 @@ pub unsafe extern "C" fn an_watch_runtime_snapshot(rt: *mut AnWatchRuntime) -> *
 /// Un evento nativo desde SwiftUI. Solo se encola si la plantilla registró ese
 /// oyente sobre ese nodo.
 ///
+/// `payload_json` es un objeto plano —`{"value":0.4}`, `{"x":12,"y":30}`— o
+/// nulo para los eventos que no llevan nada. Se admite JSON y no un puñado de
+/// parámetros porque cada evento lleva claves distintas: un `pan` lleva seis
+/// números y un `dismiss` ninguno, y una firma que valiera para los dos sería
+/// una firma que no dice nada.
+///
+/// Solo se aceptan valores planos. Un objeto o una lista dentro se rechazan
+/// avisando, porque el otro lado —`PropValue`— no los sabe representar y
+/// tragárselos los convertiría en nulos que nadie podría explicar.
+///
 /// # Safety
-/// `rt` debe venir de `an_watch_runtime_new`; `name`, una cadena C válida.
+/// `rt` debe venir de `an_watch_runtime_new`; `name`, una cadena C válida, y
+/// `payload_json`, una cadena C válida o nulo.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_watch_runtime_event(
     rt: *mut AnWatchRuntime,
     target: u32,
     name: *const c_char,
+    payload_json: *const c_char,
 ) {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return };
     if name.is_null() {
         return;
     }
     let Ok(name) = (unsafe { CStr::from_ptr(name) }).to_str() else { return };
-    // Un `press` no lleva carga: en el reloj no hay coordenadas que valga la
-    // pena mandar, porque el dedo tapa el sitio donde tocó.
-    rt.mount.host().dispatch(target, name, Vec::new());
+    let payload = unsafe { read_payload(payload_json) };
+    rt.mount.host().dispatch(target, name, payload);
+}
+
+/// Deshace el objeto JSON de un evento en los pares que entiende el puente.
+unsafe fn read_payload(raw: *const c_char) -> Vec<(String, PropValue)> {
+    if raw.is_null() {
+        return Vec::new();
+    }
+    let Ok(text) = (unsafe { CStr::from_ptr(raw) }).to_str() else {
+        eprintln!("angular-native: la carga de un evento no era UTF-8");
+        return Vec::new();
+    };
+    let parsed: serde_json::Map<String, serde_json::Value> = match serde_json::from_str(text) {
+        Ok(map) => map,
+        Err(error) => {
+            eprintln!("angular-native: la carga de un evento no se entiende: {error}");
+            return Vec::new();
+        }
+    };
+    let mut payload = Vec::with_capacity(parsed.len());
+    for (key, value) in parsed {
+        let converted = match value {
+            serde_json::Value::Bool(b) => PropValue::Bool(b),
+            serde_json::Value::String(s) => PropValue::Str(s),
+            serde_json::Value::Null => PropValue::Null,
+            serde_json::Value::Number(n) => match n.as_f64() {
+                Some(number) => PropValue::Number(number),
+                None => {
+                    eprintln!("angular-native: {key} traía un número que no cabe en un f64");
+                    continue;
+                }
+            },
+            other => {
+                eprintln!("angular-native: {key} traía {other}, que el puente no sabe llevar");
+                continue;
+            }
+        };
+        payload.push((key, converted));
+    }
+    payload
 }
 
 /// # Safety
