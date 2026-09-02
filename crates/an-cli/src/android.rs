@@ -697,6 +697,38 @@ fn pick_device(adb: &Path, form: Form) -> Result<String> {
         ),
     }
 }
+
+/// Comprueba que el aparato que pidió `--device` existe y es de la forma que
+/// se está armando.
+///
+/// Dejar pasar un serial cualquiera sería peor que no tener la opción: el APK
+/// del reloj entra sin quejarse en un teléfono, arranca y pinta, y lo único
+/// que no hace es ser una app de reloj. Es el fallo que solo se ve al
+/// publicarla.
+fn check_device(adb: &Path, serial: &str, form: Form) -> Result<String> {
+    let encontrados = devices(adb)?;
+    match encontrados.iter().find(|(s, _)| s == serial) {
+        Some((s, forma)) if *forma == form => Ok(s.clone()),
+        Some((_, forma)) => bail!(
+            "{serial} tiene forma de {}, y esto es un APK de {}",
+            forma.nombre(),
+            form.nombre()
+        ),
+        None => bail!(
+            "no hay ningún aparato {serial}; lo que hay es: {}",
+            if encontrados.is_empty() {
+                "nada".to_owned()
+            } else {
+                encontrados
+                    .iter()
+                    .map(|(s, forma)| format!("{s} ({})", forma.nombre()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
+        ),
+    }
+}
+
 pub fn install_and_launch(
     workspace: &Workspace,
     apk: &Path,
@@ -706,16 +738,24 @@ pub fn install_and_launch(
     let sdk = Sdk::discover()?;
     let adb = sdk.adb();
     let application_id = application_id(workspace);
-    eprintln!("==> instalando");
+    // A qué aparato va, decidido antes de tocar nada. Sin el `-s`, `adb` elige
+    // por su cuenta: con uno solo acierta siempre, y en cuanto hay dos se
+    // planta —o, si el otro está sin autorizar, ni siquiera se planta y manda
+    // el APK del reloj al teléfono.
+    let serial = match device {
+        Some(pedido) => check_device(&adb, pedido, form)?,
+        None => pick_device(&adb, form)?,
+    };
+    eprintln!("==> instalando en {serial}");
     // Mismo motivo que en iOS: instalar sobre una app en marcha no recarga el
     // bundle nuevo.
     let _ = Command::new(&adb)
-        .args(["shell", "am", "force-stop", &application_id])
+        .args(["-s", &serial, "shell", "am", "force-stop", &application_id])
         .output();
     run(
         workspace,
         &adb.to_string_lossy(),
-        &["install", "-r", &apk.to_string_lossy()],
+        &["-s", &serial, "install", "-r", &apk.to_string_lossy()],
         "adb install falló",
     )?;
     run(
@@ -725,6 +765,8 @@ pub fn install_and_launch(
         // llame de otra forma: `--rename-manifest-package` cualifica los
         // nombres de clase con el paquete original.
         &[
+            "-s",
+            &serial,
             "shell",
             "am",
             "start",
