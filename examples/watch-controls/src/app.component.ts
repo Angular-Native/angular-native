@@ -227,6 +227,10 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
       que se le dé aquí es además el tamaño con el que taffy coloca lo de
       dentro, y una hoja del reloj ocupa la pantalla entera.
     -->
+    <!--
+      El paddingTop de dentro es 56 y no 40: el botón de cerrar de una hoja lo
+      pinta el sistema arriba a la izquierda, y hay que dejarle su sitio.
+    -->
     <an-modal
       [style.position]="'absolute'"
       [style.top]="'0'"
@@ -239,7 +243,7 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
       <an-view
         [style.width]="'100%'"
         [style.height]="'100%'"
-        [style.paddingTop]="'40'"
+        [style.paddingTop]="'56'"
         [style.paddingHorizontal]="'12'"
         [style.gap]="'8'"
         [backgroundColor]="'#101827'">

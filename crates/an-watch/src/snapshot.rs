@@ -484,6 +484,11 @@ fn unheard(event: &str) -> Option<&'static str> {
             "la app del reloj ocupa la pantalla entera y el sistema no reserva \
              márgenes que se puedan preguntar"
         }
+        "focus" | "blur" => {
+            "todavía no: en el reloj el foco es el mismo que decide quién tiene la \
+             corona, y darle dos dueños haría que la corona saltase de sitio al \
+             escribir"
+        }
         _ => return None,
     })
 }
