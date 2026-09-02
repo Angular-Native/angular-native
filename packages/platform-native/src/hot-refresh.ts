@@ -117,6 +117,40 @@ function rewire(type: Declaration, old: Map<string, Declaration>): void {
   def.dependencies = () => resolved
 }
 
+/**
+ * La lista de directivas —o de pipes— que puede usar una plantilla.
+ *
+ * Angular la resuelve una sola vez, al definir el componente, y la función que
+ * deja guardada cierra sobre las dependencias de aquel momento: cambiar
+ * `def.dependencies` después no la toca. Y al recargar en caliente,
+ * `mergeWithExistingDefinition` conserva a propósito la lista que tuviera la
+ * definición vieja, así que tampoco llega la del bundle nuevo.
+ *
+ * Con las dos puertas cerradas, la única forma de que la plantilla nueva
+ * encuentre sus directivas es rehacer la lista aquí, a partir de las clases ya
+ * reapuntadas. Se devuelve una función y no un array porque las definiciones
+ * de esas clases se están cambiando en este mismo barrido: leerlas ahora daría
+ * las viejas.
+ *
+ * Dejarla en `null` —que es lo que se hacía— no la hace recalcularse: la deja
+ * vacía para siempre. Y no se nota casi: sin directivas, `[backgroundColor]`
+ * deja de ser la entrada de `an-view` y pasa por `Renderer2.setProperty`, que
+ * aquí acaba en el mismo `setProp`, así que la pantalla sigue pintando igual.
+ * Lo que no sobrevive es lo que una directiva hace y una prop no —enganchar un
+ * oyente, escribir estilos desde el host—, y eso se vio por primera vez en el
+ * reloj: `an-safe-area` dejaba de apartar del arco y de crecer, y la pantalla
+ * se quedaba negra.
+ */
+function defsFrom(def: Def, kind: 'directive' | 'pipe'): (() => Def[]) | null {
+  if (def.dependencies == null) {
+    return null
+  }
+  return () =>
+    dependenciesOf(def)
+      .map((dep) => (kind === 'pipe' ? dep.ɵpipe : (dep.ɵcmp ?? dep.ɵdir)))
+      .filter((entry): entry is Def => entry != null)
+}
+
 export function hotRefresh(newRoot: Type<unknown>): boolean {
   if (!running) {
     return false
@@ -138,13 +172,22 @@ export function hotRefresh(newRoot: Type<unknown>): boolean {
 
   for (const [key, before] of previous) {
     const after = next.get(key)!
+    // La misma clase, no una nueva que se le parece: viene de la mitad de
+    // arriba del bundle, que no se vuelve a evaluar. Su definición no ha
+    // cambiado, así que no hay nada que sustituir, y sustituirla igualmente no
+    // sale gratis: `replaceMetadata` tira y rehace las vistas de esa clase, y
+    // un componente con `<ng-content />` pierde por el camino lo que le
+    // proyectaron. `an-safe-area` se quedaba vacío y con él la pantalla
+    // entera.
+    if (before === after) {
+      continue
+    }
     if (before.ɵcmp && after.ɵcmp) {
-      // Los `defs` resueltos se guardan en caché la primera vez que se usan.
-      // Angular conserva la caché vieja al mezclar, y entonces un componente
-      // recién añadido a una plantilla no aparecería. Vaciarla antes la hace
-      // recalcularse a partir de las dependencias que se acaban de reapuntar.
-      before.ɵcmp.directiveDefs = null
-      before.ɵcmp.pipeDefs = null
+      // Angular mezcla la definición nueva sobre la vieja pero se queda con
+      // las listas de directivas y pipes que hubiera en esta, así que es aquí
+      // —y no en la nueva— donde hay que dejarlas rehechas.
+      before.ɵcmp.directiveDefs = defsFrom(after.ɵcmp, 'directive')
+      before.ɵcmp.pipeDefs = defsFrom(after.ɵcmp, 'pipe')
       const newDef = after.ɵcmp
       const newFactory = after.ɵfac
       replaceMetadata(
