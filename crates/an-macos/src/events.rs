@@ -525,12 +525,10 @@ pub fn system_cursor(name: &str) -> Option<Retained<NSCursor>> {
 /// —que en escritorio pasa constantemente— el puntero entraría y saldría por
 /// donde ya no hay nada.
 fn tracking_area(
-    mtm: objc2::MainThreadMarker,
     view: &NSView,
     options: NSTrackingAreaOptions,
     owner: &objc2::runtime::AnyObject,
 ) -> Retained<NSTrackingArea> {
-    let _ = mtm;
     let rect = CGRect { origin: CGPoint { x: 0.0, y: 0.0 }, size: CGSize::default() };
     let area = unsafe {
         NSTrackingArea::initWithRect_options_owner_userInfo(
@@ -560,7 +558,6 @@ pub fn attach_cursor(
     // cursor: la forma del puntero es cosa de la ventana con la que se está
     // trabajando, no de una que está detrás.
     let area = tracking_area(
-        mtm,
         view,
         NSTrackingAreaOptions::CursorUpdate | NSTrackingAreaOptions::ActiveInKeyWindow,
         &target,
@@ -674,7 +671,6 @@ pub fn attach(
         // va a ser la excepción que se comporta distinto que el resto del
         // escritorio.
         let area = tracking_area(
-            mtm,
             view,
             NSTrackingAreaOptions::MouseEnteredAndExited | NSTrackingAreaOptions::ActiveInActiveApp,
             &target,
