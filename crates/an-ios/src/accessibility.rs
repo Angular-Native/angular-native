@@ -29,13 +29,18 @@
 //! template writing `accessibilityRole="link"` on an `an-button` is saying
 //! this reads as a link, not as "link, button".
 //!
-//! **A role is not enough to be read.** A `UIView` is not an accessibility
-//! element by default, and traits on a view that is not an element reach no
-//! reader: VoiceOver never stops there. It shows up the moment the tree is
-//! walked from outside —a plain `an-view` with `accessibilityRole="slider"`
-//! and nothing else comes back as nothing at all— so a real role also makes
-//! the view an element, unless the template said `accessible="false"`, in
-//! which case the template wins.
+//! **A role or a name is not enough to be read.** A `UIView` is not an
+//! accessibility element by default, and neither traits nor a label on a view
+//! that is not an element reach any reader: VoiceOver never stops there. It
+//! shows up the moment the tree is walked from outside —a plain `an-view` with
+//! `accessibilityRole="slider"` and nothing else comes back as nothing at
+//! all— and it is the quietest failure in the whole area, because everything
+//! was set correctly.
+//!
+//! So a role the platform can honour makes the view an element, and so does a
+//! label: naming something is saying it is worth reaching. `accessible`
+//! overrules both in either direction, because it is the prop that exists to
+//! say exactly this.
 //!
 //! **What UIKit does not have is said out loud.** The contract's vocabulary is
 //! longer than the trait set in three places —`radio`, `expanded` and `busy`—
@@ -94,6 +99,8 @@ pub struct Accessibility {
     /// same as `Some(false)`: the first leaves the decision to the role, the
     /// second is the template taking it.
     accessible: HashMap<NodeId, bool>,
+    /// Nodes the template gave a name to. A name is a reason to be a stop.
+    labelled: HashSet<NodeId>,
     /// Whether the view was an accessibility element before anyone touched it.
     /// A `UIButton` already is; an `an-view` is not. It is what comes back
     /// when the template stops asking for anything.
@@ -113,6 +120,7 @@ impl Accessibility {
         self.state.remove(&id);
         self.explicit_value.remove(&id);
         self.accessible.remove(&id);
+        self.labelled.remove(&id);
         self.base_element.remove(&id);
     }
 
@@ -136,6 +144,12 @@ impl Accessibility {
             // anything.
             "accessibilityLabel" => {
                 view.setAccessibilityLabel(text.map(NSString::from_str).as_deref(), mtm);
+                if text.is_some() {
+                    self.labelled.insert(id);
+                } else {
+                    self.labelled.remove(&id);
+                }
+                self.write_element(mtm, id, view);
             }
             "accessibilityHint" => {
                 view.setAccessibilityHint(text.map(NSString::from_str).as_deref(), mtm);
@@ -231,15 +245,25 @@ impl Accessibility {
             .base_element
             .entry(id)
             .or_insert_with(|| view.isAccessibilityElement(mtm));
-        let has_role = self.role.get(&id).is_some_and(|r| trait_of(*r).is_some());
+        // `none` counts as a role here on purpose: a template that says "this
+        // has no role" and gives it a name still wants the name read.
+        let has_role =
+            self.role.get(&id).is_some_and(|r| *r == Role::None || trait_of(*r).is_some());
+        let named = self.labelled.contains(&id);
 
         let (element, hidden) = match self.accessible.get(&id).copied() {
             Some(true) => (true, false),
             Some(false) => (false, true),
-            None if has_role => (true, false),
+            None if has_role || named => (true, false),
             None => (base, false),
         };
-        view.setIsAccessibilityElement(element, mtm);
+        // Only if it differs from what the view already reported. Writing a
+        // flag the view already had is a write nobody asked for, and on the
+        // AppKit side the same line cost a button its role — different API,
+        // same rule.
+        if element != base {
+            view.setIsAccessibilityElement(element, mtm);
+        }
         view.setAccessibilityElementsHidden(hidden, mtm);
     }
 
@@ -255,9 +279,14 @@ impl Accessibility {
         let base = *self.base.entry(id).or_insert_with(|| view.accessibilityTraits(mtm));
 
         let mut traits = match self.role.get(&id).copied() {
-            // `none` and "the template said nothing" are the same order for
-            // the mask: hand the view back the traits the system gave it.
-            None | Some(Role::None) => base,
+            // No prop at all: hand the view back the traits the system gave
+            // it. `none` is not this — see below.
+            None => base,
+            // `none` is a role, and the role it names is no role. It clears
+            // the mask rather than restoring it, which is what takes away the
+            // `.button` a `UIButton` was carrying. The Android host makes the
+            // same split, with `android.view.View` for exactly this.
+            Some(Role::None) => 0,
             Some(role) => match trait_of(role) {
                 Some(bit) => bit,
                 None => {

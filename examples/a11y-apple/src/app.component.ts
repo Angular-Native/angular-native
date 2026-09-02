@@ -92,6 +92,26 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
         [color]="'#93c5fd'"
         [attr.accessibilityLabel]="'Save the changes you made'"></an-button>
 
+      <!-- A role taken away. 'none' is not the same as saying nothing: saying
+           nothing hands the control back the role the system gave it, and
+           'none' strips it. Same split the Android host makes, where 'none' is
+           the 'android.view.View' class. -->
+      <an-button
+        [style.height]="36"
+        [title]="'Stripped of its role'"
+        [variant]="'tonal'"
+        [color]="'#93c5fd'"
+        [attr.accessibilityRole]="'none'"></an-button>
+
+      <!-- A name on a plain view and nothing else. Without a role there is
+           nothing to make it a stop, so naming it has to be enough: a label
+           that reaches no reader is the quietest failure in the whole area. -->
+      <an-view
+        [style.height]="26"
+        [borderRadius]="4"
+        [backgroundColor]="'#1a2235'"
+        [attr.accessibilityLabel]="'Named and nothing else'"></an-view>
+
       <!-- A switch, on. 'checked' is nobody's trait: it goes into the value,
            and it goes in with the platform's own convention rather than a word
            of ours, so the reader says it in the user's language. -->

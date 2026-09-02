@@ -206,7 +206,7 @@ if [ "${permission:-0}" -eq 2 ]; then
 fi
 
 BUILD_LOG="$(mktemp)"
-if cargo an macos examples/a11y --no-launch >"$BUILD_LOG" 2>&1; then
+if cargo an macos examples/a11y-apple --no-launch >"$BUILD_LOG" 2>&1; then
   echo "  ok   the accessibility example builds into the .app"
 else
   echo "  FALLO the accessibility example does not build"
@@ -276,13 +276,19 @@ expect 'AXButton label="Chosen and switched off" enabled=false selected=true' \
 expect 'AXRadioButton label="No trait in UIKit"' \
   'role="radio", which UIKit has not, is AXRadioButton here'
 
-# The one that guards against the easy mistake: writing our label over the
-# system's. A `NSButton` arrives with its title as its name, and a host that
-# wrote an empty label on top would leave this row nameless.
+expect 'AXUnknown title="Stripped of its role"' \
+  'role="none" takes the role away and leaves the name, like android.view.View'
+expect 'AXUnknown label="Named and nothing else"' \
+  'a name on a plain view is enough to make it a stop'
+
+# The two that guard against the easy mistake: writing our label over the
+# system's. An `NSButton` arrives with its title as its name and with a role
+# AppKit works out for itself, and both are lost the moment anything is
+# overridden on the view. The second row is the one that catches it.
 expect 'AXButton title="Untouched button"' \
   'a system button nobody labelled keeps the name AppKit gave it'
 expect 'AXButton label="Save the changes you made" title="Save"' \
-  'and one the template did label reads with ours, not with its title'
+  'and one the template did label reads with ours and is still a button'
 
 # And what must **not** be there. An accessibility check that only looks for
 # what it expects cannot catch the opposite failure: something read out that
@@ -296,8 +302,6 @@ absent 'decorative filler' \
   'accessible="false" takes the text inside out of the tree with it'
 absent 'AXStaticText value="Play"' \
   'accessible="true" makes the row one stop: its icon and its text are not two more'
-absent 'label="No role in AppKit"' \
-  'role="summary", which AppKit has not, is left out instead of faked'
 
 # The log side of the same coin: what could not be applied has to have been
 # said. A host that drops something quietly passes every check above.
@@ -306,6 +310,8 @@ said() { # <regexp> <what it proves>
   check $r "$2"
 }
 
+expect 'AXUnknown label="No role in AppKit"' \
+  'role="summary", which AppKit has not, keeps the name and claims no role'
 said 'accessibilityRole.="summary". on <View>: AppKit has no role' \
   'and it says so, with the name of what was asked for'
 said 'asks for .busy.: the NSAccessibility protocol has no property' \

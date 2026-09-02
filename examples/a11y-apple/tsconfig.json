@@ -11,7 +11,7 @@
     "useDefineForClassFields": false,
     "experimentalDecorators": false,
     "moduleDetection": "force",
-    "outDir": "../../build/js/a11y",
+    "outDir": "../../build/js/a11y-apple",
     "rootDir": "../..",
     "paths": {
       "@angular-native/platform": ["../../packages/platform-native/src/public-api.ts"],

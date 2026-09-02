@@ -1060,8 +1060,7 @@ impl HostRenderer for AppKitHost {
             // NSAccessibility protocol, but `checked` ends up in the value,
             // and that means knowing whether the template set one.
             _ if crate::accessibility::handles(key) => {
-                let kind_name = format!("{kind:?}");
-                self.accessibility.apply(id, &native, &kind_name, key, value);
+                self.accessibility.apply(id, &native, kind, key, value);
             }
 
             // --- geometría propia de la vista

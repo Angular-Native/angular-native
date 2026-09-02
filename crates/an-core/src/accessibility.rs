@@ -32,9 +32,14 @@ pub enum Role {
     Slider,
     Search,
     Summary,
-    /// "This view claims no role." Not the same as not sending the prop: it is
-    /// an order to drop whatever was set before and hand the view back the
-    /// role the system gave it.
+    /// "This view has no role." **Not** the same as not sending the prop.
+    ///
+    /// Dropping the prop hands the view back whatever the system gave it — a
+    /// `UIButton` goes back to reading as a button. `none` is the opposite: it
+    /// takes the role away, including the one the widget underneath was
+    /// carrying. It is the same split the Android host makes, where dropping
+    /// the prop restores the widget's class and `none` sets
+    /// `android.view.View`, the class that means nothing.
     None,
 }
 
