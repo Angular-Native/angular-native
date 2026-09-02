@@ -60,7 +60,7 @@ pub fn assemble(
 ) -> Result<Package> {
     let root = &workspace.root;
     let profile = if release { "release" } else { "debug" };
-    let app_dir = root.join("build/watchos").join(format!("{APP_NAME}.app"));
+    let app_dir = workspace.build_dir().join("watchos").join(format!("{APP_NAME}.app"));
 
     eprintln!("==> core Rust ({profile}, {TARGET})");
     // `+nightly` y `build-std`: ver la cabecera. Si esto falla porque falta el
@@ -107,7 +107,7 @@ pub fn assemble(
     }
     sources.extend(swift_sources(&root.join("shells/shared"))?);
 
-    let lib_dir = root.join("target").join(TARGET).join(profile);
+    let lib_dir = workspace.target_dir().join(TARGET).join(profile);
     let mut args: Vec<String> = vec![
         "swiftc".into(),
         "-sdk".into(),

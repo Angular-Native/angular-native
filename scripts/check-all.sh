@@ -33,6 +33,7 @@ cargo test --quiet 2>&1 | tail -1
 
 echo
 "$ROOT/scripts/check-macos.sh"
+"$ROOT/scripts/check-external.sh"
 
 echo
 "$ROOT/scripts/check-plugins.sh"

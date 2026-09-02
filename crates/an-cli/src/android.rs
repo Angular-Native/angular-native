@@ -13,17 +13,18 @@ use anyhow::{bail, Context, Result};
 use crate::plugins::{self, Platform, Plugin};
 use crate::workspace::Workspace;
 
+/// El paquete Java del shell. No cambia: es el de `shells/android/java`, y va
+/// escrito en cada `package dev.angularnative;`. Lo que sí cambia por proyecto
+/// es el identificador de la aplicación, y para eso está
+/// `--rename-manifest-package`, que reescribe el manifiesto y deja las clases
+/// donde estaban.
 const PACKAGE: &str = "dev.angularnative";
 const ACTIVITY: &str = "dev.angularnative.MainActivity";
 const ABI: &str = "arm64-v8a";
 const RUST_TARGET: &str = "aarch64-linux-android";
 
-/// Para qué clase de aparato se arma el APK.
-///
-/// Un reloj con Wear OS corre `android.view.View` como cualquier teléfono, así
-/// que el core, la biblioteca nativa y las 4.500 líneas de Java son las mismas
-/// y esto no parte el build en dos: lo único que cambia es el manifiesto, que
-/// es donde se declara la forma del aparato y el tema que le toca.
+/// Teléfono o reloj. Los dos son Android y comparten host; lo que cambia
+/// es el manifiesto y en qué aparato se instala.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Form {
     Phone,
@@ -33,6 +34,14 @@ pub enum Form {
 impl Form {
     /// El manifiesto de cada forma. No es un fichero con condicionales porque
     /// el formato no tiene ninguno: `aapt2` no sabe de variantes.
+    /// El nombre suelto, para encontrar el que ponga un proyecto de fuera.
+    fn manifest_name(self) -> &'static str {
+        match self {
+            Form::Phone => "AndroidManifest.xml",
+            Form::Watch => "AndroidManifest.wear.xml",
+        }
+    }
+
     fn manifest(self) -> &'static str {
         match self {
             Form::Phone => "shells/android/AndroidManifest.xml",
@@ -48,7 +57,6 @@ impl Form {
         }
     }
 }
-
 pub struct Sdk {
     pub root: PathBuf,
     pub build_tools: PathBuf,
@@ -116,7 +124,9 @@ pub fn assemble(
     let sdk = Sdk::discover()?;
     let root = &workspace.root;
     let profile = if release { "release" } else { "debug" };
-    let out = root.join("build/android");
+    let app_name = workspace.app_name();
+    let application_id = application_id(workspace);
+    let out = workspace.build_dir().join("android");
     let staging = out.join("apk");
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(staging.join("assets"))?;
@@ -136,7 +146,7 @@ pub fn assemble(
         bail!("la compilación del core para Android falló");
     }
     std::fs::copy(
-        root.join("target").join(RUST_TARGET).join(profile).join("liban_android.so"),
+        workspace.target_dir().join(RUST_TARGET).join(profile).join("liban_android.so"),
         staging.join(format!("lib/{ABI}/liban_android.so")),
     )?;
     std::fs::copy(bundle, staging.join("assets/main.js"))?;
@@ -176,9 +186,9 @@ pub fn assemble(
         );
     }
 
-    // Los recursos propios del shell: los dos temas, uno por forma. Se
-    // compilan aquí y no en `prepare-android-deps.py` porque son nuestros y
-    // cambian; los de las librerías no cambian nunca y por eso se cachean.
+    // Los recursos propios del shell —el tema de la app— se compilan aquí y no
+    // en `prepare-android-deps.py` porque son nuestros y cambian; los de las
+    // librerías no cambian nunca y por eso aquellos se cachean.
     eprintln!("==> aapt2 compile (recursos del shell)");
     let app_res = out.join("shell-res.zip");
     let _ = std::fs::remove_file(&app_res);
@@ -197,15 +207,19 @@ pub fn assemble(
 
     // El enlace de recursos va antes que `javac`: de aquí salen las clases
     // `R` que las librerías necesitan para encontrar sus propios recursos.
-    eprintln!("==> aapt2 link ({})", form.nombre());
+    eprintln!("==> aapt2 link");
     let unsigned = out.join("unsigned.apk");
     let generado = out.join("gen");
     let _ = std::fs::remove_dir_all(&generado);
     std::fs::create_dir_all(&generado)?;
-    let manifest = root.join(form.manifest());
-    if !manifest.is_file() {
-        bail!("no encuentro el manifiesto {}", manifest.display());
-    }
+    // El manifiesto del proyecto pisa al del shell si lo hay: es lo que escribe
+    // `an add android`, y a partir de ahí es del usuario. Tiene que seguir
+    // declarando el paquete del shell, porque ahí están las clases; el
+    // identificador de la aplicación lo pone `--rename-manifest-package`.
+    let manifest = workspace
+        .overlay("android", form.manifest_name())
+        .unwrap_or_else(|| root.join(form.manifest()));
+    comprobar_manifiesto(&manifest)?;
     let mut link: Vec<String> = vec![
         "link".into(),
         "-I".into(),
@@ -225,12 +239,19 @@ pub fn assemble(
         "-o".into(),
         unsigned.to_string_lossy().into_owned(),
     ];
+    // En el monorepo el identificador ya es el del manifiesto y no hay nada que
+    // renombrar; renombrarlo igualmente cambiaría el paquete instalado sin que
+    // nadie lo haya pedido.
+    if application_id != PACKAGE {
+        link.push("--rename-manifest-package".into());
+        link.push(application_id.clone());
+    }
     for recurso in &recursos {
         link.push("-R".into());
         link.push(recurso.clone());
     }
-    // Los nuestros van al final: con `--auto-add-overlay`, el último gana, y
-    // un tema de la app tiene que poder pisar al de la librería.
+    // Los del shell van los últimos: `--auto-add-overlay` deja que lo de aquí
+    // redefina lo que traigan las librerías, y no al revés.
     link.push("-R".into());
     link.push(app_res.to_string_lossy().into_owned());
     run(root, &sdk.tool("aapt2").to_string_lossy(), &link, "aapt2 link falló")?;
@@ -356,12 +377,12 @@ pub fn assemble(
     )?;
 
     let keystore = debug_keystore()?;
-    // Un nombre por forma: los dos APK llevan el mismo paquete y si
+    // Un nombre por forma: los dos APK llevan el mismo paquete, y si
     // compartieran fichero, armar el del reloj dejaría al del teléfono
     // apuntando a un APK que ya no es el suyo.
     let apk = out.join(match form {
-        Form::Phone => "AngularNative.apk",
-        Form::Watch => "AngularNative-wear.apk",
+        Form::Phone => format!("{app_name}.apk"),
+        Form::Watch => format!("{app_name}-wear.apk"),
     });
     let _ = std::fs::remove_file(&apk);
     run(
@@ -387,6 +408,39 @@ pub fn assemble(
     let size = std::fs::metadata(&apk)?.len();
     eprintln!("==> {} MB en {}", size / (1024 * 1024), apk.display());
     Ok(apk)
+}
+
+/// El identificador con el que Android instala la app.
+///
+/// En un proyecto de fuera es el `app.bundleId`, el mismo que en iOS. En el
+/// monorepo es el paquete del shell tal cual: aquí no hay proyecto que
+/// consultar y cambiarlo movería de sitio la app de ejemplo que ya está
+/// instalada en el emulador de todo el mundo.
+fn application_id(workspace: &Workspace) -> String {
+    match &workspace.project {
+        Some(project) => project.bundle_id.clone(),
+        None => PACKAGE.to_owned(),
+    }
+}
+
+/// Que el manifiesto siga declarando el paquete del shell.
+///
+/// Si alguien lo cambia a mano, `javac` compila igual —las clases llevan su
+/// `package` dentro— pero Android no encuentra la actividad y la app no abre.
+/// Vale más pararlo aquí.
+fn comprobar_manifiesto(manifest: &Path) -> Result<()> {
+    let texto = std::fs::read_to_string(manifest)
+        .with_context(|| format!("no se pudo leer {}", manifest.display()))?;
+    if !texto.contains(&format!("package=\"{PACKAGE}\"")) {
+        bail!(
+            "{}: el manifiesto tiene que declarar package=\"{PACKAGE}\", que es donde están \
+             las clases del shell.\n\
+             El identificador de la aplicación no se pone aquí: sale de app.bundleId en \
+             angular-native.json.",
+            manifest.display()
+        );
+    }
+    Ok(())
 }
 
 /// El almacén de claves de depuración estándar. Si no existe, se crea: es el
@@ -425,43 +479,6 @@ fn debug_keystore() -> Result<PathBuf> {
     Ok(path)
 }
 
-pub fn install_and_launch(
-    workspace: &Workspace,
-    apk: &Path,
-    form: Form,
-    device: Option<&str>,
-) -> Result<()> {
-    let sdk = Sdk::discover()?;
-    let adb = sdk.adb();
-    let serial = match device {
-        Some(pedido) => pedido.to_owned(),
-        None => pick_device(&adb, form)?,
-    };
-    eprintln!("==> instalando en {serial}");
-    // Mismo motivo que en iOS: instalar sobre una app en marcha no recarga el
-    // bundle nuevo.
-    let _ =
-        Command::new(&adb).args(["-s", &serial, "shell", "am", "force-stop", PACKAGE]).output();
-    run(
-        workspace,
-        &adb.to_string_lossy(),
-        &["-s", &serial, "install", "-r", &apk.to_string_lossy()],
-        "adb install falló",
-    )?;
-    run(
-        workspace,
-        &adb.to_string_lossy(),
-        &["-s", &serial, "shell", "am", "start", "-n", &format!("{PACKAGE}/{ACTIVITY}")],
-        "no se pudo lanzar la app",
-    )?;
-    Ok(())
-}
-
-/// Los aparatos que `adb` ve ahora mismo, con su forma.
-///
-/// La forma se pregunta al aparato y no se adivina por el nombre del AVD:
-/// `ro.build.characteristics` lleva `watch` en cualquier imagen de Wear OS, y
-/// es lo mismo que mira el sistema.
 fn devices(adb: &Path) -> Result<Vec<(String, Form)>> {
     let salida = Command::new(adb)
         .args(["devices"])
@@ -525,6 +542,36 @@ fn pick_device(adb: &Path, form: Form) -> Result<String> {
             varios.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
         ),
     }
+}
+pub fn install_and_launch(
+    workspace: &Workspace,
+    apk: &Path,
+    form: Form,
+    device: Option<&str>,
+) -> Result<()> {
+    let sdk = Sdk::discover()?;
+    let adb = sdk.adb();
+    let application_id = application_id(workspace);
+    eprintln!("==> instalando");
+    // Mismo motivo que en iOS: instalar sobre una app en marcha no recarga el
+    // bundle nuevo.
+    let _ = Command::new(&adb).args(["shell", "am", "force-stop", &application_id]).output();
+    run(
+        workspace,
+        &adb.to_string_lossy(),
+        &["install", "-r", &apk.to_string_lossy()],
+        "adb install falló",
+    )?;
+    run(
+        workspace,
+        &adb.to_string_lossy(),
+        // La actividad conserva el paquete del shell aunque la aplicación se
+        // llame de otra forma: `--rename-manifest-package` cualifica los
+        // nombres de clase con el paquete original.
+        &["shell", "am", "start", "-n", &format!("{application_id}/{ACTIVITY}")],
+        "no se pudo lanzar la app",
+    )?;
+    Ok(())
 }
 
 fn walk(dir: &Path) -> Vec<PathBuf> {

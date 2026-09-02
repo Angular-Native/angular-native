@@ -5,6 +5,13 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
+# El binario se llama `an`, no `an-cli`: `cargo install --path crates/an-cli` lo
+# deja en el PATH con el nombre que sale en la documentación, y desde ahí sirve
+# en cualquier proyecto Angular sin pasar por `cargo`.
+[[bin]]
+name = "an"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0.104"
 axum = { version = "0.8.9", features = ["ws"] }

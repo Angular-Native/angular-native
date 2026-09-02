@@ -7,6 +7,7 @@
 mod android;
 mod build;
 mod dev;
+mod init;
 mod ios;
 mod macos;
 mod plugins;
@@ -45,37 +46,10 @@ enum Command {
         #[arg(long)]
         no_launch: bool,
     },
-    /// Compila, arma el .app de la tele y lo lanza en el simulador de tvOS.
+    /// Compila, arma el .app del reloj y lo lanza en el simulador de watchOS.
     ///
-    /// Necesita nightly con `rust-src`: `aarch64-apple-tvos-sim` es un target
-    /// de nivel 3 y su `std` se construye en el momento.
-    Tvos {
-        app: Option<String>,
-        /// Nombre del simulador de tvOS.
-        #[arg(long, default_value = TELE_POR_DEFECTO)]
-        device: String,
-        #[arg(long)]
-        release: bool,
-        /// Solo arma el .app, sin instalarlo.
-        #[arg(long)]
-        no_launch: bool,
-    },
-    /// Compila, arma el .app y lo lanza en el simulador de visionOS.
-    ///
-    /// Necesita nightly con `rust-src`, por lo mismo que tvOS.
-    Visionos {
-        app: Option<String>,
-        /// Nombre del simulador de visionOS.
-        #[arg(long, default_value = VISOR_POR_DEFECTO)]
-        device: String,
-        #[arg(long)]
-        release: bool,
-        /// Solo arma el .app, sin instalarlo.
-        #[arg(long)]
-        no_launch: bool,
-    },
-    /// Compila, arma el .app de escritorio y lo lanza en este Mac.
-    ///
+    /// Necesita nightly con `rust-src`: `aarch64-apple-watchos-sim` es un
+    /// target de nivel 3 y su `std` se construye en el momento.
     /// No hay simulador: la app corre aquí mismo. Por defecto lleva el ejemplo
     /// de los controles, que es el que enseña de un vistazo qué pinta AppKit y
     /// qué no.
@@ -99,22 +73,6 @@ enum Command {
         #[arg(long)]
         release: bool,
     },
-    /// Compila, arma el APK y lo lanza en el emulador de Android.
-    Android {
-        app: Option<String>,
-        #[arg(long)]
-        release: bool,
-        /// Solo arma el APK, sin instalarlo.
-        #[arg(long)]
-        no_launch: bool,
-        /// Número de serie del aparato (`adb devices`). Por defecto, el único
-        /// que haya con forma de teléfono.
-        #[arg(long)]
-        device: Option<String>,
-    },
-    /// Compila, arma el APK del reloj y lo lanza en un emulador de Wear OS.
-    ///
-    /// Es un comando aparte y no un `--wear` de `an android` por lo mismo que
     /// `an watchos` no es un `--watch` de `an ios`: cambia el manifiesto,
     /// cambia el tema, cambia el ejemplo por defecto y cambia el aparato al
     /// que va. Con un flag habría que repetir las cuatro cosas en cada
@@ -130,6 +88,15 @@ enum Command {
         /// que haya con forma de reloj.
         #[arg(long)]
         device: Option<String>,
+    },
+    /// Compila, arma el APK y lo lanza en el emulador de Android.
+    Android {
+        app: Option<String>,
+        #[arg(long)]
+        release: bool,
+        /// Solo arma el APK, sin instalarlo.
+        #[arg(long)]
+        no_launch: bool,
     },
     /// Enseña los plugins de los que depende una app.
     ///
@@ -153,17 +120,32 @@ enum Command {
         /// Lanza en el simulador del reloj en vez de en el del teléfono.
         #[arg(long)]
         watchos: bool,
-        /// Lanza como app de escritorio en este Mac.
-        #[arg(long)]
-        macos: bool,
-        /// Lanza en un emulador de Wear OS. Aquí sí es un flag y no un
-        /// comando: `an dev` ya elige aparato con flags y el ejemplo lo pone
-        /// quien lo invoca.
-        #[arg(long)]
-        wearos: bool,
         /// No lanza nada; solo sirve el bundle.
         #[arg(long)]
         no_launch: bool,
+    },
+    /// Prepara un proyecto Angular existente para compilar a nativo.
+    ///
+    /// Se ejecuta dentro del proyecto —uno de `ng new`— y le añade las
+    /// dependencias, el tsconfig del build nativo y un punto de entrada. No
+    /// toca nada de lo que ya haya.
+    Init {
+        /// Directorio del proyecto. Por defecto, el actual.
+        dir: Option<String>,
+        /// Nombre de la app. Por defecto sale del `name` del package.json.
+        #[arg(long)]
+        name: Option<String>,
+        /// Identificador del paquete, p. ej. com.ejemplo.miapp.
+        #[arg(long)]
+        id: Option<String>,
+        /// Reescribe lo que genera `an init` y reinstala los paquetes.
+        /// Nunca toca el código de la app.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Añade una plataforma al proyecto: `an add ios`, `an add android`.
+    Add {
+        platform: String,
     },
 }
 
@@ -187,39 +169,14 @@ impl From<PlatformArg> for plugins::Platform {
 /// es el reloj.
 const TELEFONO_POR_DEFECTO: &str = "iPhone 17 Pro";
 const RELOJ_POR_DEFECTO: &str = "Apple Watch Series 11 (46mm)";
-const TELE_POR_DEFECTO: &str = "Apple TV 4K (3rd generation)";
-const VISOR_POR_DEFECTO: &str = "Apple Vision Pro";
-
-/// Lo que hacen igual las tres familias de UIKit: descubrir plugins, compilar
-/// el bundle, armar el `.app` y —si se pide— lanzarlo.
-///
-/// `por_defecto` es la app que se usa cuando no se nombra ninguna. iOS se
-/// queda con la del workspace; tvOS y visionOS traen la suya porque una
-/// pantalla de tele y una ventana volumétrica no se parecen a un teléfono.
-#[allow(clippy::too_many_arguments)]
-fn uikit(
-    workspace: &workspace::Workspace,
-    family: ios::Family,
-    app: Option<String>,
-    device: String,
-    release: bool,
-    no_launch: bool,
-    por_defecto: Option<&str>,
-) -> anyhow::Result<()> {
-    let elegida = app.as_deref().or(por_defecto);
-    let app = workspace.app(elegida)?;
-    let found = plugins::discover(workspace, &app)?;
-    let bundle = build::bundle(workspace, &app, release, &found)?;
-    let package = ios::assemble(workspace, family, &bundle, release, None, &found)?;
-    if no_launch {
-        println!("{}", package.dir.display());
-        return Ok(());
-    }
-    ios::launch(&package, &device)
-}
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    // `an init` es el único que corre donde todavía no hay nada que descubrir:
+    // el proyecto no está inicializado, que es justo el motivo de ejecutarlo.
+    if let Command::Init { dir, name, id, force } = &cli.command {
+        return init::init(dir.as_deref(), name.as_deref(), id.as_deref(), *force);
+    }
     let workspace = workspace::Workspace::discover()?;
 
     match cli.command {
@@ -240,32 +197,16 @@ fn main() -> anyhow::Result<()> {
             }
         }
         Command::Ios { app, device, release, no_launch } => {
-            uikit(&workspace, ios::Family::Ios, app, device, release, no_launch, None)
+            let app = workspace.app(app.as_deref())?;
+            let found = plugins::discover(&workspace, &app)?;
+            let bundle = build::bundle(&workspace, &app, release, &found)?;
+            let package = ios::assemble(&workspace, &bundle, release, None, &found)?;
+            if no_launch {
+                println!("{}", package.dir.display());
+                return Ok(());
+            }
+            ios::launch(&package, &device)
         }
-        Command::Tvos { app, device, release, no_launch } => {
-            // El ejemplo por defecto de la tele no es el del teléfono: en una
-            // pantalla de 1920x1080 vista desde el sofá, `hello-angular` sale
-            // en una esquina y con la letra ilegible. Y sobre todo, en tvOS no
-            // hay toques: lo que hay que enseñar es el foco del mando.
-            uikit(
-                &workspace,
-                ios::Family::TvOs,
-                app,
-                device,
-                release,
-                no_launch,
-                Some("examples/hello-tv"),
-            )
-        }
-        Command::Visionos { app, device, release, no_launch } => uikit(
-            &workspace,
-            ios::Family::VisionOs,
-            app,
-            device,
-            release,
-            no_launch,
-            Some("examples/hello-vision"),
-        ),
         Command::Macos { app, release, no_launch } => {
             // El ejemplo por defecto del escritorio no es el de todos los
             // demás: `controls` enseña los controles del sistema uno detrás de
@@ -292,7 +233,7 @@ fn main() -> anyhow::Result<()> {
             let package = watchos::assemble(&workspace, &bundle, release, None)?;
             watchos::launch(&package, &device)
         }
-        Command::Android { app, release, no_launch, device } => {
+        Command::Android { app, release, no_launch } => {
             let app = workspace.app(app.as_deref())?;
             let found = plugins::discover(&workspace, &app)?;
             let bundle = build::bundle(&workspace, &app, release, &found)?;
@@ -302,7 +243,7 @@ fn main() -> anyhow::Result<()> {
                 println!("{}", apk.display());
                 return Ok(());
             }
-            android::install_and_launch(&workspace, &apk, android::Form::Phone, device.as_deref())
+            android::install_and_launch(&workspace, &apk, android::Form::Phone, None)
         }
         Command::Wearos { app, release, no_launch, device } => {
             // Igual que en el reloj de Apple: el ejemplo por defecto no puede
@@ -319,17 +260,12 @@ fn main() -> anyhow::Result<()> {
             }
             android::install_and_launch(&workspace, &apk, android::Form::Watch, device.as_deref())
         }
-        Command::Dev { app, device, port, android, watchos, wearos, macos, no_launch } => {
+        Command::Dev { app, device, port, android, watchos, no_launch } => {
             let app = workspace.app(app.as_deref())?;
             let found = plugins::discover(&workspace, &app)?;
-            if macos {
-                macos::reject_plugins(&found)?;
-                return dev::run(workspace, app, dev::Target::MacOs, port, no_launch, found);
-            }
-            let target = match (android, watchos, wearos) {
-                (_, _, true) => dev::Target::Android { form: crate::android::Form::Watch },
-                (true, _, _) => dev::Target::Android { form: crate::android::Form::Phone },
-                (_, true, _) => dev::Target::WatchOs {
+            let target = match (android, watchos) {
+                (true, _) => dev::Target::Android,
+                (_, true) => dev::Target::WatchOs {
                     device: if device == TELEFONO_POR_DEFECTO {
                         RELOJ_POR_DEFECTO.to_owned()
                     } else {
@@ -343,5 +279,8 @@ fn main() -> anyhow::Result<()> {
             }
             dev::run(workspace, app, target, port, no_launch, found)
         }
+        Command::Add { platform } => init::add(&workspace, &platform),
+        // Ya se atendió antes de descubrir el proyecto.
+        Command::Init { .. } => unreachable!(),
     }
 }

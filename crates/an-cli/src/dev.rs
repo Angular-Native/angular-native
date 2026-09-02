@@ -30,7 +30,7 @@ use tokio::sync::broadcast;
 
 use crate::plugins::Plugin;
 use crate::workspace::Workspace;
-use crate::{build, ios, macos, watchos};
+use crate::{build, ios, watchos};
 
 /// Los cambios llegan en ráfagas: guardar en un editor dispara varios eventos,
 /// y `ngc` escribe decenas de ficheros. Se espera a que amaine.
@@ -46,12 +46,7 @@ struct Server {
 pub enum Target {
     Ios { device: String },
     WatchOs { device: String },
-    /// App de escritorio en este mismo Mac. No hay simulador que arrancar, así
-    /// que el ciclo de guardar y ver el cambio es el más corto de los cuatro.
-    MacOs,
-    /// Teléfono o reloj: el mismo host y el mismo servidor, distinto
-    /// manifiesto y distinto aparato.
-    Android { form: crate::android::Form },
+    Android,
 }
 
 pub fn run(
@@ -76,12 +71,10 @@ pub fn run(
     // El emulador de Android no ve `localhost`: la máquina anfitriona es
     // 10.0.2.2 desde dentro.
     let url = match target {
-        // El Mac y los dos simuladores comparten la red de la máquina, así que
-        // les vale la misma dirección.
-        Target::Ios { .. } | Target::WatchOs { .. } | Target::MacOs => {
-            format!("http://127.0.0.1:{port}")
-        }
-        Target::Android { .. } => format!("http://{}:{port}", crate::android::EMULATOR_HOST),
+        // El simulador del reloj comparte la red del Mac igual que el del
+        // teléfono, así que le vale la misma dirección.
+        Target::Ios { .. } | Target::WatchOs { .. } => format!("http://127.0.0.1:{port}"),
+        Target::Android => format!("http://{}:{port}", crate::android::EMULATOR_HOST),
     };
 
     // El puerto se abre antes de dar nada por bueno: si ya hay otro `an dev`
@@ -106,41 +99,32 @@ pub fn run(
     if !no_launch {
         match &target {
             Target::Ios { device } => {
-                // `an dev` solo cubre iOS de las tres familias de UIKit.
-                //
-                // No es que tvOS y visionOS no puedan: comparten shell, y el
-                // `DevClient` que se suscribe a las recargas ya va dentro del
-                // `.app` que arma `ios::assemble` para las tres. Lo que falta
-                // es haberlo visto funcionar, y sin runtime de simulador para
-                // ninguna de las dos eso no se puede comprobar. Enchufarlas
-                // aquí sería ofrecer un ciclo de desarrollo que nadie ha visto
-                // recargar nunca. Ver docs/tvos.md.
-                let package =
-                    ios::assemble(&workspace, ios::Family::Ios, &bundle_path, false, Some(&url), &plugins)?;
+                let package = ios::assemble(&workspace, &bundle_path, false, Some(&url), &plugins)?;
                 ios::launch(&package, device)?;
             }
             Target::WatchOs { device } => {
                 let package = watchos::assemble(&workspace, &bundle_path, false, Some(&url))?;
                 watchos::launch(&package, device)?;
             }
-            Target::MacOs => {
-                let package = macos::assemble(&workspace, &bundle_path, false, Some(&url))?;
-                macos::launch(&package)?;
-            }
-            Target::Android { form } => {
-                let apk = crate::android::assemble(
-                    &workspace,
-                    &bundle_path,
-                    false,
-                    Some(&url),
-                    &plugins,
-                    *form,
-                )?;
-                crate::android::install_and_launch(&workspace, &apk, *form, None)?;
+            Target::Android => {
+                let apk =
+                    crate::android::assemble(
+                        &workspace,
+                        &bundle_path,
+                        false,
+                        Some(&url),
+                        &plugins,
+                        crate::android::Form::Phone,
+                    )?;
+                crate::android::install_and_launch(&workspace, &apk, crate::android::Form::Phone, None)?;
             }
         }
     }
-    eprintln!("==> vigilando {} y packages/", app.display());
+    eprintln!(
+        "==> vigilando {}{}",
+        app.join("src").display(),
+        if workspace.project.is_none() { " y packages/" } else { "" }
+    );
 
     watch(workspace, app, server, runtime, plugins)
 }
@@ -191,10 +175,17 @@ fn watch(
         let _ = tx.send(event);
     })?;
 
-    for dir in [app.join("src"), PathBuf::from("packages")] {
-        let path = workspace.root.join(dir);
+    // `packages/` solo en el monorepo: ahí las fuentes del framework son las que
+    // se compilan. En un proyecto de fuera lo que se compila es la copia
+    // empaquetada que hay en su `node_modules`, así que vigilar el SDK
+    // provocaría recompilaciones que no cambian nada de lo que corre.
+    let mut vigilados = vec![workspace.root.join(app.join("src"))];
+    if workspace.project.is_none() {
+        vigilados.push(workspace.root.join("packages"));
+    }
+    for path in &vigilados {
         if path.is_dir() {
-            watcher.watch(&path, RecursiveMode::Recursive)?;
+            watcher.watch(path, RecursiveMode::Recursive)?;
         }
     }
 

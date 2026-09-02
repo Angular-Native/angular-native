@@ -80,6 +80,25 @@ Todo va por el mismo binario, `an`. No hay `.xcodeproj` ni Gradle: las
 herramientas de cada SDK ya hacen el trabajo y el proceso cabe en un fichero
 que se puede leer entero.
 
+### En un proyecto Angular que ya existe
+
+`an` no se queda dentro de este repositorio. Sobre una app cualquiera de
+`ng new`:
+
+```bash
+cargo install --path crates/an-cli   # deja `an` en el PATH, una vez por máquina
+
+cd mi-app                            # un proyecto de Angular normal
+an init                              # dependencias, tsconfig y punto de entrada
+an add ios                           # crea ios/Info.plist, que a partir de ahí es tuyo
+an ios                               # al simulador
+```
+
+`an build`, `an ios`, `an android` y `an dev` funcionan igual desde el monorepo
+que desde fuera; averiguar en cuál de los dos está es cosa del CLI. El flujo
+entero, y por qué los paquetes van empaquetados y el `.app` no se commitea, en
+[docs/proyecto-externo.md](docs/proyecto-externo.md).
+
 ## Qué hay
 
 **Primitivas** — `an-view`, `an-text`, `an-image`, `an-scroll-view`,
@@ -140,6 +159,7 @@ cargo test                    # solo el núcleo Rust
 ./scripts/check-pickers.sh    # segmentos, desplegable, pasos, búsqueda y fecha
 ./scripts/check-web.sh        # cabecera, texto multilínea, navegador, hoja
 ./scripts/check-plugins.sh    # que un plugin se descubre, se enlaza y contesta
+./scripts/check-external.sh   # un proyecto Angular de fuera: init, add, build
 ./scripts/check-styles.sh     # que las dos listas de nombres de estilo no se separen
 ./scripts/check-kinds.sh      # que la etiqueta, la primitiva y el código digan lo mismo
 ./scripts/check-watchos.sh    # el modelo del reloj y su compilación cruzada
