@@ -1,4 +1,7 @@
-# tvOS
+---
+title: tvOS
+description: Angular en el Apple TV — el mismo host que iOS, y una plataforma donde no se toca nada.
+---
 
 Angular en el Apple TV: mismo núcleo, mismo layout, mismo bundle y —esto es lo
 que lo separa del reloj— el **mismo host**. tvOS trae UIKit con jerarquía de
@@ -45,7 +48,7 @@ comparte es el `Info.plist`, porque las claves que pide cada familia no se
 parecen: el de tvOS lleva `UIDeviceFamily = 3` y no lleva `LSRequiresIPhoneOS`,
 `UILaunchScreen` ni orientaciones, que son del teléfono.
 
-La tercera familia, visionOS, está en [docs/visionos.md](visionos.md).
+La tercera familia, visionOS, está en [visionOS](/es/platforms/visionos/).
 
 **El nombre y el identificador llevan sufijo.** `AngularNativeTV` y
 `dev.angularnative.playground.tv`. Sin él, `an tvos` pisaría el `.app` que acaba
@@ -87,7 +90,7 @@ Lo que sí hay que hacer es **declararse**. `-[UIView canBecomeFocused]` devuelv
 el reconocedor se engancha, no falla nada, y el botón sencillamente no responde
 nunca. `canBecomeFocused` solo se puede cambiar heredando, así que el host crea
 `an-view` en tvOS como una subclase propia, `AnFocusableView`
-([focus.rs](../crates/an-ios/src/focus.rs)):
+(`crates/an-ios/src/focus.rs`):
 
 ```text
   an-view  ──▶  AnFocusableView : UIView
@@ -140,7 +143,7 @@ propio del `an-view` es lo que demuestra que el foco también llegó a él.
 ## Qué no existe en tvOS
 
 Esta lista está escrita a mano en
-[`crates/an-ios/src/family.rs`](../crates/an-ios/src/family.rs), y con motivo:
+`crates/an-ios/src/family.rs`, y con motivo:
 `objc2-ui-kit` genera los enlaces de todas las plataformas Apple sin mirar la
 anotación de disponibilidad del SDK, así que `UISwitch::new(mtm)` **compila**
 para tvOS y lo que falla es la búsqueda de la clase en tiempo de ejecución, ya

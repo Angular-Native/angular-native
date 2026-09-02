@@ -55,7 +55,7 @@ grep_check 'title=arriba — pulsado 1 veces' 'la pulsación llegó a JS y la se
 #
 #    `family.rs` es la lista de verdad —es la anotación del SDK traída al
 #    Rust—, y de ahí salen dos cosas que se pueden separar sin que nada falle:
-#    el aviso que se escribe en el log y la fila de la tabla de docs/tvos.md.
+#    el aviso que se escribe en el log y la fila de la tabla de docs-site/src/content/docs/platforms/tvos.md.
 #    Que se separen es justo lo que deja a alguien buscando un control que
 #    nunca va a aparecer.
 KINDS="$(sed -n '/#\[cfg(target_os = "tvos")\]/,/#\[cfg(not(target_os = "tvos"))\]/p' \
@@ -69,10 +69,10 @@ else
     # an-web-view. Es la misma que va del núcleo a la plantilla, así que no
     # hay tabla de traducción que se pueda quedar atrás.
     tag="an-$(sed -E 's/([a-z0-9])([A-Z])/\1-\2/g' <<<"$kind" | tr '[:upper:]' '[:lower:]')"
-    if grep -q -- "$tag" docs/tvos.md; then
-      check ok "docs/tvos.md dice qué pasa con $tag"
+    if grep -q -- "$tag" docs-site/src/content/docs/platforms/tvos.md; then
+      check ok "docs-site/src/content/docs/platforms/tvos.md dice qué pasa con $tag"
     else
-      check no "docs/tvos.md no menciona $tag, que family.rs da por no disponible"
+      check no "docs-site/src/content/docs/platforms/tvos.md no menciona $tag, que family.rs da por no disponible"
     fi
   done
 fi
