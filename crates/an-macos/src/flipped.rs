@@ -52,24 +52,7 @@ use objc2::{define_class, msg_send, DefinedClass, MainThreadOnly};
 use objc2_app_kit::{NSEvent, NSView};
 use objc2_foundation::NSObjectProtocol;
 
-/// Una dirección de deslizamiento suscrita. Se guardan en un mapa de bits
-/// porque cada dirección es su propia salida: escuchar solo `swipeLeft` no
-/// tiene por qué entregar las otras tres.
-pub const SWIPE_LEFT: u8 = 1 << 0;
-pub const SWIPE_RIGHT: u8 = 1 << 1;
-pub const SWIPE_UP: u8 = 1 << 2;
-pub const SWIPE_DOWN: u8 = 1 << 3;
-
-/// El bit que le toca a cada nombre de evento, si es uno de los cuatro.
-pub fn swipe_bit(event: &str) -> Option<u8> {
-    Some(match event {
-        "swipeLeft" => SWIPE_LEFT,
-        "swipeRight" => SWIPE_RIGHT,
-        "swipeUp" => SWIPE_UP,
-        "swipeDown" => SWIPE_DOWN,
-        _ => return None,
-    })
-}
+use crate::support::swipe_direction;
 
 pub struct FlippedIvars {
     /// A quién avisar, cuando alguien ha pedido algún deslizamiento.
@@ -100,34 +83,16 @@ define_class!(
 
         /// El deslizamiento del trackpad.
         ///
-        /// La correspondencia entre el signo y la dirección no es una
-        /// suposición: está escrita en `NSEvent.h`, en el comentario de
-        /// `deltaX`. «A non-0 deltaX will represent a horizontal swipe, -1 for
-        /// swipe right and 1 for swipe left. A non-0 deltaY will represent a
-        /// vertical swipe, -1 for swipe down and 1 for swipe up.»
+        /// Qué dirección es cada signo lo dice `support::swipe_direction`, que
+        /// está fuera de la plataforma justo para poder probarlo sin trackpad.
         #[unsafe(method(swipeWithEvent:))]
         fn swipe_with_event(&self, event: &NSEvent) {
             let ivars = self.ivars();
-            let (bit, name) = {
-                let dx = unsafe { event.deltaX() };
-                let dy = unsafe { event.deltaY() };
-                if dx != 0.0 {
-                    if dx < 0.0 {
-                        (SWIPE_RIGHT, "swipeRight")
-                    } else {
-                        (SWIPE_LEFT, "swipeLeft")
-                    }
-                } else if dy != 0.0 {
-                    if dy < 0.0 {
-                        (SWIPE_DOWN, "swipeDown")
-                    } else {
-                        (SWIPE_UP, "swipeUp")
-                    }
-                } else {
-                    // Un deslizamiento sin dirección no es de nadie. Se pasa,
-                    // que es lo que haría la vista si no tuviera este método.
-                    return unsafe { msg_send![super(self), swipeWithEvent: event] };
-                }
+            let deltas = (unsafe { event.deltaX() }, unsafe { event.deltaY() });
+            let Some((bit, name)) = swipe_direction(deltas.0, deltas.1) else {
+                // Un deslizamiento sin dirección no es de nadie. Se pasa, que
+                // es lo que haría la vista si no tuviera este método.
+                return unsafe { msg_send![super(self), swipeWithEvent: event] };
             };
 
             if ivars.swipe_mask.get() & bit == 0 {

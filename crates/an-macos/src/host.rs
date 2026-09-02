@@ -1767,7 +1767,7 @@ impl HostRenderer for AppKitHost {
         // (ver `flipped.rs`). Lo que hay que hacer es decirle a quién avisar y
         // de qué dirección. El `<an-scroll-view>` lo recoge por su documento,
         // que es el que es nuestro; el `NSScrollView` de fuera es del sistema.
-        if let Some(bit) = crate::flipped::swipe_bit(event) {
+        if let Some(bit) = crate::support::swipe_bit(event) {
             let Some(flipped) = self.swipe_view(id) else { return };
             flipped.listen_swipe(id, self.events.clone(), bit);
             self.listeners.insert(

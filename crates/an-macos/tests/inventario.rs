@@ -63,3 +63,30 @@ fn los_nombres_de_evento_no_se_repiten() {
         );
     }
 }
+
+/// Hacia dónde va cada signo en un deslizamiento de AppKit.
+///
+/// Es lo único de este host que no se puede comprobar corriéndolo: hace falta
+/// un trackpad y una mano encima. Lo que sí se puede es no equivocarse al
+/// copiar lo que dice Apple, que es lo que esta prueba fija. De `NSEvent.h`:
+/// «A non-0 deltaX will represent a horizontal swipe, -1 for swipe right and 1
+/// for swipe left. A non-0 deltaY will represent a vertical swipe, -1 for
+/// swipe down and 1 for swipe up.»
+#[test]
+fn el_signo_del_deslizamiento_es_el_que_dice_appkit() {
+    use an_macos::support::{swipe_bit, swipe_direction};
+
+    assert_eq!(swipe_direction(-1.0, 0.0).map(|(_, n)| n), Some("swipeRight"));
+    assert_eq!(swipe_direction(1.0, 0.0).map(|(_, n)| n), Some("swipeLeft"));
+    assert_eq!(swipe_direction(0.0, -1.0).map(|(_, n)| n), Some("swipeDown"));
+    assert_eq!(swipe_direction(0.0, 1.0).map(|(_, n)| n), Some("swipeUp"));
+    // Sin dirección no hay deslizamiento: el evento se pasa a la cadena.
+    assert!(swipe_direction(0.0, 0.0).is_none());
+
+    // Y el bit que sale de la dirección es el que se suscribe con ese nombre,
+    // o una vista escucharía una dirección y recibiría otra.
+    for (dx, dy) in [(-1.0, 0.0), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+        let (bit, nombre) = swipe_direction(dx, dy).expect("hay dirección");
+        assert_eq!(swipe_bit(nombre), Some(bit), "«{nombre}» se suscribe con otro bit");
+    }
+}

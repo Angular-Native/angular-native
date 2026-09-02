@@ -49,6 +49,32 @@ enum Screenshot {
         return CGPoint(x: partes[0], y: partes[1])
     }
 
+    /// Un deslizamiento, en `x,y,deltaX,deltaY`.
+    ///
+    /// Es lo único de este host que no se puede provocar de verdad sin un
+    /// trackpad y una mano encima: el gesto lo reconoce el sistema, no la app,
+    /// y no hay forma de pedirle que lo reconozca. Lo que sí se puede es entrar
+    /// por la misma puerta por la que entra él —`swipeWithEvent:` sobre la
+    /// vista que hay bajo el punto— con los mismos deltas que él manda, y ver
+    /// si de ahí en adelante todo funciona: la vista lo recoge o lo pasa a su
+    /// padre, el evento cruza al motor y la plantilla se recompone.
+    ///
+    /// Lo que esto **no** comprueba es que un gesto de dos dedos acabe en un
+    /// `swipeWithEvent:`. Eso lo decide el sistema y hay que mirarlo con la
+    /// mano. Lo que sí comprueba es todo lo demás, que es lo que se puede
+    /// romper editando este repositorio.
+    static var deslizamiento: (punto: CGPoint, dx: Double, dy: Double)? {
+        guard let bruto = ProcessInfo.processInfo.environment["AN_SCREENSHOT_SWIPE"] else {
+            return nil
+        }
+        let partes = bruto.split(separator: ",").compactMap { Double($0) }
+        guard partes.count == 4 else {
+            NSLog("angular-native: AN_SCREENSHOT_SWIPE se escribe x,y,deltaX,deltaY")
+            return nil
+        }
+        return (CGPoint(x: partes[0], y: partes[1]), partes[2], partes[3])
+    }
+
     /// Fotografiar la ventana entera, barra de título incluida.
     ///
     /// La captura normal es la del contenido, que es lo que monta el núcleo.
@@ -136,6 +162,31 @@ enum Screenshot {
         CGAssociateMouseAndMouseCursorPosition(1)
     }
 
+    /// Manda un deslizamiento a la vista que haya bajo el punto.
+    ///
+    /// El evento se arma con un `CGEvent` de rueda porque es la única forma de
+    /// tener un `NSEvent` con los deltas puestos; lo que lo convierte en un
+    /// deslizamiento no es el tipo, es a qué método se entrega. Y se entrega al
+    /// resultado de `hitTest:`, que es lo que hace el sistema: si esa vista no
+    /// lo atiende, sube a su padre por la cadena de responder.
+    static func deslizar(en view: NSView) {
+        guard let (punto, dx, dy) = deslizamiento else { return }
+        guard let cg = CGEvent(source: nil) else {
+            NSLog("angular-native: no se pudo armar el evento de deslizamiento")
+            return
+        }
+        cg.type = .scrollWheel
+        cg.setDoubleValueField(.scrollWheelEventDeltaAxis1, value: dy)
+        cg.setDoubleValueField(.scrollWheelEventDeltaAxis2, value: dx)
+        guard let evento = NSEvent(cgEvent: cg) else {
+            NSLog("angular-native: el evento de deslizamiento no se pudo convertir")
+            return
+        }
+        // `hitTest:` quiere el punto en las coordenadas del padre de la vista.
+        let destino = view.hitTest(view.convert(punto, to: view.superview)) ?? view
+        destino.swipe(with: evento)
+    }
+
     /// Cuántos colores distintos hay en el mapa de bits.
     ///
     /// Se muestrea uno de cada cuatro píxeles por filas y columnas: son
@@ -219,6 +270,9 @@ enum Screenshot {
             // `mouseEntered:`, el evento cruza al motor, Angular recompone—, y
             // los tres pasan solos con dejar correr los frames. Forzar el
             // bucle de eventos desde aquí sería reentrar en este método.
+            if frames == max(1, Screenshot.framesDeGracia / 3) {
+                Screenshot.deslizar(en: view)
+            }
             if frames == max(1, Screenshot.framesDeGracia / 2) {
                 Screenshot.ponerElPuntero(en: view)
             }

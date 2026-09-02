@@ -160,6 +160,57 @@ pub fn unsupported_event(kind: NodeKind, event: &str) -> Option<&'static str> {
     }
 }
 
+/// Una dirección de deslizamiento suscrita.
+///
+/// Se guardan en un mapa de bits porque cada dirección es su propia salida:
+/// escuchar solo `swipeLeft` no tiene por qué entregar las otras tres.
+pub const SWIPE_LEFT: u8 = 1 << 0;
+pub const SWIPE_RIGHT: u8 = 1 << 1;
+pub const SWIPE_UP: u8 = 1 << 2;
+pub const SWIPE_DOWN: u8 = 1 << 3;
+
+/// El bit que le toca a cada nombre de evento, si es uno de los cuatro.
+pub fn swipe_bit(event: &str) -> Option<u8> {
+    Some(match event {
+        "swipeLeft" => SWIPE_LEFT,
+        "swipeRight" => SWIPE_RIGHT,
+        "swipeUp" => SWIPE_UP,
+        "swipeDown" => SWIPE_DOWN,
+        _ => return None,
+    })
+}
+
+/// Hacia dónde fue un deslizamiento, a partir de los deltas del `NSEvent`.
+///
+/// La correspondencia entre el signo y la dirección no es una suposición y no
+/// se puede comprobar sin un trackpad y una mano encima, así que está donde se
+/// puede leer y probar sin ninguna de las dos cosas. La escribe Apple en
+/// `NSEvent.h`, en el comentario de `deltaX`:
+///
+/// > A non-0 deltaX will represent a horizontal swipe, -1 for swipe right and
+/// > 1 for swipe left. A non-0 deltaY will represent a vertical swipe, -1 for
+/// > swipe down and 1 for swipe up.
+///
+/// El horizontal manda sobre el vertical cuando llegan los dos, que en la
+/// práctica no pasa: el sistema manda un eje por gesto.
+pub fn swipe_direction(delta_x: f64, delta_y: f64) -> Option<(u8, &'static str)> {
+    if delta_x != 0.0 {
+        return Some(if delta_x < 0.0 {
+            (SWIPE_RIGHT, "swipeRight")
+        } else {
+            (SWIPE_LEFT, "swipeLeft")
+        });
+    }
+    if delta_y != 0.0 {
+        return Some(if delta_y < 0.0 {
+            (SWIPE_DOWN, "swipeDown")
+        } else {
+            (SWIPE_UP, "swipeUp")
+        });
+    }
+    None
+}
+
 /// Primitivas cuya vista en este host la crea el propio host, y no AppKit.
 ///
 /// Importa para una sola cosa, y por eso está aquí y no escondida en `host.rs`:
