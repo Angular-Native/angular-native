@@ -1,0 +1,31 @@
+{
+  "name": "@angular-native/plugin-keychain",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "src/public-api.ts",
+  "peerDependencies": {
+    "@angular/core": ">=22.0.0"
+  },
+  "angularNative": {
+    "module": "keychain",
+    "entry": "src/public-api.ts",
+    "ios": {
+      "sources": "native/ios",
+      "register": "AnKeychainPlugin",
+      "plist": {
+        "NSFaceIDUsageDescription": "Para comprobar que eres tú antes de enseñar lo que hay guardado."
+      }
+    },
+    "android": {
+      "sources": "native/android",
+      "register": "dev.angularnative.plugins.KeychainPlugin",
+      "manifest": {
+        "uses-permission": ["android.permission.USE_BIOMETRIC"],
+        "uses-feature": {
+          "android.hardware.fingerprint": false
+        }
+      }
+    }
+  }
+}

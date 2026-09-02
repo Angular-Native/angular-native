@@ -355,13 +355,16 @@ fn read_plist(declared: Option<&Value>, manifest: &Path) -> Result<BTreeMap<Stri
         // que se para aquí en vez de escribir en un sitio que nadie pidió.
         if key.is_empty() || key.contains('.') {
             bail!(
-                "{}: angularNative.ios.plist tiene la clave {key:?};                  solo se admiten claves de primer nivel y sin puntos",
+                "{}: angularNative.ios.plist tiene la clave {key:?}; solo se admiten claves de \
+                 primer nivel y sin puntos",
                 manifest.display()
             );
         }
         if !plist_value_ok(value) {
             bail!(
-                "{}: angularNative.ios.plist[{key:?}] es {value};                  solo se admiten cadenas, booleanos, números y listas de cadenas.                  Un diccionario anidado todavía no se funde. Ver docs/plugins.md.",
+                "{}: angularNative.ios.plist[{key:?}] es {value}; solo se admiten cadenas, \
+                 booleanos, números y listas de cadenas. Un diccionario anidado todavía no se \
+                 funde. Ver docs/plugins.md.",
                 manifest.display()
             );
         }
@@ -398,7 +401,8 @@ fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<Ma
             "uses-permission" => {
                 let lista = valor.as_array().with_context(|| {
                     format!(
-                        "{}: angularNative.android.manifest[\"uses-permission\"]                          tiene que ser una lista de nombres",
+                        "{}: angularNative.android.manifest[\"uses-permission\"] tiene que ser \
+                         una lista de nombres",
                         manifest.display()
                     )
                 })?;
@@ -415,14 +419,16 @@ fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<Ma
             "uses-feature" => {
                 let objeto = valor.as_object().with_context(|| {
                     format!(
-                        "{}: angularNative.android.manifest[\"uses-feature\"] tiene que ser                          un objeto de nombre a si es obligatoria",
+                        "{}: angularNative.android.manifest[\"uses-feature\"] tiene que ser un \
+                         objeto de nombre a si es obligatoria",
                         manifest.display()
                     )
                 })?;
                 for (nombre, required) in objeto {
                     let required = required.as_bool().with_context(|| {
                         format!(
-                            "{}: uses-feature[{nombre:?}] tiene que ser true o false,                              que es lo que vale android:required",
+                            "{}: uses-feature[{nombre:?}] tiene que ser true o false, que es lo \
+                             que vale android:required",
                             manifest.display()
                         )
                     })?;
@@ -430,7 +436,8 @@ fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<Ma
                 }
             }
             otro => bail!(
-                "{}: angularNative.android.manifest no sabe de {otro:?};                  de momento solo se aportan \"uses-permission\" y \"uses-feature\".                  Ver docs/plugins.md.",
+                "{}: angularNative.android.manifest no sabe de {otro:?}; de momento solo se \
+                 aportan \"uses-permission\" y \"uses-feature\". Ver docs/plugins.md.",
                 manifest.display()
             ),
         }
