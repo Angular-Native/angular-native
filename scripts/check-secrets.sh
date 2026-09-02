@@ -91,4 +91,38 @@ MEDIAS="$(AN_PLUGINS='{
 # dentro del mensaje, y de eso responde el propio plugin.
 contiene "$MEDIAS" 'falló: Error: el plugin keychain' 'un método que el plugin no atiende rechaza la promesa'
 
+# ── Y que el lado Android compile ───────────────────────────────────────────
+#
+# El runner headless no toca ni Swift ni Java. Armar el APK sí, y cuesta medio
+# minuto —lo hace `check-android-java.sh`—, pero el Java de un plugin se puede
+# comprobar por su cuenta y en un segundo: contra `android.jar` y con el
+# directorio del shell en el `sourcepath`, que es lo que resuelve `AnPlugin` y
+# `AnPluginCall` sin arrastrar el host entero.
+#
+# `-implicit:none` es lo que corta ese arrastre: se compilan las fuentes que se
+# nombran y nada más. Un error dentro del shell no sale por aquí —para eso está
+# el APK—; un error en el plugin, sí. Esta comprobación es la que encontró que
+# `BIOMETRIC_ERROR_NEGATIVE_BUTTON` no existe en la API de la plataforma.
+ANDROID_JAR="$(ls -d "${ANDROID_HOME:-$HOME/Library/Android/sdk}"/platforms/*/android.jar 2>/dev/null | tail -1)"
+if [ -z "$ANDROID_JAR" ]; then
+  ko 'no encuentro android.jar; el Java de los plugins se queda sin comprobar'
+else
+  CLASES="$(mktemp -d)"
+  trap 'rm -rf "$CLASES"' EXIT
+  # `find` y no un glob: bash no expande `**` sin `globstar`, y sin él el
+  # comodín llegaría a `javac` tal cual y la comprobación fallaría por un
+  # motivo que no tiene nada que ver con el código.
+  find packages -path '*/native/android/*' -name '*.java' >"$CLASES/fuentes.txt"
+  if javac -nowarn -implicit:none -source 17 -target 17 \
+      -classpath "$ANDROID_JAR" \
+      -sourcepath shells/android/java \
+      -d "$CLASES" \
+      @"$CLASES/fuentes.txt" >"$CLASES/javac.log" 2>&1; then
+    ok 'javac compila el lado Android de los plugins contra android.jar'
+  else
+    ko 'el lado Android de algún plugin no compila'
+    tail -20 "$CLASES/javac.log"
+  fi
+fi
+
 exit "$fail"

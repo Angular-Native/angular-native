@@ -37,6 +37,15 @@ public final class BiometricsPlugin implements AnPlugin {
      */
     private static final int MINIMO = Build.VERSION_CODES.Q;
 
+    /**
+     * El código con el que llega el botón de cancelar.
+     *
+     * <p>El sistema lo manda, pero la constante no es pública en la API de la plataforma: está en
+     * {@code androidx.biometric} como {@code ERROR_NEGATIVE_BUTTON}, y aquí no se usa androidx. Se
+     * escribe con su nombre y su porqué en vez de dejar un 13 suelto dentro de un {@code case}.
+     */
+    private static final int ERROR_BOTON_NEGATIVO = 13;
+
     private Activity host;
 
     /**
@@ -231,7 +240,7 @@ public final class BiometricsPlugin implements AnPlugin {
             case BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT_PERMANENT:
                 return "permanentlyLockedOut";
             case BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED:
-            case BiometricPrompt.BIOMETRIC_ERROR_NEGATIVE_BUTTON:
+            case ERROR_BOTON_NEGATIVO:
                 return "userCancel";
             case BiometricPrompt.BIOMETRIC_ERROR_NO_BIOMETRICS:
                 return "notEnrolled";
