@@ -165,8 +165,12 @@ enum Screenshot {
     /// `mouseEntered:`— lo hace el bucle de eventos normal de la app, que sigue
     /// corriendo. Por eso esto se llama a mitad de la espera y no justo antes
     /// de disparar.
+    ///
+    /// La app se pone delante al arrancar y no aquí: ver `AppDelegate`.
     static func ponerElPuntero(en view: NSView) {
         guard let punto = hover, let window = view.window else { return }
+        // La app ya se activó al arrancar (ver `AppDelegate`); esto es por si
+        // algo se la llevó delante mientras tanto.
         NSApp.activate(ignoringOtherApps: true)
         // Dónde estaba el ratón de quien lanzó la comprobación. Se le devuelve
         // en cuanto la foto está hecha: mover el puntero de alguien y dejarlo

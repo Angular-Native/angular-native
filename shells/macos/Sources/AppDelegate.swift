@@ -31,7 +31,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // planta encima de lo que estuviera haciendo quien la ejecutó y le come
         // las pulsaciones. La captura no lo necesita —`cacheDisplay` dibuja la
         // vista esté delante o detrás—, así que en ese modo no se activa.
-        if Screenshot.destino == nil {
+        //
+        // Con una excepción: la captura del puntero. Las áreas de seguimiento
+        // de este host son `ActiveInActiveApp`, porque en un Mac los controles
+        // solo se iluminan al pasar por encima cuando la app está delante, y
+        // una comprobación no puede pedirle al host que se comporte distinto
+        // que el resto del escritorio. Se activa **aquí** y no al mover el
+        // puntero: activarse tarda, y un ratón que entra en un área mientras la
+        // app todavía no está activa no vuelve a entrar nunca —no se mueve otra
+        // vez—, así que la comprobación salía bien o mal según lo que hubiera
+        // tardado el sistema.
+        if Screenshot.destino == nil || Screenshot.hover != nil {
             NSApp.activate(ignoringOtherApps: true)
         }
     }
