@@ -23,6 +23,10 @@ pub enum Error {
     IdOutOfRange(NodeId),
     /// Colgar un nodo de sí mismo o de uno de sus descendientes.
     Cycle { parent: NodeId, child: NodeId },
+    /// Colgar de un padre nuevo un nodo que todavía cuelga de otro. Mudarlo es
+    /// darlo de baja primero; sin la baja el árbol queda con el hijo en dos
+    /// sitios y cada host se lo cree de una forma.
+    AlreadyAttached { parent: NodeId, child: NodeId, actual: NodeId },
     NoRoot,
     Layout(String),
 }
@@ -277,6 +281,17 @@ impl ShadowTree {
         // un bit volteado, sí.
         if self.desciende_de(parent, child) {
             return Err(Error::Cycle { parent, child });
+        }
+        // Colgar de un padre nuevo algo que ya cuelga de otro no es mudarlo:
+        // el hijo se queda en la lista de los dos y su `parent` apunta solo al
+        // último, así que el layout lo recorre dos veces y el frame lleva un
+        // `Insert` sin su `Remove`. Los tres hosts reaccionan distinto —UIKit
+        // y AppKit mueven la vista sin decir nada, `ViewGroup.addView` lanza y
+        // deja el subárbol sin montar—, o sea que el mismo árbol se ve de tres
+        // maneras. Mudar es dar de baja y volver a dar de alta, y eso lo manda
+        // JS, que es quien sabe de dónde sale.
+        if let Some(actual) = self.node(child)?.parent {
+            return Err(Error::AlreadyAttached { parent, child, actual });
         }
         let index = index.min(self.node(parent)?.children.len());
         self.node_mut(parent)?.children.insert(index, child);

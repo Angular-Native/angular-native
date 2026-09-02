@@ -215,14 +215,25 @@ export function materialize(node: NativeNode): void {
   const parent = mountParent(node)
   const index = mountIndex(node)
 
+  // Los hijos salen del abuelo antes de que este nodo sea una vista, y no
+  // después: en cuanto `materialized` está a `true`, el padre montado de cada
+  // hijo es ya este nodo, así que la baja se comparaba consigo misma y no se
+  // mandaba nunca. El árbol quedaba con el mismo hijo colgando de dos padres.
+  //
+  // No se notaba porque UIKit y AppKit mueven una vista que ya tiene padre sin
+  // decir nada; `ViewGroup.addView` de Android lanza, y la primera vez que se
+  // vio fue con un `an-safe-area` recargado en caliente en el reloj: la
+  // pantalla se quedaba negra.
+  //
+  // Todos los descendientes montados cuelgan del mismo sitio —el padre montado
+  // de este nodo—, porque lo que hay entre medias no es vista.
+  if (parent) {
+    for (const child of descendants) __an_dom.removeChild(parent.id, child.id)
+  }
+
   node.id = __an_dom.createNode(node.kind as NativeKind)
   node.materialized = true
 
-  // Los hijos se sacan del abuelo y se meten dentro, en el mismo orden.
-  for (const child of descendants) {
-    const previous = mountParent(child)
-    if (previous && previous !== node) __an_dom.removeChild(previous.id, child.id)
-  }
   if (parent) __an_dom.insertChild(parent.id, node.id, index)
   descendants.forEach((child, position) => {
     __an_dom.insertChild(node.id, child.id, position)
