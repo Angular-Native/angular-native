@@ -138,8 +138,17 @@ pub fn discover(workspace: &Workspace, app: &Path) -> Result<Vec<Plugin>> {
 
 /// Resuelve un paquete como lo haría Node: primero el `node_modules` de la
 /// app, después el de la raíz —que es donde npm pone los de los workspaces—.
+///
+/// La raíz solo cuenta en el monorepo. Para un proyecto de fuera, el
+/// `node_modules` del SDK no es un sitio del que su app pueda depender: enlazar
+/// desde ahí un plugin que su `package.json` no declara sería enlazar algo que
+/// en la máquina de al lado no está.
 fn resolve_package(workspace: &Workspace, app_dir: &Path, name: &str) -> Option<PathBuf> {
-    for base in [app_dir, workspace.root.as_path()] {
+    let mut bases: Vec<&Path> = vec![app_dir];
+    if workspace.project.is_none() {
+        bases.push(workspace.root.as_path());
+    }
+    for base in bases {
         let candidate = base.join("node_modules").join(name);
         if candidate.join("package.json").is_file() {
             // Los workspaces de npm son enlaces; interesa el directorio real,

@@ -113,7 +113,11 @@ pub fn run(
             }
         }
     }
-    eprintln!("==> vigilando {} y packages/", app.display());
+    eprintln!(
+        "==> vigilando {}{}",
+        app.join("src").display(),
+        if workspace.project.is_none() { " y packages/" } else { "" }
+    );
 
     watch(workspace, app, server, runtime, plugins)
 }
@@ -164,10 +168,17 @@ fn watch(
         let _ = tx.send(event);
     })?;
 
-    for dir in [app.join("src"), PathBuf::from("packages")] {
-        let path = workspace.root.join(dir);
+    // `packages/` solo en el monorepo: ahí las fuentes del framework son las que
+    // se compilan. En un proyecto de fuera lo que se compila es la copia
+    // empaquetada que hay en su `node_modules`, así que vigilar el SDK
+    // provocaría recompilaciones que no cambian nada de lo que corre.
+    let mut vigilados = vec![workspace.root.join(app.join("src"))];
+    if workspace.project.is_none() {
+        vigilados.push(workspace.root.join("packages"));
+    }
+    for path in &vigilados {
         if path.is_dir() {
-            watcher.watch(&path, RecursiveMode::Recursive)?;
+            watcher.watch(path, RecursiveMode::Recursive)?;
         }
     }
 
