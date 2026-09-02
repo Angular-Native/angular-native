@@ -13,20 +13,20 @@ import { ScrollView, View, type NativeLayoutEvent, type NativeScrollEvent } from
 import { output } from '@angular/core'
 
 /**
- * El alto de las filas: uno para todas, o uno por fila.
+ * The rows' height: one for all of them, or one per row.
  *
- * La función se llama una vez por fila cada vez que cambia la lista, no en
- * cada desplazamiento.
+ * The function is called once per row every time the list changes, not on every
+ * scroll.
  */
 export type ItemHeight<T> = number | ((item: T, index: number) => number)
 
-/** Lo que recibe la plantilla de cada fila. */
+/** What each row's template receives. */
 export interface VirtualListContext<T> {
   $implicit: T
   index: number
 }
 
-/** Una ranura del carrusel. Su `key` no cambia nunca; su contenido sí. */
+/** One slot in the carousel. Its `key` never changes; its content does. */
 interface Slot<T> {
   key: number
   index: number
@@ -37,12 +37,13 @@ interface Slot<T> {
 }
 
 /**
- * Dónde empieza cada fila y cuánto mide.
+ * Where each row starts and how tall it is.
  *
- * Con un alto único no hace falta guardar nada: la posición de la fila `i` es
- * `i * alto` y la fila que hay en un desplazamiento sale de una división. Con
- * altos distintos hay que sumar, así que se acumulan una vez por lista y luego
- * se busca por bisección, que en cinco mil filas son trece comparaciones.
+ * With a single height nothing needs storing: row `i`'s position is
+ * `i * height` and the row at a given offset comes out of a division. With
+ * differing heights they have to be added up, so they are accumulated once per
+ * list and then searched by bisection, which over five thousand rows is thirteen
+ * comparisons.
  */
 type Metrics =
   | { readonly kind: 'fixed'; readonly height: number; readonly min: number; readonly total: number }
@@ -52,8 +53,8 @@ function metricsFor<T>(items: readonly T[], height: ItemHeight<T>): Metrics {
   if (typeof height === 'number') {
     return { kind: 'fixed', height, min: height, total: items.length * height }
   }
-  // `starts` tiene una entrada más que filas: la última es el alto total, y
-  // así el hueco de la fila `i` es siempre `starts[i + 1] - starts[i]`.
+  // `starts` has one entry more than there are rows: the last one is the total
+  // height, so that row `i`'s slot is always `starts[i + 1] - starts[i]`.
   const starts = new Array<number>(items.length + 1)
   starts[0] = 0
   let min = Infinity
@@ -83,7 +84,7 @@ function heightOf(metrics: Metrics, index: number): number {
   return (metrics.starts[index + 1] ?? metrics.total) - (metrics.starts[index] ?? metrics.total)
 }
 
-/** La fila que ocupa ese desplazamiento. */
+/** The row that sits at that offset. */
 function indexAt(metrics: Metrics, offset: number): number {
   if (metrics.kind === 'fixed') {
     return Math.floor(offset / metrics.height)
@@ -103,25 +104,25 @@ function indexAt(metrics: Metrics, offset: number): number {
 }
 
 /**
- * Lista con reciclado de vistas.
+ * A list that recycles its views.
  *
- * Monta un número fijo de ranuras —las que caben en pantalla más un margen— y
- * al desplazarse no crea ni destruye ninguna: cambia lo que muestra cada una y
- * dónde está. Diez mil filas cuestan las mismas veinte vistas nativas que
- * veinte filas.
+ * It mounts a fixed number of slots —as many as fit on screen plus a margin— and
+ * scrolling creates and destroys none of them: it changes what each one shows
+ * and where it sits. Ten thousand rows cost the same twenty native views as
+ * twenty rows do.
  *
- * El truco está en el `track slot.key`: la clave de una ranura es su posición
- * en el carrusel, no el elemento que enseña, así que Angular reutiliza la vista
- * incrustada y solo actualiza sus bindings. `NgTemplateOutlet` hace lo mismo
- * mientras las claves del contexto no cambien, que es el caso.
+ * The trick is in the `track slot.key`: a slot's key is its position in the
+ * carousel, not the item it is showing, so Angular reuses the embedded view and
+ * only updates its bindings. `NgTemplateOutlet` does the same as long as the
+ * context's keys do not change, which is the case here.
  *
- * El alto de fila hay que darlo: sin él no se sabe qué hay en un
- * desplazamiento sin haber medido todo lo anterior. Puede ser uno para todas
- * o una función por fila.
+ * The row height has to be given: without it there is no telling what sits at a
+ * given offset without having measured everything before it. It can be one for
+ * all of them or a function per row.
  *
  * ```html
  * <an-virtual-list [items]="rows()" [itemHeight]="64" [style.flexGrow]="'1'">
- * <an-virtual-list [items]="rows()" [itemHeight]="alto" [style.flexGrow]="'1'">
+ * <an-virtual-list [items]="rows()" [itemHeight]="rowHeight" [style.flexGrow]="'1'">
  *   <ng-template let-row let-i="index">
  *     <an-text>{{ i }}: {{ row.name }}</an-text>
  *   </ng-template>
@@ -132,8 +133,8 @@ function indexAt(metrics: Metrics, offset: number): number {
   selector: 'an-virtual-list',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ScrollView, View, NgTemplateOutlet],
-  // El host tampoco puede dimensionarse por el contenido, o se lleva por
-  // delante el layout del padre igual que haría el ScrollView de dentro.
+  // The host cannot be sized by its content either, or it takes the parent's
+  // layout down with it just as the ScrollView inside would.
   host: {
     '[style.minHeight]': "'0'",
     '[style.flexBasis]': "'0'",
@@ -171,13 +172,14 @@ function indexAt(metrics: Metrics, offset: number): number {
 export class VirtualList<T> {
   readonly items = input.required<readonly T[]>()
   readonly itemHeight = input.required<ItemHeight<T>>()
-  /** Ranuras de más a cada lado, para que un scroll rápido no deje huecos. */
+  /** Spare slots at each end, so a fast scroll leaves no gaps. */
   readonly overscan = input(4)
 
-  /** Si está recargando. El gesto la abre; ponerla a `false` la cierra. */
+  /** Whether it is refreshing. The gesture opens it; setting it to `false`
+   * closes it. */
   readonly refreshing = input(false)
 
-  /** Tirar para recargar. Sin nadie escuchando, el gesto no existe. */
+  /** Pull to refresh. With nobody listening, the gesture does not exist. */
   readonly refresh = output<void>()
 
   protected readonly template = contentChild(TemplateRef<VirtualListContext<T>>)
@@ -190,15 +192,17 @@ export class VirtualList<T> {
   protected readonly totalHeight = computed(() => this.metrics().total)
 
   /**
-   * Cuántas ranuras hay. Solo cambia si cambia el alto del viewport o el de
-   * las filas; desplazarse no la mueve, que es justo lo que permite reciclar.
+   * How many slots there are. It only changes when the viewport's height or the
+   * rows' does; scrolling does not move it, which is precisely what makes
+   * recycling possible.
    */
   private readonly slotCount = computed(() => {
-    // Con altos distintos manda el más bajo: es el que decide cuántas filas
-    // caben en el peor caso, y quedarse corto dejaría huecos al desplazarse.
+    // With differing heights the shortest one governs: it is what decides how
+    // many rows fit in the worst case, and coming up short would leave gaps on
+    // scroll.
     const visible = Math.ceil(this.viewport() / this.metrics().min)
-    // Sin alto de viewport todavía no se sabe cuántas caben; se montan unas
-    // pocas para que el primer frame no salga vacío.
+    // With no viewport height yet there is no telling how many fit; a few are
+    // mounted so the first frame does not come out empty.
     return (visible > 0 ? visible : 1) + this.overscan() * 2
   })
 
@@ -224,8 +228,8 @@ export class VirtualList<T> {
         top: String(topOf(metrics, index)),
         height: String(heightOf(metrics, index)),
         row,
-        // Las claves del contexto no cambian nunca, y por eso
-        // `NgTemplateOutlet` actualiza la vista en vez de rehacerla.
+        // The context's keys never change, which is why `NgTemplateOutlet`
+        // updates the view instead of rebuilding it.
         context: row === undefined ? null : { $implicit: row, index }
       })
     }
@@ -242,9 +246,9 @@ export class VirtualList<T> {
 }
 
 /**
- * Una lista más corta que el carrusel no necesita ranuras vacías: se recorta.
- * Pasar de una lista corta a una larga sí crea ranuras, pero eso ocurre al
- * filtrar, no al desplazarse.
+ * A list shorter than the carousel needs no empty slots: it gets trimmed. Going
+ * from a short list to a long one does create slots, but that happens when
+ * filtering, not when scrolling.
  */
 function slotCountFor(desired: number, total: number): number {
   return Math.min(desired, Math.max(total, 1))

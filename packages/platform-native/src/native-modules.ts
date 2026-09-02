@@ -5,14 +5,14 @@ declare const __an_native: {
 }
 
 /**
- * Puerta a los módulos nativos.
+ * The door to the native modules.
  *
- * Un módulo es código Rust que no pinta nada: leer el dispositivo, guardar un
- * fichero, pedir permisos. La llamada nunca bloquea; la respuesta llega en un
- * frame, el mismo o uno posterior.
+ * A module is Rust code that draws nothing: reading the device, saving a file,
+ * asking for permissions. The call never blocks; the answer arrives in a frame,
+ * this one or a later one.
  *
- * La forma recomendada de usarlo no es esta clase directamente sino un
- * servicio tipado por módulo, que es donde viven los tipos de ida y vuelta.
+ * The recommended way to use it is not this class directly but a typed service
+ * per module, which is where the types going out and coming back live.
  */
 @Injectable({ providedIn: 'root' })
 export class NativeModules {
@@ -21,18 +21,19 @@ export class NativeModules {
   }
 }
 
-/** Fuera de un contexto de inyección. */
+/** Outside an injection context. */
 export function callNative<T>(module: string, method: string, args?: unknown): Promise<T> {
   return __an_native.call(module, method, args) as Promise<T>
 }
 
 /**
- * Dónde corre la app.
+ * Where the app is running.
  *
- * Una por host, no una por sistema: `ios` es también el iPad, porque son el
- * mismo host y la misma superficie; `tvos`, `visionos`, `macos`, `watchos` y
- * `wearos` sí son sitios distintos, con controles distintos y con formas de
- * manejarse distintas, y una app que quiera adaptarse necesita distinguirlos.
+ * One per host, not one per operating system: `ios` is the iPad too, because
+ * they are the same host and the same surface; `tvos`, `visionos`, `macos`,
+ * `watchos` and `wearos` really are different places, with different controls
+ * and different ways of being handled, and an app that wants to adapt needs to
+ * tell them apart.
  */
 export type NativePlatform =
   | 'ios'
@@ -44,21 +45,21 @@ export type NativePlatform =
   | 'wearos'
 
 export interface DeviceInfo {
-  /** Dónde corre. Ver `NativePlatform`. */
+  /** Where it is running. See `NativePlatform`. */
   platform: NativePlatform
-  /** Versión del sistema, tal cual la da la plataforma. */
+  /** The system's version, exactly as the platform gives it. */
   systemVersion: string
-  /** Nombre del modelo. */
+  /** The model's name. */
   model: string
-  /** Puntos por píxel: 2 o 3 en iOS. */
+  /** Points per pixel: 2 or 3 on iOS. */
   scale: number
-  /** Idioma preferido del sistema, en formato BCP 47. */
+  /** The system's preferred language, in BCP 47 form. */
   locale: string
 }
 
 /**
- * Módulo de dispositivo. Es el ejemplo de referencia de cómo se envuelve un
- * módulo nativo en un servicio tipado.
+ * The device module. It is the reference example of how a native module gets
+ * wrapped in a typed service.
  */
 @Injectable({ providedIn: 'root' })
 export class Device {

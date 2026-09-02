@@ -3,8 +3,8 @@ import { outputFromObservable } from '@angular/core/rxjs-interop'
 import { map, Observable } from 'rxjs'
 
 /**
- * Carga de un `(press)`. Las coordenadas van en puntos y son relativas a la
- * vista que recibió el toque.
+ * The payload of a `(press)`. The coordinates are in points and relative to the
+ * view that took the tap.
  *
  */
 export interface NativePressEvent {
@@ -13,74 +13,76 @@ export interface NativePressEvent {
 }
 
 /**
- * En qué punto del gesto llega el evento.
+ * Where in the gesture the event arrives.
  *
- * `cancel` no es un fallo: el sistema se lleva el gesto cuando otro gana —al
- * arrastrar dentro de una lista que empieza a desplazarse, por ejemplo—. Quien
- * mueve algo con el dedo tiene que devolverlo a su sitio, no dejarlo a medias.
+ * `cancel` is not a failure: the system takes the gesture away when another one
+ * wins —dragging inside a list that starts scrolling, for instance—. Whoever is
+ * moving something with a finger has to put it back where it was, not leave it
+ * halfway.
  */
 export type NativeGestureState = 'begin' | 'move' | 'end' | 'cancel'
 
 /**
- * Arrastre.
+ * A drag.
  *
- * `translation` va desde donde empezó el dedo, no desde el evento anterior:
- * así basta con sumarlo a la posición inicial, sin acumular nada ni arrastrar
- * el error de redondeo de cada paso.
+ * `translation` is measured from where the finger started, not from the previous
+ * event: that way adding it to the starting position is enough, with nothing to
+ * accumulate and no rounding error dragged along from every step.
  */
 export interface NativePanEvent {
   x: number
   y: number
   translationX: number
   translationY: number
-  /** Puntos por segundo. Sirve para seguir por inercia al soltar. */
+  /** Points per second. Useful for coasting on after the finger lifts. */
   velocityX: number
   velocityY: number
   state: NativeGestureState
 }
 
-/** Pellizco. `scale` es relativa al principio del gesto, no absoluta. */
+/** A pinch. `scale` is relative to the start of the gesture, not absolute. */
 export interface NativePinchEvent {
   scale: number
   velocity: number
   state: NativeGestureState
 }
 
-/** Giro con dos dedos, en radianes desde que empezó el gesto. */
+/** A two-finger rotation, in radians since the gesture began. */
 export interface NativeRotateEvent {
   rotation: number
   velocity: number
   state: NativeGestureState
 }
 
-/** Un evento que solo lleva la posición elegida. */
+/** An event carrying nothing but the chosen position. */
 export interface NativeIndexEvent {
   index: number
 }
 
-/** Un evento que solo lleva un número. */
+/** An event carrying nothing but a number. */
 export interface NativeValueEvent {
   value: number
 }
 
-/** Un evento que solo lleva texto. */
+/** An event carrying nothing but text. */
 export interface NativeTextEvent {
   value: string
 }
 
-/** Marco resuelto de una vista, relativo a su padre y en puntos. */
+/** A view's resolved frame, relative to its parent and in points. */
 /**
- * Un giro de la corona digital del reloj.
+ * A turn of the watch's digital crown.
  *
- * `delta` es lo que ha girado desde el aviso anterior, que es lo que casi
- * siempre se quiere: SwiftUI solo entrega el acumulado, y restar en cada
- * plantilla sería repetir la misma cuenta en todas.
+ * `delta` is how much it has turned since the last notification, which is what
+ * is nearly always wanted: SwiftUI only hands over the running total, and
+ * subtracting in every template would mean repeating the same sum in all of
+ * them.
  */
 export interface NativeCrownEvent {
   delta: number
-  /** Acumulado desde que la vista tomó el foco. */
+  /** The running total since the view took focus. */
   offset: number
-  /** Vueltas por segundo. Sirve para seguir por inercia al soltar. */
+  /** Turns per second. Useful for coasting on after the finger lifts. */
   velocity: number
 }
 
@@ -91,7 +93,7 @@ export interface NativeLayoutEvent {
   height: number
 }
 
-/** Márgenes que el sistema se reserva: notch, barra de estado, home. */
+/** The margins the system keeps for itself: notch, status bar, home bar. */
 export interface NativeSafeAreaInsets {
   top: number
   right: number
@@ -99,22 +101,24 @@ export interface NativeSafeAreaInsets {
   left: number
 }
 
-/** Desplazamiento actual de un `ScrollView`, en puntos. */
+/** A `ScrollView`'s current scroll offset, in points. */
 export interface NativeScrollEvent {
   x: number
   y: number
 }
 
 /**
- * El puntero entra o sale de una vista.
+ * The pointer enters or leaves a view.
  *
- * Es una sola salida con un booleano y no dos —`hoverIn` y `hoverOut`— porque
- * lo que hay debajo también es uno solo: un `NSTrackingArea` da entrada y
- * salida por el mismo camino, y partirlo en dos salidas obligaría a montar dos
- * suscripciones para lo que casi siempre acaba en la misma señal.
+ * It is one output with a boolean and not two —`hoverIn` and `hoverOut`—
+ * because what sits underneath is one thing too: an `NSTrackingArea` delivers
+ * entry and exit down the same road, and splitting it into two outputs would
+ * force two subscriptions for something that nearly always ends up in the same
+ * signal.
  *
- * Las coordenadas son las del puntero dentro de la vista, en puntos. Al salir
- * son las del último punto por el que pasó, que es el borde por donde se fue.
+ * The coordinates are the pointer's inside the view, in points. On the way out
+ * they are those of the last point it passed through, which is the edge it left
+ * by.
  */
 export interface NativeHoverEvent {
   hovered: boolean
@@ -123,23 +127,25 @@ export interface NativeHoverEvent {
 }
 
 /**
- * Qué puntero enseña el sistema encima de esta vista.
+ * Which pointer the system shows over this view.
  *
- * Los nombres son los de CSS y no los de AppKit porque son los que ya sabe
- * cualquiera que haya escrito una interfaz, y porque el vocabulario tiene que
- * poder significar lo mismo en otro escritorio. Cada uno es un cursor del
- * sistema —`NSCursor`— y no un dibujo nuestro: `pointer` es la mano de macOS,
- * con el aspecto que tenga en esa versión.
+ * The names are CSS's and not AppKit's because they are the ones anybody who
+ * has written an interface already knows, and because the vocabulary has to be
+ * able to mean the same thing on another desktop. Each one is a system cursor
+ * —an `NSCursor`— and not a drawing of ours: `pointer` is macOS's hand, looking
+ * however it looks on that version.
  *
- * `null` es «el que toque», que no es lo mismo que `default`: sin poner nada,
- * un campo de texto sigue enseñando el cursor de texto que pone él solo, y
- * `default` es pedir la flecha *encima* de lo que el control haría.
+ * `null` means «whichever is right», which is not the same as `default`: with
+ * nothing set, a text field goes on showing the text cursor it puts up by
+ * itself, and `default` is asking for the arrow *on top of* whatever the control
+ * would do.
  *
- * No están los de redimensionar. Los que macOS tiene desde siempre
- * —`resizeLeftRightCursor` y compañía— están marcados como obsoletos, y los
- * que los sustituyen llegaron en macOS 15, que es posterior al mínimo que
- * compila este host. Meterlos sería elegir entre un aviso de obsolescencia en
- * cada build o un método que no existe en la versión que decimos soportar.
+ * The resize ones are missing. The ones macOS has always had
+ * —`resizeLeftRightCursor` and friends— are marked deprecated, and the ones that
+ * replace them arrived in macOS 15, which is later than the minimum this host
+ * compiles for. Adding them would mean choosing between a deprecation warning on
+ * every build and a method that does not exist in the version we claim to
+ * support.
  */
 export type NativeCursor =
   | 'default'
@@ -151,13 +157,13 @@ export type NativeCursor =
   | 'not-allowed'
 
 /**
- * Las claves que un control acepta en `[ios]` o en `[android]`.
+ * The keys a control accepts in `[ios]` or in `[android]`.
  *
- * Se declara la lista aunque el tipo del objeto ya la diga, y no es
- * redundante: el tipo lo comprueba el compilador sobre lo que ve, y no ve un
- * objeto armado a trozos ni uno que viene de fuera. La lista es la que queda
- * en tiempo de ejecución, y es también la que lee `check-wrapper.sh` para
- * exigir que el host de esa plataforma —y solo ese— la mire.
+ * The list is declared even though the object's type already says it, and that
+ * is not redundant: the compiler checks the type against what it can see, and it
+ * cannot see an object assembled in pieces or one that comes from outside. The
+ * list is what survives at runtime, and it is also what `check-wrapper.sh` reads
+ * in order to demand that that platform's host —and only that one— looks at it.
  */
 interface PlatformKeys {
   readonly primitive: string
@@ -174,12 +180,13 @@ function platformKeys(
 }
 
 /**
- * Avisa una vez por clave que nadie va a mirar.
+ * Warns once per key that nobody is going to look at.
  *
- * Mismo trato que `warnUnknownStyle()` en el renderer y por el mismo motivo:
- * una prop que viaja, no la reconoce nadie y no da error es un fallo que se ve
- * como "esto no hace nada" y se busca en el sitio equivocado. Una vez por
- * clave, porque el objeto se vuelve a evaluar en cada detección de cambios.
+ * Same treatment as `warnUnknownStyle()` in the renderer and for the same
+ * reason: a prop that travels, that nobody recognises and that raises no error
+ * is a bug that looks like "this does nothing" and gets hunted in the wrong
+ * place. Once per key, because the object is evaluated again on every change
+ * detection pass.
  */
 const warnedPlatformProps = new Set<string>()
 
@@ -195,15 +202,15 @@ function warnUnknownPlatformProp(where: PlatformKeys, key: string): void {
 }
 
 /**
- * Primitivas nativas como directivas.
+ * Native primitives as directives.
  *
- * La alternativa era `CUSTOM_ELEMENTS_SCHEMA`, que además de exigir un guion en
- * el nombre apaga la comprobación de propiedades: `[bakcgroundColor]` con
- * errata pasaría el compilador y fallaría en silencio en el dispositivo.
+ * The alternative was `CUSTOM_ELEMENTS_SCHEMA`, which besides demanding a hyphen
+ * in the name switches off property checking: a mistyped `[bakcgroundColor]`
+ * would sail past the compiler and fail silently on the device.
  *
- * Con directivas, cada prop es una entrada declarada: el compilador de
- * plantillas la comprueba, el editor la autocompleta, y la directiva es el
- * sitio natural donde convertir el valor antes de mandarlo al core.
+ * With directives, every prop is a declared input: the template compiler checks
+ * it, the editor completes it, and the directive is the natural place to convert
+ * the value before sending it to the core.
  */
 @Directive()
 export abstract class NativeVisual {
@@ -215,20 +222,20 @@ export abstract class NativeVisual {
   }
 
   /**
-   * Empuja al core las entradas de esta directiva.
+   * Pushes this directive's inputs to the core.
    *
-   * Una entrada de señal no tiene un momento en el que "se asigna": se lee, y
-   * quien la lee decide cuándo. Aquí la lee un efecto.
+   * A signal input has no moment at which it "gets assigned": it is read, and
+   * whoever reads it decides when. Here an effect reads it.
    *
-   * Uno por directiva y no uno por entrada. Un `<an-text>` declara once props y
-   * casi ninguna plantilla usa más de tres: con un efecto por prop, cada
-   * `<an-text>` de una lista de cinco mil filas cargaría con once nodos
-   * reactivos que nadie va a despertar. Leer once señales cuando cambia una
-   * es más barato que tener once efectos esperando.
+   * One per directive and not one per input. An `<an-text>` declares eleven
+   * props and hardly any template uses more than three: with an effect per prop,
+   * every `<an-text>` in a list of five thousand rows would be carrying eleven
+   * reactive nodes nobody is ever going to wake. Reading eleven signals when one
+   * of them changes is cheaper than keeping eleven effects waiting.
    *
-   * Solo viaja lo que cambió. Y en la primera pasada se callan además los
-   * nulos, que es lo que vale una entrada que nadie ha puesto: mandarlos
-   * sería pedirle al host que borre algo que nunca escribió.
+   * Only what changed travels. And on the first pass the nulls keep quiet too,
+   * since that is what an input nobody has set is worth: sending them would be
+   * asking the host to erase something it never wrote.
    */
   protected push(props: Record<string, () => unknown>): void {
     const entries = Object.entries(props)
@@ -246,7 +253,7 @@ export abstract class NativeVisual {
     })
   }
 
-  /** Lo mismo para el objeto de una plataforma, que se manda descompuesto. */
+  /** The same for a platform's object, which is sent taken apart. */
   protected pushPlatform(
     where: PlatformKeys,
     value: () => Record<string, unknown> | null
@@ -279,16 +286,16 @@ export abstract class NativeVisual {
     })
   }
 
-  /** Lo que se mandó la última vez en cada objeto de plataforma. */
+  /** What was sent last time in each platform object. */
   private readonly platformSent = new Map<string, Set<string>>()
 
   /**
-   * Descompone `[ios]` o `[android]` en props sueltas con su prefijo.
+   * Takes `[ios]` or `[android]` apart into loose props with their prefix.
    *
-   * El prefijo hace dos cosas: que el host de la otra plataforma pueda
-   * descartar la prop sin saber qué es, y que el nombre siga siendo greppable
-   * —`"ios:subtitle"` tiene que aparecer en el host de iOS y no en el de
-   * Android, y eso lo comprueba un script—.
+   * The prefix does two things: it lets the other platform's host discard the
+   * prop without knowing what it is, and it keeps the name greppable
+   * —`"ios:subtitle"` has to appear in the iOS host and not in the Android one,
+   * and a script checks that—.
    */
   protected platform(where: PlatformKeys, value: Record<string, unknown> | null): void {
     const previous = this.platformSent.get(where.platform)
@@ -301,8 +308,9 @@ export abstract class NativeVisual {
       sent.add(key)
       this.set(`${where.platform}:${key}`, raw)
     }
-    // Una clave que estaba puesta y ya no está tiene que volver a su valor de
-    // fábrica: el control no se entera solo de que se la han quitado.
+    // A key that was set and is no longer there has to go back to its factory
+    // value: the control does not work out on its own that it has been taken
+    // away.
     if (previous) {
       for (const key of previous) {
         if (!sent.has(key)) this.set(`${where.platform}:${key}`, null)
@@ -312,14 +320,13 @@ export abstract class NativeVisual {
   }
 
   /**
-   * Un gesto que solo existe si la plantilla lo pide.
+   * A gesture that only exists if the template asks for it.
    *
-   * El observable es frío: el `UIGestureRecognizer` se engancha al
-   * suscribirse y se suelta al destruir la vista. Angular suscribe una salida
-   * únicamente cuando hay un `(press)` bindeado, así que una vista que nadie
-   * escucha no paga nada. Declararlo como evento de elemento habría dado el
-   * mismo coste, pero `$event` sería `Event` y habría que castear en cada
-   * plantilla.
+   * The observable is cold: the `UIGestureRecognizer` is hooked up on subscribe
+   * and let go when the view is destroyed. Angular subscribes an output only
+   * when there is a `(press)` bound, so a view nobody is listening to pays
+   * nothing. Declaring it as an element event would have cost the same, but
+   * `$event` would be an `Event` and every template would have to cast.
    */
   protected nativeEvent<T>(name: string): Observable<T> {
     return new Observable<T>((subscriber) => {
@@ -334,107 +341,107 @@ export abstract class NativeVisual {
   readonly doublePress = outputFromObservable(this.nativeEvent<NativePressEvent>('doublePress'))
 
   /**
-   * Mantener pulsado. Solo llega una vez, cuando el sistema decide que el
-   * gesto cuenta: cada plataforma tiene su umbral de tiempo, y respetarlo es
-   * lo que hace que la app se sienta de esa plataforma.
+   * Press and hold. It arrives once and once only, when the system decides the
+   * gesture counts: each platform has its own time threshold, and respecting it
+   * is what makes the app feel like it belongs to that platform.
    */
   readonly longPress = outputFromObservable(this.nativeEvent<NativePressEvent>('longPress'))
 
   readonly pan = outputFromObservable(this.nativeEvent<NativePanEvent>('pan'))
   readonly pinch = outputFromObservable(this.nativeEvent<NativePinchEvent>('pinch'))
   /**
-   * Girar con dos dedos.
+   * Two-finger rotation.
    *
-   * Se llama `rotation` y no `rotate` porque `[rotate]` ya es la
-   * transformación, y una clase no puede tener dos miembros con el mismo
-   * nombre. Queda además más claro cuál es cuál: `[rotate]` manda, `(rotation)`
-   * cuenta.
+   * It is called `rotation` and not `rotate` because `[rotate]` is already the
+   * transform, and a class cannot have two members with the same name. It also
+   * makes it clearer which is which: `[rotate]` commands, `(rotation)` reports.
    */
   readonly rotation = outputFromObservable(this.nativeEvent<NativeRotateEvent>('rotate'))
 
-  // Deslizar. Cada dirección es su propia salida porque cada una engancha su
-  // reconocedor: escuchar solo `swipeLeft` no cuesta los otros tres.
+  // Swiping. Each direction is its own output because each one hooks up its own
+  // recogniser: listening to `swipeLeft` alone does not cost the other three.
   readonly swipeLeft = outputFromObservable(this.nativeEvent<NativePressEvent>('swipeLeft'))
   readonly swipeRight = outputFromObservable(this.nativeEvent<NativePressEvent>('swipeRight'))
   readonly swipeUp = outputFromObservable(this.nativeEvent<NativePressEvent>('swipeUp'))
   readonly swipeDown = outputFromObservable(this.nativeEvent<NativePressEvent>('swipeDown'))
 
   /**
-   * El puntero entra o sale de esta vista.
+   * The pointer enters or leaves this view.
    *
-   * En un escritorio no es un adorno: un control que no cambia al pasar el
-   * ratón por encima parece apagado, y esa es la única señal que tiene alguien
-   * con un ratón de que ahí hay algo que pulsar. En un teléfono no existe —no
-   * hay puntero al que responder— y por eso el host de esa plataforma no la
-   * entrega.
+   * On a desktop this is not decoration: a control that does not change as the
+   * mouse passes over it looks disabled, and that is the only hint somebody with
+   * a mouse has that there is something there to click. On a phone it does not
+   * exist —there is no pointer to respond to— which is why that platform's host
+   * never delivers it.
    */
   readonly hover = outputFromObservable(this.nativeEvent<NativeHoverEvent>('hover'))
 
   /**
-   * El marco que le asignó el layout, cada vez que cambia.
+   * The frame layout assigned it, every time it changes.
    *
-   * No lo produce ninguna plataforma: lo emite el core al terminar el commit,
-   * porque es él quien calcula el marco. Sale gratis en iOS y en Android.
+   * No platform produces it: the core emits it as the commit finishes, because
+   * the core is what computes the frame. It comes free on both iOS and Android.
    */
   readonly layout = outputFromObservable(this.nativeEvent<NativeLayoutEvent>('layout'))
 
   /**
-   * Márgenes que el sistema se reserva, y cada vez que cambian: al rotar, al
-   * aparecer el teclado, al entrar en pantalla dividida.
+   * The margins the system keeps for itself, and every time they change: on
+   * rotation, when the keyboard comes up, when going into split screen.
    */
   readonly safeArea = outputFromObservable(this.nativeEvent<NativeSafeAreaInsets>('safeArea'))
 
   /**
-   * El foco entró o salió de esta vista.
+   * Focus came into or left this view.
    *
-   * Estaban solo en `an-text-input` porque en un teléfono el foco es del
-   * teclado. En una tele es la plataforma entera: el mando recorre las vistas
-   * enfocables y no hay otra forma de resaltar la que está debajo del cursor.
-   * `value` solo viene cuando la vista es un campo de texto.
+   * These used to be on `an-text-input` only, because on a phone focus belongs
+   * to the keyboard. On a TV it is the whole platform: the remote walks the
+   * focusable views and there is no other way to highlight the one under the
+   * cursor. `value` only comes along when the view is a text field.
    */
   readonly focus = outputFromObservable(this.nativeEvent<{ value?: string }>('focus'))
   readonly blur = outputFromObservable(this.nativeEvent<{ value?: string }>('blur'))
 
   /**
-   * La corona digital del reloj, mientras gira.
+   * The watch's digital crown, while it turns.
    *
-   * Va en la base y no en un control porque la corona la recibe **la vista que
-   * tiene el foco**, sea cual sea: en el reloj es el equivalente a rodar la
-   * rueda del ratón sobre algo.
+   * It lives on the base class and not on a control because the crown goes to
+   * **whichever view has focus**, whatever it is: on the watch it is the
+   * equivalent of rolling the mouse wheel over something.
    */
   readonly crown = outputFromObservable(this.nativeEvent<NativeCrownEvent>('crown'))
 
-  /** La corona dejó de girar. Sin él no hay forma de saber cuándo parar. */
+  /** The crown stopped turning. Without it there is no way to know when to
+   * stop. */
   readonly crownIdle = outputFromObservable(this.nativeEvent<void>('crownIdle'))
 
   readonly backgroundColor = input<string | null>(null)
 
   /**
-   * Cuántos milisegundos tarda esta vista en llegar a sus valores nuevos.
+   * How many milliseconds this view takes to reach its new values.
    *
-   * Con esto puesto, mover, escalar, cambiar la opacidad o recolocar la vista
-   * deja de ser un salto: la anima la plataforma, en su hilo de dibujo, sin
-   * volver a pasar por JavaScript en cada frame. Por eso una animación sigue
-   * yendo suave aunque el hilo del motor esté ocupado.
+   * With this set, moving, scaling, changing the opacity or relocating the view
+   * stops being a jump: the platform animates it, on its drawing thread, without
+   * coming back through JavaScript on every frame. That is why an animation
+   * stays smooth even when the engine thread is busy.
    *
-   * Lo que se anima es el cambio, no un valor concreto: se pone una vez y
-   * vale para todos los que vengan después. Cero o `null` lo apaga.
+   * What gets animated is the change, not one particular value: it is set once
+   * and holds for every change that comes after. Zero or `null` turns it off.
    */
   readonly animate = input<number | null>(null)
 
   readonly animateDelay = input<number | null>(null)
 
-  /** Por defecto `ease-out`: sale rápido y frena al llegar. */
+  /** `ease-out` by default: it leaves fast and brakes on arrival. */
   readonly animateEasing = input<'linear' | 'ease-in' | 'ease-out' | 'ease-in-out' | null>(null)
 
   /**
-   * Desplazar, escalar y girar.
+   * Translating, scaling and rotating.
    *
-   * No entran en el layout a propósito: una vista movida o escalada sigue
-   * ocupando el mismo sitio que ocupaba. Por eso son baratas —no hay nada que
-   * recalcular— y por eso son las que hay que usar para seguir a un dedo.
-   * Para mover algo *y* que lo de al lado se aparte, hay que cambiar el
-   * layout, no esto.
+   * They deliberately take no part in layout: a view that has been moved or
+   * scaled still occupies the same place it occupied. That is why they are cheap
+   * —there is nothing to recompute— and that is why they are the ones to use to
+   * follow a finger. To move something *and* have its neighbour get out of the
+   * way, the layout has to change, not this.
    */
   readonly translateX = input<number | null>(null)
 
@@ -446,14 +453,14 @@ export abstract class NativeVisual {
 
   readonly scaleY = input<number | null>(null)
 
-  /** En radianes, como lo que manda el gesto de girar. */
+  /** In radians, like what the rotate gesture sends. */
   readonly rotate = input<number | null>(null)
 
   readonly borderRadius = input<number | null>(null)
 
-  // Radios por esquina. UIKit solo sabe de un radio único, así que cuando
-  // difieren el host dibuja el contorno y lo usa de máscara; Android lo
-  // resuelve con `setCornerRadii`.
+  // Per-corner radii. UIKit only knows about a single radius, so when they
+  // differ the host draws the outline and uses it as a mask; Android settles it
+  // with `setCornerRadii`.
   readonly borderTopLeftRadius = input<number | null>(null)
 
   readonly borderTopRightRadius = input<number | null>(null)
@@ -469,53 +476,55 @@ export abstract class NativeVisual {
   readonly opacity = input<number | null>(null)
 
   /**
-   * Puntero del sistema encima de esta vista.
+   * The system pointer over this view.
    *
-   * Va con `(hover)` y por lo mismo: donde hay ratón, la forma del cursor es
-   * la mitad de la respuesta. Donde no lo hay no significa nada, así que el
-   * único host que la mira es el del escritorio; los otros dos no tienen
-   * puntero al que darle forma. Está en la lista de props de puntero de
-   * `scripts/check-wrapper.sh`, que es quien exige que macOS sí la mire.
+   * It goes with `(hover)` and for the same reason: where there is a mouse, the
+   * cursor's shape is half the response. Where there is not, it means nothing,
+   * so the only host that looks at it is the desktop one; the other two have no
+   * pointer to give a shape to. It is in the pointer prop list in
+   * `scripts/check-wrapper.sh`, which is what demands that macOS does look at
+   * it.
    */
   readonly cursor = input<NativeCursor | null>(null)
 
   /**
-   * El nombre que anuncia un lector de pantalla.
+   * The name a screen reader announces.
    *
-   * Sin esto, VoiceOver y TalkBack leen lo que encuentren dentro —el texto de
-   * un hijo, el nombre del fichero de una imagen— o no leen nada. Un
-   * `an-view` que hace de botón es, sin etiqueta, un elemento sin nombre: se
-   * puede enfocar y no se puede saber qué hace.
+   * Without this, VoiceOver and TalkBack read whatever they find inside —a
+   * child's text, an image's filename— or they read nothing at all. An `an-view`
+   * acting as a button is, with no label, an element with no name: you can focus
+   * it and you cannot tell what it does.
    *
-   * Los controles del sistema traen la suya de fábrica y solo hay que ponerla
-   * cuando la de fábrica no dice lo que toca.
+   * System controls come with theirs from the factory, and it only needs setting
+   * when the factory one does not say the right thing.
    */
   readonly accessibilityLabel = input<string | null>(null)
 
-  /** Qué pasa al activarlo, si el nombre no basta. Se lee después del nombre. */
+  /** What happens on activating it, if the name is not enough. It is read after
+   * the name. */
   readonly accessibilityHint = input<string | null>(null)
 
-  /** Qué es. Ver `NativeRole`. */
+  /** What it is. See `NativeRole`. */
   readonly accessibilityRole = input<NativeRole | null>(null)
 
-  /** Lo que vale ahora mismo: «35 %», «tres de siete». */
+  /** What it is worth right now: «35 %», «three of seven». */
   readonly accessibilityValue = input<string | null>(null)
 
-  /** Cómo está. Ver `NativeAccessibilityState`. */
+  /** What state it is in. See `NativeAccessibilityState`. */
   readonly accessibilityState = input<NativeAccessibilityState | null>(null)
 
   /**
-   * Si esto es **un** elemento para el lector, en vez de un contenedor por el
-   * que se navega hacia dentro.
+   * Whether this is **one** element as far as the reader is concerned, rather
+   * than a container you navigate into.
    *
-   * Es lo que convierte una fila entera —icono, título y subtítulo— en una
-   * sola parada que se lee de una vez, en vez de tres paradas sueltas. `false`
-   * hace lo contrario: esconde la vista y lo que tenga dentro, que es lo que
-   * hace falta para lo puramente decorativo.
+   * It is what turns a whole row —icon, title and subtitle— into a single stop
+   * read out in one go, instead of three separate stops. `false` does the
+   * opposite: it hides the view and whatever is inside it, which is what purely
+   * decorative things need.
    */
   readonly accessible = input<boolean | null>(null)
 
-  /** Identificador para pruebas de interfaz; acaba en accessibilityIdentifier. */
+  /** An identifier for UI tests; it ends up as accessibilityIdentifier. */
   readonly testID = input<string | null>(null)
 }
 
@@ -523,17 +532,16 @@ export abstract class NativeVisual {
 export class View extends NativeVisual {}
 
 /**
- * Qué es esto para quien no lo ve.
+ * What this is, for somebody who cannot see it.
  *
- * El vocabulario es corto a propósito. Cada plataforma tiene el suyo —traits
- * en UIKit, roles de `NSAccessibility` en AppKit, `AccessibilityNodeInfo` en
- * Android— y no se parecen ni en el número ni en los nombres. Lo que sí
- * comparten es este puñado, que es además lo que un lector de pantalla
- * anuncia de forma distinta: «botón», «encabezado», «enlace», «imagen»,
- * «casilla», «selector».
+ * The vocabulary is deliberately short. Each platform has its own —traits in
+ * UIKit, `NSAccessibility` roles in AppKit, `AccessibilityNodeInfo` on Android—
+ * and they resemble each other neither in number nor in name. What they do share
+ * is this handful, which is also what a screen reader announces differently:
+ * «button», «heading», «link», «image», «checkbox», «picker».
  *
- * Un rol que solo tuviera una plataforma iría en su objeto `[ios]` o
- * `[android]`, como cualquier otra cosa que solo existe en un sitio.
+ * A role that only one platform had would go in its `[ios]` or `[android]`
+ * object, like anything else that exists in one place only.
  */
 export type NativeRole =
   | 'button'
@@ -550,31 +558,31 @@ export type NativeRole =
   | 'none'
 
 /**
- * En qué estado está, para quien no lo ve.
+ * What state it is in, for somebody who cannot see it.
  *
- * Va aparte del rol porque cambia con el tiempo y el rol no: un lector de
- * pantalla vuelve a anunciar «seleccionado» cuando esto cambia, sin que la
- * vista se rehaga.
+ * It is kept apart from the role because it changes over time and the role does
+ * not: a screen reader announces «selected» again when this changes, without the
+ * view being rebuilt.
  */
 export interface NativeAccessibilityState {
   disabled?: boolean
   selected?: boolean
-  /** Marcado, para casillas e interruptores. `mixed` es el estado intermedio. */
+  /** Checked, for checkboxes and switches. `mixed` is the in-between state. */
   checked?: boolean | 'mixed'
   expanded?: boolean
   busy?: boolean
 }
 
 /**
- * Un control del sistema: algo que se toca y que se puede apagar.
+ * A system control: something you touch and that can be switched off.
  *
- * `enabled` está aquí y no repetido en cada uno porque significa lo mismo en
- * los ocho y en las dos plataformas —`UIControl.isEnabled` y
- * `View.setEnabled`—, incluido el gris y el que deje de responder al toque,
- * que lo pone el sistema y no nosotros.
+ * `enabled` lives here rather than being repeated in each of them because it
+ * means the same thing in all eight and on both platforms —`UIControl.isEnabled`
+ * and `View.setEnabled`—, including the grey-out and the fact that it stops
+ * responding to touch, which the system does and not us.
  *
- * Los campos de texto no entran: ya tienen `editable`, que es la misma idea
- * con el nombre que usa un campo.
+ * Text fields do not belong here: they already have `editable`, the same idea
+ * under the name a field uses.
  */
 @Directive()
 export abstract class NativeControl extends NativeVisual {
@@ -589,11 +597,12 @@ export abstract class NativeControl extends NativeVisual {
 }
 
 /**
- * Pila de pantallas.
+ * A stack of screens.
  *
- * Sus hijos se superponen y ocupan todo —eso lo impone el core, no el estilo—
- * y el host anima la entrada y la salida según `transition`. Rara vez se usa
- * a pelo: lo normal es `NativeStack`, que la conecta con el router.
+ * Its children overlap and fill everything —the core imposes that, not the
+ * styling— and the host animates the way in and the way out according to
+ * `transition`. It is rarely used bare: the usual thing is `NativeStack`, which
+ * wires it to the router.
  */
 @Directive({ selector: 'an-stack-view' })
 export class StackView extends NativeVisual {
@@ -605,26 +614,26 @@ export class StackView extends NativeVisual {
   }
 
   /**
-   * Sentido de la próxima transición. Lo decide quien navega, que es el
-   * único que sabe si se avanza o se retrocede.
+   * The direction of the next transition. Whoever navigates decides it, being
+   * the only one who knows whether this is going forward or back.
    */
   readonly transition = input<'push' | 'pop' | 'none' | null>('none')
 
-  /** Gesto de borde en iOS, botón físico en Android. */
+  /** The edge gesture on iOS, the physical button on Android. */
   readonly back = outputFromObservable(this.nativeEvent<void>('back'))
 }
 
-/** Lo que el `UIScrollView` tiene y el de Android no. */
+/** What `UIScrollView` has and Android's does not. */
 export type IosScrollViewProps = {
   /**
-   * El desplazamiento se para en múltiplos del tamaño de la vista.
-   * `UIScrollView.isPagingEnabled`. Android no lo trae: lo suyo es
-   * `ViewPager2`, que es otra vista con su adaptador, no una prop.
+   * Scrolling comes to rest at multiples of the view's size.
+   * `UIScrollView.isPagingEnabled`. Android does not ship it: its answer is
+   * `ViewPager2`, which is another view with its own adapter, not a prop.
    */
   pagingEnabled?: boolean
   /**
-   * Qué hace el teclado al desplazarse. `keyboardDismissMode`. En Android el
-   * teclado no se esconde al desplazar y no hay nada que pedirle.
+   * What the keyboard does while scrolling. `keyboardDismissMode`. On Android
+   * the keyboard does not hide on scroll and there is nothing to ask it for.
    */
   keyboardDismissMode?: 'none' | 'onDrag' | 'interactive'
 }
@@ -650,42 +659,42 @@ export class ScrollView extends NativeVisual {
   readonly showsScrollIndicator = input<boolean | null>(null)
 
   /**
-   * Si el dedo mueve el contenido.
+   * Whether the finger moves the content.
    *
-   * Apagado, la vista sigue recortando y el contenido sigue pudiendo
-   * desplazarse desde el código: lo que se quita es el gesto.
+   * Switched off, the view goes on clipping and the content can still be
+   * scrolled from code: what is taken away is the gesture.
    */
   readonly scrollEnabled = input<boolean | null>(true)
 
   readonly ios = input<IosScrollViewProps | null>(null)
 
-  /** El rebote de iOS al llegar al final. */
+  /** iOS's bounce on reaching the end. */
   readonly bounces = input<boolean | null>(null)
 
   /**
-   * Si está recargando. Ponerlo a `false` cierra la ruedecilla; la abre el
-   * propio gesto, no esta prop.
+   * Whether it is refreshing. Setting it to `false` closes the spinner; the
+   * gesture itself opens it, not this prop.
    */
   readonly refreshing = input<boolean | null>(false)
 
   /**
-   * Tirar para recargar.
+   * Pull to refresh.
    *
-   * En iOS lo dibuja el sistema con un `UIRefreshControl`. Android no trae uno
-   * en la plataforma —`SwipeRefreshLayout` vive en AndroidX— así que se dibuja
-   * el mismo arco que hace el sistema.
+   * On iOS the system draws it with a `UIRefreshControl`. Android ships none in
+   * the platform —`SwipeRefreshLayout` lives in AndroidX— so the same arc the
+   * system draws is drawn by hand.
    */
   readonly refresh = outputFromObservable(this.nativeEvent<void>('refresh'))
 
   /**
-   * Se emite en cada frame de desplazamiento. El `contentSize` lo calcula el
-   * layout solo: es el tamaño que ocupan los hijos, y el core lo manda al
-   * `UIScrollView` cuando cambia.
+   * Emitted on every frame of the scroll. Layout computes the `contentSize` by
+   * itself: it is the size the children take up, and the core sends it to the
+   * `UIScrollView` whenever it changes.
    */
   readonly scroll = outputFromObservable(this.nativeEvent<NativeScrollEvent>('scroll'))
 }
 
-/** Tamaño real de una imagen ya cargada, en puntos. */
+/** The real size of an image once loaded, in points. */
 export interface NativeImageLoadEvent {
   width: number
   height: number
@@ -695,9 +704,9 @@ export interface NativeImageLoadEvent {
 export class Image extends NativeVisual {
   constructor() {
     super()
-    // Este oyente no es opcional: el layout no puede colocar algo cuyo tamaño
-    // no conoce, y solo la imagen sabe cuánto mide. Se registra siempre, aunque
-    // la plantilla no escuche `load`.
+    // This listener is not optional: layout cannot place something whose size
+    // it does not know, and only the image knows how big it is. It is always
+    // registered, even when the template is not listening for `load`.
     const unlisten = this.renderer.listen(this.node, 'load', (payload) => {
       const size = payload as NativeImageLoadEvent
       this.set('intrinsicWidth', size.width)
@@ -713,17 +722,17 @@ export class Image extends NativeVisual {
   }
 
   /**
-   * Ruta de la imagen. Sin esquema es un recurso del bundle de la app; con
-   * `http` o `https` se baja por red y aparece cuando llegue.
+   * The image's path. With no scheme it is a resource in the app's bundle; with
+   * `http` or `https` it is fetched over the network and appears when it lands.
    */
   readonly source = input<string | null>(null)
 
-  /** `contain` por defecto; también `cover`, `stretch` y `center`. */
+  /** `contain` by default; also `cover`, `stretch` and `center`. */
   readonly resizeMode = input<'contain' | 'cover' | 'stretch' | 'center' | null>(null)
 
   /**
-   * Tamaño intrínseco. Se rellena solo al cargar la imagen; fijarlo a mano
-   * sirve para reservar el hueco antes de que llegue y evitar el salto.
+   * The intrinsic size. It fills itself in when the image loads; setting it by
+   * hand reserves the space before the image arrives and avoids the jump.
    */
   readonly intrinsicWidth = input<number | null>(null)
 
@@ -732,13 +741,14 @@ export class Image extends NativeVisual {
   readonly load = outputFromObservable(this.nativeEvent<NativeImageLoadEvent>('load'))
 }
 
-/** Lo que el `TextView` de Android tiene y el `UILabel` de iOS no. */
+/** What Android's `TextView` has and iOS's `UILabel` does not. */
 export type AndroidTextProps = {
   /**
-   * Deja seleccionar y copiar el texto.
+   * Lets the text be selected and copied.
    *
-   * `UILabel` no lo hace: en iOS un texto seleccionable es un `UITextView`
-   * apagado, que es otra vista y otra medición, así que aquí no se imita.
+   * `UILabel` does not do it: on iOS a selectable text is a disabled
+   * `UITextView`, which is another view and another measurement, so it is not
+   * imitated here.
    */
   selectable?: boolean
 }
@@ -768,7 +778,7 @@ export class Text extends NativeVisual {
 
   readonly fontSize = input<number | null>(null)
 
-  /** `'bold'`, `'normal'` o la escala numérica de CSS (100..900). */
+  /** `'bold'`, `'normal'` or CSS's numeric scale (100..900). */
   readonly fontWeight = input<string | number | null>(null)
 
   readonly fontStyle = input<'normal' | 'italic' | null>(null)
@@ -781,35 +791,36 @@ export class Text extends NativeVisual {
 
   readonly textAlign = input<'left' | 'center' | 'right' | 'justify' | null>(null)
 
-  /** 0 o nulo = sin límite. */
+  /** 0 or null = no limit. */
   readonly numberOfLines = input<number | null>(null)
 
-  /** Subrayado o tachado. Una raya sencilla, que es lo que se pide siempre. */
+  /** Underline or strikethrough. A plain single line, which is what anybody
+   * ever asks for. */
   readonly textDecoration = input<'none' | 'underline' | 'lineThrough' | null>('none')
 
   readonly android = input<AndroidTextProps | null>(null)
 }
 
-/** Lo que el campo de UIKit tiene y el de Android no. */
+/** What UIKit's field has and Android's does not. */
 export type IosTextInputProps = {
   /**
-   * La equis para vaciar el campo. `UITextField.clearButtonMode`. Android no
-   * la tiene: ahí la convención es borrar con el teclado.
+   * The little cross that empties the field. `UITextField.clearButtonMode`.
+   * Android has none: over there the convention is to delete with the keyboard.
    */
   clearButtonMode?: 'never' | 'whileEditing' | 'always'
   /**
-   * El marco que dibuja UIKit alrededor del campo.
-   * `UITextField.borderStyle`. En Android el fondo de un `EditText` lo pone el
-   * tema, y aquí se quita a propósito para que el marco lo ponga la plantilla.
+   * The frame UIKit draws around the field. `UITextField.borderStyle`. On
+   * Android an `EditText`'s background comes from the theme, and here it is
+   * deliberately taken away so that the template supplies the frame.
    */
   borderStyle?: 'none' | 'line' | 'bezel' | 'roundedRect'
 }
 
-/** Lo que el campo de Android tiene y el de UIKit no. */
+/** What Android's field has and UIKit's does not. */
 export type AndroidTextInputProps = {
-  /** Al recibir el foco, todo el texto queda seleccionado. */
+  /** On taking focus, the whole text ends up selected. */
   selectAllOnFocus?: boolean
-  /** Esconde el cursor. `EditText.setCursorVisible`. */
+  /** Hides the caret. `EditText.setCursorVisible`. */
   cursorVisible?: boolean
 }
 
@@ -846,8 +857,8 @@ export class TextInput extends NativeVisual {
   readonly placeholder = input<string | null>(null)
 
   /**
-   * El host solo escribe en el campo si el texto difiere de verdad: asignarlo
-   * en cada tecla movería el cursor al final.
+   * The host only writes into the field when the text really does differ:
+   * assigning on every keystroke would send the caret to the end.
    */
   readonly value = input<string | null>(null)
 
@@ -859,7 +870,7 @@ export class TextInput extends NativeVisual {
 
   readonly fontSize = input<number | null>(null)
 
-  /** `'bold'`, `'normal'` o la escala numérica de CSS (100..900). */
+  /** `'bold'`, `'normal'` or CSS's numeric scale (100..900). */
   readonly fontWeight = input<string | number | null>(null)
 
   readonly fontFamily = input<string | null>(null)
@@ -867,61 +878,62 @@ export class TextInput extends NativeVisual {
   readonly textAlign = input<'left' | 'center' | 'right' | null>(null)
 
   /**
-   * Qué teclado sale.
+   * Which keyboard comes up.
    *
-   * No es un adorno: un campo de correo con el teclado de texto obliga a
-   * buscar la arroba, y uno de teléfono con letras deja escribir cosas que no
-   * son un teléfono. En iOS es `keyboardType`; en Android, el `inputType`, que
-   * además cambia lo que el campo acepta.
+   * This is not decoration: an email field with the text keyboard makes people
+   * hunt for the at sign, and a phone field with letters lets them type things
+   * that are not a phone number. On iOS it is `keyboardType`; on Android the
+   * `inputType`, which also changes what the field will accept.
    */
   readonly keyboardType = input<'default' | 'numeric' | 'decimal' | 'email' | 'phone' | 'url' | null>('default')
 
   /**
-   * Qué pone la tecla de retorno. Cambia el rótulo y, con él, lo que la
-   * persona espera que pase al pulsarla.
+   * What the return key says. It changes the label and, with it, what the person
+   * expects to happen when they press it.
    */
   readonly returnKeyType = input<'default' | 'done' | 'go' | 'next' | 'search' | 'send' | null>('default')
 
   readonly autoCapitalize = input<'none' | 'sentences' | 'words' | 'characters' | null>('sentences')
 
-  /** El corrector del sistema. Apagarlo es lo normal en un usuario o un código. */
+  /** The system's autocorrect. Turning it off is the usual thing for a username
+   * or a code. */
   readonly autoCorrect = input<boolean | null>(true)
 
-  /** Color del texto de ayuda, que no tiene por qué ser el del texto. */
+  /** The placeholder's colour, which does not have to be the text's. */
   readonly placeholderColor = input<string | null>(null)
 
   readonly ios = input<IosTextInputProps | null>(null)
 
   readonly android = input<AndroidTextInputProps | null>(null)
 
-  /** Emparejado con `value`, habilita `[(value)]` en la plantilla. */
+  /** Paired with `value`, it enables `[(value)]` in the template. */
   readonly valueChange = outputFromObservable(
     this.nativeEvent<{ value: string }>('change').pipe(map((event) => event.value))
   )
 
-  /** La tecla de retorno del teclado. */
+  /** The keyboard's return key. */
   readonly submit = outputFromObservable(
     this.nativeEvent<{ value: string }>('submit').pipe(map((event) => event.value))
   )
 }
 
-/** Pestaña seleccionada. */
+/** The selected tab. */
 export interface NativeTabSelectEvent {
   index: number
 }
 
 /**
- * Barra de pestañas del sistema.
+ * The system tab bar.
  *
- * Es la barra de verdad —`UITabBar` en iOS— no una fila de vistas imitándola:
- * hereda su tipografía, su fondo translúcido y su comportamiento con el texto
- * grande de accesibilidad.
+ * It is the real bar —`UITabBar` on iOS— and not a row of views imitating one:
+ * it inherits its typeface, its translucent background and its behaviour with
+ * large accessibility text.
  */
-/** Lo que la barra de iOS tiene y la de Material no. */
+/** What iOS's bar has and Material's does not. */
 export type IosTabBarProps = {
   /**
-   * Si se ve lo que pasa por detrás. `UITabBar.isTranslucent`. La barra de
-   * Material es opaca por diseño y no tiene un interruptor para esto.
+   * Whether what goes past behind it shows through. `UITabBar.isTranslucent`.
+   * Material's bar is opaque by design and has no switch for this.
    */
   translucent?: boolean
 }
@@ -942,30 +954,31 @@ export class TabBar extends NativeVisual {
     this.pushPlatform(TAB_BAR_IOS, this.ios)
   }
 
-  /** Títulos, en orden. */
-  // El protocolo no lleva listas y una barra de pestañas no justifica
-  // añadirlas: viajan como JSON.
+  /** Titles, in order. */
+  // The protocol carries no lists and a tab bar is not enough reason to add
+  // them: they travel as JSON.
   readonly items = input<readonly string[] | null>(null)
 
   /**
-   * Iconos, en el mismo orden que los títulos.
+   * Icons, in the same order as the titles.
    *
-   * Los nombres son los de `<an-icon>`, así que valen los comunes —`home`,
-   * `search`, `settings`— y también los nativos de cada plataforma. Una barra
-   * de pestañas sin iconos es legal, pero no es lo que espera nadie.
+   * The names are `<an-icon>`'s, so the common ones work —`home`, `search`,
+   * `settings`— and so do each platform's native ones. A tab bar with no icons
+   * is legal, but it is not what anybody expects.
    */
   readonly icons = input<readonly string[] | null>(null)
 
   readonly selectedIndex = input<number | null>(0)
 
-  /** Color de la pestaña activa. */
+  /** The active tab's colour. */
   readonly color = input<string | null>(null)
 
   /**
-   * Color de las demás.
+   * The colour of the rest.
    *
-   * Sin esto salía el activo rebajado, que en una barra clara puede acabar
-   * siendo casi el color del fondo: los rótulos están ahí y no se leen.
+   * Without this the active one came out dimmed, which on a light bar can end up
+   * almost the colour of the background: the labels are there and cannot be
+   * read.
    */
   readonly unselectedColor = input<string | null>(null)
 
@@ -976,22 +989,22 @@ export class TabBar extends NativeVisual {
   )
 }
 
-/** Lo que el interruptor de Material tiene y el de UIKit no. */
+/** What Material's switch has and UIKit's does not. */
 export type AndroidSwitchProps = {
   /**
-   * Color de la vía con el interruptor apagado.
+   * The track's colour when the switch is off.
    *
-   * `UISwitch` no lo expone: lo que circula por ahí es ponerle un
-   * `backgroundColor` y un radio de esquina a un control del sistema para que
-   * se le vea el fondo por detrás, y eso se rompe en cuanto Apple cambia el
-   * alto del control. En iOS se queda con el color del sistema.
+   * `UISwitch` does not expose it: what goes around is putting a
+   * `backgroundColor` and a corner radius on a system control so its background
+   * shows through from behind, and that breaks the moment Apple changes the
+   * control's height. On iOS it keeps the system's colour.
    */
   trackColor?: string
 }
 
 const SWITCH_ANDROID = platformKeys('an-switch', 'android', ['trackColor'])
 
-/** Interruptor del sistema. */
+/** The system switch. */
 @Directive({ selector: 'an-switch' })
 export class Switch extends NativeControl {
   constructor() {
@@ -1006,42 +1019,43 @@ export class Switch extends NativeControl {
 
   readonly on = input<boolean | null>(false)
 
-  /** Color cuando está encendido. */
+  /** The colour when it is on. */
   readonly color = input<string | null>(null)
 
-  /** Color del pulgar, el que se mueve. */
+  /** The thumb's colour, the part that moves. */
   readonly thumbColor = input<string | null>(null)
 
   readonly android = input<AndroidSwitchProps | null>(null)
 
-  /** Emparejado con `on`, habilita `[(on)]` en la plantilla. */
+  /** Paired with `on`, it enables `[(on)]` in the template. */
   readonly onChange = outputFromObservable(
     this.nativeEvent<{ value: boolean }>('change').pipe(map((event) => event.value))
   )
 }
 
-/** Lo que el deslizador de UIKit tiene y el de Material no. */
+/** What UIKit's slider has and Material's does not. */
 export type IosSliderProps = {
   /**
-   * Si avisa mientras se arrastra o solo al soltar. `UISlider.isContinuous`.
-   * El de Material siempre avisa mientras se arrastra y no se puede cambiar.
+   * Whether it reports while being dragged or only on release.
+   * `UISlider.isContinuous`. Material's always reports while being dragged and
+   * that cannot be changed.
    */
   continuous?: boolean
 }
 
-/** Lo que el deslizador de Material tiene y el de UIKit no. */
+/** What Material's slider has and UIKit's does not. */
 export type AndroidSliderProps = {
   /**
-   * Salto entre valores. `Slider.setStepSize`.
+   * The jump between values. `Slider.setStepSize`.
    *
-   * No es una prop común porque `UISlider` es continuo y no tiene pasos.
-   * Redondear el valor en el host se puede, pero entonces el dedo va por un
-   * sitio y el valor por otro: el de Material se engancha a los pasos, y
-   * prometer «pasos» dando dos comportamientos distintos es peor que decir
-   * que solo lo tiene Android.
+   * It is not a common prop because `UISlider` is continuous and has no steps.
+   * Rounding the value in the host is possible, but then the finger goes one way
+   * and the value another: Material's snaps to the steps, and promising «steps»
+   * while giving two different behaviours is worse than saying only Android has
+   * it.
    *
-   * Tiene que dividir el recorrido de forma exacta o Material se queja; si no
-   * lo hace, el host lo dice por el registro y deja el deslizador continuo.
+   * It has to divide the range exactly or Material complains; if it does not,
+   * the host says so in the log and leaves the slider continuous.
    */
   stepSize?: number
 }
@@ -1049,7 +1063,7 @@ export type AndroidSliderProps = {
 const SLIDER_IOS = platformKeys('an-slider', 'ios', ['continuous'])
 const SLIDER_ANDROID = platformKeys('an-slider', 'android', ['stepSize'])
 
-/** Deslizador del sistema. */
+/** The system slider. */
 @Directive({ selector: 'an-slider' })
 export class Slider extends NativeControl {
   constructor() {
@@ -1075,10 +1089,10 @@ export class Slider extends NativeControl {
 
   readonly color = input<string | null>(null)
 
-  /** El tramo recorrido, de la izquierda al pulgar. */
+  /** The stretch already covered, from the left to the thumb. */
   readonly minimumTrackColor = input<string | null>(null)
 
-  /** El que queda por recorrer. */
+  /** The stretch still to go. */
   readonly maximumTrackColor = input<string | null>(null)
 
   readonly thumbColor = input<string | null>(null)
@@ -1092,7 +1106,7 @@ export class Slider extends NativeControl {
   )
 }
 
-/** Ruedecilla de carga. Se esconde sola cuando se para. */
+/** A loading spinner. It hides itself when it stops. */
 @Directive({ selector: 'an-activity-indicator' })
 export class ActivityIndicator extends NativeVisual {
   constructor() {
@@ -1108,7 +1122,7 @@ export class ActivityIndicator extends NativeVisual {
   readonly color = input<string | null>(null)
 }
 
-/** Barra de progreso determinada. `progress` va de 0 a 1. */
+/** A determinate progress bar. `progress` runs from 0 to 1. */
 @Directive({ selector: 'an-progress-bar' })
 export class ProgressBar extends NativeVisual {
   constructor() {
@@ -1125,30 +1139,30 @@ export class ProgressBar extends NativeVisual {
 }
 
 /**
- * Lo que el botón de iOS tiene y el de Android no.
+ * What iOS's button has and Android's does not.
  *
- * Es un alias y no una interfaz a propósito: una interfaz no se puede pasar
- * por un `Record<string, unknown>` —TypeScript no le da firma de índice— y el
- * recorrido de claves que hace `platform()` la necesita. Un alias sí.
+ * It is a type alias and not an interface on purpose: an interface cannot be
+ * passed as a `Record<string, unknown>` —TypeScript gives it no index
+ * signature— and the key walk `platform()` does needs one. An alias can.
  */
 export type IosButtonProps = {
   /**
-   * Segunda línea, más pequeña, debajo del rótulo.
+   * A second, smaller line beneath the label.
    *
-   * `UIButtonConfiguration.subtitle`. Material no tiene nada equivalente: un
-   * botón de dos líneas no es un botón de Material, así que no se imita.
+   * `UIButtonConfiguration.subtitle`. Material has no equivalent: a two-line
+   * button is not a Material button, so it is not imitated.
    */
   subtitle?: string
 }
 
-/** Lo que el botón de Material tiene y el de UIKit no. */
+/** What Material's button has and UIKit's does not. */
 export type AndroidButtonProps = {
-  /** Color de la onda que sale del dedo. `MaterialButton.setRippleColor`. */
+  /** The colour of the ripple under the finger. `MaterialButton.setRippleColor`. */
   rippleColor?: string
   /**
-   * Rótulo en mayúsculas. Era lo normal en Material 2 y dejó de serlo en
-   * Material 3, pero sigue estando y hay marcas que lo piden. En iOS un botón
-   * nunca ha llevado el rótulo en mayúsculas.
+   * An upper-case label. It was the norm in Material 2 and stopped being so in
+   * Material 3, but it is still there and there are brands that ask for it. On
+   * iOS a button has never had its label in upper case.
    */
   allCaps?: boolean
 }
@@ -1156,7 +1170,7 @@ export type AndroidButtonProps = {
 const BUTTON_IOS = platformKeys('an-button', 'ios', ['subtitle'])
 const BUTTON_ANDROID = platformKeys('an-button', 'android', ['rippleColor', 'allCaps'])
 
-/** Botón del sistema, con su tipografía y su respuesta al toque. */
+/** The system button, with its own typeface and its own response to touch. */
 @Directive({ selector: 'an-button' })
 export class Button extends NativeControl {
   constructor() {
@@ -1179,34 +1193,34 @@ export class Button extends NativeControl {
   readonly color = input<string | null>(null)
 
   /**
-   * Cómo se ve: solo el rótulo, relleno, con un fondo tenue del mismo color, o
-   * con el contorno y nada dentro.
+   * How it looks: the label alone, filled, with a faint background of the same
+   * colour, or outlined and empty inside.
    *
-   * `text` por defecto, que es lo que hace un botón sin más en iOS. Las otras
-   * las dibuja la plataforma —`UIButtonConfiguration` en iOS—, salvo en
-   * Android, donde los botones de Material 3 no están en la plataforma y la
-   * píldora se dibuja a mano sobre un `Button` de verdad.
+   * `text` by default, which is what a plain button does on iOS. The others are
+   * drawn by the platform —`UIButtonConfiguration` on iOS— except on Android,
+   * where Material 3's buttons are not in the platform and the pill is drawn by
+   * hand over a real `Button`.
    *
-   * No hay `elevated`: Material la tiene y UIKit no tiene nada parecido, así
-   * que sería una variante que solo hace algo en media plataforma. Quien la
-   * quiera, por `[android]`.
+   * There is no `elevated`: Material has it and UIKit has nothing like it, so it
+   * would be a variant that only does something on half the platforms. Whoever
+   * wants it can go through `[android]`.
    */
   readonly variant = input<'text' | 'filled' | 'tonal' | 'outlined' | null>('text')
 
   /**
-   * Icono a un lado del rótulo, por nombre, igual que `<an-icon>`.
+   * An icon beside the label, by name, just like `<an-icon>`.
    *
-   * Un SF Symbol en iOS y un Material Symbol en Android, así que la misma
-   * plantilla da el icono que le toca a cada plataforma.
+   * An SF Symbol on iOS and a Material Symbol on Android, so the same template
+   * gives each platform the icon that belongs to it.
    */
   readonly icon = input<string | null>(null)
 
-  /** De qué lado del rótulo. `leading` por defecto. */
+  /** Which side of the label. `leading` by default. */
   readonly iconPosition = input<'leading' | 'trailing' | null>('leading')
 
   readonly fontSize = input<number | null>(null)
 
-  /** `'bold'`, `'normal'` o la escala numérica de CSS (100..900). */
+  /** `'bold'`, `'normal'` or CSS's numeric scale (100..900). */
   readonly fontWeight = input<string | number | null>(null)
 
   readonly ios = input<IosButtonProps | null>(null)
@@ -1215,11 +1229,11 @@ export class Button extends NativeControl {
 }
 
 /**
- * Elegir una de varias opciones que están todas a la vista.
+ * Picking one of several options, all of them on screen.
  *
- * `UISegmentedControl` en iOS. Android no trae equivalente en la plataforma
- * —el de Material vive en una librería aparte—, así que se dibuja con vistas
- * del sistema, como la barra de pestañas.
+ * `UISegmentedControl` on iOS. Android ships no platform equivalent —Material's
+ * lives in a separate library— so it is drawn out of system views, like the tab
+ * bar.
  */
 @Directive({ selector: 'an-segmented-control' })
 export class SegmentedControl extends NativeControl {
@@ -1242,10 +1256,10 @@ export class SegmentedControl extends NativeControl {
 }
 
 /**
- * Subir y bajar de uno en uno.
+ * Up and down, one at a time.
  *
- * `UIStepper` en iOS. En Android no hay equivalente en la plataforma y se arma
- * con dos botones del sistema.
+ * `UIStepper` on iOS. Android has no platform equivalent, so it is put together
+ * out of two system buttons.
  */
 @Directive({ selector: 'an-stepper' })
 export class Stepper extends NativeControl {
@@ -1265,18 +1279,18 @@ export class Stepper extends NativeControl {
 
   readonly maximumValue = input<number | null>(100)
 
-  /** Cuánto sube o baja cada toque. Uno por defecto. */
+  /** How much each tap goes up or down. One by default. */
   readonly step = input<number | null>(1)
 
   readonly change = outputFromObservable(this.nativeEvent<NativeValueEvent>('change'))
 }
 
 /**
- * Campo de búsqueda del sistema, con su lupa y su botón de borrar.
+ * The system search field, with its magnifier and its clear button.
  *
- * Es un control aparte y no un `<an-text-input>` con un icono al lado: el sistema
- * le da el teclado con la tecla de buscar, el comportamiento de cancelar y el
- * aspecto que la gente reconoce como "aquí se busca".
+ * It is a control of its own and not an `<an-text-input>` with an icon beside
+ * it: the system gives it the keyboard with the search key, the cancel
+ * behaviour and the look people recognise as "this is where you search".
  */
 @Directive({ selector: 'an-search-bar' })
 export class SearchBar extends NativeControl {
@@ -1297,11 +1311,11 @@ export class SearchBar extends NativeControl {
 }
 
 /**
- * Elegir una de varias opciones de una lista que se despliega.
+ * Picking one of several options from a list that drops down.
  *
- * En iOS es un botón que abre un `UIMenu`: no hay un control de desplegable, y
- * `UIPickerView` es la rueda a pantalla completa, que es otra cosa y ya no es
- * lo que usa el sistema para una lista corta. En Android es un `Spinner`.
+ * On iOS it is a button that opens a `UIMenu`: there is no dropdown control, and
+ * `UIPickerView` is the full-screen wheel, which is a different thing and no
+ * longer what the system uses for a short list. On Android it is a `Spinner`.
  */
 @Directive({ selector: 'an-select' })
 export class Select extends NativeControl {
@@ -1321,20 +1335,20 @@ export class Select extends NativeControl {
 }
 
 /**
- * Selector de fecha y hora del sistema.
+ * The system date and time picker.
  *
- * El valor va y viene en milisegundos desde 1970 —lo que da y toma `Date`—,
- * porque una fecha formateada depende del idioma y de la zona horaria del
- * dispositivo, y eso lo resuelve cada plataforma.
+ * The value goes out and comes back in milliseconds since 1970 —what `Date`
+ * gives and takes— because a formatted date depends on the device's language
+ * and time zone, and each platform settles that for itself.
  */
 @Directive({ selector: 'an-date-picker' })
 export class DatePicker extends NativeControl {
   constructor() {
     super()
     this.push({
-      // Una fecha viaja en milisegundos desde 1970, que es lo que da y toma
-      // `Date`: formatearla depende del idioma y de la zona del dispositivo,
-      // y eso lo resuelve cada plataforma.
+      // A date travels in milliseconds since 1970, which is what `Date` gives
+      // and takes: formatting it depends on the device's language and time
+      // zone, and each platform settles that for itself.
       value: () => {
         const value = this.value()
         return value instanceof Date ? value.getTime() : (value ?? Date.now())
@@ -1351,12 +1365,12 @@ export class DatePicker extends NativeControl {
 }
 
 /**
- * Cabecera con título y botón de atrás.
+ * A header with a title and a back button.
  *
- * `UINavigationBar` en iOS y `Toolbar` en Android. Fuera de un
- * `UINavigationController` no hay botón de atrás automático, así que se pone
- * uno con el mismo símbolo y en el mismo sitio; navegar sigue siendo cosa del
- * router, que es quien sabe a dónde se vuelve.
+ * `UINavigationBar` on iOS and `Toolbar` on Android. Outside a
+ * `UINavigationController` there is no automatic back button, so one is put
+ * there with the same symbol and in the same place; navigating is still the
+ * router's business, since the router is what knows where you go back to.
  */
 @Directive({ selector: 'an-navigation-bar' })
 export class NavigationBar extends NativeVisual {
@@ -1374,9 +1388,8 @@ export class NavigationBar extends NativeVisual {
   readonly showsBack = input<boolean | null>(false)
 
   /**
-   * Rótulo del botón de atrás. Solo en iOS: en Android la barra de
-   * herramientas lleva únicamente la flecha, que es lo que hace cualquier app
-   * de la plataforma.
+   * The back button's label. iOS only: on Android the toolbar carries nothing
+   * but the arrow, which is what any app on that platform does.
    */
   readonly backTitle = input<string | null>(null)
 
@@ -1384,11 +1397,11 @@ export class NavigationBar extends NativeVisual {
 }
 
 /**
- * Campo de texto de varias líneas.
+ * A multi-line text field.
  *
- * Es una primitiva aparte y no una prop de `<an-text-input>` porque en iOS son dos
- * controles distintos —`UITextField` y `UITextView`— y cambiar de uno a otro
- * con la vista ya montada no es posible.
+ * It is a primitive of its own and not a prop on `<an-text-input>` because on
+ * iOS they are two separate controls —`UITextField` and `UITextView`— and
+ * swapping one for the other with the view already mounted is not possible.
  */
 @Directive({ selector: 'an-textarea' })
 export class TextArea extends NativeVisual {
@@ -1411,10 +1424,10 @@ export class TextArea extends NativeVisual {
 }
 
 /**
- * Navegador embebido: `WKWebView` en iOS, `WebView` en Android.
+ * An embedded browser: `WKWebView` on iOS, `WebView` on Android.
  *
- * Se le da una dirección o un HTML suelto. Es una vista más del árbol: ocupa
- * el sitio que le dé el layout y se puede poner al lado de cualquier otra.
+ * It takes an address or a loose piece of HTML. It is one more view in the tree:
+ * it occupies whatever space layout gives it and it can sit beside any other.
  */
 @Directive({ selector: 'an-web-view' })
 export class WebView extends NativeVisual {
@@ -1432,13 +1445,13 @@ export class WebView extends NativeVisual {
 }
 
 /**
- * Mapa.
+ * A map.
  *
- * En iOS es `MKMapView`, el del sistema. En Android no hay ninguno en la
- * plataforma —el de Google vive en Play Services, que pide clave de API y una
- * dependencia que este build no puede traer—, así que ahí se dibujan teselas
- * de OpenStreetMap sobre un `Canvas`: es una vista nativa, pero no es el mapa
- * del sistema y no trae rutas ni búsqueda.
+ * On iOS it is `MKMapView`, the system's own. On Android there is none in the
+ * platform —Google's lives in Play Services, which wants an API key and a
+ * dependency this build cannot bring in— so over there OpenStreetMap tiles are
+ * drawn onto a `Canvas`: it is a native view, but it is not the system's map and
+ * it brings neither directions nor search.
  */
 @Directive({ selector: 'an-map-view' })
 export class MapView extends NativeVisual {
@@ -1457,23 +1470,23 @@ export class MapView extends NativeVisual {
   readonly longitude = input<number | null>(0)
 
   /**
-   * Nivel de zoom al estilo de las teselas: 0 es el mundo entero y cada nivel
-   * es el doble de cerca. MapKit no trabaja así —trabaja con cuántos grados se
-   * ven— y la conversión la hace el host, para que la misma cifra signifique
-   * lo mismo en las dos plataformas.
+   * A zoom level in the tile style: 0 is the whole world and each level is twice
+   * as close. MapKit does not work that way —it works in how many degrees are on
+   * screen— and the host does the conversion, so that the same number means the
+   * same thing on both platforms.
    */
   readonly zoom = input<number | null>(12)
 
-  /** El punto de dónde estás. Solo en iOS: el mapa de Android no lo sabe. */
+  /** The dot showing where you are. iOS only: Android's map does not know. */
   readonly showsUser = input<boolean | null>(false)
 }
 
 /**
- * Vídeo.
+ * Video.
  *
- * `VideoView` en Android. En iOS no hay una vista de vídeo: hay una capa
- * —`AVPlayerLayer`— que se cuelga de cualquier vista, así que el host la
- * cuelga y le ajusta el marco. Una capa no se estira con su vista.
+ * `VideoView` on Android. On iOS there is no video view: there is a layer
+ * —`AVPlayerLayer`— that hangs off any view, so the host hangs it there and
+ * keeps its frame in step. A layer does not stretch along with its view.
  */
 @Directive({ selector: 'an-video-view' })
 export class VideoView extends NativeVisual {
@@ -1490,24 +1503,24 @@ export class VideoView extends NativeVisual {
 
   readonly playing = input<boolean | null>(false)
 
-  /** Solo en iOS: `VideoView` no entrega el reproductor de dentro. */
+  /** iOS only: `VideoView` does not hand over the player inside it. */
   readonly muted = input<boolean | null>(false)
 }
 
 /**
- * Icono del sistema.
+ * A system icon.
  *
- * No se dibuja nada ni se empaqueta ningún juego de iconos: en iOS es un SF
- * Symbol y en Android un drawable del sistema, pedidos por nombre. Un icono
- * así envejece con la plataforma —cambia cuando cambia el sistema— en vez de
- * quedarse anclado al día en que se metió en el proyecto, y ya viene con el
- * peso y el trazo que le tocan a esa versión.
+ * Nothing is drawn and no icon set is bundled: on iOS it is an SF Symbol and on
+ * Android a system drawable, both asked for by name. An icon like that ages
+ * along with the platform —it changes when the system changes— instead of
+ * staying pinned to the day it was dropped into the project, and it arrives with
+ * the weight and the stroke that belong to that version.
  *
- * Los nombres comunes —`home`, `search`, `settings`, `back`, `close`, `add`,
- * `delete`, `edit`, `share`, `star`, `menu`, `check`…— se traducen al nombre
- * de cada plataforma, así que la misma plantilla vale para las dos. Para lo
- * específico se escribe el nombre nativo directamente: cualquier SF Symbol
- * (`square.and.arrow.up`) o cualquier drawable de Android.
+ * The common names —`home`, `search`, `settings`, `back`, `close`, `add`,
+ * `delete`, `edit`, `share`, `star`, `menu`, `check`…— are translated into each
+ * platform's own name, so the same template works on both. For anything
+ * specific, the native name is written directly: any SF Symbol
+ * (`square.and.arrow.up`) or any Android drawable.
  */
 @Directive({ selector: 'an-icon' })
 export class Icon extends NativeVisual {
@@ -1519,9 +1532,9 @@ export class Icon extends NativeVisual {
       iconWeight: this.weight,
       color: this.color
     })
-    // El tamaño es además el de la caja. Va aparte del empujón porque no es
-    // una prop: son dos estilos, y el layout tiene que saberlos para que un
-    // `<an-icon>` sin medidas no quede invisible.
+    // The size is also the box's size. It goes outside the push because it is
+    // not a prop: it is two styles, and layout has to know them so that an
+    // `<an-icon>` with no measurements does not end up invisible.
     effect(() => {
       const points = this.size()
       this.renderer.setStyle(this.node, 'width', points)
@@ -1532,31 +1545,30 @@ export class Icon extends NativeVisual {
   readonly name = input<string | null>(null)
 
   /**
-   * Puntos. Además de fijar el tamaño de la vista, elige el trazo del
-   * símbolo: en iOS un icono grande no es el pequeño escalado, es otro
-   * dibujo.
+   * Points. Besides pinning the view's size down, it picks the symbol's stroke:
+   * on iOS a large icon is not the small one scaled up, it is a different
+   * drawing.
    *
-   * Los 24 son los de por defecto y llegan siempre, incluso sin `[size]`: una
-   * entrada de señal se lee aunque nadie la escriba, que es justo lo que un
-   * `set` sin enlazar no hacía.
+   * The 24 is the default and it always arrives, even with no `[size]`: a signal
+   * input is read whether or not anybody writes it, which is exactly what an
+   * unbound setter did not do.
    */
   readonly size = input(24)
 
-  /** Grosor del trazo, en la escala de la tipografía: 100..900. */
+  /** The stroke's weight, on the typographic scale: 100..900. */
   readonly weight = input<number | null>(null)
 
   readonly color = input<string | null>(null)
 }
 
 /**
- * Contenido que se presenta encima de todo.
+ * Content presented on top of everything.
  *
- * Se presenta de verdad: un `UIViewController` en iOS y un `Dialog` en
- * Android, no una vista puesta sobre las demás. Se ve parecido, pero la
- * diferencia importa: el sistema sabe que hay algo modal delante, así que
- * VoiceOver y TalkBack dejan de leer lo de detrás, el botón de atrás de
- * Android lo cierra, y no compite en orden de dibujo con los diálogos del
- * sistema.
+ * It really is presented: a `UIViewController` on iOS and a `Dialog` on Android,
+ * not a view laid over the others. It looks similar, but the difference matters:
+ * the system knows there is something modal in front, so VoiceOver and TalkBack
+ * stop reading what is behind, Android's back button closes it, and it does not
+ * compete for draw order with the system's own dialogs.
  */
 @Directive({ selector: 'an-modal' })
 export class Modal extends NativeVisual {
@@ -1571,28 +1583,28 @@ export class Modal extends NativeVisual {
   readonly visible = input<boolean | null>(false)
 
   /**
-   * `fullScreen` cubre la pantalla; `sheet` entra desde abajo con el tirador
-   * y los topes del sistema.
+   * `fullScreen` covers the screen; `sheet` comes up from the bottom with the
+   * system's grabber and detents.
    */
   readonly presentation = input<'fullScreen' | 'sheet' | null>(null)
 
   /**
-   * Se cerró.
+   * It closed.
    *
-   * Puede cerrarlo el usuario sin pasar por la plantilla —bajando la hoja en
-   * iOS, con el botón de atrás en Android—, así que hay que escucharlo: si no,
-   * la señal que lo abrió se queda diciendo que sigue abierto y volver a
-   * ponerla a `true` no hace nada.
+   * The user can close it without going through the template —dragging the sheet
+   * down on iOS, with the back button on Android— so this has to be listened to:
+   * otherwise the signal that opened it goes on saying it is still open and
+   * setting it back to `true` does nothing.
    */
   readonly dismiss = outputFromObservable(this.nativeEvent<void>('dismiss'))
 }
 
 /**
- * Diálogo del sistema.
+ * A system dialog.
  *
- * No es una capa dibujada por el framework: es un `UIAlertController` y un
- * `AlertDialog` de verdad, con su aspecto, su animación y su comportamiento
- * con VoiceOver y TalkBack. No ocupa sitio en el layout.
+ * It is not a layer drawn by the framework: it is a real `UIAlertController` and
+ * a real `AlertDialog`, with their look, their animation and their behaviour
+ * with VoiceOver and TalkBack. It takes up no room in the layout.
  */
 @Directive({ selector: 'an-alert' })
 export class Alert extends NativeVisual {
@@ -1608,11 +1620,11 @@ export class Alert extends NativeVisual {
   }
 
   /**
-   * Hoja de acciones en vez de diálogo centrado.
+   * An action sheet instead of a centred dialog.
    *
-   * Es la forma de ofrecer varias acciones sobre algo que se acaba de tocar;
-   * el diálogo centrado es para confirmar o avisar. En iOS sale desde abajo,
-   * en Android es una lista.
+   * It is the way to offer several actions on something that has just been
+   * tapped; the centred dialog is for confirming or warning. On iOS it comes up
+   * from the bottom, on Android it is a list.
    */
   readonly sheet = input<boolean | null>(false)
 
@@ -1622,16 +1634,16 @@ export class Alert extends NativeVisual {
 
   readonly message = input<string | null>('')
 
-  /** Títulos de los botones, en orden. Sin ninguno, sale un «OK». */
+  /** The buttons' titles, in order. With none, an «OK» shows up. */
   readonly buttons = input<readonly string[] | null>(null)
 
-  /** Índice del botón pulsado. */
+  /** The index of the button that was pressed. */
   readonly select = outputFromObservable(
     this.nativeEvent<NativeTabSelectEvent>('select').pipe(map((event) => event.index))
   )
 }
 
-/** Para importar todas de golpe en un componente standalone. */
+/** For importing them all at once into a standalone component. */
 export const NATIVE_PRIMITIVES = [
   View,
   Text,

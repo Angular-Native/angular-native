@@ -10,7 +10,7 @@ import {
 } from '@angular/common'
 import type { Provider } from '@angular/core'
 
-/** Historial guardado por una recarga anterior, si lo hubo. */
+/** History saved by an earlier reload, if there was one. */
 interface SavedHistory {
   stack: Array<{ url: string; state: unknown }>
   index: number
@@ -26,21 +26,20 @@ function restoreHistory(): SavedHistory | null {
 function rememberHistory(read: () => SavedHistory): void {
   historySource = read
   savedHistory.set(read())
-  // La señal se lee al recargar, así que basta con mantenerla al día.
+  // The signal is read on reload, so keeping it up to date is enough.
   const original = historySource
   savedHistory.update(() => original())
 }
 
 /**
- * `PlatformLocation` sobre una pila en memoria.
+ * `PlatformLocation` over an in-memory stack.
  *
- * El router de Angular está escrito contra la History API del navegador. Aquí
- * no hay barra de direcciones ni historial del sistema, así que se le da una
- * pila propia: las rutas siguen siendo URLs, pero solo existen dentro de la
- * app.
+ * Angular's router is written against the browser's History API. There is no
+ * address bar and no system history here, so it gets a stack of its own: routes
+ * are still URLs, but they exist only inside the app.
  *
- * Es también el punto por donde entrará el gesto de volver atrás de iOS y el
- * botón físico de Android, que tienen que acabar llamando a `back()`.
+ * It is also the point iOS's back gesture and Android's physical button will
+ * come in through, since both have to end up calling `back()`.
  */
 @Injectable()
 export class NativePlatformLocation extends PlatformLocation {
@@ -50,8 +49,8 @@ export class NativePlatformLocation extends PlatformLocation {
 
   constructor() {
     super()
-    // La pila sobrevive a una recarga en caliente: volver al principio de la
-    // app cada vez que se guarda un fichero es lo primero que molesta.
+    // The stack survives a hot reload: being thrown back to the start of the
+    // app every time you save a file is the first thing that grates.
     const saved = restoreHistory()
     if (saved) {
       this.stack = saved.stack
@@ -76,7 +75,7 @@ export class NativePlatformLocation extends PlatformLocation {
     }
   }
 
-  /** No hay fragmentos que escuchar: sin barra de direcciones no hay `#`. */
+  /** There are no fragments to listen to: with no address bar there is no `#`. */
   override onHashChange(): VoidFunction {
     return () => {}
   }
@@ -123,8 +122,8 @@ export class NativePlatformLocation extends PlatformLocation {
   }
 
   override pushState(state: unknown, _title: string, url: string): void {
-    // Navegar desde el medio de la pila descarta lo que hubiera delante, igual
-    // que en un navegador.
+    // Navigating from the middle of the stack throws away whatever was ahead of
+    // it, just as in a browser.
     this.stack.length = this.index + 1
     this.stack.push({ url, state })
     this.index = this.stack.length - 1
@@ -144,20 +143,21 @@ export class NativePlatformLocation extends PlatformLocation {
     if (next < 0 || next >= this.stack.length) return
     this.index = next
     this.remember()
-    // El router escucha aquí para deshacer la navegación.
+    // The router listens here in order to undo the navigation.
     for (const listener of this.listeners) {
       listener({ type: 'popstate', state: this.stack[next].state })
     }
   }
 
-  /** `true` si hay algo a lo que volver: lo usa el gesto de atrás. */
+  /** `true` if there is something to go back to: the back gesture uses it. */
   get canGoBack(): boolean {
     return this.index > 0
   }
 
   /**
-   * Posición actual en la pila. Comparar índices entre navegaciones es lo que
-   * distingue avanzar de retroceder, y de ahí sale el sentido de la animación.
+   * The current position in the stack. Comparing indices between navigations is
+   * what tells going forward from going back, and that is where the animation's
+   * direction comes from.
    */
   get historyIndex(): number {
     return this.index
@@ -178,12 +178,12 @@ export class NativePlatformLocation extends PlatformLocation {
 }
 
 /**
- * Lo que hay que añadir a los providers para que el router de Angular
- * funcione aquí. Va junto a `provideRouter(routes)`.
+ * What has to go into the providers for Angular's router to work here. It goes
+ * alongside `provideRouter(routes)`.
  */
 export const NATIVE_LOCATION_PROVIDERS: Provider[] = [
-  // Se registra la clase concreta además del token: la pila de navegación
-  // necesita el índice del historial, que `PlatformLocation` no expone.
+  // The concrete class is registered as well as the token: the navigation stack
+  // needs the history index, which `PlatformLocation` does not expose.
   NativePlatformLocation,
   { provide: PlatformLocation, useExisting: NativePlatformLocation },
   { provide: LocationStrategy, useClass: PathLocationStrategy },

@@ -3,29 +3,28 @@ import { ChangeDetectionStrategy, Component, computed, input, signal } from '@an
 import { type NativeSafeAreaInsets } from './primitives'
 
 /**
- * Aparta el contenido de lo que el sistema se reserva: el notch, la barra de
- * estado, el indicador de inicio, la barra de navegación de Android.
+ * Keeps the content clear of whatever the system reserves for itself: the notch,
+ * the status bar, the home indicator, Android's navigation bar.
  *
- * Los márgenes no son constantes ni se pueden calcular: cambian al rotar, al
- * abrirse el teclado y al entrar en pantalla dividida. Los cuenta el host cada
- * vez que cambian.
+ * The margins are neither constant nor computable: they change on rotation, when
+ * the keyboard comes up and on going into split screen. The host measures them
+ * every time they change.
  *
  * ```html
  * <an-safe-area [edges]="['top', 'bottom']" [padding]="20" [style.gap]="'12'">
- *   <an-text>ya no queda debajo del notch</an-text>
+ *   <an-text>no longer sitting under the notch</an-text>
  * </an-safe-area>
  * ```
  *
- * No hay una vista dentro: el área segura *es* su vista, así que lo que se le
- * ponga para ordenar a los hijos —`gap`, `flexDirection`, `alignItems`— manda
- * sobre ellos. Con una vista intermedia no lo hacía: los estilos se quedaban
- * en el envoltorio, que solo tenía un hijo, y no pasaba nada. Sin ruido, sin
- * error, sin separación.
+ * There is no view inside: the safe area *is* its view, so whatever is put on it
+ * to arrange its children —`gap`, `flexDirection`, `alignItems`— governs them.
+ * With an intermediate view it did not: the styles stayed on the wrapper, which
+ * had only one child, and nothing happened. No noise, no error, no spacing.
  *
- * El apartado se aplica como relleno y no como margen a propósito: los
- * márgenes que reserva el sistema se cuentan para la vista donde está, así que
- * una vista que se apartara con margen dejaría de estar debajo del notch,
- * pasaría a reservar cero, volvería a su sitio, y así sin parar.
+ * The inset is applied as padding and not as margin on purpose: the margins the
+ * system reserves are measured for the view they belong to, so a view that moved
+ * itself out of the way with a margin would stop being under the notch, would
+ * start reserving zero, would go back to where it was, and on and on for ever.
  */
 @Component({
   selector: 'an-safe-area',
@@ -42,7 +41,7 @@ import { type NativeSafeAreaInsets } from './primitives'
   template: `<ng-content />`
 })
 export class SafeArea {
-  /** Qué bordes apartar. Por defecto, los cuatro. */
+  /** Which edges to keep clear. All four by default. */
   readonly edges = input<readonly ('top' | 'right' | 'bottom' | 'left')[]>([
     'top',
     'right',
@@ -51,18 +50,18 @@ export class SafeArea {
   ])
 
   /**
-   * Relleno propio, que se suma al que reserva el sistema.
+   * Padding of your own, added on top of what the system reserves.
    *
-   * Va como entrada y no como `[style.padding]` porque el relleno de esta
-   * vista ya lo escribe el área segura: los dos a la vez se pisarían, y el
-   * que perdiera lo haría en silencio.
+   * It is an input and not a `[style.padding]` because this view's padding is
+   * already written by the safe area: the two of them at once would overwrite
+   * each other, and whichever lost would do so in silence.
    */
   readonly padding = input(0)
 
   /**
-   * En una escucha del host, `$event` está tipado como `Event` y no hay forma
-   * de decirle a Angular que este trae otra cosa. El casteo vive aquí, en un
-   * sitio, en vez de en cada plantilla.
+   * In a host listener, `$event` is typed as an `Event` and there is no way to
+   * tell Angular that this one carries something else. The cast lives here, in
+   * one place, rather than in every template.
    */
   protected onInsets(event: Event): void {
     this.insets.set(event as unknown as NativeSafeAreaInsets)
