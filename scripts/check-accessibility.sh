@@ -181,11 +181,37 @@ fi
 # 5. And the one that counts: the tree as the system publishes it.
 #
 # Everything above compares text with text. This launches the app and asks the
-# accessibility server, from another process, what that app publishes. It needs
-# the Accessibility permission, which is granted by hand per app in System
-# Settings and cannot be granted from a script — so when it is missing this says
-# so and skips. A machine without the grant has not broken anything; it just
-# cannot see this.
+# accessibility server, from another process, what that app publishes.
+#
+# **It needs the Accessibility permission, and that permission is granted by
+# hand.** A checkbox in System Settings, per application, which no script can
+# tick — so on a machine where nobody ticked it, this half cannot run. That
+# includes every CI runner there will ever be, and it includes a laptop that has
+# just been set up. A machine without the grant has not broken anything, and a
+# suite that goes red on it is lying about the state of the code: the whole of
+# `scripts/` is written so that what cannot be checked is *skipped*, out loud
+# and with its reason, the way `check-signing.sh` skips the `.aab` when
+# bundletool is not installed.
+#
+# Three states have to be told apart, and only one of them is a bug:
+#
+#   the permission is missing         -> skip, saying what to grant and where
+#   the permission works, app is mute -> FAIL: that is the regression this
+#                                        whole file exists to catch
+#   the permission works, app talks   -> carry on
+#
+# Telling the first from the second is not one question. `AXIsProcessTrusted()`,
+# which is what the walker checks on the way in and what makes it exit 2, reads
+# TCC's record — and that record can say yes while the server refuses every
+# read. A terminal that was granted and then replaced by an update is the usual
+# way in; over ssh there is no grant to have. In that state the trust check
+# passes and every `AXUIElementCopyAttributeValue` comes back empty, which looks
+# exactly like a host that publishes nothing.
+#
+# So the permission is not only asked about, it is *used*. A process that
+# certainly publishes a tree is read first. If that one answers, the door works
+# and a silent app is our bug; if it does not, the door is shut and there is
+# nothing here to see.
 # ---------------------------------------------------------------------------
 AX_DUMP="$ROOT/build/macos/ax-dump"
 mkdir -p "$ROOT/build/macos"
@@ -195,15 +221,88 @@ if ! swiftc -O "$ROOT/scripts/ax-dump.swift" -o "$AX_DUMP" 2>/dev/null; then
   exit 1
 fi
 
-# The walker itself says whether it is allowed to look. Pid 1 publishes no tree,
-# so a run against it separates "no permission" (2) from anything else.
-"$AX_DUMP" 1 >/dev/null 2>&1 || permission=$?
-if [ "${permission:-0}" -eq 2 ]; then
-  echo "  --   the accessibility tree is not read: this process has no Accessibility"
-  echo "       permission. System Settings > Privacy & Security > Accessibility,"
-  echo "       granted to the terminal running this."
+no_permission() { # <why>
+  echo "  --   the accessibility tree is not read: $1."
+  echo "       Grant Accessibility to the terminal running this — System Settings >"
+  echo "       Privacy & Security > Accessibility — and run it again. Everything"
+  echo "       above this line was checked; nothing below it can be."
   exit "$fail"
+}
+
+# The walker's own answer. Pid 1 publishes no tree, so a run against it can only
+# come back as "no permission" (2) or as "nothing there" (1), and the first is
+# the one worth acting on.
+"$AX_DUMP" 1 >/dev/null 2>&1 || trusted=$?
+if [ "${trusted:-0}" -eq 2 ]; then
+  no_permission "this process is not trusted for Accessibility"
 fi
+
+# And the door, tried rather than asked about.
+#
+# The Finder is read: it is always running, and it is a *regular* app, which is
+# the distinction that matters. The Dock and the menu bar extras publish
+# themselves to anybody — that is how the menu bar is usable — so reading one of
+# those proves nothing. Reading another regular application's windows is what
+# the permission actually governs.
+#
+# What a refusal looks like from here is the thing that cost the time. There is
+# **no error**: `AXUIElementCopyAttributeValue` returns `kAXErrorSuccess`, hands
+# back an array of the right length, and every element in it is the application
+# element again — the app as its own child, all the way down until the walker's
+# depth limit stops it. So the tree is not empty, it is a spiral, and a check
+# that only asks "did anything come back?" says yes and then fails to find a
+# single window in it. That is what "nothing came back from the accessibility
+# tree" was really reporting, and it is not a bug in this repository.
+#
+# The signature is exactly that: the first child of the application is the
+# application. One line of the dump settles it, so the walker is killed as soon
+# as it has written two — the spiral is thousands of rows and none of them are
+# any more informative than the second.
+WITNESS_OUT="$(mktemp)"
+WITNESS_PID="$(pgrep -x Finder | head -1 || true)"
+witness=unknown
+if [ -n "$WITNESS_PID" ]; then
+  "$AX_DUMP" "$WITNESS_PID" >"$WITNESS_OUT" 2>/dev/null &
+  WALKER=$!
+  for _ in $(seq 1 40); do
+    [ "$(wc -l <"$WITNESS_OUT")" -ge 2 ] && break
+    # It stopped on its own before saying anything: that is a refusal too, and
+    # waiting the other three seconds out would prove nothing.
+    kill -0 "$WALKER" 2>/dev/null || break
+    sleep 0.1
+  done
+  # Killed before it is waited on, always: the walk does not end in four
+  # seconds and `wait` on a live walker never comes back.
+  kill -9 "$WALKER" 2>/dev/null || true
+  wait "$WALKER" 2>/dev/null || true
+
+  if [ "$(wc -l <"$WITNESS_OUT")" -lt 2 ]; then
+    witness=silent
+  elif [ "$(sed -n '1p;2p' "$WITNESS_OUT" | grep -c '^ *AXApplication')" -eq 2 ]; then
+    witness=spiral
+  else
+    witness=answers
+  fi
+fi
+rm -f "$WITNESS_OUT"
+
+case "$witness" in
+  silent)
+    no_permission "the Finder publishes nothing to this process"
+    ;;
+  spiral)
+    # TCC's record said yes and the server still said no. It is the same wall
+    # as an unticked box, reached from the other side, and the same instruction
+    # gets over it: granting it again replaces the stale record.
+    no_permission "the Finder comes back as its own child, which is what a refused read is"
+    ;;
+  unknown)
+    echo "  --   the accessibility tree is not read: there is no Finder running, so this"
+    echo "       is not a Mac with a logged-in session and there is nothing for an"
+    echo "       app to publish a tree to."
+    exit "$fail"
+    ;;
+esac
 
 BUILD_LOG="$(mktemp)"
 if cargo an macos examples/a11y --no-launch >"$BUILD_LOG" 2>&1; then
@@ -245,9 +344,19 @@ window_rows() {
   sed -n "/AXWindow/,/AXMenuBar/p" "$TREE" 2>/dev/null | wc -l
 }
 
+# The walker's exit code is read and not thrown away. `|| continue` would
+# swallow a 2 — the permission going away between the check above and here, a
+# grant revoked while this ran — and sixty silent retries later this would
+# report the host as mute, which is the wrong bug entirely.
 for _ in $(seq 1 60); do
   sleep 0.5
-  "$AX_DUMP" "$APP_PID" >"$TREE" 2>/dev/null || continue
+  walked=0
+  "$AX_DUMP" "$APP_PID" >"$TREE" 2>/dev/null || walked=$?
+  if [ "$walked" -eq 2 ]; then
+    kill -9 "$APP_PID" 2>/dev/null || true
+    trap - EXIT
+    no_permission "the Accessibility permission went away while this was running"
+  fi
   if [ "$(window_rows)" -gt 8 ]; then
     break
   fi
@@ -256,7 +365,11 @@ done
 if [ "$(window_rows)" -gt 8 ]; then
   echo "  ok   the app publishes an accessibility tree to a process outside it"
 else
-  echo "  FAIL  nothing came back from the accessibility tree"
+  # And this is a real failure, said as one. The permission is not the reason
+  # and does not get to be suspected: the Dock's tree was read from this very
+  # process a moment ago, so the door works and it is our app that is mute.
+  echo "  FAIL  nothing came back from the accessibility tree, and the permission is"
+  echo "        not why: the Finder published a real one to this process seconds ago"
   tail -20 "$RUN_LOG"
   exit 1
 fi

@@ -188,11 +188,13 @@ AN_SCREENSHOT="$SHOT_HOVER" AN_SCREENSHOT_FRAMES=150 \
 # separate runs. So the precondition is checked first and reported as a skip,
 # loudly and with its reason. A skip is not a pass: the run says so, and the
 # same binary passes as soon as nothing else is fighting for the front.
+hovered=yes
 if grep -q "\[hover\] inside pointer" "$HOVER_LOG"; then
   echo "  ok   the pointer enters the view and the template hears about it"
 elif grep -q "frontmost=no" "$HOVER_LOG"; then
   echo "  skipped the (hover): the app never reached the front, so the pointer"
   echo "           was never on top of it. Close the simulators and try again."
+  hovered=no
 else
   echo "  FAIL nobody received the (hover) with the mouse on top"
   fail=1
@@ -200,7 +202,16 @@ fi
 
 # And that it also shows. A `(hover)` that arrives and changes nothing on screen
 # is half the job: what has to be checked is that the tree was recomposed.
-if [ -s "$SHOT_STILL" ] && [ -s "$SHOT_HOVER" ] \
+#
+# It is skipped with the line above and not asked on its own. Two pictures of a
+# window that was never hovered are identical *because* they were never
+# hovered, so leaving this one to run turns a skip into a FAIL one line later —
+# a red suite for a reason the code had nothing to do with, which is exactly
+# what the skip above exists to avoid. A skip is still not a pass: it says so.
+if [ "$hovered" = "no" ]; then
+  echo "  skipped whether the window changes with the mouse on top: there was no"
+  echo "           hover to change it."
+elif [ -s "$SHOT_STILL" ] && [ -s "$SHOT_HOVER" ] \
   && ! cmp -s "$SHOT_STILL" "$SHOT_HOVER"; then
   echo "  ok   and the window changes with the mouse on top"
 else
