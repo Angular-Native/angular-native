@@ -11,19 +11,19 @@ import dev.angularnative.AnPluginCall;
 import org.json.JSONObject;
 
 /**
- * El portapapeles de Android.
+ * The Android clipboard.
  *
- * <p>Se compila dentro del APK en la misma invocación de {@code javac} que el shell, así que ve
- * {@link AnPlugin} y {@link AnPluginCall} sin classpath adicional. Quien lo registra es el fichero
- * que genera {@code an} a partir del {@code package.json}.
+ * <p>It is compiled into the APK in the same {@code javac} invocation as the shell, so it sees
+ * {@link AnPlugin} and {@link AnPluginCall} with no extra classpath. What registers it is the file
+ * {@code an} generates out of the {@code package.json}.
  *
- * <p>{@code ClipboardManager} quiere el hilo de UI, y aquí ya estamos en él: el core entrega las
- * llamadas dentro del frame. Por eso se puede contestar en el acto en vez de guardarse el
- * {@link AnPluginCall} para más tarde.
+ * <p>{@code ClipboardManager} wants the UI thread, and we are already on it here: the core delivers
+ * the calls inside the frame. That is why the answer can be given on the spot instead of holding on
+ * to the {@link AnPluginCall} for later.
  */
 public final class ClipboardPlugin implements AnPlugin {
 
-    /** La pantalla de la app. Un plugin de Android casi siempre necesita un contexto. */
+    /** The app's screen. An Android plugin nearly always needs a context. */
     private Activity host;
 
     @Override
@@ -38,7 +38,7 @@ public final class ClipboardPlugin implements AnPlugin {
                         ? null
                         : (ClipboardManager) host.getSystemService(Context.CLIPBOARD_SERVICE);
         if (clipboard == null) {
-            respond.reject("el plugin clipboard no tiene contexto de Android");
+            respond.reject("the clipboard plugin has no Android context");
             return;
         }
 
@@ -46,7 +46,7 @@ public final class ClipboardPlugin implements AnPlugin {
             case "write":
                 String text = args.optString("text", null);
                 if (text == null) {
-                    respond.reject("clipboard.write necesita un texto en 'text'");
+                    respond.reject("clipboard.write needs a piece of text in 'text'");
                     return;
                 }
                 clipboard.setPrimaryClip(ClipData.newPlainText("angular-native", text));
@@ -54,8 +54,9 @@ public final class ClipboardPlugin implements AnPlugin {
                 return;
 
             case "read":
-                // Cadena vacía y no nulo: quien pide el portapapeles quiere
-                // pintar algo, y `undefined` obligaría a comprobarlo en cada uso.
+                // An empty string and not null: whoever asks for the clipboard
+                // wants to paint something, and `undefined` would force a check
+                // at every single use.
                 respond.resolve(readText(clipboard));
                 return;
 
@@ -64,9 +65,9 @@ public final class ClipboardPlugin implements AnPlugin {
                 return;
 
             default:
-                // Nunca en silencio: un método que no existe rechaza la promesa
-                // diciendo cuál se pidió.
-                respond.reject("el plugin clipboard no tiene ningún método " + method);
+                // Never in silence: a method that does not exist rejects the
+                // promise saying which one was asked for.
+                respond.reject("the clipboard plugin has no method " + method);
         }
     }
 

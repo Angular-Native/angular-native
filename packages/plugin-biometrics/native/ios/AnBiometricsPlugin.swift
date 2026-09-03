@@ -1,30 +1,32 @@
 import LocalAuthentication
 import UIKit
 
-/// Biometría de iOS: `LAContext`.
+/// The iOS biometrics: `LAContext`.
 ///
-/// El diálogo lo presenta el sistema por encima de la app, así que aquí no hay
-/// vista que montar ni `UIViewController` del que colgar nada: por eso este
-/// plugin no implementa `attach`.
+/// The dialog is presented by the system on top of the app, so there is no view
+/// to mount here and no `UIViewController` to hang anything off: that is why
+/// this plugin does not implement `attach`.
 ///
-/// `evaluatePolicy` contesta en una cola suya, no en la principal. Da igual:
-/// `AnPluginCall` habla con un buzón con cerrojo al otro lado, no con una
-/// variable del hilo de UI, así que se puede contestar desde donde llegue la
-/// respuesta.
+/// `evaluatePolicy` answers on a queue of its own, not on the main one. It does
+/// not matter: `AnPluginCall` talks to a mailbox with a lock on the other side,
+/// not to a variable belonging to the UI thread, so the answer can be given from
+/// wherever it arrives.
 ///
-/// Nada de esto funciona sin `NSFaceIDUsageDescription` en el `Info.plist`.
-/// Sin esa clave iOS no avisa ni devuelve un error: mata el proceso en cuanto
-/// se evalúa la política, y desde fuera parece que la app se cerró sola. La
-/// clave la declara el `package.json` de este plugin y la funde `an` al armar
-/// el `.app`; no hay que ponerla a mano.
+/// None of this works without `NSFaceIDUsageDescription` in the `Info.plist`.
+/// Without that key iOS gives no warning and returns no error: it kills the
+/// process the moment the policy is evaluated, and from the outside it looks as
+/// though the app closed by itself. The key is declared by this plugin's
+/// `package.json` and merged in by `an` when it puts the `.app` together; it does
+/// not have to be added by hand.
 final class AnBiometricsPlugin: AnPlugin {
 
-    /// El contexto de la evaluación en curso.
+    /// The context of the evaluation under way.
     ///
-    /// Hay que guardarlo: `evaluatePolicy` es asíncrono y si el `LAContext` se
-    /// libera antes de que conteste, el diálogo se cierra solo y la llamada no
-    /// vuelve. Uno nuevo por evaluación, además, porque un contexto recuerda
-    /// que ya autenticó y reusarlo devolvería `success` sin enseñar nada.
+    /// It has to be kept: `evaluatePolicy` is asynchronous and if the `LAContext`
+    /// is released before it answers, the dialog closes by itself and the call
+    /// never comes back. A new one per evaluation, on top of that, because a
+    /// context remembers that it already authenticated and reusing it would
+    /// return `success` without showing anything.
     private var pending: LAContext?
 
     func call(_ method: String, _ args: [String: Any], _ respond: AnPluginCall) {
@@ -34,8 +36,8 @@ final class AnBiometricsPlugin: AnPlugin {
 
         case "authenticate":
             guard let reason = args["reason"] as? String, !reason.isEmpty else {
-                respond.reject("biometrics.authenticate necesita un 'reason' no vacío: es lo que "
-                    + "el sistema enseña dentro del diálogo")
+                respond.reject("biometrics.authenticate needs a non-empty 'reason': it is what "
+                    + "the system shows inside the dialog")
                 return
             }
             authenticate(
@@ -45,34 +47,34 @@ final class AnBiometricsPlugin: AnPlugin {
                 respond: respond)
 
         default:
-            respond.reject("el plugin biometrics no tiene ningún método \(method)")
+            respond.reject("the biometrics plugin has no method \(method)")
         }
     }
 
-    // MARK: - Disponibilidad
+    // MARK: - Availability
 
-    /// Qué hay y si se puede usar, sin enseñar nada.
+    /// What there is and whether it can be used, without showing anything.
     ///
-    /// `biometryType` no vale hasta después de `canEvaluatePolicy`: en un
-    /// `LAContext` recién creado siempre es `.none`, aunque el aparato tenga
-    /// Face ID. Por eso se pregunta siempre, incluso cuando solo interesa el
-    /// tipo.
+    /// `biometryType` is worthless until after `canEvaluatePolicy`: on a
+    /// freshly created `LAContext` it is always `.none`, even on a device with
+    /// Face ID. That is why the question is always asked, even when only the
+    /// type is of interest.
     private static func availability() -> [String: Any] {
         let context = LAContext()
         var error: NSError?
-        let puede = context.canEvaluatePolicy(
+        let allowed = context.canEvaluatePolicy(
             .deviceOwnerAuthenticationWithBiometrics, error: &error)
         let kind = describe(context.biometryType)
-        if puede {
+        if allowed {
             return ["status": "available", "kind": kind, "detail": "LAContext.canEvaluatePolicy"]
         }
         guard let error else {
-            // `canEvaluatePolicy` promete rellenar el error cuando devuelve
-            // false. Si algún día no lo hace, se dice; dar `available` aquí
-            // sería enseñar un botón que no funciona.
+            // `canEvaluatePolicy` promises to fill the error in when it returns
+            // false. If one day it does not, it is said so; answering `available`
+            // here would mean showing a button that does not work.
             return [
                 "status": "unavailable", "kind": kind,
-                "detail": "canEvaluatePolicy dijo que no y no dijo por qué"
+                "detail": "canEvaluatePolicy said no and did not say why"
             ]
         }
         let (status, detail) = translate(error)
@@ -85,14 +87,14 @@ final class AnBiometricsPlugin: AnPlugin {
         case .touchID: return "touchId"
         case .opticID: return "opticId"
         case .none: return "none"
-        // `LABiometryType` puede crecer con el sistema, y una versión de iOS
-        // más nueva que este código traería un tipo que aquí no está. Decir
-        // `unknown` es cierto; decir `none` sería decir que no hay sensor.
+        // `LABiometryType` can grow along with the system, and a version of iOS
+        // newer than this code would bring a type that is not here. Saying
+        // `unknown` is true; saying `none` would be saying there is no sensor.
         @unknown default: return "unknown"
         }
     }
 
-    // MARK: - Autenticación
+    // MARK: - Authentication
 
     private func authenticate(
         reason: String,
@@ -104,26 +106,26 @@ final class AnBiometricsPlugin: AnPlugin {
         if let cancelTitle, !cancelTitle.isEmpty {
             context.localizedCancelTitle = cancelTitle
         }
-        // Cadena vacía en `localizedFallbackTitle` quita el botón de «Introducir
-        // código». Sin esto iOS lo enseña igualmente, el usuario lo pulsa y la
-        // llamada vuelve con `userFallback` sin que la app haya pedido nunca
-        // esa puerta.
+        // An empty string in `localizedFallbackTitle` takes the "Enter passcode"
+        // button away. Without this iOS shows it anyway, the user presses it and
+        // the call comes back with `userFallback` without the app ever having
+        // asked for that door.
         if !allowDeviceCredential {
             context.localizedFallbackTitle = ""
         }
         let policy: LAPolicy =
             allowDeviceCredential ? .deviceOwnerAuthentication : .deviceOwnerAuthenticationWithBiometrics
 
-        // El tipo se lee antes de evaluar, mientras el contexto sigue vivo y
-        // ya ha resuelto la política: después de contestar no hay a quién
-        // preguntar.
+        // The type is read before evaluating, while the context is still alive
+        // and has already resolved the policy: once the answer is given there is
+        // nobody left to ask.
         var probe: NSError?
-        let puede = context.canEvaluatePolicy(policy, error: &probe)
+        let allowed = context.canEvaluatePolicy(policy, error: &probe)
         let kind = Self.describe(context.biometryType)
-        if !puede {
-            // Sin sensor, sin huella registrada o bloqueado: se contesta con
-            // el motivo en vez de enseñar un diálogo que el sistema va a
-            // cerrar solo.
+        if !allowed {
+            // No sensor, nothing enrolled or locked out: the reason is given
+            // back instead of showing a dialog the system is going to close by
+            // itself.
             let (status, detail) = Self.translate(probe)
             respond.resolve(["outcome": status, "kind": kind, "detail": detail])
             return
@@ -141,22 +143,23 @@ final class AnBiometricsPlugin: AnPlugin {
         }
     }
 
-    // MARK: - Errores
+    // MARK: - Errors
 
-    /// De `LAError` a los nombres del contrato.
+    /// From `LAError` to the names in the contract.
     ///
-    /// Cada rama es una situación distinta para quien usa la app, y por eso no
-    /// se juntan: `userCancel` no merece ni un aviso, `biometryNotEnrolled`
-    /// merece un enlace a Ajustes y `biometryLockout` merece ofrecer el código.
+    /// Every branch is a different situation for whoever is using the app, and
+    /// that is why they are not folded together: `userCancel` does not deserve
+    /// so much as a warning, `biometryNotEnrolled` deserves a link to Settings
+    /// and `biometryLockout` deserves offering the passcode.
     ///
-    /// iOS no distingue el bloqueo temporal del permanente —`biometryLockout`
-    /// es el único código que hay—, así que `permanentlyLockedOut` no sale
-    /// nunca de aquí. Es una diferencia real entre las dos plataformas y está
-    /// documentada; fingir el segundo estado a base de contar intentos sería
-    /// inventárselo.
+    /// iOS does not tell the temporary lockout from the permanent one
+    /// —`biometryLockout` is the only code there is—, so `permanentlyLockedOut`
+    /// never comes out of here. It is a real difference between the two
+    /// platforms and it is documented; faking the second state by counting
+    /// attempts would be making it up.
     private static func translate(_ error: NSError?) -> (String, String) {
         guard let error else {
-            return ("unavailable", "el sistema falló y no dijo por qué")
+            return ("unavailable", "the system failed and did not say why")
         }
         let detail = "LAError \(error.code): \(error.localizedDescription)"
         guard error.domain == LAErrorDomain, let code = LAError.Code(rawValue: error.code) else {
@@ -174,8 +177,8 @@ final class AnBiometricsPlugin: AnPlugin {
         case .biometryLockout: return ("lockedOut", detail)
         case .invalidContext: return ("unavailable", detail)
         case .notInteractive: return ("unavailable", detail)
-        // Igual que con `LABiometryType`: un código nuevo de una versión más
-        // nueva llega aquí, y `unavailable` con el número dentro es cierto.
+        // Same as with `LABiometryType`: a new code from a newer version lands
+        // here, and `unavailable` with the number inside it is true.
         default: return ("unavailable", detail)
         }
     }

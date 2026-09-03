@@ -13,47 +13,49 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * Biometría de Android: {@code BiometricPrompt}.
+ * The Android biometrics: {@code BiometricPrompt}.
  *
- * <p>El de la plataforma, {@code android.hardware.biometrics.BiometricPrompt}, no el de
- * {@code androidx.biometric}. Aquí no hay Gradle: las dependencias de Android están vendidas una a
- * una en {@code vendor/android}, y meter una librería entera para envolver una API que ya trae el
- * sistema sería pagar el APK dos veces. El precio de la decisión está dicho abajo: por debajo de
- * Android 10 este plugin contesta que no puede, en vez de callarse.
+ * <p>The platform's one, {@code android.hardware.biometrics.BiometricPrompt}, not the one from
+ * {@code androidx.biometric}. There is no Gradle here: the Android dependencies are vendored one by
+ * one in {@code vendor/android}, and pulling in a whole library to wrap an API the system already
+ * ships would be paying for the APK twice. The price of that decision is stated below: under
+ * Android 10 this plugin answers that it cannot, instead of keeping quiet.
  *
- * <p>El diálogo lo dibuja el sistema por encima de la app. Este plugin no pinta nada y no ve nunca
- * la huella ni la cara: solo recibe cómo acabó.
+ * <p>The dialog is drawn by the system on top of the app. This plugin paints nothing and never sees
+ * the fingerprint or the face: all it gets is how it ended.
  */
 public final class BiometricsPlugin implements AnPlugin {
 
     /**
-     * {@code BiometricPrompt} llegó en Android 9 (API 28), pero
-     * {@code BiometricManager.canAuthenticate} —lo único que sabe decir si hay sensor y si hay algo
-     * registrado sin enseñar un diálogo— llegó en Android 10 (API 29).
+     * {@code BiometricPrompt} arrived in Android 9 (API 28), but
+     * {@code BiometricManager.canAuthenticate} —the only thing that can say whether there is a
+     * sensor and whether anything is enrolled without showing a dialog— arrived in Android 10
+     * (API 29).
      *
-     * <p>Se pide 29 y no 28 a propósito. Con 28 habría que averiguar la disponibilidad enseñando el
-     * diálogo y mirando qué error sale, y `availability()` dejaría de ser lo que dice ser: una
-     * pregunta que no interrumpe a nadie.
+     * <p>29 is asked for rather than 28 on purpose. With 28 availability would have to be worked out
+     * by showing the dialog and looking at which error comes back, and `availability()` would stop
+     * being what it says it is: a question that interrupts nobody.
      */
-    private static final int MINIMO = Build.VERSION_CODES.Q;
+    private static final int MINIMUM_API = Build.VERSION_CODES.Q;
 
     /**
-     * El código con el que llega el botón de cancelar.
+     * The code the cancel button arrives with.
      *
-     * <p>El sistema lo manda, pero la constante no es pública en la API de la plataforma: está en
-     * {@code androidx.biometric} como {@code ERROR_NEGATIVE_BUTTON}, y aquí no se usa androidx. Se
-     * escribe con su nombre y su porqué en vez de dejar un 13 suelto dentro de un {@code case}.
+     * <p>The system sends it, but the constant is not public in the platform API: it is in
+     * {@code androidx.biometric} as {@code ERROR_NEGATIVE_BUTTON}, and androidx is not used here. It
+     * is written out with its name and its reason instead of leaving a bare 13 inside a
+     * {@code case}.
      */
-    private static final int ERROR_BOTON_NEGATIVO = 13;
+    private static final int ERROR_NEGATIVE_BUTTON = 13;
 
     private Activity host;
 
     /**
-     * La cancelación del diálogo que esté en pantalla, si hay alguno.
+     * The cancellation for whichever dialog is on screen, if there is one.
      *
-     * <p>Sin esto, una segunda llamada mientras la primera sigue abierta deja dos diálogos del
-     * sistema encima del otro y una promesa que ya no le va a llegar nada. Con esto, la primera se
-     * cierra y contesta {@code systemCancel} antes de que la segunda empiece.
+     * <p>Without this, a second call while the first one is still open leaves two system dialogs on
+     * top of each other and a promise nothing is ever going to reach again. With it, the first one
+     * closes and answers {@code systemCancel} before the second one starts.
      */
     private CancellationSignal pending;
 
@@ -73,8 +75,8 @@ public final class BiometricsPlugin implements AnPlugin {
                 String reason = args.optString("reason", "");
                 if (reason.isEmpty()) {
                     respond.reject(
-                            "biometrics.authenticate necesita un 'reason' no vacío: es el título"
-                                    + " del diálogo del sistema");
+                            "biometrics.authenticate needs a non-empty 'reason': it is the title"
+                                    + " of the system dialog");
                     return;
                 }
                 authenticate(
@@ -86,52 +88,53 @@ public final class BiometricsPlugin implements AnPlugin {
                 return;
 
             default:
-                respond.reject("el plugin biometrics no tiene ningún método " + method);
+                respond.reject("the biometrics plugin has no method " + method);
         }
     }
 
-    // ── Disponibilidad ──────────────────────────────────────────────────────
+    // ── Availability ────────────────────────────────────────────────────────
 
     /**
-     * Qué hay y si se puede usar, sin enseñar nada.
+     * What there is and whether it can be used, without showing anything.
      *
-     * <p>El {@code kind} es siempre {@code unknown} o {@code none}: {@code BiometricManager} dice si
-     * se puede autenticar, no con qué. iOS sí lo dice, y por eso el contrato lo lleva; rellenarlo
-     * aquí con {@code fingerprint} porque la mayoría de los Android lo son sería mentir justo en los
-     * que llevan cámara.
+     * <p>The {@code kind} is always {@code unknown} or {@code none}: {@code BiometricManager} says
+     * whether it can authenticate, not with what. iOS does say, which is why the contract carries
+     * it; filling it in here with {@code fingerprint} because most Androids are would be lying about
+     * exactly the ones with a camera.
      */
     private JSONObject availability() {
-        if (Build.VERSION.SDK_INT < MINIMO) {
-            return estado(
+        if (Build.VERSION.SDK_INT < MINIMUM_API) {
+            return state(
                     "unavailable",
                     "none",
-                    "este plugin necesita Android 10 (API " + MINIMO + ") y el aparato tiene API "
+                    "this plugin needs Android 10 (API " + MINIMUM_API + ") and the device is on API "
                             + Build.VERSION.SDK_INT);
         }
         BiometricManager manager =
                 host == null ? null : host.getSystemService(BiometricManager.class);
         if (manager == null) {
-            return estado("unavailable", "none", "el sistema no da BiometricManager");
+            return state("unavailable", "none", "the system does not hand out a BiometricManager");
         }
-        int codigo = manager.canAuthenticate();
-        switch (codigo) {
+        int code = manager.canAuthenticate();
+        switch (code) {
             case BiometricManager.BIOMETRIC_SUCCESS:
-                return estado("available", "unknown", "BIOMETRIC_SUCCESS");
+                return state("available", "unknown", "BIOMETRIC_SUCCESS");
             case BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE:
-                return estado("noHardware", "none", "BIOMETRIC_ERROR_NO_HARDWARE");
+                return state("noHardware", "none", "BIOMETRIC_ERROR_NO_HARDWARE");
             case BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED:
-                return estado("notEnrolled", "unknown", "BIOMETRIC_ERROR_NONE_ENROLLED");
+                return state("notEnrolled", "unknown", "BIOMETRIC_ERROR_NONE_ENROLLED");
             case BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE:
-                return estado("unavailable", "unknown", "BIOMETRIC_ERROR_HW_UNAVAILABLE");
+                return state("unavailable", "unknown", "BIOMETRIC_ERROR_HW_UNAVAILABLE");
             default:
-                // API 30 añadió BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED, y las
-                // que vengan detrás llegarán aquí. El número dentro es cierto;
-                // dar `available` sería enseñar un botón que no funciona.
-                return estado("unavailable", "unknown", "canAuthenticate devolvió " + codigo);
+                // API 30 added BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED, and
+                // whichever come after it will land here. The number inside is
+                // true; answering `available` would mean showing a button that
+                // does not work.
+                return state("unavailable", "unknown", "canAuthenticate returned " + code);
         }
     }
 
-    // ── Autenticación ───────────────────────────────────────────────────────
+    // ── Authentication ──────────────────────────────────────────────────────
 
     private void authenticate(
             String reason,
@@ -139,17 +142,17 @@ public final class BiometricsPlugin implements AnPlugin {
             String cancelTitle,
             boolean allowDeviceCredential,
             AnPluginCall respond) {
-        if (Build.VERSION.SDK_INT < MINIMO) {
+        if (Build.VERSION.SDK_INT < MINIMUM_API) {
             respond.resolve(
-                    resultado(
+                    result(
                             "unavailable",
                             "none",
-                            "este plugin necesita Android 10 (API " + MINIMO + ") y el aparato"
-                                    + " tiene API " + Build.VERSION.SDK_INT));
+                            "this plugin needs Android 10 (API " + MINIMUM_API + ") and the device"
+                                    + " is on API " + Build.VERSION.SDK_INT));
             return;
         }
         if (host == null) {
-            respond.reject("el plugin biometrics no tiene contexto de Android");
+            respond.reject("the biometrics plugin has no Android context");
             return;
         }
 
@@ -162,22 +165,23 @@ public final class BiometricsPlugin implements AnPlugin {
                     BiometricManager.Authenticators.BIOMETRIC_STRONG
                             | BiometricManager.Authenticators.DEVICE_CREDENTIAL);
         } else {
-            // Sin botón negativo, `BiometricPrompt` lanza al construirse. Y con
-            // `DEVICE_CREDENTIAL` puesto, ponerlo lanza también: el sistema pone
-            // el suyo. De ahí que sea un `else` y no una línea suelta.
+            // With no negative button, `BiometricPrompt` throws when it is built.
+            // And with `DEVICE_CREDENTIAL` set, setting one throws as well: the
+            // system puts its own there. Hence an `else` rather than a line on
+            // its own.
             builder.setNegativeButton(
-                    cancelTitle == null || cancelTitle.isEmpty() ? "Cancelar" : cancelTitle,
+                    cancelTitle == null || cancelTitle.isEmpty() ? "Cancel" : cancelTitle,
                     host.getMainExecutor(),
                     (dialog, which) -> {
-                        // No se contesta aquí: el sistema manda además
-                        // ERROR_NEGATIVE_BUTTON por el callback de error, y
-                        // contestar dos veces dejaría la segunda en el aire.
+                        // No answer is given here: the system also sends
+                        // ERROR_NEGATIVE_BUTTON through the error callback, and
+                        // answering twice would leave the second one hanging.
                     });
         }
 
         if (pending != null && !pending.isCanceled()) {
-            // Cierra el diálogo anterior. Su callback recibirá ERROR_CANCELED y
-            // contestará `systemCancel`, que es exactamente lo que pasó.
+            // Closes the previous dialog. Its callback will get ERROR_CANCELED
+            // and answer `systemCancel`, which is exactly what happened.
             pending.cancel();
         }
         CancellationSignal signal = new CancellationSignal();
@@ -192,14 +196,14 @@ public final class BiometricsPlugin implements AnPlugin {
                                     BiometricPrompt.AuthenticationResult authResult) {
                                 pending = null;
                                 respond.resolve(
-                                        resultado("success", "unknown", "onAuthenticationSucceeded"));
+                                        result("success", "unknown", "onAuthenticationSucceeded"));
                             }
 
                             @Override
                             public void onAuthenticationError(int code, CharSequence message) {
                                 pending = null;
                                 respond.resolve(
-                                        resultado(
+                                        result(
                                                 translate(code),
                                                 "unknown",
                                                 "BiometricPrompt error " + code + ": " + message));
@@ -207,21 +211,21 @@ public final class BiometricsPlugin implements AnPlugin {
 
                             @Override
                             public void onAuthenticationFailed() {
-                                // Un intento que no reconoce a nadie. **No se
-                                // contesta**: el diálogo sigue en pantalla y el
-                                // usuario puede volver a probar. Contestar aquí
-                                // cerraría la promesa con el diálogo todavía
-                                // abierto, y la siguiente respuesta —la buena o
-                                // el bloqueo— no tendría a quién llegar.
+                                // An attempt that recognises nobody. **No answer
+                                // is given**: the dialog stays on screen and the
+                                // user can try again. Answering here would close
+                                // the promise with the dialog still open, and the
+                                // next answer —the good one, or the lockout—
+                                // would have nobody left to reach.
                             }
                         });
     }
 
     /**
-     * De los códigos de {@code BiometricPrompt} a los nombres del contrato.
+     * From the {@code BiometricPrompt} codes to the names in the contract.
      *
-     * <p>Android sí separa el bloqueo temporal del permanente, y iOS no. Es la diferencia que hace
-     * que {@code permanentlyLockedOut} solo salga de aquí.
+     * <p>Android does separate the temporary lockout from the permanent one, and iOS does not. That
+     * is the difference that makes {@code permanentlyLockedOut} come from here and nowhere else.
      */
     private static String translate(int code) {
         switch (code) {
@@ -240,7 +244,7 @@ public final class BiometricsPlugin implements AnPlugin {
             case BiometricPrompt.BIOMETRIC_ERROR_LOCKOUT_PERMANENT:
                 return "permanentlyLockedOut";
             case BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED:
-            case ERROR_BOTON_NEGATIVO:
+            case ERROR_NEGATIVE_BUTTON:
                 return "userCancel";
             case BiometricPrompt.BIOMETRIC_ERROR_NO_BIOMETRICS:
                 return "notEnrolled";
@@ -249,36 +253,37 @@ public final class BiometricsPlugin implements AnPlugin {
             case BiometricPrompt.BIOMETRIC_ERROR_NO_DEVICE_CREDENTIAL:
                 return "passcodeNotSet";
             default:
-                // API 30 añadió BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED, y las
-                // que vengan detrás llegarán aquí con su número en `detail`.
+                // API 30 added BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED, and
+                // whichever come after it will land here with their number in
+                // `detail`.
                 return "unavailable";
         }
     }
 
-    /** Lo que devuelve {@code availability()}: su clave es {@code status}. */
-    private static JSONObject estado(String status, String kind, String detail) {
+    /** What {@code availability()} returns: its key is {@code status}. */
+    private static JSONObject state(String status, String kind, String detail) {
         return json("status", status, kind, detail);
     }
 
-    /** Lo que devuelve {@code authenticate()}: su clave es {@code outcome}. */
-    private static JSONObject resultado(String outcome, String kind, String detail) {
+    /** What {@code authenticate()} returns: its key is {@code outcome}. */
+    private static JSONObject result(String outcome, String kind, String detail) {
         return json("outcome", outcome, kind, detail);
     }
 
     /**
-     * El objeto de vuelta. {@code kind} y {@code detail} van siempre: una respuesta a la que le
-     * falta {@code detail} obliga a comprobarlo en cada uso del otro lado.
+     * The object that goes back. {@code kind} and {@code detail} are always there: an answer missing
+     * its {@code detail} forces a check at every single use on the other side.
      */
-    private static JSONObject json(String clave, String valor, String kind, String detail) {
+    private static JSONObject json(String key, String value, String kind, String detail) {
         JSONObject json = new JSONObject();
         try {
-            json.put(clave, valor);
+            json.put(key, value);
             json.put("kind", kind);
             json.put("detail", detail);
         } catch (JSONException error) {
-            // `put` de una cadena no nula no lanza nunca; si lo hiciera, un
-            // objeto a medias sería peor que decirlo.
-            throw new IllegalStateException("no se pudo armar la respuesta de biometrics", error);
+            // `put` of a non-null string never throws; if it ever did, a
+            // half-built object would be worse than saying so.
+            throw new IllegalStateException("the biometrics answer could not be built", error);
         }
         return json;
     }
