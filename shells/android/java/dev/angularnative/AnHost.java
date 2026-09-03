@@ -3347,11 +3347,28 @@ public final class AnHost {
     }
 
     /**
+     * Controls already complained about in `measureControl`.
+     *
+     * The layout measures on every pass, so a warning said where the measuring
+     * happens would be said dozens of times a second and the log would stop
+     * being worth reading. It is the same thing `AnWarnings` does on watchOS and
+     * `warn_once` on iOS.
+     */
+    private final java.util.Set<String> unmeasured = new java.util.HashSet<>();
+
+    /**
      * The natural size of a system control, in points.
      *
      * A throwaway one is created and asked: it is the same thing iOS does with
      * `sizeThatFits`, and for the same reason —a switch's height changes between
      * versions of Android and with the accessibility settings.
+     *
+     * The probe is the very widget `createView` mounts, never an imitation and
+     * never a number written down here: what is measured has to be what ends up
+     * on the screen or the layout reserves room for something else.
+     *
+     * Every name `NodeKind::control_name()` returns has to have a case. That is
+     * not a convention, it is what `scripts/check-measure.sh` asserts.
      */
     public long measureControl(String name, float availableWidthDp) {
         View probe;
@@ -3385,7 +3402,92 @@ public final class AnHost {
                 probe = bar;
                 break;
             }
+            case "Icon": {
+                // The very view `<an-icon>` mounts, with a glyph inside it: the
+                // Material Symbols font is what decides how tall a 24 dp icon
+                // draws, and an empty `TextView` measures no width at all.
+                //
+                // The 24 is the one number here that is not the system's, and it
+                // cannot be: a glyph has no natural size, it is drawn at whatever
+                // text size it is given. It is `<an-icon>`'s default `[size]`,
+                // the same one `newIconView()` sets, and the template overrides
+                // it by pinning width and height anyway.
+                TextView icon = newIconView();
+                icon.setText(iconGlyph("home"));
+                probe = icon;
+                break;
+            }
+            case "SegmentedControl": {
+                // With one segment inside, for the same reason as the tab bar: an
+                // empty `MaterialButtonToggleGroup` measures zero, and the height
+                // that matters is the one Material gives a segment.
+                AnSegmentedControl segments = new AnSegmentedControl(context);
+                segments.setItems(new String[] {" "});
+                probe = segments;
+                break;
+            }
+            case "Stepper": {
+                // Assembled from two Material icon buttons and a label, and it
+                // fills itself in on being built: what comes out is the height of
+                // a real icon button and the width of the pair of them.
+                probe = new AnStepper(context);
+                break;
+            }
+            case "SearchBar": {
+                // Expanded, which is how the host mounts it: iconified it
+                // measures the magnifier alone and nothing else.
+                android.widget.SearchView search = new android.widget.SearchView(context);
+                search.setIconifiedByDefault(false);
+                probe = search;
+                break;
+            }
+            case "Picker": {
+                // A `Spinner` with nothing in it has no row to be as tall as, so
+                // it measures its background and no more. One entry is enough for
+                // the height to be a real row's.
+                android.widget.Spinner spinner = new android.widget.Spinner(context);
+                spinner.setAdapter(
+                        new android.widget.ArrayAdapter<String>(
+                                context,
+                                android.R.layout.simple_spinner_item,
+                                new String[] {" "}));
+                probe = spinner;
+                break;
+            }
+            case "DatePicker": {
+                // On Android the picker is a dialog and what stays on screen is
+                // the date written out, so the field is what gets measured. It
+                // formats itself on being built, with the device's locale: a
+                // date in German is wider than the same one in English.
+                probe = new AnDateField(context);
+                break;
+            }
+            case "NavigationBar": {
+                // A `Toolbar` takes its height from `actionBarSize`, which is the
+                // theme's and changes with the device. With a title inside, so
+                // the row of text is measured and not just the minimum.
+                android.widget.Toolbar toolbar = new android.widget.Toolbar(context);
+                toolbar.setTitle(" ");
+                probe = toolbar;
+                break;
+            }
             default:
+                // Never a silent zero. A control the core asks about and this
+                // host does not know is laid out 0x0, which on screen looks like
+                // a layout that went wrong and not like a host that is missing a
+                // case —and that is exactly how `an-icon`, `an-stepper`,
+                // `an-date-picker` and four more went unnoticed. Said once: the
+                // layout asks again on every pass.
+                if (unmeasured.add(name)) {
+                    android.util.Log.e(
+                            "angular-native",
+                            name
+                                    + " has no measurement in this host:"
+                                    + " NodeKind::control_name() asks for it and"
+                                    + " AnHost.measureControl has no case for it, so it"
+                                    + " is laid out 0x0 and cannot be seen. Add one, and"
+                                    + " scripts/check-measure.sh will stop failing.");
+                }
                 return 0;
         }
         int unspecified = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
@@ -3401,9 +3503,16 @@ public final class AnHost {
             height += bottomInsetDp();
         }
 
-        // Sliders and bars take up all the width they are given; their natural
-        // measurement only rules the height.
-        boolean stretches = "Slider".equals(name) || "ProgressBar".equals(name);
+        // Some of them take up all the width they are given; their natural
+        // measurement only rules the height. The same list as on iOS, plus the
+        // navigation bar, which there is the system's own and here is a
+        // `Toolbar` in the tree like any other view.
+        boolean stretches =
+                "Slider".equals(name)
+                        || "ProgressBar".equals(name)
+                        || "SearchBar".equals(name)
+                        || "SegmentedControl".equals(name)
+                        || "NavigationBar".equals(name);
         if (stretches && availableWidthDp > 0) {
             width = availableWidthDp;
         }

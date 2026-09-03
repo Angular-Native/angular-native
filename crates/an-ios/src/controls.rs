@@ -19,6 +19,14 @@ use objc2_ui_kit::{UISlider, UISwitch};
 /// Natural sizes, in points, indexed by the control's name.
 pub type ControlSizes = HashMap<String, (f32, f32)>;
 
+/// The point size an `<an-icon>` is drawn at when the template says nothing.
+///
+/// It has to match `Icon.size`'s default in `packages/primitives`, because that
+/// is where it comes from on the way in: the directive pins the box's width and
+/// height with it, so this only ever decides the measurement of an icon that
+/// somehow arrived with neither.
+const DEFAULT_ICON_POINTS: f32 = 24.0;
+
 /// Asks each control how much room it takes. Called once, at startup.
 pub fn measure_controls(mtm: MainThreadMarker) -> ControlSizes {
     // An infinite width so each one gives its natural size with nothing
@@ -52,6 +60,27 @@ pub fn measure_controls(mtm: MainThreadMarker) -> ControlSizes {
     // The drop-down is a button with a menu: it measures what a button
     // measures.
     record("Picker", &UIButton::new(mtm));
+    // The header. It is the same `UINavigationBar` the host mounts, and it
+    // knows its own height —44 on a phone, more on an iPad, and different
+    // again at the large accessibility sizes—, which is why it is asked and
+    // not written down. Without this line it was not in the table at all, and
+    // an `<an-navigation-bar>` with no explicit height was laid out 0 points
+    // tall: the title, the back button and everything in it went off the
+    // screen with nothing said.
+    record("NavigationBar", &objc2_ui_kit::UINavigationBar::new(mtm));
+    // The icon, in the `UIImageView` the host mounts for it.
+    //
+    // The point size is the one number here that cannot be asked of the
+    // system: an SF Symbol has no natural size —it is drawn at whatever size
+    // its configuration says—, so something has to say which one. 24 is
+    // `<an-icon>`'s default `[size]`, declared in `packages/primitives`, and
+    // the template overrides it by pinning width and height whenever it writes
+    // `[size]`. What the system does decide is everything else: the aspect
+    // that symbol comes out with at that size and what the image view keeps
+    // around it.
+    let icon = objc2_ui_kit::UIImageView::new(mtm);
+    icon.setImage(crate::icons::symbol("home", DEFAULT_ICON_POINTS, 400).as_deref());
+    record("Icon", &icon);
 
     // Some of them return zero from `sizeThatFits` because they have no
     // content yet; for those the known natural size wins.
@@ -70,6 +99,8 @@ pub fn measure_controls(mtm: MainThreadMarker) -> ControlSizes {
         ("Picker", (140.0, 44.0)),
         #[cfg(not(target_os = "tvos"))]
         ("DatePicker", (200.0, 44.0)),
+        ("NavigationBar", (320.0, 44.0)),
+        ("Icon", (DEFAULT_ICON_POINTS, DEFAULT_ICON_POINTS)),
     ] {
         let entry = sizes.entry(name.to_owned()).or_insert(fallback);
         if entry.0 <= 0.0 {

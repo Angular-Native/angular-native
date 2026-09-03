@@ -18,7 +18,7 @@ use objc2::rc::Retained;
 use objc2::MainThreadMarker;
 use objc2_app_kit::{
     NSAttributedStringNSExtendedStringDrawing, NSButton, NSDatePicker, NSFont, NSFontAttributeName,
-    NSPopUpButton, NSProgressIndicator, NSProgressIndicatorStyle, NSSearchField,
+    NSImageView, NSPopUpButton, NSProgressIndicator, NSProgressIndicatorStyle, NSSearchField,
     NSSegmentedControl, NSSlider, NSStepper, NSStringDrawingOptions, NSSwitch, NSTextField, NSView,
 };
 use objc2_core_foundation::CGSize;
@@ -32,6 +32,11 @@ pub const TEXT_INSET: &str = "__text-inset";
 
 /// Natural sizes, in points, indexed by the control's name.
 pub type ControlSizes = HashMap<String, (f32, f32)>;
+
+/// The point size an `<an-icon>` is drawn at when the template says nothing.
+/// It matches `Icon.size`'s default in `packages/primitives`, which is where
+/// it comes from on the way in.
+const DEFAULT_ICON_POINTS: f32 = 24.0;
 
 /// How much wider than its text an AppKit label is.
 ///
@@ -120,6 +125,18 @@ pub fn measure_controls(mtm: MainThreadMarker) -> ControlSizes {
     record("SearchBar", &NSSearchField::new(mtm));
     record("Picker", &NSPopUpButton::new(mtm));
     record("DatePicker", &NSDatePicker::new(mtm));
+    // The icon, in the very `NSImageView` the host mounts for it.
+    //
+    // The point size is the one number here that cannot be asked of the
+    // system: an SF Symbol has no natural size —it is drawn at whatever size
+    // its configuration says—, so something has to say which. 24 is
+    // `<an-icon>`'s default `[size]`, declared in `packages/primitives`, and
+    // the template pins width and height with it whenever it writes `[size]`.
+    // What AppKit decides is the rest: the aspect the symbol comes out with at
+    // that size and what the image view keeps around it.
+    let icon = NSImageView::new(mtm);
+    unsafe { icon.setImage(crate::icons::symbol("home", DEFAULT_ICON_POINTS, 400).as_deref()) };
+    record("Icon", &icon);
     // macOS's tab bar is a segmented control (see `support.rs`), so it
     // measures what that one measures. The height is nudged up a little
     // because in the tree it goes as a bar and not as a loose control.
@@ -148,6 +165,7 @@ pub fn measure_controls(mtm: MainThreadMarker) -> ControlSizes {
         ("TabBar", (320.0, 32.0)),
         ("Switch", (38.0, 22.0)),
         ("ActivityIndicator", (20.0, 20.0)),
+        ("Icon", (DEFAULT_ICON_POINTS, DEFAULT_ICON_POINTS)),
     ] {
         let entry = sizes.entry(name.to_owned()).or_insert(fallback);
         if entry.0 <= 0.0 {
