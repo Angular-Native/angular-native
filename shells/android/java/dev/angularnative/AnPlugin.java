@@ -5,30 +5,32 @@ import android.app.Activity;
 import org.json.JSONObject;
 
 /**
- * Lo que implementa un plugin de Android.
+ * What an Android plugin implements.
  *
- * <p>No declara su nombre: el nombre con el que JS lo invoca está en el {@code
- * angularNative.module} de su {@code package.json} y de ahí lo saca {@code an} al generar el
- * registro. Un solo sitio donde escribirlo es un sitio menos donde puedan dejar de coincidir.
+ * <p>It does not declare its own name: the name JS calls it by is in the {@code
+ * angularNative.module} of its {@code package.json}, and that is where {@code an} takes it from
+ * when generating the registry. One single place to write it is one fewer place where two copies
+ * can stop matching.
  */
 public interface AnPlugin {
 
     /**
-     * La pantalla de la app, antes de la primera llamada.
+     * The app's screen, before the first call.
      *
-     * <p>Casi todo lo de Android pide un contexto, y un plugin no tiene de dónde sacarlo. Se le da
-     * la Activity: de ahí salen tanto el contexto como el sitio donde presentar algo. Quien no la
-     * necesite no implementa nada.
+     * <p>Almost everything on Android asks for a context, and a plugin has nowhere to get one. It
+     * is handed the Activity: both the context and the place to present something come out of it.
+     * Whoever does not need it implements nothing.
      */
     default void attach(Activity host) {}
 
     /**
-     * Atiende una llamada.
+     * Handles one call.
      *
-     * <p>{@code args} es lo que mandó JS, ya decodificado; si no mandó un objeto llega vacío en vez
-     * de nulo. Se puede contestar en el acto o guardar el {@link AnPluginCall} y contestar más
-     * tarde — es lo que separa leer el portapapeles de sacar una foto—, pero hay que contestar
-     * siempre: un método que no existe se rechaza, no se ignora.
+     * <p>{@code args} is what JS sent, already decoded; if it sent something that is not an object,
+     * this arrives empty rather than null. It can be answered on the spot or the {@link
+     * AnPluginCall} kept and answered later —that is what separates reading the clipboard from
+     * taking a photo—, but it always has to be answered: a method that does not exist is rejected,
+     * not ignored.
      */
     void call(String method, JSONObject args, AnPluginCall respond);
 }

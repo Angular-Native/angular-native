@@ -6,11 +6,11 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
- * La respuesta de una llamada a un plugin.
+ * The answer to a plugin call.
  *
- * <p>Se puede contestar desde cualquier hilo: al otro lado hay un buzón con cerrojo, no una
- * variable del hilo de UI. Lo que no se puede es no contestar — la promesa del lado JS se queda
- * esperando para siempre—, así que todo camino de error tiene que acabar en {@link #reject}.
+ * <p>It can be answered from any thread: on the other side there is a locked mailbox, not a
+ * variable of the UI thread. What cannot be done is not answering —the promise on the JS side is
+ * left waiting for ever—, so every error path has to end in {@link #reject}.
  */
 public final class AnPluginCall {
 
@@ -23,14 +23,14 @@ public final class AnPluginCall {
         this.id = id;
     }
 
-    /** Para un método que no devuelve nada. */
+    /** For a method that returns nothing. */
     public void resolve() {
         send("null");
     }
 
     public void resolve(String text) {
-        // `JSONObject.quote` escapa y pone las comillas: es el escape de JSON
-        // que trae la plataforma, sin envolver la cadena en un objeto.
+        // `JSONObject.quote` escapes and adds the quotes: it is the JSON escaping the platform
+        // ships, without wrapping the string in an object.
         send(text == null ? "null" : JSONObject.quote(text));
     }
 
@@ -57,13 +57,13 @@ public final class AnPluginCall {
             }
             answered = true;
         }
-        AnRuntime.pluginReject(id, message == null ? "el plugin falló" : message);
+        AnRuntime.pluginReject(id, message == null ? "the plugin failed" : message);
     }
 
     private void send(String json) {
         synchronized (this) {
             if (answered) {
-                Log.w(TAG, "un plugin contestó dos veces a la misma llamada");
+                Log.w(TAG, "a plugin answered the same call twice");
                 return;
             }
             answered = true;

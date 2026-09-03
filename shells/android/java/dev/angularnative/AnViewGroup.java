@@ -5,22 +5,23 @@ import android.view.View;
 import android.view.ViewGroup;
 
 /**
- * Contenedor que no calcula nada.
+ * A container that computes nothing.
  *
- * El layout ya lo resolvió taffy; aquí solo hay que aplicar el marco que llega
- * de Rust. Dejar que Android midiera por su cuenta sería tener dos motores de
- * layout peleándose, igual que pasaría con Auto Layout en iOS.
+ * The layout has already been resolved by taffy; all that is needed here is to
+ * apply the frame that arrives from Rust. Letting Android measure on its own
+ * would mean two layout engines fighting each other, just as would happen with
+ * Auto Layout on iOS.
  */
 public final class AnViewGroup extends ViewGroup {
 
     /**
-     * Marco en píxeles, ya convertido desde los puntos que usa el core.
+     * A frame in pixels, already converted from the points the core uses.
      *
-     * Hereda de `MarginLayoutParams` y no de `LayoutParams` a secas porque un
-     * `ScrollView` es un `FrameLayout` por dentro y mide a sus hijos con
-     * `measureChildWithMargins`: con los otros, la app se cae al montar el
-     * primer scroll. El tamaño va en los campos `width`/`height` heredados,
-     * que es lo que esos contenedores leen.
+     * It extends `MarginLayoutParams` and not plain `LayoutParams` because a
+     * `ScrollView` is a `FrameLayout` underneath and measures its children with
+     * `measureChildWithMargins`: with the others, the app crashes on mounting
+     * the first scroll view. The size goes in the inherited `width`/`height`
+     * fields, which is what those containers read.
      */
     public static final class Frame extends ViewGroup.MarginLayoutParams {
         public int left;
@@ -33,9 +34,9 @@ public final class AnViewGroup extends ViewGroup {
 
     public AnViewGroup(Context context) {
         super(context);
-        // Recortar por defecto. Sin esto, el contenido de un ScrollView se
-        // dibuja por encima de lo que tiene alrededor: los hijos van en
-        // posición absoluta y pueden quedar muy fuera de su contenedor.
+        // Clip by default. Without this, the contents of a ScrollView are drawn
+        // over whatever surrounds it: the children are absolutely positioned and
+        // can end up well outside their container.
         setClipChildren(true);
     }
 
@@ -56,11 +57,11 @@ public final class AnViewGroup extends ViewGroup {
             contentWidth = Math.max(contentWidth, frame.left + params.width);
             contentHeight = Math.max(contentHeight, frame.top + params.height);
         }
-        // Un ScrollView mide siempre a su hijo con altura UNSPECIFIED: si aquí
-        // se devolviera el mínimo sugerido, el contenido quedaría en cero y no
-        // se vería nada. Con el tamaño que ocupan los hijos, `resolveSize`
-        // devuelve eso cuando no hay restricción y respeta la medida exacta
-        // cuando sí la hay.
+        // A ScrollView always measures its child with an UNSPECIFIED height: if
+        // the suggested minimum were returned here, the content would come out
+        // at zero and nothing would show. Given the size the children take up,
+        // `resolveSize` returns that when there is no constraint and honours the
+        // exact measurement when there is one.
         setMeasuredDimension(
                 resolveSize(Math.max(contentWidth, getSuggestedMinimumWidth()), widthSpec),
                 resolveSize(Math.max(contentHeight, getSuggestedMinimumHeight()), heightSpec));

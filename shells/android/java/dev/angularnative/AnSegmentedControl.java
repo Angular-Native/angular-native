@@ -8,12 +8,12 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
 
 /**
- * Control segmentado.
+ * Segmented control.
  *
- * Es el «segmented button» de Material 3 tal cual: un
- * `MaterialButtonToggleGroup` con botones marcables dentro. La forma de los
- * extremos, el contenedor del elegido, la marca de verificación y la respuesta
- * al pulsar las pone la librería, no este fichero.
+ * It is the Material 3 "segmented button" as it comes: a
+ * `MaterialButtonToggleGroup` with checkable buttons inside. The shape of the
+ * end segments, the container of the selected one, the check mark and the
+ * response to a press are all put there by the library, not by this file.
  */
 public final class AnSegmentedControl extends MaterialButtonToggleGroup {
 
@@ -22,19 +22,20 @@ public final class AnSegmentedControl extends MaterialButtonToggleGroup {
     }
 
     private OnSelected listener;
-    /** Para no avisar del segmento que se acaba de fijar desde la plantilla. */
-    private boolean fijando;
+    /** So the segment just set from the template is not reported back. */
+    private boolean setting;
     private Integer activeColor;
 
     public AnSegmentedControl(Context context) {
         super(context);
         setSingleSelection(true);
-        // Siempre hay uno elegido: un segmentado sin nada marcado no representa
-        // ningún estado, y al volver de la plantilla habría que adivinar cuál.
+        // There is always one selected: a segmented control with nothing checked
+        // represents no state at all, and coming back from the template one
+        // would have to guess which.
         setSelectionRequired(true);
         addOnButtonCheckedListener(
                 (group, checkedId, isChecked) -> {
-                    if (isChecked && !fijando && listener != null) {
+                    if (isChecked && !setting && listener != null) {
                         listener.onSelected(checkedId - 1);
                     }
                 });
@@ -54,9 +55,9 @@ public final class AnSegmentedControl extends MaterialButtonToggleGroup {
     public void setItems(String[] items) {
         removeAllViews();
         for (int index = 0; index < items.length; index++) {
-            // El estilo va por atributo del tema: así el botón sale con la
-            // tipografía, la altura y el trazo que Material 3 le da a un
-            // segmento, en vez de con los de un botón suelto.
+            // The style goes through a theme attribute: that way the button
+            // comes out with the typography, the height and the stroke Material
+            // 3 gives a segment, rather than those of a standalone button.
             MaterialButton segment =
                     new MaterialButton(
                             getContext(),
@@ -64,8 +65,8 @@ public final class AnSegmentedControl extends MaterialButtonToggleGroup {
                             com.google.android.material.R.attr.materialButtonOutlinedStyle);
             segment.setText(items[index]);
             segment.setCheckable(true);
-            // Los identificadores empiezan en 1: el 0 es `View.NO_ID` y el grupo
-            // no sabría de qué segmento le hablan.
+            // The identifiers start at 1: 0 is `View.NO_ID` and the group would
+            // not know which segment it was being told about.
             segment.setId(index + 1);
             tint(segment);
             addView(segment, new LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -76,32 +77,32 @@ public final class AnSegmentedControl extends MaterialButtonToggleGroup {
         if (index < 0 || index >= getChildCount()) {
             return;
         }
-        fijando = true;
+        setting = true;
         check(index + 1);
-        fijando = false;
+        setting = false;
     }
 
     /**
-     * Tiñe el segmento con el color de la app.
+     * Tints the segment with the app's colour.
      *
-     * Solo el relleno del elegido y el texto: el resto —trazo, forma, ondas al
-     * pulsar— se queda como lo pinta Material.
+     * Only the fill of the selected one and the text: the rest —stroke, shape,
+     * ripples on press— stays as Material paints it.
      */
     private void tint(MaterialButton segment) {
         if (activeColor == null) {
             return;
         }
-        int[][] estados = {new int[] {android.R.attr.state_checked}, new int[] {}};
+        int[][] states = {new int[] {android.R.attr.state_checked}, new int[] {}};
         segment.setBackgroundTintList(
-                new ColorStateList(estados, new int[] {activeColor, Color.TRANSPARENT}));
-        segment.setTextColor(new ColorStateList(estados, new int[] {contrast(activeColor), activeColor}));
+                new ColorStateList(states, new int[] {activeColor, Color.TRANSPARENT}));
+        segment.setTextColor(new ColorStateList(states, new int[] {contrast(activeColor), activeColor}));
     }
 
-    /** Blanco o negro, el que se lea sobre ese color. */
+    /** Black or white, whichever reads on that colour. */
     private static int contrast(int color) {
-        double luz =
+        double light =
                 (0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color))
                         / 255.0;
-        return luz > 0.6 ? Color.BLACK : Color.WHITE;
+        return light > 0.6 ? Color.BLACK : Color.WHITE;
     }
 }

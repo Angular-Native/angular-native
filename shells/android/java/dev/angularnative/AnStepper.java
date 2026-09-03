@@ -8,15 +8,16 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textview.MaterialTextView;
 
 /**
- * Subir y bajar de uno en uno.
+ * Stepping up and down one at a time.
  *
- * Material 3 no tiene «stepper»: no es que falte en la librería, es que no
- * existe en el sistema de diseño. Así que se arma con piezas que sí son suyas
- * —dos botones de icono y un rótulo—, y no dibujando una imitación.
+ * Material 3 has no "stepper": it is not that the library is missing one, it is
+ * that it does not exist in the design system. So it is assembled from pieces
+ * that are Material's own —two icon buttons and a label—, and not by drawing an
+ * imitation.
  *
- * El valor se enseña porque en Android un par de botones sueltos no dice qué
- * están cambiando; en iOS el control no lo enseña porque ahí la convención es
- * tenerlo al lado.
+ * The value is shown because on Android a pair of loose buttons does not say
+ * what they are changing; on iOS the control does not show it because there the
+ * convention is to have it alongside.
  */
 public final class AnStepper extends LinearLayout {
 
@@ -30,41 +31,41 @@ public final class AnStepper extends LinearLayout {
     private double maximum = 100;
     private double step = 1;
     private final MaterialTextView label;
-    private final MaterialButton menos;
-    private final MaterialButton mas;
+    private final MaterialButton minus;
+    private final MaterialButton plus;
 
     public AnStepper(Context context) {
         super(context);
         setOrientation(HORIZONTAL);
         setGravity(Gravity.CENTER_VERTICAL);
 
-        menos = boton(context, "−", -1);
-        mas = boton(context, "+", 1);
+        minus = button(context, "−", -1);
+        plus = button(context, "+", 1);
         label = new MaterialTextView(context);
         label.setGravity(Gravity.CENTER);
         label.setTextAppearance(
                 com.google.android.material.R.style.TextAppearance_Material3_TitleMedium);
 
-        addView(menos);
+        addView(minus);
         addView(label, new LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
-        addView(mas);
+        addView(plus);
         refresh();
     }
 
-    private MaterialButton boton(Context context, String texto, int direccion) {
-        // Botón de icono de Material 3: redondo, del tamaño que manda el
-        // sistema y con sus ondas al pulsar. Lleva texto en vez de icono porque
-        // «−» y «+» son eso, un carácter.
-        MaterialButton boton =
+    private MaterialButton button(Context context, String text, int direction) {
+        // A Material 3 icon button: round, the size the system dictates and with
+        // its ripples on press. It carries text rather than an icon because "−"
+        // and "+" are exactly that, a character.
+        MaterialButton button =
                 new MaterialButton(
                         context, null, com.google.android.material.R.attr.materialIconButtonStyle);
-        boton.setText(texto);
-        boton.setOnClickListener(v -> nudge(direccion));
-        return boton;
+        button.setText(text);
+        button.setOnClickListener(v -> nudge(direction));
+        return button;
     }
 
-    private void nudge(int direccion) {
-        double next = Math.max(minimum, Math.min(maximum, value + direccion * step));
+    private void nudge(int direction) {
+        double next = Math.max(minimum, Math.min(maximum, value + direction * step));
         if (next == value) {
             return;
         }
@@ -99,15 +100,15 @@ public final class AnStepper extends LinearLayout {
     }
 
     private void refresh() {
-        // Sin decimales cuando el paso es entero: "3" y no "3.0".
+        // No decimals when the step is a whole number: "3" and not "3.0".
         if (step == Math.rint(step) && value == Math.rint(value)) {
             label.setText(String.valueOf((long) value));
         } else {
             label.setText(String.valueOf(value));
         }
-        // Un botón que no puede hacer nada se apaga, que es lo que hace
-        // cualquier control del sistema al llegar al tope.
-        menos.setEnabled(value > minimum);
-        mas.setEnabled(value < maximum);
+        // A button that can do nothing is disabled, which is what any system
+        // control does on reaching its limit.
+        minus.setEnabled(value > minimum);
+        plus.setEnabled(value < maximum);
     }
 }

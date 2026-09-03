@@ -9,11 +9,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * El registro de plugins del APK.
+ * The APK's plugin registry.
  *
- * <p>Quién está dentro lo decide {@code an} al armar el APK, leyendo las dependencias del
- * {@code package.json} de la app: lo escribe en {@code AnGeneratedPlugins.java}, que es lo que
- * llama {@link #install(Activity)}.
+ * <p>Who is inside is decided by {@code an} when it builds the APK, reading the dependencies of the
+ * app's {@code package.json}: it writes them into {@code AnGeneratedPlugins.java}, which is what
+ * {@link #install(Activity)} calls.
  */
 public final class AnPluginRegistry {
 
@@ -28,8 +28,8 @@ public final class AnPluginRegistry {
     private AnPluginRegistry() {}
 
     /**
-     * Se llama una vez, antes de crear el {@link AnRuntime}: el core construye un módulo por plugin
-     * registrado al arrancar el motor, y lo que llegue después ya no entraría.
+     * Called once, before creating the {@link AnRuntime}: the core builds one module per registered
+     * plugin when the engine starts, and anything arriving after that would no longer get in.
      */
     public static void install(Activity host) {
         INSTANCE.host = host;
@@ -38,12 +38,12 @@ public final class AnPluginRegistry {
     }
 
     /**
-     * La llama el fichero generado, una vez por plugin. El nombre viene del
-     * {@code package.json} del plugin, que es el único sitio donde se escribe.
+     * Called by the generated file, once per plugin. The name comes from the plugin's
+     * {@code package.json}, which is the only place it is written.
      */
     public static void register(String name, AnPlugin plugin) {
         if (INSTANCE.plugins.containsKey(name)) {
-            Log.w(TAG, "dos plugins dicen llamarse " + name + "; se queda el primero");
+            Log.w(TAG, "two plugins claim to be called " + name + "; the first one stays");
             return;
         }
         plugin.attach(INSTANCE.host);
@@ -51,31 +51,30 @@ public final class AnPluginRegistry {
         AnRuntime.registerPlugin(name);
     }
 
-    /** Rust llama aquí desde el hilo de UI, dentro del frame. */
+    /** Rust calls in here from the UI thread, inside the frame. */
     public void dispatch(long id, String module, String method, String args) {
         AnPluginCall respond = new AnPluginCall(id);
         AnPlugin plugin = plugins.get(module);
         if (plugin == null) {
-            // No debería poder pasar: el core solo conoce los nombres que este
-            // registro le dio. Si pasa, se dice en vez de dejar la promesa
-            // colgada.
-            respond.reject("el plugin " + module + " no está en este APK");
+            // This should not be able to happen: the core only knows the names this registry
+            // gave it. If it does happen, it is said rather than leaving the promise hanging.
+            respond.reject("the plugin " + module + " is not in this APK");
             return;
         }
         JSONObject parsed;
         try {
             parsed = new JSONObject(args == null ? "{}" : args);
         } catch (Exception error) {
-            // JS puede mandar cualquier cosa, no solo un objeto. Se entrega
-            // vacío en vez de reventar: es lo mismo que hace el shell de iOS.
+            // JS can send anything, not only an object. It is handed over empty rather than
+            // blowing up: it is the same thing the iOS shell does.
             parsed = new JSONObject();
         }
         try {
             plugin.call(method, parsed, respond);
         } catch (RuntimeException error) {
-            // Una excepción del plugin no puede tumbar el frame, pero tampoco
-            // puede desaparecer: se convierte en el rechazo de esa promesa.
-            respond.reject(module + "." + method + " lanzó: " + error);
+            // An exception from the plugin cannot bring the frame down, but it cannot disappear
+            // either: it becomes the rejection of that promise.
+            respond.reject(module + "." + method + " threw: " + error);
         }
     }
 }

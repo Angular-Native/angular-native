@@ -8,16 +8,16 @@ import android.view.MenuItem;
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 
 /**
- * Barra de pestañas.
+ * Tab bar.
  *
- * Es la `BottomNavigationView` de Material 3, la de verdad: la plataforma de
- * Android no trae ninguna —`android.widget` se quedó en las pestañas de 2011—
- * y la de Material vive en una librería aparte, que este build se trae
- * resuelta a mano porque no usa Gradle.
+ * It is Material 3's `BottomNavigationView`, the real one: the Android platform
+ * ships none —`android.widget` stopped at the tabs of 2011— and Material's lives
+ * in a separate library, which this build resolves by hand because it does not
+ * use Gradle.
  *
- * De ahí salen el indicador de píldora detrás del icono elegido, la animación
- * al cambiar, el comportamiento con TalkBack y el alto que le toque en cada
- * versión del sistema.
+ * From it come the pill indicator behind the selected icon, the animation on
+ * switching, the behaviour with TalkBack and whatever height it is due on each
+ * version of the system.
  */
 public final class AnTabBar extends BottomNavigationView {
 
@@ -25,7 +25,7 @@ public final class AnTabBar extends BottomNavigationView {
         void onSelected(int index);
     }
 
-    /** Resuelve el nombre de un icono a un drawable. */
+    /** Resolves an icon name to a drawable. */
     public interface IconResolver {
         Drawable resolve(String name);
     }
@@ -34,20 +34,20 @@ public final class AnTabBar extends BottomNavigationView {
     private IconResolver iconResolver;
     private String[] titles = new String[0];
     private String[] icons = new String[0];
-    /** Para no avisar de la pestaña que se acaba de fijar desde la plantilla. */
-    private boolean fijando;
-    /** Los dos colores de la barra, que llegan en props distintas. */
+    /** So the tab just set from the template is not reported back. */
+    private boolean setting;
+    /** The bar's two colours, which arrive in separate props. */
     private Integer activeColor;
     private Integer inactiveColor;
 
     public AnTabBar(Context context) {
         super(context);
-        // Con rótulo siempre, como la barra de la foto de Material 3. El modo
-        // automático los esconde en cuanto hay más de tres pestañas.
+        // Always labelled, like the bar in the Material 3 photograph. The
+        // automatic mode hides them as soon as there are more than three tabs.
         setLabelVisibilityMode(LABEL_VISIBILITY_LABELED);
         setOnItemSelectedListener(
                 item -> {
-                    if (!fijando && listener != null) {
+                    if (!setting && listener != null) {
                         listener.onSelected(item.getItemId() - 1);
                     }
                     return true;
@@ -68,7 +68,7 @@ public final class AnTabBar extends BottomNavigationView {
         rebuild();
     }
 
-    /** Iconos, en el mismo orden que los títulos. */
+    /** Icons, in the same order as the titles. */
     public void setIcons(String[] icons) {
         this.icons = icons;
         rebuild();
@@ -79,62 +79,63 @@ public final class AnTabBar extends BottomNavigationView {
         applyColors();
     }
 
-    /** Color de las pestañas que no están elegidas. */
+    /** Colour of the tabs that are not selected. */
     public void setInactiveColor(int color) {
         this.inactiveColor = color;
         applyColors();
     }
 
     /**
-     * El color de la pestaña elegida y el de las demás, que llegan sueltos.
+     * The colour of the selected tab and that of the rest, which arrive apart.
      *
-     * Sin decir nada, el de las inactivas es el activo rebajado. Antes salía
-     * del tinte que ya tuviera el icono, y eso las dejaba en blanco sobre el
-     * fondo claro de la barra: los rótulos estaban ahí, del color del fondo.
+     * With nothing said, the inactive one is the active one dimmed. It used to
+     * come from whatever tint the icon already carried, and that left them white
+     * on the light background of the bar: the labels were there, in the colour
+     * of the background.
      */
     private void applyColors() {
         if (activeColor == null && inactiveColor == null) {
             return;
         }
-        int activo = activeColor == null ? inactiveColor : activeColor;
-        int apagado =
+        int active = activeColor == null ? inactiveColor : activeColor;
+        int dimmed =
                 inactiveColor != null
                         ? inactiveColor
                         : android.graphics.Color.argb(
                                 150,
-                                android.graphics.Color.red(activo),
-                                android.graphics.Color.green(activo),
-                                android.graphics.Color.blue(activo));
-        android.content.res.ColorStateList lista =
+                                android.graphics.Color.red(active),
+                                android.graphics.Color.green(active),
+                                android.graphics.Color.blue(active));
+        android.content.res.ColorStateList list =
                 new android.content.res.ColorStateList(
                         new int[][] {new int[] {android.R.attr.state_checked}, new int[] {}},
-                        new int[] {activo, apagado});
-        setItemIconTintList(lista);
-        setItemTextColor(lista);
+                        new int[] {active, dimmed});
+        setItemIconTintList(list);
+        setItemTextColor(list);
     }
 
     public void setSelectedIndex(int index) {
         if (index < 0 || index >= getMenu().size()) {
             return;
         }
-        // Fijarla desde la plantilla no es elegirla: avisar aquí devolvería el
-        // evento a quien lo acaba de provocar.
-        fijando = true;
+        // Setting it from the template is not selecting it: reporting here would
+        // send the event back to whoever has just caused it.
+        setting = true;
         setSelectedItemId(index + 1);
-        fijando = false;
+        setting = false;
     }
 
     private void rebuild() {
         Menu menu = getMenu();
         menu.clear();
         for (int index = 0; index < titles.length; index++) {
-            // Los identificadores empiezan en 1: el 0 es `Menu.NONE` y la
-            // barra lo trata como "sin elemento".
+            // The identifiers start at 1: 0 is `Menu.NONE` and the bar treats it
+            // as "no item".
             MenuItem item = menu.add(Menu.NONE, index + 1, index, titles[index]);
             if (iconResolver != null && index < icons.length) {
-                Drawable icono = iconResolver.resolve(icons[index]);
-                if (icono != null) {
-                    item.setIcon(icono);
+                Drawable icon = iconResolver.resolve(icons[index]);
+                if (icon != null) {
+                    item.setIcon(icon);
                 }
             }
         }
@@ -142,8 +143,8 @@ public final class AnTabBar extends BottomNavigationView {
     }
 
     /**
-     * Alto de la barra. Lo decide Material, no nosotros: se le pregunta
-     * midiendo, que es lo que hace cualquier layout de Android.
+     * The bar's height. Material decides it, not us: it is asked by measuring,
+     * which is what any Android layout does.
      */
     public int heightPx() {
         measure(

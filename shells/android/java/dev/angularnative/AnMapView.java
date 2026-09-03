@@ -17,24 +17,25 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Mapa.
+ * Map.
  *
- * Android no trae ninguno en la plataforma: el de Google vive en Play
- * Services, que es una dependencia con clave de API y este build no usa
- * Gradle. Así que aquí se dibujan teselas de OpenStreetMap sobre un `Canvas`.
+ * Android ships none in the platform: Google's lives in Play Services, which is
+ * a dependency with an API key and this build does not use Gradle. So here
+ * OpenStreetMap tiles are drawn onto a `Canvas`.
  *
- * Es una vista nativa de verdad —no un navegador escondido— pero tampoco es el
- * mapa del sistema, y conviene decirlo: no trae rutas, ni búsqueda, ni el
- * punto azul de dónde estás. Dibuja el mundo y deja arrastrarlo.
+ * It is a genuine native view —not a browser in disguise— but it is not the
+ * system map either, and that is worth saying: it brings no directions, no
+ * search, and no blue dot for where you are. It draws the world and lets you
+ * drag it.
  */
 public final class AnMapView extends View {
 
     private static final int TILE = 256;
-    /** Las teselas de OSM piden identificarse; sin esto devuelven 403. */
-    private static final String AGENT = "angular-native/0.1 (ejemplo)";
+    /** The OSM tiles ask you to identify yourself; without this they return 403. */
+    private static final String AGENT = "angular-native/0.1 (example)";
 
     private final ExecutorService fetcher = Executors.newFixedThreadPool(4);
-    /** Un cuarto de la memoria de la app, que es lo que recomienda Android. */
+    /** A quarter of the app's memory, which is what Android recommends. */
     private final LruCache<String, Bitmap> cache =
             new LruCache<String, Bitmap>((int) (Runtime.getRuntime().maxMemory() / 4096)) {
                 @Override
@@ -66,7 +67,7 @@ public final class AnMapView extends View {
         invalidate();
     }
 
-    // --- proyección de Mercator, que es la que usan las teselas
+    // --- the Mercator projection, which is the one the tiles use
 
     private static double lonToX(double lon, int z) {
         return (lon + 180.0) / 360.0 * (1 << z);
@@ -91,7 +92,7 @@ public final class AnMapView extends View {
         int z = (int) Math.round(zoom);
         double centerX = lonToX(longitude, z);
         double centerY = latToY(latitude, z);
-        // Esquina de arriba a la izquierda, en píxeles del mundo entero.
+        // Top left corner, in pixels of the whole world.
         double originX = centerX * TILE - getWidth() / 2.0;
         double originY = centerY * TILE - getHeight() / 2.0;
 
@@ -106,7 +107,7 @@ public final class AnMapView extends View {
                 if (row < 0 || row >= limit) {
                     continue;
                 }
-                // A lo ancho el mundo da la vuelta; a lo alto no.
+                // Across, the world wraps around; vertically it does not.
                 int wrapped = ((col % limit) + limit) % limit;
                 Bitmap tile = tile(z, wrapped, row);
                 if (tile == null) {
@@ -119,7 +120,7 @@ public final class AnMapView extends View {
         }
     }
 
-    /** La tesela si ya está; si no, se pide y se redibuja cuando llegue. */
+    /** The tile if it is already there; if not, it is requested and redrawn on arrival. */
     private Bitmap tile(int z, int x, int y) {
         final String key = z + "/" + x + "/" + y;
         Bitmap hit = cache.get(key);
@@ -139,10 +140,11 @@ public final class AnMapView extends View {
     }
 
     /**
-     * Un mapa de bits de 1x1 que marca "ya se ha pedido".
+     * A 1x1 bitmap that marks "already requested".
      *
-     * Sin esto, cada redibujo volvería a pedir las teselas que están en
-     * camino, y arrastrar el mapa lanzaría cientos de descargas iguales.
+     * Without this, every redraw would request the tiles that are on their way
+     * again, and dragging the map would fire off hundreds of identical
+     * downloads.
      */
     private static final Bitmap PENDING =
             Bitmap.createBitmap(1, 1, Bitmap.Config.ALPHA_8);
@@ -176,7 +178,7 @@ public final class AnMapView extends View {
                 return true;
             case MotionEvent.ACTION_MOVE: {
                 int z = (int) Math.round(zoom);
-                // Lo que se ha movido el dedo, en píxeles, pasado a grados.
+                // How far the finger has moved, in pixels, turned into degrees.
                 double x = lonToX(longitude, z) * TILE - (event.getX() - lastX);
                 double y = latToY(latitude, z) * TILE - (event.getY() - lastY);
                 longitude = xToLon(x / TILE, z);
