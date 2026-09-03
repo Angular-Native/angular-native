@@ -359,11 +359,11 @@ need a paid Developer ID certificate and have never been run. See
 - **`(scroll)` is not delivered.** It is a known event name and iOS implements
   it; this host does not, so subscribing to it gets the generic "cannot deliver"
   warning. It is a real gap, not a decision.
-- **No plugins.** `an-macos` has no plugin registry — nothing carries a call out
-  to Swift — so `an macos` and `an dev --macos` refuse to build an app that
-  depends on one rather than shipping an app whose every call would fail. A
-  module name reached at run time without a declared dependency is rejected with
-  the name *and* the reason, which is not the same message a typo gets.
+- **A plugin's entitlements need a real signature.** The host loads plugins, but
+  an ad-hoc-signed `.app` carrying a profile-backed entitlement is killed at
+  launch by the system, so an unsigned build drops those keys and warns naming
+  the key, the plugin and the flag that restores them. See
+  [Plugins on the Mac and the watch](/extending/plugins-on-the-mac-and-the-watch/).
 - **No `an add macos`.** There is no per-project `Info.plist` and no per-project
   bundle id: the shell's plist is copied verbatim, and the id is
   `dev.angularnative.playground.mac`.

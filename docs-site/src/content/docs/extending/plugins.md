@@ -312,12 +312,11 @@ an plugins examples/clipboard
 an plugins examples/clipboard --platform android   # exits 0 if covered, errors if not
 ```
 
-Two hosts cover **no** plugins at all, and both refuse the build rather than
-shipping an app whose every call would be rejected at runtime:
-
-- **watchOS.** `an-watch` has none of the registry `an-ios` and `an-android`
-  have, and its shell is not a port of the iOS one.
-- **macOS.** Same position, same refusal.
+All five hosts load plugins. What differs is what a plugin can *do* on each,
+and a plugin that cannot work on one declares so itself: the build then refuses
+that combination and quotes the plugin's own sentence, rather than shipping an
+app whose calls would be rejected at runtime. See
+[Plugins on the Mac and the watch](/extending/plugins-on-the-mac-and-the-watch/).
 
 And at runtime the same idea: a method the plugin does not handle **rejects the
 promise naming the method that was asked for**. It does not hang and it does not
@@ -454,8 +453,6 @@ A method with no canned answer is rejected too, with the method's name in it.
   `android.jar`; there is no Gradle here, and without Gradle no `kotlinc` comes
   for free. A plugin with `.kt` sources **stops the build** and says so, rather
   than producing an APK with those files silently left out.
-- **watchOS and macOS.** Neither host has a registry. An app with plugins does
-  not compile for either, and says so.
 - **A deadline for one that does not answer.** A plugin that keeps its call
   object and calls neither `resolve` nor `reject` leaves the promise waiting. It
   would want a per-call timeout — a camera takes minutes, reading the clipboard

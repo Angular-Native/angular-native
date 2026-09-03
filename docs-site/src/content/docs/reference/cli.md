@@ -257,9 +257,7 @@ Android.
 There is no `an dev --ios` — iOS is the default.
 
 `--macos` has no simulator to launch into: `an dev --macos` kills the window
-that was already open and opens a new one, the same as `an macos`. It refuses
-before building anything if the app depends on a plugin, because the desktop
-host has no plugin registry.
+that was already open and opens a new one, the same as `an macos`.
 
 `--device` behaves as "if you did not change it, use this platform's default":
 `--watchos` gets the watch, `--tvos` the Apple TV, `--visionos` the headset.
