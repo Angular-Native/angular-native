@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# El host de macOS: lo que hay que ejecutar para comprobarlo.
+# The macOS host: what has to be run to check it.
 #
-# Las comprobaciones de texto —el inventario contra el enum, la lista de props
-# ignoradas, la recarga en caliente— están en `check-macos.py`. Aquí está lo que
-# es un proceso: compilar, armar el `.app`, arrancarlo y mirar lo que pintó.
+# The text checks —the inventory against the enum, the list of ignored props,
+# the hot reload— are in `check-macos.py`. What is here is what is a process:
+# compiling, building the `.app`, launching it and looking at what it painted.
 #
-# **Y arrancarlo se puede.** Es lo que separa a esta plataforma de las otras
-# cuatro: no hay simulador que levantar ni aparato que buscar, la app corre en
-# la misma máquina que la compiló y termina sola. Así que aquí la comprobación
-# no se queda en «cruza-compila»: la app se abre, monta el árbol y se hace una
-# captura a sí misma, y lo que se mira es esa imagen.
+# **And launching it can be done.** That is what separates this platform from
+# the other four: there is no simulator to bring up and no device to look for,
+# the app runs on the same machine that compiled it and terminates on its own.
+# So the check here does not stop at "it cross-compiles": the app opens, mounts
+# the tree and takes a screenshot of itself, and what is examined is that image.
 #
-# La captura la hace la app y no `screencapture` a propósito. Pedirle la
-# pantalla al sistema exige el permiso de grabación, que se concede a mano y por
-# aplicación: una comprobación que depende de eso falla en la máquina de
-# cualquiera que no lo haya concedido, y falla por un motivo que no tiene nada
-# que ver con lo que se estaba comprobando. Una vista, en cambio, sabe dibujarse
-# en un mapa de bits sin pedir permiso a nadie. Ver
+# The screenshot is taken by the app and not by `screencapture` on purpose.
+# Asking the system for the screen requires the recording permission, which is
+# granted by hand and per application: a check that depends on that fails on the
+# machine of anyone who has not granted it, and fails for a reason that has
+# nothing to do with what was being checked. A view, on the other hand, knows how
+# to draw itself into a bitmap without asking anyone's permission. See
 # `shells/macos/Sources/Screenshot.swift`.
 set -euo pipefail
 
@@ -27,35 +27,35 @@ fail=0
 
 echo "== macOS"
 
-# Lo de texto va primero: es instantáneo y no compila nada, así que si el
-# inventario está mal se sabe antes de esperar a un enlazado.
+# The text checks go first: they are instant and compile nothing, so if the
+# inventory is wrong it is known before waiting for a link.
 if ! python3 "$ROOT/scripts/check-macos.py" "$ROOT"; then
   fail=1
 fi
 
 if [ "$(uname -s)" != "Darwin" ]; then
-  echo "  --   el resto se omite: el host de macOS solo se compila en un Mac"
+  echo "  --   the rest is skipped: the macOS host only compiles on a Mac"
   exit "$fail"
 fi
 
-# 1. El inventario, por dentro. No abre ninguna ventana: `support.rs` está fuera
-#    de `cfg(target_os = "macos")` para poder mirarlo desde aquí.
+# 1. The inventory, from the inside. It opens no window: `support.rs` is outside
+#    `cfg(target_os = "macos")` so it can be looked at from here.
 if cargo test --quiet -p an-macos >/dev/null 2>&1; then
-  echo "  ok   el inventario de primitivas se sostiene"
+  echo "  ok   the inventory of primitives holds up"
 else
-  echo "  FALLO los tests de an-macos no pasan"
+  echo "  FAIL the an-macos tests do not pass"
   cargo test -p an-macos 2>&1 | tail -20
   fail=1
 fi
 
-# 2. El `.app` entero: núcleo para aarch64-apple-darwin, shell de AppKit
-#    enlazado con swiftc y firma ad-hoc. Sin la firma, macOS mata la app al
-#    primer trozo de código que genera QuickJS.
+# 2. The whole `.app`: core for aarch64-apple-darwin, AppKit shell linked with
+#    swiftc and an ad-hoc signature. Without the signature, macOS kills the app
+#    at the first piece of code QuickJS generates.
 BUILD_LOG="$(mktemp)"
 if cargo an macos --no-launch >"$BUILD_LOG" 2>&1; then
-  echo "  ok   el .app se arma y se firma"
+  echo "  ok   the .app is built and signed"
 else
-  echo "  FALLO el .app de macOS no se arma"
+  echo "  FAIL the macOS .app does not build"
   tail -30 "$BUILD_LOG"
   rm -f "$BUILD_LOG"
   exit 1
@@ -64,117 +64,123 @@ rm -f "$BUILD_LOG"
 
 APP="$ROOT/build/macos/AngularNativeMac.app"
 
-# 3. La forma del bundle. Un `.app` de macOS no es plano como el de iOS, y uno
-#    mal armado lo abre el Finder y lo rechaza `open` sin decir por qué.
-faltan=()
-for pieza in Contents/Info.plist Contents/MacOS/AngularNativeMac Contents/Resources/main.js; do
-  [ -e "$APP/$pieza" ] || faltan+=("$pieza")
+# 3. The shape of the bundle. A macOS `.app` is not flat like the iOS one, and a
+#    badly built one is opened by the Finder and rejected by `open` without
+#    saying why.
+missing=()
+for piece in Contents/Info.plist Contents/MacOS/AngularNativeMac Contents/Resources/main.js; do
+  [ -e "$APP/$piece" ] || missing+=("$piece")
 done
-if [ "${#faltan[@]}" -eq 0 ]; then
-  echo "  ok   el bundle tiene su Info.plist, su ejecutable y su main.js"
+if [ "${#missing[@]}" -eq 0 ]; then
+  echo "  ok   the bundle has its Info.plist, its executable and its main.js"
 else
-  echo "  FALLO al bundle le faltan: ${faltan[*]}"
+  echo "  FAIL the bundle is missing: ${missing[*]}"
   fail=1
 fi
 
 if codesign --verify --deep "$APP" >/dev/null 2>&1; then
-  echo "  ok   la firma ad-hoc vale"
+  echo "  ok   the ad-hoc signature is valid"
 else
-  echo "  FALLO el .app no está firmado: QuickJS moriría al generar código"
+  echo "  FAIL the .app is not signed: QuickJS would die generating code"
   fail=1
 fi
 
-# 4. Y ahora la de verdad: arrancarla.
-SHOT="$ROOT/build/macos/captura.png"
+# 4. And now the real one: launching it.
+SHOT="$ROOT/build/macos/screenshot.png"
 RUN_LOG="$(mktemp)"
 rm -f "$SHOT"
 if AN_SCREENSHOT="$SHOT" "$APP/Contents/MacOS/AngularNativeMac" >"$RUN_LOG" 2>&1; then
-  echo "  ok   la app arranca, monta el árbol y se cierra sola"
+  echo "  ok   the app starts, mounts the tree and closes on its own"
 else
-  echo "  FALLO la app no llegó a montar nada (código $?)"
+  echo "  FAIL the app never mounted anything (exit code $?)"
   tail -30 "$RUN_LOG"
   fail=1
 fi
 
-# 5. Que pintó. Un PNG del tamaño correcto y enteramente negro pesa lo suyo y
-#    pasaría cualquier prueba que mire el tamaño del fichero, así que lo que se
-#    mira es cuántos colores distintos hay: la app los cuenta al guardar.
-colores="$(sed -n 's/.*, \([0-9]*\) colores).*/\1/p' "$RUN_LOG" | tail -1)"
-if [ -s "$SHOT" ] && [ -n "$colores" ] && [ "$colores" -gt 16 ]; then
-  echo "  ok   la ventana pintó los controles ($colores colores en la captura)"
+# 5. That it painted. A PNG of the right size and entirely black weighs its
+#    share and would pass any test that looks at the file size, so what is
+#    examined is how many distinct colours there are: the app counts them as it
+#    saves.
+colours="$(sed -n 's/.*, \([0-9]*\) colours).*/\1/p' "$RUN_LOG" | tail -1)"
+if [ -s "$SHOT" ] && [ -n "$colours" ] && [ "$colours" -gt 16 ]; then
+  echo "  ok   the window painted the controls ($colours colours in the screenshot)"
 else
-  echo "  FALLO la captura salió en blanco o no se escribió"
+  echo "  FAIL the screenshot came out blank or was not written"
   fail=1
 fi
 
-# 6. El camino ruidoso, que es el que sostiene la regla de la casa. El ejemplo
-#    de los controles usa props que AppKit no puede honrar, y tienen que salir
-#    por pantalla la primera vez que llegan.
-if grep -q "no se aplica en macOS" "$RUN_LOG"; then
-  echo "  ok   lo que AppKit no cubre se dice al llegar, no se traga"
+# 6. The noisy path, which is what holds up the house rule. The controls example
+#    uses props AppKit cannot honour, and they have to come out on screen the
+#    first time they arrive.
+#
+# The host is a crate and is being translated on its own branch, so the patterns
+# that read its prose accept either language.
+if grep -qE "no se aplica en macOS|does not apply on macOS" "$RUN_LOG"; then
+  echo "  ok   what AppKit does not cover is said on arrival, not swallowed"
 else
-  echo "  FALLO ninguna prop descartada salió por pantalla: el aviso no funciona"
+  echo "  FAIL not one discarded prop came out on screen: the warning does not work"
   fail=1
 fi
 
-# 7. Y el reverso: nada que nadie haya declarado. Una «prop desconocida» es una
-#    prop que este host no mira y que tampoco está en IGNORED, o sea, un olvido.
-if grep -q "prop desconocida" "$RUN_LOG"; then
-  echo "  FALLO hay props que el host no mira y que no están declaradas:"
-  grep "prop desconocida" "$RUN_LOG" | sed 's/^/       /'
+# 7. And the reverse: nothing nobody has declared. An "unknown prop" is a prop
+#    this host does not look at and that is not in IGNORED either, that is, an
+#    oversight.
+if grep -qE "prop desconocida|unknown prop" "$RUN_LOG"; then
+  echo "  FAIL there are props the host does not look at and that are not declared:"
+  grep -E "prop desconocida|unknown prop" "$RUN_LOG" | sed 's/^/       /'
   fail=1
 else
-  echo "  ok   ninguna prop del ejemplo se queda sin dueño"
+  echo "  ok   no prop of the example is left without an owner"
 fi
 
-# 8. El escritorio de verdad: el puntero y el deslizamiento.
+# 8. The real desktop: the pointer and the swipe.
 #
-# Las dos cosas que esta plataforma tiene y las otras cuatro no, y las dos se
-# pueden comprobar aquí *corriendo la app*, que es lo que separa a macOS del
-# resto: no hay simulador que levantar ni aparato que buscar.
+# The two things this platform has and the other four do not, and both can be
+# checked here *by running the app*, which is what separates macOS from the
+# rest: there is no simulator to bring up and no device to look for.
 #
-# El puntero se mueve de verdad. `CGWarpMouseCursorPosition` no pide ningún
-# permiso —no es `CGEventPost`, que sí exige accesibilidad—, así que lo que
-# entra en el `NSTrackingArea` es el ratón, y lo que sale en la imagen es el
-# área del sistema haciendo su trabajo.
+# The pointer really moves. `CGWarpMouseCursorPosition` asks for no permission
+# —it is not `CGEventPost`, which does require accessibility—, so what enters the
+# `NSTrackingArea` is the mouse, and what comes out in the picture is the system
+# area doing its job.
 #
-# El deslizamiento no se puede provocar: el gesto lo reconoce el sistema a
-# partir de dos dedos en el trackpad y no hay forma de pedírselo. Lo que sí se
-# puede es entrar por su misma puerta —`swipeWithEvent:` sobre la vista que hay
-# bajo el punto— con los deltas que manda él, y comprobar todo lo que viene
-# después. Ver `Screenshot.swift`.
+# The swipe cannot be provoked: the gesture is recognised by the system from two
+# fingers on the trackpad and there is no way to ask it for one. What can be done
+# is to come in through its own door —`swipeWithEvent:` on the view under the
+# point— with the deltas it sends, and check everything that comes after. See
+# `Screenshot.swift`.
 BUILD_LOG="$(mktemp)"
 if cargo an macos examples/desktop --no-launch >"$BUILD_LOG" 2>&1; then
-  echo "  ok   el ejemplo del escritorio se arma"
+  echo "  ok   the desktop example builds"
 else
-  echo "  FALLO el ejemplo del escritorio no se arma"
+  echo "  FAIL the desktop example does not build"
   tail -20 "$BUILD_LOG"
   fail=1
 fi
 rm -f "$BUILD_LOG"
 
 BIN="$APP/Contents/MacOS/AngularNativeMac"
-SHOT_QUIETO="$ROOT/build/macos/escritorio.png"
-SHOT_ENCIMA="$ROOT/build/macos/escritorio-encima.png"
+SHOT_STILL="$ROOT/build/macos/desktop.png"
+SHOT_HOVER="$ROOT/build/macos/desktop-hover.png"
 DESK_LOG="$(mktemp)"
 HOVER_LOG="$(mktemp)"
 
-AN_SCREENSHOT="$SHOT_QUIETO" AN_SCREENSHOT_FRAMES=150 \
+AN_SCREENSHOT="$SHOT_STILL" AN_SCREENSHOT_FRAMES=150 \
   AN_SCREENSHOT_SWIPE=360,600,-1,0 "$BIN" >"$DESK_LOG" 2>&1 || true
 
-# El signo lo dice `NSEvent.h`: «-1 for swipe right». Si esta línea deja de
-# cuadrar es que alguien cambió la correspondencia, no que el gesto no llegue.
-if grep -q "\[swipe\] derecha" "$DESK_LOG"; then
-  echo "  ok   un deslizamiento con deltaX -1 llega a la plantilla como «derecha»"
+# The sign comes from `NSEvent.h`: "-1 for swipe right". If this line stops
+# adding up, somebody changed the mapping, not that the gesture fails to arrive.
+if grep -q "\[swipe\] right" "$DESK_LOG"; then
+  echo "  ok   a swipe with deltaX -1 reaches the template as \"right\""
 else
-  echo "  FALLO el deslizamiento no llegó a la plantilla"
+  echo "  FAIL the swipe never reached the template"
   fail=1
 fi
 
-# El puntero encima de la primera tarjeta. Las coordenadas son las de la
-# ventana de 720x820 que abre el shell; si el ejemplo cambia de sitio, aquí
-# hay que moverlas.
-AN_SCREENSHOT="$SHOT_ENCIMA" AN_SCREENSHOT_FRAMES=150 \
+# The pointer over the first card. The coordinates are those of the 720x820
+# window the shell opens; if the example moves things around, they have to be
+# moved here.
+AN_SCREENSHOT="$SHOT_HOVER" AN_SCREENSHOT_FRAMES=150 \
   AN_SCREENSHOT_HOVER=97,200 "$BIN" >"$HOVER_LOG" 2>&1 || true
 
 # A hover only happens if the window is actually under the pointer, and that
@@ -184,39 +190,40 @@ AN_SCREENSHOT="$SHOT_ENCIMA" AN_SCREENSHOT_FRAMES=150 \
 # separate runs. So the precondition is checked first and reported as a skip,
 # loudly and with its reason. A skip is not a pass: the run says so, and the
 # same binary passes as soon as nothing else is fighting for the front.
-if grep -q "\[hover\] dentro de pointer" "$HOVER_LOG"; then
-  echo "  ok   el puntero entra en la vista y la plantilla se entera"
+if grep -q "\[hover\] inside pointer" "$HOVER_LOG"; then
+  echo "  ok   the pointer enters the view and the template hears about it"
 elif grep -q "frontmost=no" "$HOVER_LOG"; then
-  echo "  omitida el (hover): la app no llegó al frente, así que el puntero"
-  echo "           nunca estuvo encima. Ciérrale los simuladores y repite."
+  echo "  skipped the (hover): the app never reached the front, so the pointer"
+  echo "           was never on top of it. Close the simulators and try again."
 else
-  echo "  FALLO nadie recibió el (hover) con el ratón encima"
+  echo "  FAIL nobody received the (hover) with the mouse on top"
   fail=1
 fi
 
-# Y que además se vea. Un `(hover)` que llega y no cambia nada en pantalla es
-# la mitad del trabajo: lo que hay que comprobar es que el árbol se recompuso.
-if [ -s "$SHOT_QUIETO" ] && [ -s "$SHOT_ENCIMA" ] \
-  && ! cmp -s "$SHOT_QUIETO" "$SHOT_ENCIMA"; then
-  echo "  ok   y la ventana cambia con el ratón encima"
+# And that it also shows. A `(hover)` that arrives and changes nothing on screen
+# is half the job: what has to be checked is that the tree was recomposed.
+if [ -s "$SHOT_STILL" ] && [ -s "$SHOT_HOVER" ] \
+  && ! cmp -s "$SHOT_STILL" "$SHOT_HOVER"; then
+  echo "  ok   and the window changes with the mouse on top"
 else
-  echo "  FALLO la ventana sale igual con el ratón encima que sin él"
+  echo "  FAIL the window looks the same with the mouse on top as without it"
   fail=1
 fi
 
-# 9. El mapa y el vídeo, que son los dos que faltaban.
+# 9. The map and the video, which are the two that were left.
 #
-# Lo que se mira del mapa es la imagen: `MKMapView` dibuja teselas y eso sube
-# el recuento de colores muy por encima de lo que da una caja vacía. Del vídeo
-# no se puede mirar la imagen y no se disimula: `AVPlayerView` compone sus
-# fotogramas fuera del dibujado de la vista —por eso tampoco los ve
-# `cacheDisplay`—, así que lo que se comprueba es que se monta como vista de
-# verdad y que el reproductor no falla. Está dicho en docs/macos.md.
+# What is examined of the map is the image: `MKMapView` draws tiles and that
+# pushes the colour count well above what an empty box gives. Of the video the
+# image cannot be examined, and that is not glossed over: `AVPlayerView`
+# composes its frames outside the view's drawing —which is also why
+# `cacheDisplay` does not see them—, so what is checked is that it mounts as a
+# real view and that the player does not fail. It is written down in
+# docs/macos.md.
 BUILD_LOG="$(mktemp)"
 if cargo an macos examples/media --no-launch >"$BUILD_LOG" 2>&1; then
-  echo "  ok   el ejemplo de mapa y vídeo se arma"
+  echo "  ok   the map and video example builds"
 else
-  echo "  FALLO el ejemplo de mapa y vídeo no se arma"
+  echo "  FAIL the map and video example does not build"
   tail -20 "$BUILD_LOG"
   fail=1
 fi
@@ -227,27 +234,27 @@ MEDIA_LOG="$(mktemp)"
 AN_SCREENSHOT="$SHOT_MEDIA" AN_SCREENSHOT_FRAMES=240 \
   AN_SCREENSHOT_PRESS=360,782 "$BIN" >"$MEDIA_LOG" 2>&1 || true
 
-if grep -q "no se pinta en macOS" "$MEDIA_LOG"; then
-  echo "  FALLO el mapa o el vídeo siguen sin pintarse:"
-  grep "no se pinta en macOS" "$MEDIA_LOG" | sed 's/^/       /'
+if grep -qE "no se pinta en macOS|is not drawn on macOS" "$MEDIA_LOG"; then
+  echo "  FAIL the map or the video still are not painted:"
+  grep -E "no se pinta en macOS|is not drawn on macOS" "$MEDIA_LOG" | sed 's/^/       /'
   fail=1
 else
-  echo "  ok   el mapa y el vídeo se montan con su vista del sistema"
+  echo "  ok   the map and the video mount with their system view"
 fi
 
-if grep -q "no se puede reproducir" "$MEDIA_LOG"; then
-  echo "  FALLO el reproductor falló:"
-  grep "no se puede reproducir" "$MEDIA_LOG" | sed 's/^/       /'
+if grep -qE "no se puede reproducir|cannot be played" "$MEDIA_LOG"; then
+  echo "  FAIL the player failed:"
+  grep -E "no se puede reproducir|cannot be played" "$MEDIA_LOG" | sed 's/^/       /'
   fail=1
 else
-  echo "  ok   el reproductor no falló al ponerse en marcha"
+  echo "  ok   the player did not fail on starting up"
 fi
 
-colores_media="$(sed -n 's/.*, \([0-9]*\) colores).*/\1/p' "$MEDIA_LOG" | tail -1)"
-if [ -n "$colores_media" ] && [ "$colores_media" -gt 200 ]; then
-  echo "  ok   el mapa dibuja de verdad ($colores_media colores en la captura)"
+media_colours="$(sed -n 's/.*, \([0-9]*\) colours).*/\1/p' "$MEDIA_LOG" | tail -1)"
+if [ -n "$media_colours" ] && [ "$media_colours" -gt 200 ]; then
+  echo "  ok   the map really draws ($media_colours colours in the screenshot)"
 else
-  echo "  FALLO el mapa salió liso: ${colores_media:-ninguna captura} colores"
+  echo "  FAIL the map came out flat: ${media_colours:-no screenshot} colours"
   fail=1
 fi
 

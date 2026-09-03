@@ -3,17 +3,17 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
 import type { NativeCursor, NativeHoverEvent } from '@angular-native/primitives'
 
 /**
- * Lo que solo existe en un escritorio: puntero, forma del puntero, y el gesto
- * de deslizar del trackpad.
+ * What only exists on a desktop: the pointer, the shape of the pointer, and the
+ * trackpad swipe gesture.
  *
- * No hay ninguno de los tres en un teléfono, así que este ejemplo no está para
- * verse en el simulador: está para verse en un Mac, con un ratón encima. Las
- * tres cosas las entrega el sistema —`NSTrackingArea`, `NSCursor` y
- * `swipeWithEvent:`— y ninguna se dibuja aquí.
+ * There is none of the three on a phone, so this example is not meant to be
+ * looked at in the simulator: it is meant to be looked at on a Mac, with a mouse
+ * on it. All three things are delivered by the system —`NSTrackingArea`,
+ * `NSCursor` and `swipeWithEvent:`— and none of them is drawn here.
  *
- * La cabecera de arriba no se ve en el contenido a propósito: en macOS el
- * `[title]` de un `<an-navigation-bar>` acaba en la barra de título de la
- * ventana, que es donde un usuario de Mac lo busca, y el nodo no ocupa sitio.
+ * The navigation bar at the top is deliberately not visible in the content: on
+ * macOS the `[title]` of an `<an-navigation-bar>` ends up in the window's title
+ * bar, which is where a Mac user looks for it, and the node takes up no room.
  */
 @Component({
   selector: 'app-root',
@@ -26,16 +26,16 @@ import type { NativeCursor, NativeHoverEvent } from '@angular-native/primitives'
       [style.padding]="'20'"
       [style.gap]="'18'"
       [backgroundColor]="'#0b1020'">
-      <an-navigation-bar [title]="titulo()" />
+      <an-navigation-bar [title]="title()" />
 
-      <an-text [fontSize]="26" [fontWeight]="700" [color]="'#f8fafc'">escritorio</an-text>
-      <an-text [fontSize]="13" [color]="'#94a3b8'">{{ pista() }}</an-text>
+      <an-text [fontSize]="26" [fontWeight]="700" [color]="'#f8fafc'">desktop</an-text>
+      <an-text [fontSize]="13" [color]="'#94a3b8'">{{ hint() }}</an-text>
 
-      <!-- Pasar por encima. El fondo, el borde y el rótulo cambian con
-           (hover), y el puntero cambia con [cursor]. -->
-      <an-text [fontSize]="15" [fontWeight]="600" [color]="'#cbd5e1'">encima</an-text>
+      <!-- Hovering. The background, the border and the label change with
+           (hover), and the pointer changes with [cursor]. -->
+      <an-text [fontSize]="15" [fontWeight]="600" [color]="'#cbd5e1'">hover</an-text>
       <an-view [style.flexDirection]="'row'" [style.gap]="'12'" [style.height]="86">
-        @for (tarjeta of tarjetas; track tarjeta.nombre) {
+        @for (card of cards; track card.name) {
           <an-view
             [style.flexGrow]="'1'"
             [style.alignItems]="'center'"
@@ -43,34 +43,34 @@ import type { NativeCursor, NativeHoverEvent } from '@angular-native/primitives'
             [style.gap]="'6'"
             [borderRadius]="12"
             [borderWidth]="2"
-            [borderColor]="encima() === tarjeta.nombre ? '#6ee7b7' : '#1e293b'"
-            [backgroundColor]="encima() === tarjeta.nombre ? '#12324a' : '#111a2e'"
-            [cursor]="tarjeta.cursor"
-            (hover)="onHover(tarjeta.nombre, $event)">
+            [borderColor]="hovered() === card.name ? '#6ee7b7' : '#1e293b'"
+            [backgroundColor]="hovered() === card.name ? '#12324a' : '#111a2e'"
+            [cursor]="card.cursor"
+            (hover)="onHover(card.name, $event)">
             <an-text [fontSize]="15" [fontWeight]="600" [color]="'#e2e8f0'">
-              {{ tarjeta.nombre }}
+              {{ card.name }}
             </an-text>
             <an-text [fontSize]="12" [color]="'#94a3b8'">
-              {{ encima() === tarjeta.nombre ? 'dentro' : 'fuera' }}
+              {{ hovered() === card.name ? 'inside' : 'outside' }}
             </an-text>
           </an-view>
         }
       </an-view>
 
-      <!-- Un control del sistema también sabe decir cuándo tiene el puntero
-           encima: el área vigilada no la lleva la vista, la lleva un objeto
-           aparte, así que no hace falta subclasear el NSButton. -->
+      <!-- A system control can report the pointer being over it too: the
+           tracking area is not carried by the view, it is carried by a separate
+           object, so there is no need to subclass the NSButton. -->
       <an-button
         [style.height]="40"
-        [title]="botonEncima() ? 'y un botón del sistema también' : 'pasa por aquí'"
+        [title]="buttonHovered() ? 'and a system button too' : 'come over here'"
         [variant]="'tonal'"
         [color]="'#6ee7b7'"
         [cursor]="'pointer'"
-        (hover)="botonEncima.set($event.hovered)"
-        (press)="pulsaciones.set(pulsaciones() + 1)"></an-button>
+        (hover)="buttonHovered.set($event.hovered)"
+        (press)="presses.set(presses() + 1)"></an-button>
 
-      <!-- Deslizar. Dos dedos en el trackpad, con el umbral del sistema. -->
-      <an-text [fontSize]="15" [fontWeight]="600" [color]="'#cbd5e1'">deslizar</an-text>
+      <!-- Swiping. Two fingers on the trackpad, with the system threshold. -->
+      <an-text [fontSize]="15" [fontWeight]="600" [color]="'#cbd5e1'">swipe</an-text>
       <an-view
         [style.flex]="1"
         [style.alignItems]="'center'"
@@ -79,14 +79,14 @@ import type { NativeCursor, NativeHoverEvent } from '@angular-native/primitives'
         [borderRadius]="14"
         [backgroundColor]="'#111a2e'"
         [cursor]="'grab'"
-        (swipeLeft)="onSwipe('izquierda', '←')"
-        (swipeRight)="onSwipe('derecha', '→')"
-        (swipeUp)="onSwipe('arriba', '↑')"
-        (swipeDown)="onSwipe('abajo', '↓')">
-        <an-text [fontSize]="34" [fontWeight]="700" [color]="'#6ee7b7'">{{ flecha() }}</an-text>
-        <an-text [fontSize]="14" [color]="'#e2e8f0'">{{ ultimoDeslizamiento() }}</an-text>
+        (swipeLeft)="onSwipe('left', '←')"
+        (swipeRight)="onSwipe('right', '→')"
+        (swipeUp)="onSwipe('up', '↑')"
+        (swipeDown)="onSwipe('down', '↓')">
+        <an-text [fontSize]="34" [fontWeight]="700" [color]="'#6ee7b7'">{{ arrow() }}</an-text>
+        <an-text [fontSize]="14" [color]="'#e2e8f0'">{{ lastSwipe() }}</an-text>
         <an-text [fontSize]="12" [color]="'#94a3b8'">
-          deslizamientos: {{ deslizamientos() }} · pulsaciones: {{ pulsaciones() }}
+          swipes: {{ swipes() }} · presses: {{ presses() }}
         </an-text>
       </an-view>
     </an-view>
@@ -94,42 +94,42 @@ import type { NativeCursor, NativeHoverEvent } from '@angular-native/primitives'
 })
 export class AppComponent {
   /**
-   * Cada tarjeta enseña un puntero del sistema distinto. Son los de
-   * `NSCursor`, pedidos por el nombre de CSS.
+   * Each card shows a different system pointer. They are `NSCursor`'s own,
+   * asked for by their CSS name.
    */
-  readonly tarjetas: ReadonlyArray<{ nombre: string; cursor: NativeCursor }> = [
-    { nombre: 'pointer', cursor: 'pointer' },
-    { nombre: 'text', cursor: 'text' },
-    { nombre: 'crosshair', cursor: 'crosshair' },
-    { nombre: 'not-allowed', cursor: 'not-allowed' }
+  readonly cards: ReadonlyArray<{ name: string; cursor: NativeCursor }> = [
+    { name: 'pointer', cursor: 'pointer' },
+    { name: 'text', cursor: 'text' },
+    { name: 'crosshair', cursor: 'crosshair' },
+    { name: 'not-allowed', cursor: 'not-allowed' }
   ]
 
-  readonly encima = signal<string | null>(null)
-  readonly botonEncima = signal(false)
-  readonly pulsaciones = signal(0)
-  readonly deslizamientos = signal(0)
-  readonly ultimoDeslizamiento = signal('todavía nada')
+  readonly hovered = signal<string | null>(null)
+  readonly buttonHovered = signal(false)
+  readonly presses = signal(0)
+  readonly swipes = signal(0)
+  readonly lastSwipe = signal('nothing yet')
 
-  readonly titulo = signal('escritorio · angular-native')
+  readonly title = signal('desktop · angular-native')
 
-  readonly pista = signal(
-    'pasa el ratón por las tarjetas y desliza con dos dedos en el recuadro de abajo'
+  readonly hint = signal(
+    'hover the cards with the mouse and swipe with two fingers in the box below'
   )
 
-  readonly flecha = signal('·')
+  readonly arrow = signal('·')
 
-  onHover(nombre: string, evento: NativeHoverEvent): void {
-    this.encima.set(evento.hovered ? nombre : null)
-    if (evento.hovered) {
-      // El punto llega en coordenadas de la vista, igual que el de un (press).
-      console.log(`[hover] dentro de ${nombre} en ${Math.round(evento.x)},${Math.round(evento.y)}`)
+  onHover(name: string, event: NativeHoverEvent): void {
+    this.hovered.set(event.hovered ? name : null)
+    if (event.hovered) {
+      // The point arrives in view coordinates, just like a (press) one.
+      console.log(`[hover] inside ${name} at ${Math.round(event.x)},${Math.round(event.y)}`)
     }
   }
 
-  onSwipe(direccion: string, flecha: string): void {
-    this.deslizamientos.set(this.deslizamientos() + 1)
-    this.ultimoDeslizamiento.set(direccion)
-    this.flecha.set(flecha)
-    console.log(`[swipe] ${direccion}`)
+  onSwipe(direction: string, arrow: string): void {
+    this.swipes.set(this.swipes() + 1)
+    this.lastSwipe.set(direction)
+    this.arrow.set(arrow)
+    console.log(`[swipe] ${direction}`)
   }
 }

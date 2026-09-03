@@ -1,266 +1,273 @@
 #!/usr/bin/env python3
-"""Lo del host de macOS que se puede leer sin compilar nada.
+"""The parts of the macOS host that can be read without compiling anything.
 
-Va aparte del `.sh` por lo mismo que en el reloj: aquí se comparan listas que
-viven en ficheros distintos, y el shell no es sitio para eso. El `.sh` se queda
-con lo que sí es un proceso —compilar, armar el `.app`, arrancarlo—.
+It is kept apart from the `.sh` for the same reason as on the watch: here lists
+that live in different files are compared, and the shell is no place for that.
+The `.sh` keeps what really is a process —compiling, building the `.app`,
+launching it—.
 
-Las tres cosas que se miran son las tres formas que tiene este host de fallar en
-silencio:
+The three things looked at are the three ways this host has of failing silently:
 
-1. Una primitiva que el núcleo monta y que el inventario no nombra. El `match`
-   de `create` no compilaría, pero el informe de qué pinta macOS y qué no sí
-   seguiría compilando, y saldría con un hueco.
-2. Un `_ => {}` al final de un `match` de props o de estilos: la prop llega, no
-   se aplica y no lo dice nadie.
-3. Un shell que se copia el cliente del servidor de desarrollo en vez de usar el
-   de `shells/shared`: dos copias que se separan la primera vez que alguien
-   toca una.
+1. A primitive the core mounts and the inventory does not name. The `match` in
+   `create` would not compile, but the report of what macOS paints and what it
+   does not would still compile, and it would come out with a hole in it.
+2. A `_ => {}` at the end of a props or styles `match`: the prop arrives, is not
+   applied and nobody says so.
+3. A shell that copies the development server client instead of using the one in
+   `shells/shared`: two copies that drift apart the first time somebody touches
+   one of them.
 """
 
 import pathlib
 import re
 import sys
 
-raiz = pathlib.Path(sys.argv[1])
-fallos: list[str] = []
+root = pathlib.Path(sys.argv[1])
+failures: list[str] = []
 oks: list[str] = []
 
 
-def leer(ruta: str) -> str:
-    fichero = raiz / ruta
-    if not fichero.is_file():
-        fallos.append(f'  FALLO falta {ruta}')
+def read(path: str) -> str:
+    file = root / path
+    if not file.is_file():
+        failures.append(f'  FAIL {path} is missing')
         return ''
-    return fichero.read_text()
+    return file.read_text()
 
 
-props = leer('crates/an-core/src/props.rs')
-soporte = leer('crates/an-macos/src/support.rs')
-host = leer('crates/an-macos/src/host.rs')
-eventos = leer('crates/an-macos/src/events.rs')
-volteada = leer('crates/an-macos/src/flipped.rs')
-plist = leer('shells/macos/Resources/Info.plist')
-directivas = leer('packages/primitives/src/primitives.ts')
-cli = leer('crates/an-cli/src/macos.rs')
-raiz_swift = leer('shells/macos/Sources/RootViewController.swift')
+props = read('crates/an-core/src/props.rs')
+support = read('crates/an-macos/src/support.rs')
+host = read('crates/an-macos/src/host.rs')
+events = read('crates/an-macos/src/events.rs')
+flipped = read('crates/an-macos/src/flipped.rs')
+plist = read('shells/macos/Resources/Info.plist')
+directives = read('packages/primitives/src/primitives.ts')
+cli = read('crates/an-cli/src/macos.rs')
+root_swift = read('shells/macos/Sources/RootViewController.swift')
 
-# 1. La tabla del inventario contra el enum del núcleo.
+# 1. The inventory table against the core's enum.
 #
-# El enum se lee del núcleo y no se copia aquí: es la misma regla que en
-# `check-kinds.sh`, donde una lista escrita a mano es justo lo que se quiere
-# quitar de en medio.
-cuerpo = props[props.index('pub enum NodeKind {'):]
-cuerpo = cuerpo[:cuerpo.index('\n}')]
-# `RawText` es interno: nunca llega a montarse como vista, así que no tiene por
-# qué estar en un inventario de lo que se pinta.
-del_nucleo = {n for n in re.findall(r'^    ([A-Z]\w+),$', cuerpo, re.M)} - {'RawText'}
+# The enum is read from the core and not copied here: it is the same rule as in
+# `check-kinds.sh`, where a hand-written list is exactly what one wants out of
+# the way.
+body = props[props.index('pub enum NodeKind {'):]
+body = body[:body.index('\n}')]
+# `RawText` is internal: it never gets mounted as a view, so it has no business
+# being in an inventory of what gets painted.
+from_core = {n for n in re.findall(r'^    ([A-Z]\w+),$', body, re.M)} - {'RawText'}
 
-del_inventario = set(re.findall(r'NodeKind::(\w+),\s*Support::', soporte))
-del_inventario |= set(re.findall(r'\(\s*NodeKind::(\w+),\s*$', soporte, re.M))
+from_inventory = set(re.findall(r'NodeKind::(\w+),\s*Support::', support))
+from_inventory |= set(re.findall(r'\(\s*NodeKind::(\w+),\s*$', support, re.M))
 
-faltan = sorted(del_nucleo - del_inventario)
-sobran = sorted(del_inventario - del_nucleo)
-if faltan:
-    fallos.append(
-        '  FALLO el inventario de macOS no dice con qué pinta: ' + ', '.join(faltan)
+missing = sorted(from_core - from_inventory)
+extra = sorted(from_inventory - from_core)
+if missing:
+    failures.append(
+        '  FAIL the macOS inventory does not say what it paints these with: ' + ', '.join(missing)
     )
-if sobran:
-    fallos.append('  FALLO el inventario nombra primitivas que no existen: ' + ', '.join(sobran))
-if not faltan and not sobran and del_nucleo:
-    nativas = len(re.findall(r'Support::Native\(', soporte))
-    armadas = len(re.findall(r'Support::Assembled\(', soporte))
-    ausentes = len(re.findall(r'Support::Missing\(', soporte))
-    en_otro_sitio = len(re.findall(r'Support::Elsewhere\(', soporte))
+if extra:
+    failures.append('  FAIL the inventory names primitives that do not exist: ' + ', '.join(extra))
+if not missing and not extra and from_core:
+    native = len(re.findall(r'Support::Native\(', support))
+    assembled = len(re.findall(r'Support::Assembled\(', support))
+    absent = len(re.findall(r'Support::Missing\(', support))
+    elsewhere = len(re.findall(r'Support::Elsewhere\(', support))
     oks.append(
-        f'  ok   las {len(del_nucleo)} primitivas montables están en el inventario '
-        f'({nativas} con control del sistema, {armadas} armadas, '
-        f'{en_otro_sitio} que macOS pone fuera del árbol, {ausentes} que no trae)'
+        f'  ok   the {len(from_core)} mountable primitives are in the inventory '
+        f'({native} with a system control, {assembled} assembled, '
+        f'{elsewhere} that macOS puts outside the tree, {absent} it does not ship)'
     )
-    # Una primitiva declarada ausente tiene que avisar al montarse. Hoy no hay
-    # ninguna, y por eso el camino que avisaba se quitó del host: si alguien
-    # vuelve a declarar una, hay que volver a escribirlo o el nodo se montaría
-    # como una caja vacía y en silencio, que es lo que este fichero persigue.
-    if ausentes and 'HostView::Unsupported' not in host:
-        fallos.append(
-            '  FALLO el inventario declara una primitiva ausente y el host ya no tiene el '
-            'camino que lo dice al montarla'
+    # A primitive declared absent has to report itself when mounted. There is
+    # none today, and that is why the path that reported it was taken out of the
+    # host: if somebody declares one again, it has to be written back or the node
+    # would mount as an empty box and in silence, which is what this file is
+    # after.
+    if absent and 'HostView::Unsupported' not in host:
+        failures.append(
+            '  FAIL the inventory declares an absent primitive and the host no longer has the '
+            'path that says so when mounting it'
         )
-    elif not ausentes:
-        oks.append('  ok   no queda ninguna primitiva sin pintar en este host')
+    elif not absent:
+        oks.append('  ok   no primitive is left unpainted on this host')
 
-# 2. El reparto de props acaba avisando, no callando.
+# 2. The props dispatch ends up reporting, not keeping quiet.
 #
-# Los `_ => {}` que hay en `set_prop` son otra cosa y están bien: reparten por
-# *tipo de vista* —poner `textAlign` en un interruptor no hace nada y no tiene
-# por qué avisar—. Lo que no puede haber es un comodín en el reparto por
-# *nombre de prop*, que es donde se pierde lo que alguien escribió en una
-# plantilla. Ese `match` tiene que terminar en dos brazos: el de lo que se
-# ignora a sabiendas y el de lo que no conoce nadie.
-cuerpo_prop = host[host.index('fn set_prop('):] if 'fn set_prop(' in host else ''
-if '_ if ignored_reason(key).is_some()' not in cuerpo_prop:
-    fallos.append('  FALLO set_prop no consulta IGNORED: lo descartado no se distingue del olvido')
-elif 'prop desconocida' not in cuerpo_prop:
-    fallos.append('  FALLO set_prop se traga las props que no conoce sin decirlo')
-elif re.search(r'\n            _ => \{\s*\}\n        \}\n    \}', cuerpo_prop):
-    fallos.append('  FALLO set_prop termina en un comodín vacío')
+# The `_ => {}` arms inside `set_prop` are another thing and they are fine: they
+# dispatch by *view type* —putting `textAlign` on a switch does nothing and has
+# no reason to report anything—. What there cannot be is a wildcard in the
+# dispatch by *prop name*, which is where whatever somebody wrote in a template
+# gets lost. That `match` has to end in two arms: the one for what is knowingly
+# ignored and the one for what nobody knows about.
+prop_body = host[host.index('fn set_prop('):] if 'fn set_prop(' in host else ''
+# The host is a crate translated on its own branch, so the message it prints for
+# an unknown prop is matched in either language.
+if '_ if ignored_reason(key).is_some()' not in prop_body:
+    failures.append('  FAIL set_prop does not consult IGNORED: the discarded is indistinguishable from the forgotten')
+elif not re.search(r'prop desconocida|unknown prop', prop_body):
+    failures.append('  FAIL set_prop swallows the props it does not know without saying so')
+elif re.search(r'\n            _ => \{\s*\}\n        \}\n    \}', prop_body):
+    failures.append('  FAIL set_prop ends in an empty wildcard')
 else:
-    oks.append('  ok   una prop que macOS no mira sale por la salida de error')
+    oks.append('  ok   a prop macOS does not look at comes out on the error output')
 
-# 3. Lo que macOS no puede honrar, dicho y con motivo.
+# 3. What macOS cannot honour, said out loud and with a reason.
 #
-# `IGNORED` es la lista de props que este host no aplica a propósito. Sin motivo
-# escrito, el aviso que sale por pantalla no sirve de nada. Se recorta la lista
-# antes de leerla: en un fichero de mil seiscientas líneas hay muchas tuplas de
-# dos cadenas que no son esta.
+# `IGNORED` is the list of props this host deliberately does not apply. Without a
+# written reason, the warning that comes out on screen is worth nothing. The list
+# is trimmed before being read: in a file of sixteen hundred lines there are many
+# two-string tuples that are not this one.
 if 'const IGNORED' in host:
-    lista = host[host.index('const IGNORED'):]
-    lista = lista[:lista.index('\n];')]
-    # Cada entrada empieza en `("nombre"`; el motivo es todo lo que va hasta la
-    # siguiente. Se corta así, y no con una expresión regular sobre la cadena
-    # entera, porque en Rust un literal largo se parte en varias líneas con `\`
-    # y ninguna expresión razonable lo recompone.
-    trozos = re.split(r'\n    \(', '\n' + lista)
-    ignoradas = []
-    for trozo in trozos:
-        m = re.match(r'\s*"(\w+)",(.*)', trozo, re.S)
+    listing = host[host.index('const IGNORED'):]
+    listing = listing[:listing.index('\n];')]
+    # Each entry starts at `("name"`; the reason is everything up to the next
+    # one. It is cut this way, and not with a regular expression over the whole
+    # string, because in Rust a long literal is split across several lines with
+    # `\` and no reasonable expression puts it back together.
+    chunks = re.split(r'\n    \(', '\n' + listing)
+    ignored = []
+    for chunk in chunks:
+        m = re.match(r'\s*"(\w+)",(.*)', chunk, re.S)
         if m:
-            ignoradas.append((m.group(1), m.group(2)))
-    sin_motivo = [nombre for nombre, motivo in ignoradas if len(re.findall(r'[a-zA-Z]', motivo)) < 8]
-    if not ignoradas:
-        fallos.append('  FALLO no se pudo leer la lista IGNORED de host.rs')
-    elif sin_motivo:
-        fallos.append('  FALLO estas props se ignoran sin decir por qué: ' + ', '.join(sin_motivo))
+            ignored.append((m.group(1), m.group(2)))
+    without_reason = [name for name, reason in ignored if len(re.findall(r'[a-zA-Z]', reason)) < 8]
+    if not ignored:
+        failures.append('  FAIL the IGNORED list of host.rs could not be read')
+    elif without_reason:
+        failures.append('  FAIL these props are ignored without saying why: ' + ', '.join(without_reason))
     else:
-        oks.append(f'  ok   las {len(ignoradas)} props que AppKit no cubre salen con su motivo')
+        oks.append(f'  ok   the {len(ignored)} props AppKit does not cover come out with their reason')
 
-# 4. El shell usa el cliente de desarrollo compartido, no una copia.
+# 4. The shell uses the shared development client, not a copy.
 if 'shells/shared' not in cli:
-    fallos.append('  FALLO el build de macOS no compila shells/shared: ¿se copió el DevClient?')
-elif any((raiz / 'shells/macos/Sources').glob('DevClient*.swift')):
-    fallos.append('  FALLO hay un DevClient dentro de shells/macos: el bueno vive en shells/shared')
+    failures.append('  FAIL the macOS build does not compile shells/shared: was the DevClient copied?')
+elif any((root / 'shells/macos/Sources').glob('DevClient*.swift')):
+    failures.append('  FAIL there is a DevClient inside shells/macos: the good one lives in shells/shared')
 else:
-    oks.append('  ok   el shell comparte el cliente de desarrollo de shells/shared')
+    oks.append('  ok   the shell shares the development client from shells/shared')
 
-# 5. La recarga en caliente no desmonta lo que sigue en pie.
+# 5. The hot reload does not unmount what is still standing.
 #
-# El fallo ya se cometió una vez —una recarga en caliente tiraba las vistas y
-# dejaba la ventana en negro—, y la única defensa es que el `clear()` esté
-# detrás de la condición.
-ffi = leer('crates/an-macos/src/ffi.rs')
+# The bug was already made once —a hot reload threw the views away and left the
+# window black—, and the only defence is that the `clear()` sits behind the
+# condition.
+ffi = read('crates/an-macos/src/ffi.rs')
 if not re.search(r'if !reply\.hot \{\s*\n\s*rt\.mount\.clear\(\);', ffi):
-    fallos.append(
-        '  FALLO an_runtime_reload desmonta sin mirar si la recarga fue en caliente'
+    failures.append(
+        '  FAIL an_runtime_reload unmounts without checking whether the reload was a hot one'
     )
 else:
-    oks.append('  ok   la recarga en caliente conserva las vistas montadas')
+    oks.append('  ok   the hot reload keeps the mounted views')
 
-# 6. El viewport se puede mover en caliente, que es lo que distingue una ventana
-#    de una pantalla de teléfono.
-if 'an_runtime_set_viewport' not in raiz_swift or 'viewDidLayout' not in raiz_swift:
-    fallos.append('  FALLO el shell no le cuenta al núcleo que la ventana cambió de tamaño')
+# 6. The viewport can move live, which is what tells a window from a phone
+#    screen.
+if 'an_runtime_set_viewport' not in root_swift or 'viewDidLayout' not in root_swift:
+    failures.append('  FAIL the shell does not tell the core the window changed size')
 else:
-    oks.append('  ok   redimensionar la ventana rehace el layout')
+    oks.append('  ok   resizing the window redoes the layout')
 
-# 7. Los frameworks que usa el host los nombra quien enlaza.
+# 7. The frameworks the host uses are named by whoever links.
 #
-# Es el fallo silencioso más caro de este host y ya se cobró una pieza: un
-# `staticlib` de Rust no arrastra sus dependencias nativas, así que el
-# `#[link(kind = "framework")]` del crate no llega al enlazador. Sin el
-# `-framework` en el `swiftc` del CLI, el `.app` se arma, se firma, arranca y
-# revienta al montar la primera vista de esa clase.
-declarados = set()
-for fichero in sorted((raiz / 'crates/an-macos/src').glob('*.rs')):
-    declarados.update(
-        re.findall(r'#\[link\(name = "(\w+)", kind = "framework"\)\]', fichero.read_text())
+# It is the most expensive silent failure of this host and it has already claimed
+# a piece: a Rust `staticlib` does not drag its native dependencies along, so the
+# crate's `#[link(kind = "framework")]` never reaches the linker. Without the
+# `-framework` in the CLI's `swiftc`, the `.app` builds, is signed, starts and
+# blows up on mounting the first view of that class.
+declared = set()
+for file in sorted((root / 'crates/an-macos/src').glob('*.rs')):
+    declared.update(
+        re.findall(r'#\[link\(name = "(\w+)", kind = "framework"\)\]', file.read_text())
     )
-if not declarados:
-    fallos.append('  FALLO no se pudo leer ningún #[link] de framework en an-macos')
+if not declared:
+    failures.append('  FAIL not one framework #[link] could be read from an-macos')
 else:
-    sin_enlazar = sorted(f for f in declarados if f'"{f}"' not in cli)
-    if sin_enlazar:
-        fallos.append(
-            '  FALLO el host usa estos frameworks y el enlazado del .app no los nombra: '
-            + ', '.join(sin_enlazar)
+    unlinked = sorted(f for f in declared if f'"{f}"' not in cli)
+    if unlinked:
+        failures.append(
+            '  FAIL the host uses these frameworks and the .app link does not name them: '
+            + ', '.join(unlinked)
         )
     else:
         oks.append(
-            f'  ok   los {len(declarados)} frameworks del host los nombra el enlazado del .app'
+            f'  ok   the {len(declared)} frameworks of the host are named by the .app link'
         )
 
-# 8. La cabecera va a la barra de título de la ventana, no a una vista.
+# 8. The navigation bar goes to the window's title bar, not to a view.
 #
-# Es la decisión de este host sobre `<an-navigation-bar>`, y tiene dos mitades
-# que se pueden romper por separado: que el `[title]` acabe en la ventana, y
-# que el nodo no deje hueco donde no hay nada. Sin la segunda, la pantalla
-# saldría con una franja vacía arriba y nadie sabría de dónde sale.
-controles = leer('crates/an-macos/src/controls.rs')
-if 'Support::Elsewhere' not in soporte or 'NavigationBar' not in soporte:
-    fallos.append('  FALLO el inventario no dice dónde acaba la cabecera de navegación')
+# It is this host's decision about `<an-navigation-bar>`, and it has two halves
+# that can break separately: that the `[title]` ends up in the window, and that
+# the node leaves no gap where there is nothing. Without the second, the screen
+# would come out with an empty strip at the top and nobody would know where it
+# came from.
+controls = read('crates/an-macos/src/controls.rs')
+if 'Support::Elsewhere' not in support or 'NavigationBar' not in support:
+    failures.append('  FAIL the inventory does not say where the navigation bar ends up')
 elif 'window.setTitle' not in host:
-    fallos.append('  FALLO el [title] de <an-navigation-bar> no llega a la barra de título')
-elif not re.search(r'"NavigationBar"\.to_owned\(\), \(0\.0, 0\.0\)', controles):
-    fallos.append(
-        '  FALLO la cabecera no mide cero en macOS: dejaría una franja vacía bajo la barra '
-        'de título'
+    failures.append('  FAIL the [title] of <an-navigation-bar> does not reach the title bar')
+elif not re.search(r'"NavigationBar"\.to_owned\(\), \(0\.0, 0\.0\)', controls):
+    failures.append(
+        '  FAIL the navigation bar does not measure zero on macOS: it would leave an empty strip '
+        'under the title bar'
     )
 else:
-    oks.append('  ok   el [title] de la cabecera acaba en la barra de título y el nodo no ocupa')
+    oks.append('  ok   the navigation bar [title] ends up in the title bar and the node takes no room')
 
-# 9. El deslizamiento es el del sistema, no un `pan` con un umbral inventado.
+# 9. The swipe is the system's, not a `pan` with a made-up threshold.
 #
-# AppKit no tiene reconocedor de deslizamiento, y la salida fácil habría sido
-# medir un arrastre y decidir por nuestra cuenta cuándo cuenta. El gesto de
-# verdad existe —`swipeWithEvent:`, con el umbral y el número de dedos que
-# decide el sistema— y es el que hay que atender.
-if 'swipeWithEvent' not in volteada:
-    fallos.append('  FALLO nadie atiende swipeWithEvent:, así que (swipeLeft) no llega nunca')
-elif 'msg_send![super(self), swipeWithEvent: event]' not in volteada:
-    fallos.append(
-        '  FALLO una vista que no escucha el deslizamiento se lo traga en vez de pasarlo a '
-        'la cadena de responder'
+# AppKit has no swipe recogniser, and the easy way out would have been to measure
+# a drag and decide on our own when it counts. The real gesture exists
+# —`swipeWithEvent:`, with the threshold and the finger count the system decides—
+# and that is the one to handle.
+if 'swipeWithEvent' not in flipped:
+    failures.append('  FAIL nobody handles swipeWithEvent:, so (swipeLeft) never arrives')
+elif 'msg_send![super(self), swipeWithEvent: event]' not in flipped:
+    failures.append(
+        '  FAIL a view that does not listen for the swipe swallows it instead of passing it to '
+        'the responder chain'
     )
 else:
-    oks.append('  ok   el deslizamiento es el evento del sistema y el que no escucha lo pasa')
+    oks.append('  ok   the swipe is the system event and whoever does not listen passes it on')
 
-# 10. El puntero: hover y cursor, y ningún cursor dibujado a mano.
-if '(hover)' in directivas and 'hover' not in soporte:
-    fallos.append('  FALLO la primitiva declara (hover) y el host de macOS no lo conoce')
-elif 'NSTrackingArea' not in eventos:
-    fallos.append('  FALLO (hover) no se monta sobre un NSTrackingArea')
+# 10. The pointer: hover and cursor, and not one cursor drawn by hand.
+if '(hover)' in directives and 'hover' not in support:
+    failures.append('  FAIL the primitive declares (hover) and the macOS host does not know it')
+elif 'NSTrackingArea' not in events:
+    failures.append('  FAIL (hover) is not mounted on an NSTrackingArea')
 else:
-    cursores = re.findall(r'"([a-z-]+)" => NSCursor::(\w+)\(\)', eventos)
-    # El vocabulario se lee del tipo `NativeCursor`, recortado antes de mirarlo:
-    # una expresión suelta sobre el fichero entero cogería cualquier otra unión
-    # de cadenas y exigiría un `NSCursor` para valores que no son cursores.
-    union = directivas[directivas.index('export type NativeCursor ='):]
+    cursors = re.findall(r'"([a-z-]+)" => NSCursor::(\w+)\(\)', events)
+    # The vocabulary is read from the `NativeCursor` type, trimmed before being
+    # looked at: a loose expression over the whole file would pick up any other
+    # union of strings and would demand an `NSCursor` for values that are not
+    # cursors.
+    union = directives[directives.index('export type NativeCursor ='):]
     union = union[:union.index('\n\n')]
-    vocabulario = set(re.findall(r"'([a-z-]+)'", union))
-    faltan_cursores = sorted(vocabulario - {nombre for nombre, _ in cursores})
-    if faltan_cursores:
-        fallos.append(
-            '  FALLO estos cursores los acepta la primitiva y macOS no los pone: '
-            + ', '.join(faltan_cursores)
+    vocabulary = set(re.findall(r"'([a-z-]+)'", union))
+    missing_cursors = sorted(vocabulary - {name for name, _ in cursors})
+    if missing_cursors:
+        failures.append(
+            '  FAIL these cursors are accepted by the primitive and macOS does not set them: '
+            + ', '.join(missing_cursors)
         )
     else:
         oks.append(
-            f'  ok   los {len(cursores)} punteros son NSCursor del sistema, ninguno dibujado'
+            f'  ok   the {len(cursors)} pointers are system NSCursors, none drawn by hand'
         )
 
-# 11. Enseñar dónde estás pide permiso, y el permiso se declara o no se pide.
+# 11. Showing where you are asks for permission, and the permission is declared
+#     or it is not asked for.
 #
-# `setShowsUserLocation:` sin la clave en el plist no falla: el sistema deniega
-# el permiso él solo y el punto no sale nunca, sin error y sin nada que mirar.
+# `setShowsUserLocation:` without the key in the plist does not fail: the system
+# denies the permission on its own and the dot never appears, with no error and
+# nothing to look at.
 if 'setShowsUserLocation' in host and 'NSLocationUsageDescription' not in plist:
-    fallos.append(
-        '  FALLO el mapa pide la ubicación y el Info.plist no declara para qué: el permiso se '
-        'deniega solo y el punto no sale'
+    failures.append(
+        '  FAIL the map asks for the location and the Info.plist does not declare what for: the '
+        'permission is denied on its own and the dot never appears'
     )
 elif 'setShowsUserLocation' in host:
-    oks.append('  ok   el mapa declara para qué pide la ubicación antes de pedirla')
+    oks.append('  ok   the map declares what it wants the location for before asking for it')
 
-for linea in oks:
-    print(linea)
-for linea in fallos:
-    print(linea)
-sys.exit(1 if fallos else 0)
+for line in oks:
+    print(line)
+for line in failures:
+    print(line)
+sys.exit(1 if failures else 0)
