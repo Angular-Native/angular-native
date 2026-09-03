@@ -71,6 +71,9 @@ pub struct ModuleRegistry {
     modules: Vec<Box<dyn NativeModule>>,
     outbox: Outbox,
     next_id: CallId,
+    /// Why a name that is not here may still be a name somebody wrote in good
+    /// faith. See `explain_absent`.
+    absent: Option<String>,
 }
 
 impl ModuleRegistry {
@@ -80,6 +83,19 @@ impl ModuleRegistry {
 
     pub fn register(&mut self, module: Box<dyn NativeModule>) {
         self.modules.push(module);
+    }
+
+    /// Says why a module that is not registered may still be a name somebody
+    /// wrote in good faith.
+    ///
+    /// On a host that loads plugins there is nothing to explain: a name that is
+    /// not in the registry is a typo, and the message saying so is the whole
+    /// answer. On a host that does not —macOS and the watch— it is not: the
+    /// module may exist as an npm package, be installed, be imported and still
+    /// not be here, and without this the rejection sends whoever reads it
+    /// hunting for a spelling mistake that is not there.
+    pub fn explain_absent(&mut self, note: impl Into<String>) {
+        self.absent = Some(note.into());
     }
 
     pub fn names(&self) -> Vec<&'static str> {
@@ -92,11 +108,29 @@ impl ModuleRegistry {
         let id = self.next_id;
         let respond = Responder { id, outbox: self.outbox.clone(), answered: false };
 
-        match self.modules.iter_mut().find(|m| m.name() == module) {
-            Some(target) => target.call(method, args, respond),
-            None => respond.reject(format!("no hay ningún módulo nativo llamado {module:?}")),
+        // The position first and the call afterwards: the `None` arm needs to
+        // read the note, and it cannot while the search still holds the
+        // registry borrowed.
+        match self.modules.iter().position(|m| m.name() == module) {
+            Some(index) => self.modules[index].call(method, args, respond),
+            None => respond.reject(self.absent_message(module)),
         }
         id
+    }
+
+    /// The rejection for a module nobody registered.
+    ///
+    /// The name always comes out: it is what turns "something failed" into
+    /// "this failed". What the host may add is the reason there is nothing
+    /// under that name here, which is not something the message could otherwise
+    /// be guessed to mean.
+    fn absent_message(&self, module: &str) -> String {
+        let mut message = format!("there is no native module called {module:?}");
+        if let Some(note) = &self.absent {
+            message.push_str(" — ");
+            message.push_str(note);
+        }
+        message
     }
 
     /// Answers that came in since last time. The bridge collects them as it
