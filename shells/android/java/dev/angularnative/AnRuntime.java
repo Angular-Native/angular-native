@@ -93,6 +93,28 @@ public final class AnRuntime {
         nativePluginReject(id, message);
     }
 
+    // ── Built-in modules ───────────────────────────────────────────────────
+    //
+    // The four the framework brings. They carry no `handle` for the same reason
+    // the plugins do not: they belong to the process, are installed before the
+    // first runtime is created and survive a hot restart. What they do not share
+    // with the plugins is the mailbox, so that a built-in cannot be shadowed by
+    // an npm package claiming its name.
+
+    /** Keeps the object Rust will hand every built-in call to. */
+    static void setBuiltinModules(AnBuiltinModules modules) {
+        nativeSetBuiltinModules(modules);
+    }
+
+    /** Answers one call. `json` is the return value, already serialised. */
+    static void builtinResolve(long id, String json) {
+        nativeBuiltinResolve(id, json);
+    }
+
+    static void builtinReject(long id, String message) {
+        nativeBuiltinReject(id, message);
+    }
+
     private static native long nativeNew(AnHost host, float width, float height);
 
     private static native int nativeEval(long handle, String name, String code);
@@ -124,4 +146,10 @@ public final class AnRuntime {
     private static native int nativePluginResolve(long id, String json);
 
     private static native int nativePluginReject(long id, String message);
+
+    private static native void nativeSetBuiltinModules(AnBuiltinModules modules);
+
+    private static native int nativeBuiltinResolve(long id, String json);
+
+    private static native int nativeBuiltinReject(long id, String message);
 }

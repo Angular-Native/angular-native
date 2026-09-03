@@ -40,6 +40,13 @@ final class RootViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        // Before creating the runtime: the core builds one native module per
+        // name when the engine starts, and whatever is registered afterwards
+        // does not get in. This host loads no plugins; the built-ins are not
+        // plugins.
+        AnBuiltinHost.view = view
+        AnBuiltinModules.install()
+
         let bounds = view.bounds
         runtime = an_runtime_new(
             Unmanaged.passUnretained(view).toOpaque(),

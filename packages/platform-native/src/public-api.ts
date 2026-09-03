@@ -2,6 +2,13 @@ export { bootstrapNativeApplication, platformNative } from './platform'
 export { NATIVE_LOCATION_PROVIDERS, NativePlatformLocation } from './location'
 export { globalHotState, hotState } from './hot-state'
 export { callNative, Device, NativeModules } from './native-modules'
+export { Files } from './modules/files'
+export type {
+  DurableStoragePlatform,
+  FileEntry,
+  FilePickerPlatform,
+  PickOptions
+} from './modules/files'
 export {
   NATIVE_STACK_PROVIDERS,
   NavigationDirection,

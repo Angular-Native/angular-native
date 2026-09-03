@@ -133,10 +133,18 @@ pub unsafe extern "C" fn an_runtime_new(
     // The plugins the shell registered before getting here. One per name;
     // what they do lives in Swift, so these only carry and fetch.
     let plugins = crate::modules::host_plugins();
+    // The modules the framework brings. They are not plugins —nobody declares
+    // them and there is no npm package— but they answer the same way, because
+    // what they call lives on the main thread too. See
+    // `an_bridge::builtins`.
+    let builtins = an_bridge::builtins::builtin_modules();
 
     let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
         let mut js = QuickJsRuntime::new()?;
         js.register_module(Box::new(device));
+        for builtin in builtins {
+            js.register_module(Box::new(builtin));
+        }
         for plugin in plugins {
             js.register_module(Box::new(plugin));
         }
@@ -237,6 +245,8 @@ pub unsafe extern "C" fn an_runtime_frame(rt: *mut AnRuntime, now_ms: f64) -> i3
     // goes before JS's turn so that an answer arriving on the spot makes it
     // into this very frame.
     crate::modules::pump();
+    // And the built-ins', through their own mailbox and their own dispatcher.
+    an_bridge::builtins::pump_c();
 
     // Whatever the worker finished since the previous frame is mounted.
     let mut applied = rt.pump();

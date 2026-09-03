@@ -138,10 +138,18 @@ pub unsafe extern "C" fn an_runtime_new(
     // The system's controls are measured here, on the main thread: creating
     // an `NSSwitch` off it is not allowed.
     let control_sizes = crate::controls::measure_controls(mtm);
+    // The modules the framework brings. This host loads no plugins, but these
+    // are not plugins: they ship with the framework and the shell serves them
+    // on the main thread, which is where AppKit lives. See
+    // `an_bridge::builtins`.
+    let builtins = an_bridge::builtins::builtin_modules();
 
     let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
         let mut js = QuickJsRuntime::new()?;
         js.register_module(Box::new(device));
+        for builtin in builtins {
+            js.register_module(Box::new(builtin));
+        }
         // There are no plugins on this host, and a call to one has to be told
         // why rather than only that the name is unknown. See
         // `modules::ABSENT_NOTE`.
@@ -245,6 +253,12 @@ pub unsafe extern "C" fn an_runtime_set_viewport(rt: *mut AnRuntime, width: f32,
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_runtime_frame(rt: *mut AnRuntime, now_ms: f64) -> i32 {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return -1 };
+
+    // The built-in calls the engine left behind are served here, which is the
+    // main thread: it is the only place where AppKit may be touched. It goes
+    // before JS's turn so that an answer arriving on the spot makes it into
+    // this very frame.
+    an_bridge::builtins::pump_c();
 
     // Whatever the worker finished since the previous frame is mounted.
     let mut applied = rt.pump();

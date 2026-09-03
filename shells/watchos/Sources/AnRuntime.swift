@@ -76,6 +76,10 @@ final class AnRuntime {
 
     func start(width: Double, height: Double) {
         guard runtime == nil else { return }
+        // Before the runtime: the core builds one native module per name when
+        // the engine starts, and whatever is registered afterwards does not get
+        // in. This host loads no plugins; the built-ins are not plugins.
+        AnBuiltinModules.install()
         runtime = an_watch_runtime_new(
             Float(width),
             Float(height),
