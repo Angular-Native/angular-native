@@ -1,18 +1,19 @@
 # angular-native
 
-React Native, pero para Angular, y con el núcleo en Rust.
+React Native, but for Angular, and with the core in Rust.
 
-Angular zoneless con signals corriendo en un motor JS embebido; el árbol de UI,
-el layout y el montaje sobre **vistas nativas reales** los lleva Rust. Sin DOM,
-sin WebView, sin zone.js. Un solo núcleo para iOS y Android.
+Zoneless Angular with signals, running on an embedded JS engine; the UI tree,
+the layout and the mounting onto **real native views** are Rust's job. No DOM,
+no WebView, no zone.js. One core for iOS, Android, macOS, the TV, the headset
+and both watches.
 
 ```text
-  hilo del motor                                        hilo de UI
+  engine thread                                         UI thread
   ─────────────────────────────────────────────         ──────────────────────
   Angular (JS)                                          CADisplayLink
       │ Renderer2                                       Choreographer
-      ▼                                                       │ pide frame
-  __an_dom ──▶ búfer binario ──▶ ShadowTree                   ▼
+      ▼                                                       │ asks for a frame
+  __an_dom ──▶ binary buffer ──▶ ShadowTree                   ▼
                                      │ commit           MountSide
                                taffy (layout)                 │
                                      │ diff                   ▼
@@ -20,8 +21,8 @@ sin WebView, sin zone.js. Un solo núcleo para iOS y Android.
                                                         (UIKit / android.view)
 ```
 
-Un componente Angular normal, sin nada especial salvo que los elementos son
-primitivas nativas:
+An ordinary Angular component, with nothing special about it except that the
+elements are native primitives:
 
 ```ts
 @Component({
@@ -30,21 +31,21 @@ primitivas nativas:
   template: `
     <an-view [style.gap]="'16'" [backgroundColor]="'#0b1020'">
       <an-text [fontSize]="28" [color]="'#f4f7ff'">angular-native</an-text>
-      <an-switch [on]="alertas()" (onChange)="alertas.set($event)" />
+      <an-switch [on]="alerts()" (onChange)="alerts.set($event)" />
       <an-view
         [backgroundColor]="'#1e2a4a'"
         [animate]="200"
         [translateX]="x()"
         (pan)="onPan($event)"></an-view>
       @if (seconds() >= 3) {
-        <an-text [fontSize]="14">han pasado {{ seconds() }} segundos</an-text>
+        <an-text [fontSize]="14">{{ seconds() }} seconds have gone by</an-text>
       }
     </an-view>
   `
 })
 export class AppComponent {
   readonly seconds = signal(0)
-  readonly alertas = signal(true)
+  readonly alerts = signal(true)
   readonly x = signal(0)
   onPan(event: NativePanEvent) { this.x.set(event.translationX) }
 }
@@ -54,327 +55,326 @@ export class AppComponent {
 bootstrapNativeApplication(AppComponent)
 ```
 
-`<an-view>` acaba siendo una `UIView` en iOS y una `AnViewGroup` en Android; el
-`<an-switch>`, un `UISwitch` y un `android.widget.Switch`.
+That `<an-view>` ends up a `UIView` on iOS and an `AnViewGroup` on Android; the
+`<an-switch>`, a `UISwitch` and a `MaterialSwitch`.
 
-## Empezar
+## Why not a WebView
 
-```bash
-cargo an dev                  # compila, lanza en el simulador y recarga al guardar
-cargo an dev --android        # lo mismo, en el emulador de Android
-cargo an ios                  # una sola vez, sin vigilar
-cargo an android              # APK, emulador y lanzamiento
-cargo an tvos                 # tele: .app de tvOS y simulador del Apple TV
-cargo an visionos             # visor: .app de visionOS y simulador del Vision Pro
-cargo an watchos              # reloj: .app de watchOS y simulador
-cargo an wearos               # reloj de Android: APK de Wear OS y emulador
-cargo an macos                # escritorio: .app de macOS, en esta misma máquina
-cargo an dev --tvos           # tele: vigilando y con refresco en caliente
-cargo an dev --wearos         # reloj de Android: vigilando y con refresco
-cargo an dev --macos          # lo mismo, vigilando y con refresco en caliente
-cargo an build --release      # solo el bundle: 276 KB frente a 1,3 MB en debug
-```
+A WebView renders a page, and a page can be made to *look* like the platform —
+on the day it was written. What it will not do is age with the platform. A
+lookalike switch does not change when the system's does, does not pick up the
+new haptic, does not answer the accessibility API the way the real one does,
+and does not know what the user set in Settings.
 
-La tele, el visor y el reloj piden nightly: `aarch64-apple-tvos-sim`,
-`aarch64-apple-visionos-sim` y `aarch64-apple-watchos-sim` son targets de nivel
-3 y su `std` se construye en el momento. Ver [platforms/tvos](https://angular-native.dev/platforms/tvos/),
-[platforms/visionos](https://angular-native.dev/platforms/visionos/) y [platforms/watchos](https://angular-native.dev/platforms/watchos/).
+So `<an-switch>` **is** a `UISwitch` and a `MaterialSwitch`. Nothing is drawn by
+hand to resemble a control, and where a platform has no equivalent the node is
+not created at all: the layout leaves the gap it had measured and the host says
+why, once, in the log. The long version is in
+[guide/how-it-works](https://angular-native.dev/guide/how-it-works/).
 
-En la tele no hay toques: se navega con el mando y el motor de foco, y un
-control que no se puede enfocar no se puede pulsar. Eso no es un detalle de
-implementación, es la plataforma, y cambia lo que una plantilla puede dar por
-hecho. Está todo en [platforms/tvos](https://angular-native.dev/platforms/tvos/).
+What follows from that is the interesting part: if the views belong to the
+platform, the **layout** cannot. UIKit, AppKit and Android each lay out
+differently and SwiftUI does not let you lay out at all, so layout leaves the
+platform entirely and runs once, in the core, over taffy.
 
-El reloj de Android no pide nada de eso: un Wear OS es Android, así que corre
-`android.view.View` y el host del teléfono le vale entero. Lo que cambia son
-cuatro cosas —el manifiesto, la pantalla redonda, la corona y las primitivas
-que allí no tienen sentido— y están en [platforms/wearos](https://angular-native.dev/platforms/wearos/).
+## In one minute
 
-El escritorio no pide nada: `aarch64-apple-darwin` es la máquina, así que no hay
-simulador que arrancar ni aparato que buscar. Es también la única plataforma
-donde una comprobación puede arrancar la app, moverle el ratón por encima y
-mirar la foto de lo que pintó. Ver [platforms/macos](https://angular-native.dev/platforms/macos/).
-
-Todo va por el mismo binario, `an`. No hay `.xcodeproj` ni Gradle: las
-herramientas de cada SDK ya hacen el trabajo y el proceso cabe en un fichero
-que se puede leer entero.
-
-### En un proyecto Angular que ya existe
-
-`an` no se queda dentro de este repositorio. Sobre una app cualquiera de
-`ng new`:
+`an` is not confined to this repository. On any app out of `ng new`:
 
 ```bash
-cargo install --path crates/an-cli   # deja `an` en el PATH, una vez por máquina
+cargo install --path crates/an-cli   # puts `an` on the PATH, once per machine
 
-cd mi-app                            # un proyecto de Angular normal
-an init                              # dependencias, tsconfig y punto de entrada
-an add ios                           # crea ios/Info.plist, que a partir de ahí es tuyo
-an ios                               # al simulador
+cd my-app                            # an ordinary Angular project
+an init                              # dependencies, tsconfig and entry point
+an add ios                           # writes ios/Info.plist, yours from then on
+an ios                               # to the simulator
 ```
 
-`an build`, `an ios`, `an android` y `an dev` funcionan igual desde el monorepo
-que desde fuera; averiguar en cuál de los dos está es cosa del CLI. El flujo
-entero, y por qué los paquetes van empaquetados y el `.app` no se commitea, en
+It touches neither `src/main.ts` nor `angular.json`, so `ng build` and
+`ng serve` keep working exactly as before. The whole flow — and why the
+framework packages are vendored and the `.app` is not committed — is in
 [guide/existing-angular-project](https://angular-native.dev/guide/existing-angular-project/).
 
-## Qué hay
-
-**Primitivas** — `an-view`, `an-text`, `an-image`, `an-scroll-view`,
-`an-text-input`, `an-textarea`, `an-stack-view`, `an-web-view`, `an-modal`,
-`an-alert`.
-
-**Controles del sistema** — `an-tab-bar`, `an-switch`, `an-slider`,
-`an-activity-indicator`, `an-progress-bar`, `an-button`,
-`an-segmented-control`, `an-stepper`, `an-search-bar`, `an-select`,
-`an-date-picker`, `an-navigation-bar`, `an-icon`. No los dibuja el framework:
-en iOS son `UITabBar`, `UISwitch`, `UISlider`, `UISegmentedControl`,
-`UIStepper`, `UISearchBar`, `UIDatePicker`, `UINavigationBar` y compañía, con
-el aspecto que tengan en esa versión del sistema. Los tres que Android no trae en la
-plataforma —barra de pestañas, control segmentado y control de pasos— se
-dibujan con vistas del sistema, y se dice cuál es cuál.
-
-**Iconos** — SF Symbols en iOS y Material Symbols en Android, por nombre. No se
-empaqueta ningún juego en iOS; en Android sí, porque el que trae la plataforma
-lleva congelado desde 2011 y no es el de Material 3.
-
-**Compuestos** — `an-virtual-list` (lista con reciclado de vistas),
-`an-safe-area`, `an-native-stack` (navegación con pila y gesto de atrás).
-
-**Gestos** — `press`, `doublePress`, `longPress`, `pan`, `pinch`, `rotation`,
-`swipeLeft`/`Right`/`Up`/`Down`. Los reconocedores son los del sistema, así que
-los umbrales de cuándo un gesto cuenta son los de cada plataforma. En el
-escritorio el deslizamiento no es un reconocedor sino un evento que sube por la
-cadena de responder, y por eso solo lo recogen las vistas del propio host; lo
-que no, avisa al suscribirse.
-
-**Y donde hay ratón** — `(hover)` dice cuándo el puntero entra y sale de una
-vista, y `[cursor]` elige cuál de los punteros del sistema se enseña encima. Las
-dos son de escritorio: un dedo no tiene forma, así que iOS y Android no las
-miran y eso está declarado, no olvidado.
-
-**Transformaciones y animación** — `translateX`, `translateY`, `scale`,
-`rotate`, y `[animate]="ms"` para que los cambios de esa vista dejen de ser un
-salto. Las hace la plataforma en su hilo de dibujo, sin volver a pasar por
-JavaScript en cada frame.
-
-**Otros eventos** — `layout`, `safeArea`, `scroll`, `refresh`, `change`,
-`focus`, `blur`, `submit`, `select`, `load`, `back`, `dismiss`, `hover`.
-
-**Angular** — plantillas AOT, señales, `@if`, `@for`, router con parámetros,
-módulos nativos tipados, y refresco en caliente: al guardar cambia el código de
-los componentes sin tirar la app, así que sigues en la misma pantalla y con lo
-que llevaras escrito.
-
-**Plugins** — módulos nativos que se escriben fuera del repo. Un paquete npm
-con su Swift y su Java dentro; la app lo declara como dependencia y `an`
-compila y registra lo suyo al armar el `.app` o el APK. Si un plugin no cubre la
-plataforma que se está compilando, el build se para y lo dice, en vez de dejar
-un método que se traga la llamada. Ver [extending/plugins](https://angular-native.dev/extending/plugins/).
-
-## Verificación sin dispositivo
+From inside this repository the same commands run against `examples/`:
 
 ```bash
-./scripts/check-all.sh        # todo: tests, las apps de ejemplo y las dos compilaciones cruzadas
+cargo an dev                  # builds, launches in the simulator and reloads on save
+cargo an dev --android        # the same, on the Android emulator
+cargo an ios                  # once, without watching
+cargo an android              # APK, emulator and launch
+cargo an tvos                 # the TV: a tvOS .app and the Apple TV simulator
+cargo an visionos             # the headset: a visionOS .app and the Vision Pro simulator
+cargo an watchos              # the watch: a watchOS .app and its simulator
+cargo an wearos               # the Android watch: a Wear OS APK and its emulator
+cargo an macos                # the desktop: a macOS .app, on this very machine
+cargo an build --release      # the bundle and nothing else
+```
 
-cargo test                    # solo el núcleo Rust
-./scripts/check-angular.sh    # la cadena entera: ngc, esbuild, QuickJS, taffy
-./scripts/check-list.sh       # an-scroll-view, an-text-input, reciclado, módulo nativo
-./scripts/check-router.sh     # navegación, parámetros y vuelta atrás
-./scripts/check-controls.sh   # los controles del sistema y sus tamaños
-./scripts/check-gestures.sh   # gestos, transformaciones y animación
-./scripts/check-pickers.sh    # segmentos, desplegable, pasos, búsqueda y fecha
-./scripts/check-web.sh        # cabecera, texto multilínea, navegador, hoja
-./scripts/check-plugins.sh    # que un plugin se descubre, se enlaza y contesta
-./scripts/check-external.sh   # un proyecto Angular de fuera: init, add, build
-./scripts/check-styles.sh     # que las dos listas de nombres de estilo no se separen
-./scripts/check-kinds.sh      # que la etiqueta, la primitiva y el código digan lo mismo
-./scripts/check-watchos.sh    # el modelo del reloj, sus listas y su compilación cruzada
-./scripts/check-wearos.sh     # el APK del reloj de Android, su tema y lo que allí no va
-./scripts/check-tvos.sh       # las medidas de la tele, lo que su SDK no trae, y su compilación cruzada
-./scripts/check-visionos.sh   # la ventana del visor, que no tape el cristal, y su compilación cruzada
-./scripts/check-macos.sh      # el .app de escritorio: arrancado, con el ratón encima y con captura
+`an dev` also takes `--tvos`, `--visionos`, `--watchos`, `--wearos` and
+`--macos`, all of them watching with hot refresh. `--macos` is the odd one out:
+there is no simulator to launch into, so it closes the window that was open and
+opens a new one.
+
+Twelve commands, no nested subcommands, every option long-form. The whole
+inventory, with the defaults and the four asymmetries between them, is in
+[reference/cli](https://angular-native.dev/reference/cli/).
+
+It all goes through one binary. There is no `.xcodeproj` and no Gradle: `an`
+drives `ngc`, esbuild, `cargo`, `swiftc`, `aapt2`, `javac`, `d8` and
+`apksigner` itself, and the only file it leaves in your repository is a small
+manifest.
+
+The TV, the headset and both Apple watches need nightly:
+`aarch64-apple-tvos-sim`, `aarch64-apple-visionos-sim` and
+`aarch64-apple-watchos-sim` are tier 3 targets and their `std` is built on the
+spot.
+
+## Eight platforms, one bundle
+
+| | Renders with | State |
+|---|---|---|
+| **iOS · iPadOS** | UIKit | all 25 primitives |
+| **Android** | android.view + Material 3 | all 25 primitives |
+| **macOS** | AppKit | all 25 primitives |
+| **visionOS** | UIKit in a windowed scene | all 25 primitives |
+| **tvOS** | UIKit + the focus engine | 20 of 25 — a TV has no switch and no slider |
+| **Wear OS** | android.view | 18 of 25 |
+| **watchOS** | SwiftUI | 17 of 25 |
+| **HarmonyOS · Windows** | — | not started |
+
+Each platform's page says which primitives it does not have and why, and every
+one of those reasons is the SDK's rather than an opinion. The matrix in one
+piece is [reference/components](https://angular-native.dev/reference/components/).
+
+Two of them are worth knowing before you write a template for them:
+
+- **On the TV nothing is touched.** You navigate with the remote and the focus
+  engine, and a control that cannot take focus cannot be pressed. That is not an
+  implementation detail, it is the platform, and it changes what a template may
+  assume. [platforms/tvos](https://angular-native.dev/platforms/tvos/)
+- **The Apple watch is the one host that is not a view hierarchy.** watchOS has
+  no `UIView` to add subviews to, so the tree Rust maintains is mirrored into a
+  model SwiftUI redraws. Everything else — the TV, the headset, the Android
+  watch, the desktop — reuses the phone's host with different classes.
+  [platforms/watchos](https://angular-native.dev/platforms/watchos/)
+
+## What is in it
+
+**Twenty-five primitives**, from `an-view` and `an-text` through `an-switch`,
+`an-select` and `an-date-picker` to `an-web-view`, `an-map-view` and
+`an-video-view`. The framework draws none of them: on iOS they are `UISwitch`,
+`UISlider`, `UISegmentedControl`, `UIDatePicker`, `UINavigationBar` and company,
+with whatever look they have in that version of the system; on Android they are
+Material 3's. The few that are assembled rather than mounted say so out loud and
+are assembled out of system views all the same: `an-stepper` on Android, because
+Material 3 defines no stepper, is two Material icon buttons and a Material
+label; on macOS, `an-tab-bar` is an `NSSegmentedControl`, which is what Mac apps
+actually use to change section.
+
+**Icons** — SF Symbols on Apple platforms and Material Symbols on Android, by
+name. Nothing is bundled on iOS; on Android it is, because what the platform
+ships has been frozen since 2011 and is not Material 3's set.
+
+**Composites** — `an-virtual-list` (a list that recycles its views),
+`an-safe-area`, `an-native-stack` (stack navigation with a back gesture).
+
+**Gestures** — `press`, `doublePress`, `longPress`, `pan`, `pinch`, `rotation`,
+`swipeLeft`/`Right`/`Up`/`Down`. The recognisers are the system's, so the
+thresholds for when a gesture counts are each platform's. On the desktop the
+swipe is not a recogniser but an event travelling up the responder chain, so
+only the views this host owns can catch it: put a `(swipeLeft)` straight onto a
+system control and it warns when you subscribe, and says where to put it
+instead.
+
+**And where there is a mouse** — `(hover)` says when the pointer enters and
+leaves a view, and `[cursor]` picks which of the system's pointers is shown over
+it. Both are desktop-only: a finger has no shape, so iOS and Android do not read
+them, and that is declared rather than forgotten.
+
+**Transforms and animation** — `translateX`, `translateY`, `scale`, `rotate`,
+and `[animate]="ms"` so that changes to that view stop being a jump. The
+platform runs them on its own drawing thread, without coming back through
+JavaScript on every frame.
+
+**Other events** — `layout`, `safeArea`, `scroll`, `refresh`, `change`, `focus`,
+`blur`, `submit`, `select`, `load`, `back`, `dismiss`, `hover`, and `crown` on
+both watches.
+
+**Angular** — AOT templates, signals, `@if`, `@for`, the router with parameters,
+typed native modules, and hot refresh: saving swaps a component's code without
+tearing the app down, so you stay on the same screen with whatever you had
+typed.
+
+**Plugins** — native modules written outside this repository. An npm package
+with its Swift and its Java inside; the app declares it as a dependency and `an`
+compiles and registers its part when it assembles the `.app` or the APK. If a
+plugin does not cover the platform being built, the build stops and says so
+rather than leaving a method that swallows the call.
+[extending/plugins](https://angular-native.dev/extending/plugins/)
+
+## Verification without a device
+
+```bash
+./scripts/check-all.sh        # everything: 348 ok, and nothing else counts
+```
+
+That is the whole suite — the Rust tests, the duplicated lists, the example
+apps, the accessibility trees, the plugins, an Angular project from outside, a
+`.app` that is started and screenshotted, and the two cross-compilations.
+Around thirty scripts run under it, and each one prints its own `ok` lines; a
+script that cannot do its job says `skipped` rather than passing quietly.
+
+```bash
 cargo run -p an-bridge --example headless -- build/bundle/hello-angular/main.js 6
 ```
 
-`headless` monta el pipeline entero salvo la plataforma: evalúa un bundle,
-avanza frames con un reloj falso, simula un toque, un arrastre, un
-desplazamiento y una vuelta atrás, e imprime el árbol resuelto. Es la forma
-rápida de depurar sin simulador, y es lo que usan todos los scripts.
+`headless` assembles the whole pipeline except the platform: it evaluates a
+bundle, advances frames on a fake clock, simulates a press, a drag, a scroll and
+a back, and prints the resolved tree. It is the quick way to debug without a
+simulator, and it is what most of those scripts drive.
 
-## Crates
+## Where things live
 
-| Crate | Qué hace |
+| Crate | What it does |
 |---|---|
-| `an-layout` | Props de estilo a `taffy::Style`, árbol de layout, medición de hojas |
-| `an-core` | Shadow tree, mutaciones, commit, diff hacia `MountOp` |
-| `an-host` | Traits `HostRenderer` y `TextMeasurer`, y las dos mitades del renderer |
-| `an-bridge` | Motor JS (QuickJS), protocolo binario, módulos nativos, hilo del motor |
-| `an-ios` | Host UIKit, medición, controles, animaciones y superficie C |
-| `an-android` | Host JNI, medición con `StaticLayout` y puntos de entrada JNI. También el de Wear OS |
-| `an-watch` | Host watchOS: el árbol reflejado en un modelo que pinta SwiftUI |
-| `an-macos` | Host AppKit: `NSView` por nodo, controles del sistema y superficie C |
-| `an-cli` | La herramienta `an`: build, ios, android, watchos, macos, plugins y servidor de desarrollo |
+| `an-layout` | Style props to `taffy::Style`, the layout tree, measuring leaves |
+| `an-core` | Shadow tree, mutations, commit, diff into `MountOp` |
+| `an-host` | The `HostRenderer` and `TextMeasurer` traits, and the renderer's two halves |
+| `an-bridge` | JS engine (QuickJS), binary protocol, native modules, engine thread |
+| `an-ios` | UIKit host, measuring, controls, animation and the C surface. Also tvOS and visionOS |
+| `an-android` | JNI host, measuring with `StaticLayout`, JNI entry points. Also Wear OS |
+| `an-watch` | watchOS host: the tree mirrored into a model SwiftUI draws |
+| `an-macos` | AppKit host: one `NSView` per node, system controls and the C surface |
+| `an-cli` | The `an` tool: the twelve commands, the plugin pipeline and the dev server |
 
-| Paquete npm | Qué hace |
+| npm package | What it does |
 |---|---|
-| `packages/runtime` | Prelude JS: consola, temporizadores, `AbortController`, búfer de comandos |
-| `packages/platform-native` | `Renderer2`, plataforma, `PlatformLocation`, navegación, módulos |
-| `packages/primitives` | Todas las primitivas, controles y compuestos |
-| `packages/plugin-clipboard` | El plugin de referencia: portapapeles en Swift y en Java |
+| `packages/runtime` | JS prelude: console, timers, `AbortController`, the command buffer |
+| `packages/platform-native` | `Renderer2`, the platform, `PlatformLocation`, navigation, modules |
+| `packages/primitives` | Every primitive, control and composite |
+| `packages/plugin-clipboard` | The reference plugin: the clipboard, in Swift and in Java |
+| `packages/plugin-biometrics` | Face ID, Touch ID and `BiometricPrompt` |
+| `packages/plugin-keychain` | The keychain and the Android keystore |
 
-## Decisiones
+The Swift and Java shells are in `shells/` — `ios`, `tvos`, `visionos`,
+`watchos`, `macos`, `android` and a `shared` one; Wear OS has none of its own,
+because it reuses the phone's down to the `MainActivity`. `examples/` holds the
+apps the checks drive.
 
-- **Vistas nativas, no pintado propio.** Accesibilidad, IME, scroll y look del
-  sistema salen gratis; el coste es una capa por plataforma para cada primitiva.
-- **Los ids de nodo los asigna JS.** Crear un nodo no necesita viaje de vuelta
-  al core, igual que los tags de Fabric.
-- **Layout en `taffy`**, no Yoga: es Rust, y trae flexbox, grid y block.
-- **Zoneless obligatorio.** Sin zone.js no hay que parchear temporizadores ni
-  XHR dentro del motor JS, que es el 80% del dolor de NativeScript.
-- **Un commit por frame.** El layout solo corre en `commit()`, y el `Frame`
-  resultante lleva únicamente lo que cambió.
-- **Búfer binario, no llamadas sueltas.** Un `@for` de 200 filas son ~1.200
-  mutaciones. Con llamadas por mutación son 1.200 cruces de frontera; así es uno.
-- **El motor JS vive en su propio hilo, y el de UI lo espera con plazo.** Si el
-  turno de JS cabe en lo que queda de frame se monta en el mismo frame; si se
-  pasa, el hilo de UI sigue y lo monta cuando llegue. El hilo aparte no es por
-  paralelismo: QuickJS necesita unos 4 MB de pila para que el router de Angular
-  complete una navegación, y el hilo principal de iOS tiene 1 MB que no se
-  pueden cambiar.
-- **JS no tiene reloj propio: tiene un turno por frame.** Los temporizadores
-  avanzan con el vsync, así que el tiempo de la app es determinista y un test
-  puede simular diez segundos sin esperarlos.
-- **AOT siempre, nunca JIT.** `ngc` compila las plantillas en el build y el
-  Angular Linker resuelve los paquetes publicados en modo parcial; el
-  dispositivo no lleva `@angular/compiler`.
-- **Primitivas como directivas tipadas, no `CUSTOM_ELEMENTS_SCHEMA`.** El
-  esquema laxo exige un guion en el nombre y, peor, apaga la comprobación de
-  propiedades: `[bakcgroundColor]` con errata pasaría el compilador y fallaría
-  en silencio en el dispositivo.
-- **Prefijo `an-` en todas las etiquetas**, como Ionic. Sin él, Angular se
-  niega a auto-cerrar una etiqueta que se llame como un elemento de HTML, y eso
-  costó dos nombres: el desplegable acabó llamándose `Picker` y el campo de
-  varias líneas, `TextEditor`. Con prefijo vuelven a ser `<an-select>` y
-  `<an-textarea>`, y `<an-view />` se cierra sola como cualquier otra.
-- **De la etiqueta al núcleo, con una regla y no con una tabla.** Se le quita
-  `an-` y se junta en PascalCase: `an-text-input` es `TextInput`. Añadir una
-  primitiva no obliga a apuntarla en una lista de traducción que se pueda
-  quedar atrás. El vocabulario del núcleo no cambia con la etiqueta: `an-select`
-  sigue viajando como el `Picker` que el enum de Rust y los tres hosts conocen.
-- **Cuánto mide un control lo decide la plataforma.** Un `UISwitch` no mide lo
-  mismo en iOS 17 que en iOS 26, ni con texto grande de accesibilidad. Se les
-  pregunta al arrancar, en el hilo principal.
-- **Los eventos se registran solo si la plantilla los pide.** `(press)` es una
-  salida sobre un observable frío: el reconocedor se engancha al suscribirse.
-- **`onLayout` lo emite el core**, no la plataforma: es él quien calcula el
-  marco, así que funciona igual en iOS y en Android sin implementarlo dos veces.
-- **El host de un componente no es una vista.** Si nadie le pone estilo, prop ni
-  oyente, no llega a crearse y sus hijos cuelgan del abuelo. Fabric lo llama
-  *view flattening*; aquí se decide en el lado JS, que ve la secuencia entera
-  antes de mandarla.
-- **Reciclar, no rehacer.** `an-virtual-list` monta un número fijo de ranuras y al
-  desplazarse no crea ni destruye ninguna: cambia lo que enseña cada una.
-- **Nada de `@angular/platform-browser`.** Arrastra `DomAdapter`,
-  `DomRendererFactory2` y el sanitizador de HTML, todo asumiendo que existe un
-  DOM. La plataforma propia son ~70 líneas.
+## Decisions
 
-## Lo que no está hecho
+- **Native views, not our own drawing.** Accessibility, IME, scrolling and the
+  system look come free; the cost is one layer per platform for each primitive.
+- **Node ids are assigned by JS.** Creating a node needs no round trip to the
+  core, the same as Fabric's tags.
+- **Layout in `taffy`**, not Yoga: it is Rust, and it brings flexbox, grid and
+  block.
+- **Zoneless, and not optionally.** Without zone.js there are no timers or XHR
+  to patch inside the JS engine, which is 80% of NativeScript's pain.
+- **One commit per frame.** Layout only runs in `commit()`, and the resulting
+  `Frame` carries only what changed.
+- **A binary buffer, not loose calls.** A `@for` over 200 rows is around 1,200
+  mutations. One call each is 1,200 border crossings; a buffer is one. The
+  protocol is twelve opcodes, little-endian, and a command the core turns down
+  says which opcode failed and at what offset.
+- **The JS engine lives on its own thread, and the UI thread waits with a
+  deadline.** If the JS turn fits in what is left of the frame it mounts in that
+  same frame; if it runs over, the UI thread carries on and mounts it when it
+  comes. The separate thread is not for parallelism: the engine is given an 8 MB
+  stack because Angular's router needs a little over 3 MB to get through one
+  navigation, and iOS's main thread has 1 MB you cannot change.
+- **JS has no clock of its own: it has one turn per frame.** Timers advance with
+  the vsync, so the app's time is deterministic and a test can simulate ten
+  seconds without waiting for them.
+- **AOT always, never JIT.** `ngc` compiles the templates at build time and the
+  Angular Linker resolves the packages published in partial mode; the device
+  does not carry `@angular/compiler`.
+- **Primitives as typed directives, not `CUSTOM_ELEMENTS_SCHEMA`.** The lax
+  schema demands a hyphen in the name and, worse, turns off property checking:
+  a typo'd `[bakcgroundColor]` would pass the compiler and fail silently on the
+  device.
+- **An `an-` prefix on every tag**, as Ionic does. Without it Angular refuses to
+  self-close a tag named like an HTML element, and that cost two names: the
+  dropdown ended up called `Picker` and the multi-line field `TextEditor`. With
+  the prefix they are `<an-select>` and `<an-textarea>` again, and `<an-view />`
+  self-closes like anything else.
+- **From tag to core with a rule, not a table.** Strip `an-` and join in
+  PascalCase: `an-text-input` is `TextInput`. Adding a primitive does not oblige
+  anyone to write it into a translation list that can fall behind. The core's
+  vocabulary does not follow the tag, though: `an-select` still travels as the
+  `Picker` the Rust enum and the hosts know.
+- **How big a control is, is the platform's decision.** A `UISwitch` is not the
+  same size on iOS 17 as on iOS 26, nor with accessibility text sizes. They are
+  asked at startup, on the main thread.
+- **Events are registered only if the template asks for them.** `(press)` is an
+  output over a cold observable: the recogniser is attached on subscribe.
+- **`onLayout` is emitted by the core**, not by a platform: it is the one
+  computing the frame, so it works the same on iOS and Android without being
+  implemented twice.
+- **A component's host is not a view.** If nobody gives it a style, a prop or a
+  listener it never gets created and its children hang off the grandparent.
+  Fabric calls it *view flattening*; here it is decided on the JS side, which
+  sees the whole sequence before sending it.
+- **Recycle, do not rebuild.** `an-virtual-list` mounts a fixed number of slots
+  and creates or destroys none of them while scrolling: it changes what each one
+  shows.
+- **No `@angular/platform-browser`.** It drags in `DomAdapter`,
+  `DomRendererFactory2` and the HTML sanitiser, all of them assuming a DOM
+  exists. The platform this project provides instead is a couple of small files.
 
-- **HarmonyOS no está empezado.** Su SDK —DevEco— no se instala sin aceptar su
-  licencia a mano, así que aquí no hay forma de compilar ni de ver nada. El
-  encaje sí está estudiado y es bueno: Rust tiene target `aarch64-unknown-linux-ohos`
-  y ArkUI expone una API nativa en C que es imperativa —crear nodo, poner
-  atributo, añadir hijo—, o sea el mismo modelo que las `MountOp` de aquí. Se
-  parecería al host de Android, no al del reloj de Apple.
+## What is not done
 
-- **Windows no está empezado.** Los targets de Rust están instalados, pero
-  enlazar necesita las librerías de MSVC y ejecutarlo necesita una máquina
-  Windows: desde un Mac se puede llegar como mucho a un `.exe` enlazado con
-  mingw, y un binario que nadie ha visto arrancar no es una plataforma
-  soportada. Queda a la espera de una máquina donde probarlo.
+- **HarmonyOS has not been started.** Its SDK — DevEco — cannot be installed
+  without accepting a licence by hand, so there is no way to compile or see
+  anything here. The fit has been studied and it is good: Rust has an
+  `aarch64-unknown-linux-ohos` target and ArkUI exposes a native C API that is
+  imperative — create node, set attribute, add child — which is exactly this
+  project's `MountOp` model. It would look like the Android host, not like the
+  Apple watch's.
 
-- **En macOS y en el reloj de Apple no hay módulos nativos.** Los dos hosts
-  montan vistas pero no registran ninguno, así que `Device.info()` —y cualquier
-  plugin— rechaza la promesa diciendo que el módulo no existe. En iOS y en
-  Android sí están. Es un hueco de host, no de diseño: el registro es el mismo
-  para todos.
+- **Windows has not been started.** The Rust targets are installed, but linking
+  needs MSVC's libraries and running it needs a Windows machine: from a Mac you
+  get at most an `.exe` linked with mingw, and a binary nobody has watched start
+  is not a supported platform. It is waiting on a machine to try it on.
 
-- **El de pasos de Android no es un control, es un montaje.** Material 3 no
-  define ninguno, así que se arma con dos botones de icono y un rótulo suyos.
-  El resto de controles sí son componentes de la librería.
-- **El refresco en caliente no llega al framework.** Cambiar un componente de la
-  app conserva el estado; cambiar `packages/` o una dependencia obliga a
-  reiniciar, porque en el intérprete solo cabe una copia de Angular. Se avisa y
-  se reinicia, no se enseña código viejo.
-- **Un plugin aporta métodos, no vistas.** Puede añadir un módulo nativo —una
-  llamada que devuelve una promesa— pero no una primitiva nueva que se monte en
-  el árbol: eso exige abrir el `NodeKind` del core a nombres que no conoce en
-  tiempo de compilación y que los tres hosts sepan construir una vista ajena.
-  Lo que falta, en [extending/plugins](https://angular-native.dev/extending/plugins/).
+- **No plugins on macOS or on the Apple watch.** Neither host has a plugin
+  registry, so `an macos` and `an watchos` refuse to build an app that depends on
+  one rather than shipping an app whose every call would be rejected at runtime.
+  The `device` module is not a plugin — it is compiled into every host, and
+  `Device.info()` resolves on both.
 
-- **En el visor no hay nada volumétrico.** visionOS monta el host de iOS tal
-  cual, en una ventana plana dentro del espacio 3D, que es lo que el sistema
-  llama una *window*. Ni volúmenes ni espacios inmersivos: las dos cosas son
-  SwiftUI y RealityKit, y no hay `UIView` que montar en ellas, así que serían
-  otro host, como pasó con el reloj. Falta también el icono y, sobre todo,
-  poder conducir la mirada y el pellizco desde fuera: el simulador no deja, así
-  que ahí no hay ni script ni captura que enseñe el realce de la mirada. En
-  [platforms/visionos](https://angular-native.dev/platforms/visionos/).
+- **A plugin contributes methods, not views.** It can add a native module — a
+  call that returns a promise — but not a new primitive that mounts in the tree:
+  that means opening the core's `NodeKind` to names it does not know at compile
+  time and teaching every host to build a view that is not its own.
+  [extending/plugins](https://angular-native.dev/extending/plugins/)
 
-- **De la tele faltan dos controles y el icono.** tvOS monta el host de iOS tal
-  cual —es el mismo UIKit, las mismas `UIView` y los mismos marcos absolutos—,
-  pero su SDK no trae `UISwitch`, `UISlider`, `UIStepper`, `UIDatePicker` ni
-  WebKit. Hoy esas cinco dejan un hueco del tamaño que dijo el layout y lo
-  dicen en el log; el interruptor y el deslizador tendrían que ser una fila
-  enfocable y una fila que responde a izquierda y derecha, que es como se
-  hacen en una tele, y eso es una primitiva nueva. Falta también que una
-  plantilla pueda escuchar `(focus)` y `(blur)`: el host los emite, pero esas
-  dos salidas solo existen hoy en `an-text-input`. Y falta el icono, que en
-  tvOS es un catálogo de assets compilado con `actool`. En
-  [platforms/tvos](https://angular-native.dev/platforms/tvos/).
+- **Hot refresh does not reach the framework.** Changing a component of the app
+  keeps its state; changing `packages/` or a dependency forces a restart,
+  because only one copy of Angular fits in the interpreter. It says so and
+  restarts rather than showing you stale code.
 
-- **El reloj monta diecisiete de las veinticinco, y dice por qué no las otras
-  ocho.** Se quedan fuera `an-tab-bar` y `an-navigation-bar` —en 205 puntos de
-  ancho no son lo mismo que en un teléfono—, `an-segmented-control`,
-  `an-textarea` y `an-web-view` —el SDK de watchOS no los trae—, `an-search-bar`
-  —en el reloj buscar es una pantalla del sistema—, `an-video-view` —AVKit allí
-  no tiene vista de reproducción— y `an-map-view`, que existe pero no acepta ni
-  centro ni zoom desde la app. La corona digital llega como `(crown)` a
-  cualquier vista, y con ella `(longPress)`, `(pan)` y los cuatro `(swipe*)`;
-  `(pinch)` y `(rotation)` no, porque no caben dos dedos en 40 mm. No es un port
-  del host de iOS: watchOS no tiene jerarquía de `UIView`, así que el árbol se
-  refleja en un modelo que redibuja SwiftUI. Faltan la animación y las
-  transformaciones. El porqué de cada decisión, en
-  [platforms/watchos](https://angular-native.dev/platforms/watchos/).
+Every platform keeps its own list of what is missing there, with the reason,
+and those lists are the ones kept honest by the checks:
+[tvOS](https://angular-native.dev/platforms/tvos/) ·
+[visionOS](https://angular-native.dev/platforms/visionos/) ·
+[watchOS](https://angular-native.dev/platforms/watchos/) ·
+[Wear OS](https://angular-native.dev/platforms/wearos/) ·
+[macOS](https://angular-native.dev/platforms/macos/) ·
+[iOS](https://angular-native.dev/platforms/ios/) ·
+[Android](https://angular-native.dev/platforms/android/)
 
-- **Del reloj de Android falta el modo ambiente y el propio reloj.** Wear OS
-  monta el host de Android tal cual, y el APK, la pantalla redonda, la corona
-  y las siete primitivas que allí no tienen sentido están hechas y vistas
-  correr. Lo que no está: el modo ambiente —cuando se baja la muñeca, el
-  sistema espera una pantalla en blanco y negro a 1 Hz, y una app que no lo
-  declara simplemente se cierra—, la corona como fuente de valor para un
-  `an-slider`, y las complicaciones y esferas, que no comparten nada con esto.
-  Y falta un reloj de verdad: todo se ha visto en el emulador, que simula la
-  corona y no trae códecs de vídeo. En [platforms/wearos](https://angular-native.dev/platforms/wearos/).
+## Development
 
-- **Del escritorio falta el campo de contraseña y las transiciones de la
-  pila.** macOS monta las veinticinco primitivas: veintidós con un control del
-  sistema, dos armadas con vistas del sistema, y la cabecera de navegación en el
-  sitio donde un Mac la tiene, que es la barra de título de la ventana y no una
-  vista del árbol. Lo que no está es `secureTextEntry` —en AppKit el campo de
-  contraseña es otra clase y una vista no puede cambiar de clase en marcha—, las
-  transiciones de `an-native-stack`, y los plugins. El menú de la app lo pone el
-  shell y no se expone a Angular. Todo ello, en
-  [platforms/macos](https://angular-native.dev/platforms/macos/).
+`NaiveMeasurer` approximates text measurement so the core can be tested with no
+platform under it. On a device `UikitMeasurer` and `JniMeasurer` are what run,
+and they cache by (text, font, available width): layout measures each node
+several times per frame, and with no cache that is hundreds of border
+crossings.
 
-## Desarrollo
+The tools find themselves: the Android SDK through `ANDROID_HOME` or its usual
+location, and inside it the latest build-tools and platform. The NDK and the
+bindgen flags are pinned in `.cargo/config.toml`.
 
-`NaiveMeasurer` aproxima la medición de texto para que el núcleo sea testeable
-sin plataforma. En el dispositivo mandan `UikitMeasurer` y `JniMeasurer`, que
-cachean por (texto, fuente, ancho disponible): el layout mide cada nodo varias
-veces por frame y sin caché eso son cientos de cruces de frontera.
-
-Las herramientas se descubren solas: el SDK de Android por `ANDROID_HOME` o la
-ruta estándar, y dentro de él la última versión de build-tools y de plataforma.
-El NDK y los flags de bindgen están fijados en `.cargo/config.toml`.
+The documentation site is `docs-site/` — Astro and Starlight, English at the
+root with an `es` locale — and it runs with `npm run docs`.
