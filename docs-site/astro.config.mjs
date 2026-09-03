@@ -18,6 +18,71 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'angular-native',
+      // A chevron turning into a filled rounded rectangle: markup on the left,
+      // the control the system draws for it on the right. Two files rather than
+      // one so the mark is legible on both backgrounds instead of being a grey
+      // that is a compromise on each.
+      logo: {
+        light: './src/assets/logo-light.svg',
+        dark: './src/assets/logo-dark.svg'
+      },
+      // The identity: one CSS file for the site and one for the home page. Both
+      // are plain CSS over Starlight's own custom properties, which is the
+      // supported way in, and neither fights the theme with `!important`.
+      customCss: ['./src/styles/theme.css', './src/styles/landing.css'],
+      // Starlight's `Hero` is a title and two buttons; this page has to make an
+      // argument in the first screenful, so that one component is replaced and
+      // everything else is left alone.
+      components: {
+        Hero: './src/components/Hero.astro'
+      },
+      // Code is most of what is read here, so it gets a theme of its own rather
+      // than the default's high-contrast primaries: Vitesse is low in
+      // saturation and sits next to the vermilion instead of arguing with it.
+      // The surfaces are overridden to the site's own so a code block reads as
+      // part of the page rather than a window pasted onto it.
+      expressiveCode: {
+        themes: ['vitesse-dark', 'vitesse-light'],
+        styleOverrides: {
+          borderRadius: '0.625rem',
+          borderColor: 'var(--an-border)',
+          codeBackground: 'var(--an-surface)',
+          codeFontFamily: 'var(--sl-font-mono)',
+          codeFontSize: '0.8438rem',
+          codeLineHeight: '1.65',
+          codePaddingBlock: '0.9rem',
+          codePaddingInline: '1.1rem',
+          frames: {
+            editorTabBarBackground: 'var(--an-surface-raised)',
+            editorTabBarBorderBottomColor: 'var(--an-border)',
+            editorActiveTabBackground: 'var(--an-surface)',
+            editorActiveTabBorderColor: 'var(--an-border)',
+            editorActiveTabIndicatorTopColor: 'var(--sl-color-accent)',
+            editorActiveTabForeground: 'var(--sl-color-white)',
+            editorTabBorderRadius: '0.375rem',
+            terminalBackground: 'var(--an-surface)',
+            terminalTitlebarBackground: 'var(--an-surface-raised)',
+            terminalTitlebarBorderBottomColor: 'var(--an-border)',
+            terminalTitlebarForeground: 'var(--sl-color-gray-3)',
+            inlineButtonBorder: 'var(--an-border-strong)',
+            inlineButtonForeground: 'var(--sl-color-gray-2)',
+            shadowColor: 'transparent'
+          }
+        }
+      },
+      // The tab colour a mobile browser paints its own chrome with. Without it
+      // the bar stays white above a dark page, which is the one part of the
+      // site the CSS cannot reach any other way.
+      head: [
+        {
+          tag: 'meta',
+          attrs: { name: 'theme-color', content: '#12151a', media: '(prefers-color-scheme: dark)' }
+        },
+        {
+          tag: 'meta',
+          attrs: { name: 'theme-color', content: '#ffffff', media: '(prefers-color-scheme: light)' }
+        }
+      ],
       defaultLocale: 'root',
       locales: {
         root: { label: 'English', lang: 'en' },

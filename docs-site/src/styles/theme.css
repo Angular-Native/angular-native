@@ -1,0 +1,552 @@
+/*
+ * The site's visual identity.
+ *
+ * The argument this project makes is that a control on the screen should be the
+ * system's own control and not a drawing of one, so the site is built the same
+ * way: it sets a type scale and a colour system and then lets the reader's own
+ * system typeface render it. Nothing is fetched from a font host — the page
+ * paints on the first frame, which is the only honest way to argue for
+ * something being fast.
+ *
+ * Colour is a single vermilion against graphite. The two things the framework is
+ * made of, Angular and Rust, both live in the red-orange band, and one saturated
+ * accent used only where something is interactive — a link, the active page, a
+ * focus ring — leaves the prose and the code to carry the page.
+ *
+ * Starlight puts its own rules in `@layer starlight.*`, so everything here wins
+ * on layer order alone. There is no `!important` in this file and there should
+ * not be one.
+ */
+
+:root {
+	/* Dark is the base, the way Starlight declares it; light overrides below. */
+	--sl-color-white: hsl(220 24% 98%);
+	--sl-color-gray-1: hsl(220 18% 92%);
+	--sl-color-gray-2: hsl(220 12% 78%);
+	--sl-color-gray-3: hsl(220 9% 58%);
+	--sl-color-gray-4: hsl(220 8% 40%);
+	--sl-color-gray-5: hsl(220 10% 26%);
+	--sl-color-gray-6: hsl(220 13% 17%);
+	--sl-color-black: hsl(220 16% 8%);
+
+	--sl-color-accent-low: hsl(12 50% 15%);
+	--sl-color-accent: hsl(14 90% 62%);
+	--sl-color-accent-high: hsl(16 96% 80%);
+
+	/* The link colour is the accent itself: `accent-high` is so pale on this
+	   background that a run of links reads as a highlighter pass. */
+	--sl-color-text-accent: var(--sl-color-accent);
+	--sl-color-text: var(--sl-color-gray-2);
+
+	--sl-color-bg: var(--sl-color-black);
+	--sl-color-bg-nav: hsl(220 15% 10% / 0.86);
+	--sl-color-bg-sidebar: hsl(220 15% 10%);
+	--sl-color-bg-inline-code: hsl(220 14% 18%);
+	--sl-color-hairline-light: hsl(220 10% 22%);
+	--sl-color-hairline: hsl(220 12% 15%);
+	--sl-color-hairline-shade: hsl(220 16% 6%);
+
+	/* Surfaces that are neither the page nor the sidebar: cards, table heads,
+	   the strip under the hero. */
+	--an-surface: hsl(220 14% 12%);
+	--an-surface-raised: hsl(220 13% 14%);
+	--an-border: hsl(220 10% 22%);
+	--an-border-strong: hsl(220 10% 30%);
+
+	/* One solid vermilion for buttons, identical in both themes, because white
+	   on it clears 4.5:1 either way and a button that changes colour with the
+	   theme stops being the same button. */
+	--an-solid: hsl(12 80% 45%);
+	--an-solid-hover: hsl(12 84% 40%);
+	--an-solid-text: hsl(0 0% 100%);
+	--an-accent-tint: hsl(14 60% 60% / 0.14);
+	--an-accent-tint-strong: hsl(14 70% 60% / 0.22);
+
+	--an-ok: hsl(150 55% 55%);
+	--an-partial: hsl(38 92% 62%);
+	--an-none: hsl(220 8% 45%);
+
+	--an-radius-sm: 0.375rem;
+	--an-radius: 0.625rem;
+	--an-radius-lg: 1rem;
+
+	/* Type. Tighter than the stock scale: a reference page is read in long
+	   stretches and a 42px h1 over 16px body makes every section look like the
+	   start of a new document. */
+	--sl-text-h1: 2rem;
+	--sl-text-h2: 1.5rem;
+	--sl-text-h3: 1.1875rem;
+	--sl-text-h4: 1.0625rem;
+	--sl-text-h5: 1rem;
+	--sl-line-height: 1.7;
+	--sl-line-height-headings: 1.25;
+	--sl-text-code: 0.8438rem;
+	--sl-text-code-sm: 0.8125rem;
+
+	--sl-content-width: 46rem;
+	--sl-sidebar-width: 17.5rem;
+	--sl-nav-height: 3.5rem;
+
+	--sl-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', 'Noto Sans',
+		Arial, sans-serif;
+	--sl-font-mono: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas,
+		'Liberation Mono', monospace;
+
+	color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+	--sl-color-white: hsl(220 24% 12%);
+	--sl-color-gray-1: hsl(220 18% 18%);
+	--sl-color-gray-2: hsl(220 12% 30%);
+	--sl-color-gray-3: hsl(220 9% 45%);
+	--sl-color-gray-4: hsl(220 8% 62%);
+	--sl-color-gray-5: hsl(220 12% 84%);
+	--sl-color-gray-6: hsl(220 20% 93%);
+	--sl-color-gray-7: hsl(220 30% 97%);
+	--sl-color-black: hsl(0 0% 100%);
+
+	--sl-color-accent-low: hsl(12 90% 95%);
+	--sl-color-accent: hsl(12 80% 45%);
+	--sl-color-accent-high: hsl(10 74% 36%);
+	--sl-color-text-accent: var(--sl-color-accent);
+
+	--sl-color-bg-nav: hsl(220 33% 99% / 0.86);
+	--sl-color-bg-sidebar: hsl(220 33% 99%);
+	--sl-color-bg-inline-code: hsl(220 24% 95%);
+	--sl-color-hairline-light: hsl(220 16% 89%);
+	--sl-color-hairline: hsl(220 18% 92%);
+	--sl-color-hairline-shade: hsl(220 18% 92%);
+
+	--an-surface: hsl(220 33% 98.5%);
+	--an-surface-raised: hsl(0 0% 100%);
+	--an-border: hsl(220 16% 89%);
+	--an-border-strong: hsl(220 14% 80%);
+
+	--an-accent-tint: hsl(12 80% 50% / 0.09);
+	--an-accent-tint-strong: hsl(12 80% 50% / 0.16);
+
+	--an-ok: hsl(150 62% 30%);
+	--an-partial: hsl(33 92% 38%);
+	--an-none: hsl(220 8% 55%);
+
+	color-scheme: light;
+}
+
+@media (min-width: 50em) {
+	:root {
+		--sl-nav-height: 3.75rem;
+		--sl-text-h1: 2.5rem;
+		--sl-text-h2: 1.75rem;
+		--sl-text-h3: 1.3125rem;
+		--sl-text-h4: 1.0938rem;
+	}
+}
+
+/* ---------------------------------------------------------------- chrome -- */
+
+body {
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+	font-synthesis-weight: none;
+}
+
+/* The bar stays put while the page moves under it, so it is translucent rather
+   than opaque: the content sliding beneath is the only cue that it is fixed. */
+header.header {
+	background-color: var(--sl-color-bg-nav);
+	backdrop-filter: saturate(1.6) blur(12px);
+	-webkit-backdrop-filter: saturate(1.6) blur(12px);
+	border-bottom: 1px solid var(--sl-color-hairline-light);
+	box-shadow: none;
+}
+
+.site-title {
+	font-weight: 600;
+	letter-spacing: -0.015em;
+	color: var(--sl-color-white);
+	gap: 0.5rem;
+}
+
+.site-title img {
+	height: 1.5rem;
+	width: auto;
+}
+
+/* --------------------------------------------------------------- sidebar -- */
+
+.sidebar-pane {
+	border-inline-end: 1px solid var(--sl-color-hairline-light);
+	background-color: var(--sl-color-bg-sidebar);
+}
+
+.sidebar-content {
+	padding-top: 1.25rem;
+}
+
+sl-sidebar-state-persist ul.top-level > li + li {
+	margin-top: 1.25rem;
+}
+
+/* Group headings are labels, not headings: small, tracked out, quiet, so the
+   eye lands on the page names underneath them. */
+.sidebar-content summary,
+.sidebar-content .group-label > span,
+.sidebar-content ul.top-level > li > .large {
+	font-size: 0.6875rem;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--sl-color-gray-3);
+}
+
+.sidebar-content a {
+	font-size: 0.875rem;
+	line-height: 1.4;
+	padding: 0.3125rem 0.625rem;
+	border-radius: var(--an-radius-sm);
+	color: var(--sl-color-gray-2);
+	border-inline-start: 2px solid transparent;
+	margin-inline-start: -2px;
+}
+
+.sidebar-content a:hover {
+	color: var(--sl-color-white);
+	background-color: var(--an-accent-tint);
+}
+
+/* The current page gets the accent twice — as a rule in the margin and as a
+   wash behind it — because in a list of fifteen short lines a colour change
+   alone is easy to miss. */
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover {
+	color: var(--sl-color-text-accent);
+	background-color: var(--an-accent-tint-strong);
+	border-inline-start-color: var(--sl-color-accent);
+	font-weight: 600;
+}
+
+/* ------------------------------------------------------ table of contents -- */
+
+starlight-toc h2 {
+	font-size: 0.6875rem;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--sl-color-gray-3);
+	margin-bottom: 0.5rem;
+}
+
+starlight-toc nav > ul {
+	border-inline-start: 1px solid var(--sl-color-hairline-light);
+}
+
+starlight-toc a {
+	font-size: 0.8125rem;
+	line-height: 1.45;
+	padding-block: 0.3125rem;
+	padding-inline-start: 0.75rem;
+	border-inline-start: 2px solid transparent;
+	margin-inline-start: -1px;
+	color: var(--sl-color-gray-3);
+	--pad-inline: 0px;
+}
+
+starlight-toc a:hover {
+	color: var(--sl-color-white);
+}
+
+starlight-toc a[aria-current='true'],
+starlight-toc a[aria-current='true']:hover {
+	color: var(--sl-color-text-accent);
+	border-inline-start-color: var(--sl-color-accent);
+	font-weight: 600;
+}
+
+/* The mobile table of contents is a control, so it gets a control's outline
+   rather than sitting loose on the page. */
+mobile-starlight-toc nav > button {
+	border-block: 1px solid var(--sl-color-hairline-light);
+	background-color: var(--sl-color-bg-nav);
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	font-size: 0.8125rem;
+}
+
+/* -------------------------------------------------------------- headings -- */
+
+.content-panel + .content-panel {
+	border-top: none;
+}
+
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) {
+	color: var(--sl-color-white);
+	letter-spacing: -0.018em;
+	font-weight: 640;
+}
+
+.sl-markdown-content h1,
+.page-title {
+	letter-spacing: -0.028em;
+	font-weight: 680;
+}
+
+/* A hairline above every h2 gives a long reference page a rhythm you can scroll
+   past and still know where you are. */
+.sl-markdown-content h2:not(:where(.not-content *)) {
+	margin-top: 3rem;
+	padding-top: 1.75rem;
+	border-top: 1px solid var(--sl-color-hairline-light);
+}
+
+.sl-markdown-content h2:first-child:not(:where(.not-content *)) {
+	margin-top: 0;
+	padding-top: 0;
+	border-top: none;
+}
+
+.sl-markdown-content h3:not(:where(.not-content *)) {
+	margin-top: 2rem;
+}
+
+.sl-markdown-content
+	:is(h2, h3, h4, h5, h6)
+	+ :is(p, ul, ol, table, .expressive-code, .starlight-aside) {
+	margin-top: 0.75rem;
+}
+
+/* The page's own header block: the description under the title is the second
+   thing read on every page, so it gets its own size rather than body size. */
+.content-panel:first-of-type .sl-markdown-content > p:first-child {
+	font-size: 1.0625rem;
+}
+
+/* ----------------------------------------------------------------- prose -- */
+
+.sl-markdown-content a:not(:where(.not-content *)) {
+	text-decoration-thickness: 1px;
+	text-underline-offset: 0.2em;
+	text-decoration-color: color-mix(in srgb, var(--sl-color-text-accent) 40%, transparent);
+	transition: text-decoration-color 0.12s ease;
+}
+
+.sl-markdown-content a:hover:not(:where(.not-content *)) {
+	text-decoration-color: currentColor;
+}
+
+.sl-markdown-content code:not(:where(.not-content *)) {
+	border: 1px solid var(--sl-color-hairline-light);
+	border-radius: var(--an-radius-sm);
+	padding: 0.1em 0.34em;
+	font-size: 0.875em;
+}
+
+.sl-markdown-content strong:not(:where(.not-content *)) {
+	color: var(--sl-color-white);
+	font-weight: 640;
+}
+
+.sl-markdown-content blockquote:not(:where(.not-content *)) {
+	border-inline-start: 2px solid var(--sl-color-accent);
+	color: var(--sl-color-gray-3);
+	font-style: normal;
+}
+
+.sl-markdown-content hr:not(:where(.not-content *)) {
+	border: none;
+	border-top: 1px solid var(--sl-color-hairline-light);
+}
+
+/* ---------------------------------------------------------------- tables -- */
+
+/*
+ * Starlight already gives a table `display: block; overflow: auto`, so a wide
+ * support matrix scrolls inside itself instead of pushing the page sideways.
+ * What is added here is the part that makes that readable: the table fills the
+ * column when it fits, the head is a surface so the reader can tell where the
+ * scroll started, and the frame says the thing is scrollable at all.
+ */
+.sl-markdown-content table:not(:where(.not-content *)) {
+	width: max-content;
+	min-width: 100%;
+	border: 1px solid var(--an-border);
+	border-radius: var(--an-radius);
+	border-spacing: 0;
+	font-size: 0.875rem;
+	overscroll-behavior-x: contain;
+}
+
+.sl-markdown-content table th:not(:where(.not-content *)) {
+	position: sticky;
+	top: 0;
+	background-color: var(--an-surface);
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	white-space: nowrap;
+	border-bottom: 1px solid var(--an-border-strong);
+}
+
+.sl-markdown-content :is(th, td):not(:where(.not-content *)) {
+	padding: 0.5rem 0.875rem;
+	border-bottom: 1px solid var(--sl-color-hairline-light);
+	vertical-align: top;
+}
+
+/* The stock rule strips the padding off the first and last cell so the text
+   lines up with the prose; inside a frame that just crowds the border. */
+.sl-markdown-content :is(th:first-child, td:first-child):not(:where(.not-content *)) {
+	padding-inline-start: 0.875rem;
+}
+
+.sl-markdown-content :is(th:last-child, td:last-child):not(:where(.not-content *)) {
+	padding-inline-end: 0.875rem;
+}
+
+.sl-markdown-content tbody tr:last-child :is(th, td):not(:where(.not-content *)) {
+	border-bottom: none;
+}
+
+.sl-markdown-content tbody tr:hover :is(th, td):not(:where(.not-content *)) {
+	background-color: var(--an-accent-tint);
+}
+
+.sl-markdown-content table code:not(:where(.not-content *)) {
+	white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ code -- */
+
+.sl-markdown-content .expressive-code {
+	margin-block: 1.25rem;
+}
+
+/* ---------------------------------------------------------------- asides -- */
+
+.starlight-aside {
+	border-inline-start-width: 2px;
+	border-radius: 0 var(--an-radius) var(--an-radius) 0;
+	padding: 0.875rem 1.125rem;
+}
+
+.starlight-aside__title {
+	font-size: 0.75rem;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+/* ----------------------------------------------------------------- cards -- */
+
+/*
+ * The stock card cycles through four hues per grid. Four colours saying nothing
+ * in particular is exactly the kind of decoration this site should not have, so
+ * a card is a plain surface and only the icon carries the accent.
+ */
+.card {
+	border: 1px solid var(--an-border);
+	border-radius: var(--an-radius);
+	background-color: var(--an-surface);
+	padding: 1.375rem 1.5rem;
+	gap: 0.625rem;
+	transition:
+		border-color 0.15s ease,
+		background-color 0.15s ease;
+}
+
+.card:hover {
+	border-color: var(--an-border-strong);
+}
+
+.card .title {
+	font-size: 1.0625rem;
+	font-weight: 640;
+	letter-spacing: -0.012em;
+	gap: 0.625rem;
+	align-items: center;
+}
+
+.card .icon {
+	--sl-card-border: color-mix(in srgb, var(--sl-color-accent) 45%, transparent);
+	--sl-card-bg: var(--an-accent-tint-strong);
+	color: var(--sl-color-text-accent);
+	border-radius: var(--an-radius-sm);
+	padding: 0.28em;
+}
+
+.card .body {
+	font-size: 0.9375rem;
+	line-height: 1.65;
+	color: var(--sl-color-gray-2);
+}
+
+/* -------------------------------------------------------------- controls -- */
+
+.sl-link-button.primary {
+	background-color: var(--an-solid);
+	border-color: var(--an-solid);
+	color: var(--an-solid-text);
+	border-radius: var(--an-radius-sm);
+	font-weight: 600;
+	font-size: 0.9375rem;
+	padding: 0.6rem 1.15rem;
+	text-decoration: none;
+}
+
+.sl-link-button.primary:hover {
+	background-color: var(--an-solid-hover);
+	border-color: var(--an-solid-hover);
+	color: var(--an-solid-text);
+}
+
+.sl-link-button.minimal,
+.sl-link-button.secondary {
+	border: 1px solid var(--an-border-strong);
+	border-radius: var(--an-radius-sm);
+	color: var(--sl-color-white);
+	font-weight: 600;
+	font-size: 0.9375rem;
+	padding: 0.6rem 1.15rem;
+	text-decoration: none;
+	background-color: transparent;
+}
+
+.sl-link-button.minimal:hover,
+.sl-link-button.secondary:hover {
+	background-color: var(--an-surface-raised);
+	border-color: var(--sl-color-gray-4);
+	color: var(--sl-color-white);
+}
+
+/* One focus ring everywhere, in the accent, so keyboard use looks deliberate
+   rather than like whatever each control happened to inherit. */
+:where(a, button, summary, input, select, [tabindex]):focus-visible {
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: 2px;
+	border-radius: var(--an-radius-sm);
+}
+
+/* --------------------------------------------------------------- footers -- */
+
+.pagination-links a {
+	border: 1px solid var(--an-border);
+	border-radius: var(--an-radius);
+	background-color: var(--an-surface);
+	box-shadow: none;
+	transition: border-color 0.15s ease;
+}
+
+.pagination-links a:hover {
+	border-color: var(--sl-color-accent);
+}
+
+.pagination-links a > span:first-child {
+	font-size: 0.75rem;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--sl-color-gray-3);
+}
+
+footer.sl-flex .meta {
+	font-size: 0.8125rem;
+	color: var(--sl-color-gray-3);
+}

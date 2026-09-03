@@ -1,0 +1,122 @@
+---
+/*
+ * The splash page's opening screen, replacing Starlight's `Hero`.
+ *
+ * The stock hero is a title, a tagline and buttons centred on an empty page,
+ * which is fine for a project whose name explains it. This one has to make an
+ * argument instead — that the thing on screen is the system's own control and
+ * not a drawing of one — so the first screenful carries the claim, the two ways
+ * in, the command that starts it, and a snippet of the code the claim is about.
+ *
+ * Everything that is prose comes from the page's frontmatter, so the Spanish
+ * page renders the same layout with its own words and nothing has to be
+ * translated inside a component.
+ */
+import { Code, LinkButton } from '@astrojs/starlight/components'
+
+// Starlight's own heading id, which the skip link and the "back to top" anchor
+// both point at. It is not exported from the package, so it is spelled out.
+const PAGE_TITLE_ID = '_top'
+
+const { data } = Astro.locals.starlightRoute.entry
+const { title = data.title, tagline, actions = [] } = data.hero || {}
+const { eyebrow, command, sample } = data as {
+  eyebrow?: string
+  command?: string
+  sample?: string
+}
+
+// An Angular component with nothing special about it except that the elements
+// are native primitives. Identifiers are code and read the same in every
+// language, so this one lives here rather than in the frontmatter.
+const snippet = `@Component({
+  selector: 'app-root',
+  imports: [NATIVE_PRIMITIVES],
+  template: \`
+    <an-view [style.gap]="'16'">
+      <an-text [fontSize]="28">angular-native</an-text>
+      <an-switch [on]="alerts()" (onChange)="alerts.set($event)" />
+    </an-view>
+  \`
+})
+export class AppComponent {
+  alerts = signal(true)
+}`
+
+const copyLabel = Astro.locals.t('expressiveCode.copyButtonTooltip')
+const copiedLabel = Astro.locals.t('expressiveCode.copyButtonCopied')
+---
+
+<div class="an-hero not-content">
+  <div class="an-hero__copy">
+    {eyebrow && <p class="an-hero__eyebrow">{eyebrow}</p>}
+    <h1 id={PAGE_TITLE_ID} data-page-title set:html={title} />
+    {tagline && <div class="an-hero__tagline" set:html={tagline} />}
+    {
+      actions.length > 0 && (
+        <div class="an-hero__actions">
+          {actions.map(({ attrs = {}, icon, link: href, text, variant }) => (
+            <LinkButton {href} {variant} icon={icon?.name} {...attrs}>
+              {text}
+            </LinkButton>
+          ))}
+        </div>
+      )
+    }
+    {
+      command && (
+        <div class="an-command">
+          <span class="an-command__prompt" aria-hidden="true">
+            $
+          </span>
+          <code>{command}</code>
+          <button
+            class="an-command__copy"
+            type="button"
+            data-command={command}
+            data-copied={copiedLabel}
+            aria-label={copyLabel}
+            title={copyLabel}
+          >
+            <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.4"
+                stroke-linejoin="round"
+                d="M5.5 5.5h7v7h-7zM10.5 5.5v-2h-7v7h2"></path>
+            </svg>
+          </button>
+        </div>
+      )
+    }
+  </div>
+
+  <div class="an-hero__sample">
+    <Code code={snippet} lang="ts" frame="code" title="app.component.ts" />
+    {sample && <p class="an-hero__note" set:html={sample} />}
+  </div>
+</div>
+
+<script>
+  // Small enough to stay inline: the button copies the command and says so for
+  // a moment. Nothing else on the page needs JavaScript.
+  document.querySelectorAll<HTMLButtonElement>('.an-command__copy').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const command = button.dataset.command
+      if (!command) return
+      try {
+        await navigator.clipboard.writeText(command)
+      } catch {
+        return
+      }
+      const previous = button.getAttribute('aria-label')
+      button.classList.add('is-copied')
+      button.setAttribute('aria-label', button.dataset.copied || 'Copied')
+      window.setTimeout(() => {
+        button.classList.remove('is-copied')
+        if (previous) button.setAttribute('aria-label', previous)
+      }, 1600)
+    })
+  })
+</script>

@@ -2,7 +2,15 @@
 title: angular-native
 description: Apps de Angular que pintan vistas nativas de verdad en ocho plataformas. Sin WebView por ninguna parte.
 template: splash
+eyebrow: 25 primitivas · 8 plataformas · un núcleo en Rust
+command: npx @angular/cli@latest new mi-app && cd mi-app && an init
+sample: |
+  Un <code>&lt;an-switch&gt;</code> <strong>es</strong> un <code>UISwitch</code>
+  en iOS y un <code>MaterialSwitch</code> en Android — el control que pinta el
+  sistema, no una copia suya.
 hero:
+  title: |
+    Vistas nativas de verdad. <em>Sin WebView por ninguna parte.</em>
   tagline: |
     Escribe Angular. Obtienes un UIView, un android.view.View, un NSView o una
     vista de SwiftUI — el control de verdad, del sistema de verdad, en ocho
@@ -19,6 +27,7 @@ hero:
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components'
+import PlatformGrid from '../../../components/PlatformGrid.astro'
 
 <CardGrid>
   <Card title="Controles de verdad, no imitaciones" icon="approve-check">
@@ -47,16 +56,34 @@ import { Card, CardGrid } from '@astrojs/starlight/components'
 
 ## Ocho plataformas, un bundle
 
-| | Pinta con | Estado |
-|---|---|---|
-| **iOS · iPadOS** | UIKit | Las 25 primitivas |
-| **Android** | android.view + Material 3 | Las 25 primitivas |
-| **macOS** | AppKit | Las 25 primitivas |
-| **tvOS** | UIKit + motor de foco | 20 de 25 — una tele no tiene interruptor ni deslizador |
-| **visionOS** | UIKit en una escena con ventana | Las 25 primitivas |
-| **watchOS** | SwiftUI | 17 de 25 |
-| **Wear OS** | android.view | 18 de 25 |
-| **HarmonyOS · Windows** | — | Sin empezar |
+<PlatformGrid
+  rendersLabel="Pinta con"
+  platforms={[
+    { name: 'iOS · iPadOS', renders: 'UIKit', state: 'Las 25 primitivas', level: 'full' },
+    {
+      name: 'Android',
+      renders: 'android.view + Material 3',
+      state: 'Las 25 primitivas',
+      level: 'full'
+    },
+    { name: 'macOS', renders: 'AppKit', state: 'Las 25 primitivas', level: 'full' },
+    {
+      name: 'tvOS',
+      renders: 'UIKit + motor de foco',
+      state: '20 de 25 — una tele no tiene interruptor ni deslizador',
+      level: 'partial'
+    },
+    {
+      name: 'visionOS',
+      renders: 'UIKit en una escena con ventana',
+      state: 'Las 25 primitivas',
+      level: 'full'
+    },
+    { name: 'watchOS', renders: 'SwiftUI', state: '17 de 25', level: 'partial' },
+    { name: 'Wear OS', renders: 'android.view', state: '18 de 25', level: 'partial' },
+    { name: 'HarmonyOS · Windows', renders: '—', state: 'Sin empezar', level: 'none' }
+  ]}
+/>
 
 ## En un minuto
 

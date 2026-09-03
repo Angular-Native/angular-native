@@ -2,7 +2,15 @@
 title: angular-native
 description: Angular apps that render real native views on eight platforms. No WebView anywhere.
 template: splash
+eyebrow: 25 primitives · 8 platforms · one Rust core
+command: npx @angular/cli@latest new my-app && cd my-app && an init
+sample: |
+  An <code>&lt;an-switch&gt;</code> <strong>is</strong> a <code>UISwitch</code> on
+  iOS and a <code>MaterialSwitch</code> on Android — the control the system
+  draws, not a copy of it.
 hero:
+  title: |
+    Real native views. <em>No WebView anywhere.</em>
   tagline: |
     Write Angular. Get a UIView, an android.view.View, an NSView or a SwiftUI
     view — the real control, from the real system, on eight platforms.
@@ -17,7 +25,8 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid, Code } from '@astrojs/starlight/components'
+import { Card, CardGrid } from '@astrojs/starlight/components'
+import PlatformGrid from '../../components/PlatformGrid.astro'
 
 <CardGrid>
   <Card title="Real controls, not lookalikes" icon="approve-check">
@@ -44,16 +53,34 @@ import { Card, CardGrid, Code } from '@astrojs/starlight/components'
 
 ## Eight platforms, one bundle
 
-| | Renders with | State |
-|---|---|---|
-| **iOS · iPadOS** | UIKit | All 25 primitives |
-| **Android** | android.view + Material 3 | All 25 primitives |
-| **macOS** | AppKit | All 25 primitives |
-| **tvOS** | UIKit + focus engine | 20 of 25 — a TV has no switch or slider |
-| **visionOS** | UIKit in a windowed scene | All 25 primitives |
-| **watchOS** | SwiftUI | 17 of 25 |
-| **Wear OS** | android.view | 18 of 25 |
-| **HarmonyOS · Windows** | — | Not started |
+<PlatformGrid
+  rendersLabel="Renders with"
+  platforms={[
+    { name: 'iOS · iPadOS', renders: 'UIKit', state: 'All 25 primitives', level: 'full' },
+    {
+      name: 'Android',
+      renders: 'android.view + Material 3',
+      state: 'All 25 primitives',
+      level: 'full'
+    },
+    { name: 'macOS', renders: 'AppKit', state: 'All 25 primitives', level: 'full' },
+    {
+      name: 'tvOS',
+      renders: 'UIKit + focus engine',
+      state: '20 of 25 — a TV has no switch or slider',
+      level: 'partial'
+    },
+    {
+      name: 'visionOS',
+      renders: 'UIKit in a windowed scene',
+      state: 'All 25 primitives',
+      level: 'full'
+    },
+    { name: 'watchOS', renders: 'SwiftUI', state: '17 of 25', level: 'partial' },
+    { name: 'Wear OS', renders: 'android.view', state: '18 of 25', level: 'partial' },
+    { name: 'HarmonyOS · Windows', renders: '—', state: 'Not started', level: 'none' }
+  ]}
+/>
 
 ## In one minute
 
