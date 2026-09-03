@@ -1,5 +1,5 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core'
-import { Files, Share } from '@angular-native/platform'
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core'
+import { Files, Network, Share } from '@angular-native/platform'
 import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
 
 /**
@@ -37,6 +37,8 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
         <an-text [fontSize]="14" [color]="'#c7d5f5'">{{ line }}</an-text>
       }
 
+      <an-text [fontSize]="14" [color]="'#6ee7b7'">{{ live() }}</an-text>
+
       <an-view [style.gap]="'10'">
         <an-view
           [style.height]="'44'"
@@ -64,16 +66,35 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
 export class AppComponent {
   private readonly files = inject(Files)
   private readonly sharing = inject(Share)
+  private readonly network = inject(Network)
 
   readonly lines = signal<string[]>([])
 
+  /**
+   * The network, live. It is a signal and not another line in the list because
+   * it is the one thing here that changes on its own: turn the Wi-Fi off and
+   * this line changes without anybody pressing anything.
+   */
+  readonly live = computed(() => {
+    const status = this.network.status()
+    if (status === null) return 'network: waiting for the first answer'
+    return (
+      `network: ${status.online ? 'online' : 'offline'} over ${status.connection}` +
+      `${status.expensive ? ', metered' : ''}${status.constrained ? ', low data' : ''}`
+    )
+  })
+
   constructor() {
     void this.exercise()
+    // Kept fresh for as long as the app is up. In a real app the returned
+    // function goes in `DestroyRef.onDestroy`; here the app is the screen.
+    this.network.watch(1000)
   }
 
   private async exercise(): Promise<void> {
     await this.exerciseFiles()
     await this.exerciseShare()
+    await this.exerciseNetwork()
   }
 
   /** The picker is not run on startup: it puts something on the screen. */
@@ -156,6 +177,23 @@ export class AppComponent {
       this.say(`share.canShare: ok ${can ? 'yes' : 'no, not on this platform'}`)
     } catch (error) {
       this.say(`share.canShare: no ${error}`)
+    }
+  }
+
+  /**
+   * The one module with no exceptions anywhere: every platform has a network
+   * monitor and every platform answers this.
+   */
+  private async exerciseNetwork(): Promise<void> {
+    try {
+      const status = await this.network.read()
+      this.say(
+        `network.status: ok ${status.online ? 'online' : 'offline'} over ` +
+          `${status.connection}${status.expensive ? ', metered' : ''}` +
+          `${status.constrained ? ', low data' : ''}`
+      )
+    } catch (error) {
+      this.say(`network.status: no ${error}`)
     }
   }
 

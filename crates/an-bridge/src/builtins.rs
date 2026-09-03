@@ -46,7 +46,7 @@ use crate::plugins::{HostPlugin, PluginBridge};
 /// refusal belongs in the shell, where it can say what this platform is and what
 /// it has instead. A name missing from the registry only ever produces "there is
 /// no native module called …", and that reads like a typo.
-pub const BUILTIN_MODULES: &[&str] = &["files", "share"];
+pub const BUILTIN_MODULES: &[&str] = &["files", "share", "network"];
 
 /// The mailbox the built-ins share. One per process, like the plugins'.
 pub fn builtin_bridge() -> &'static Arc<PluginBridge> {

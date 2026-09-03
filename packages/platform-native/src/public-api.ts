@@ -12,6 +12,12 @@ export type {
   FilePickerPlatform,
   PickOptions
 } from './modules/files'
+export { Network } from './modules/network'
+export type {
+  NetworkConnection,
+  NetworkPlatform,
+  NetworkStatus
+} from './modules/network'
 export { Share } from './modules/share'
 export type { SharePlatform, ShareRequest } from './modules/share'
 export {

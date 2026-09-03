@@ -21,6 +21,16 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
+      What the `network` built-in module reads. It is an install-time
+      permission: there is no dialog and nothing the person grants at run time,
+      so without this line every call to `network.status()` would throw
+      SecurityException. The module checks for it and answers with this very
+      line rather than dying, but an app that ships without it has a module that
+      only ever says no.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
       Package visibility. Since Android 11 an app cannot see which other apps
       are installed unless it says what it is looking for, and `resolveActivity`
       answers `null` for everything it cannot see. Without this the `files` and
