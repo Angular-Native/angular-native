@@ -14,7 +14,7 @@
       "sources": "native/ios",
       "register": "AnBiometricsPlugin",
       "plist": {
-        "NSFaceIDUsageDescription": "Para comprobar que eres tú antes de enseñar lo que hay guardado."
+        "NSFaceIDUsageDescription": "To check it is you before showing what is stored."
       }
     },
     "android": {

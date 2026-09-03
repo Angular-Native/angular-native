@@ -28,46 +28,46 @@ import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.GCMParameterSpec;
 
 /**
- * El equivalente honrado del llavero de iOS, en Android.
+ * The honest equivalent of the iOS keychain, on Android.
  *
- * <p><b>Android no tiene llavero.</b> No hay ninguna API del sistema que guarde un secreto por ti:
- * lo que hay es el <i>almacén de claves</i>, {@code AndroidKeyStore}, que guarda <i>claves</i> —no
- * datos— y no las deja salir de ahí. Así que el equivalente se arma con dos piezas:
+ * <p><b>Android has no keychain.</b> There is no system API that stores a secret for you: what there
+ * is is the <i>key store</i>, {@code AndroidKeyStore}, which holds <i>keys</i> —not data— and does
+ * not let them out. So the equivalent is built out of two pieces:
  *
  * <ol>
- *   <li>una clave AES de 256 bits generada dentro del almacén, que nunca sale de él y que en la
- *       mayoría de los aparatos vive en el TEE o en el StrongBox;
- *   <li>el secreto cifrado con ella —AES/GCM, con etiqueta de autenticación— en un fichero de
- *       preferencias privado de la app.
+ *   <li>a 256-bit AES key generated inside the store, which never leaves it and which on most
+ *       devices lives in the TEE or in the StrongBox;
+ *   <li>the secret encrypted with it —AES/GCM, with an authentication tag— in a preferences file
+ *       private to the app.
  * </ol>
  *
- * <p>Eso es exactamente lo que hace {@code androidx.security.EncryptedSharedPreferences}, y aquí
- * está escrito a mano por el mismo motivo que la biometría usa el {@code BiometricPrompt} de la
- * plataforma: en este repo no hay Gradle, las dependencias de Android se traen una a una, y esto
- * son ochenta líneas.
+ * <p>That is exactly what {@code androidx.security.EncryptedSharedPreferences} does, and here it is
+ * written by hand for the same reason the biometrics use the platform's {@code BiometricPrompt}:
+ * there is no Gradle in this repo, the Android dependencies are brought in one by one, and this is
+ * eighty lines.
  *
- * <p><b>Lo que protege y lo que no</b> está en {@code https://angular-native.dev/extending/plugins/}, y es la parte importante.
- * El resumen: al desinstalar la app desaparecen las dos piezas; la copia de seguridad puede
- * llevarse el fichero cifrado pero nunca la clave, así que restaurado en otro aparato no se abre;
- * y en un teléfono sin hardware seguro la clave la guarda el sistema en software, que es menos.
- * {@code backing()} dice cuál de los dos casos es este.
+ * <p><b>What it protects and what it does not</b> is at {@code https://angular-native.dev/extending/plugins/}, and it is the important part.
+ * The summary: uninstalling the app makes both pieces disappear; the backup may take the encrypted
+ * file but never the key, so restored on another device it cannot be opened; and on a phone with no
+ * secure hardware the key is kept by the system in software, which is less.
+ * {@code backing()} says which of the two cases this one is.
  */
 public final class KeychainPlugin implements AnPlugin {
 
-    /** El fichero de preferencias. {@code MODE_PRIVATE}: solo lo lee esta app. */
+    /** The preferences file. {@code MODE_PRIVATE}: only this app reads it. */
     private static final String PREFS = "an.keychain";
 
     private static final String KEYSTORE = "AndroidKeyStore";
     private static final String TRANSFORMATION = "AES/GCM/NoPadding";
-    /** 128 bits de etiqueta: el máximo de GCM, y lo que detecta que alguien tocó el cifrado. */
+    /** 128 tag bits: GCM's maximum, and what detects that somebody touched the ciphertext. */
     private static final int TAG_BITS = 128;
 
-    /** Una clave para lo normal y otra para lo que pide biometría. */
-    private static final String ALIAS_LLANO = "an.keychain.plain";
+    /** One key for the ordinary case and another for what asks for biometrics. */
+    private static final String ALIAS_PLAIN = "an.keychain.plain";
     private static final String ALIAS_BIO = "an.keychain.bio";
 
-    /** {@code BiometricPrompt} llegó en Android 9; su cancelación por {@code CryptoObject}, igual. */
-    private static final int MINIMO_BIO = Build.VERSION_CODES.P;
+    /** {@code BiometricPrompt} arrived in Android 9; its {@code CryptoObject} cancellation too. */
+    private static final int MIN_BIO_API = Build.VERSION_CODES.P;
 
     private Activity host;
 
@@ -79,7 +79,7 @@ public final class KeychainPlugin implements AnPlugin {
     @Override
     public void call(String method, JSONObject args, AnPluginCall respond) {
         if (host == null) {
-            respond.reject("el plugin keychain no tiene contexto de Android");
+            respond.reject("the keychain plugin has no Android context");
             return;
         }
         if ("backing".equals(method)) {
@@ -88,14 +88,14 @@ public final class KeychainPlugin implements AnPlugin {
         }
         String key = args.optString("key", "");
         if (key.isEmpty()) {
-            respond.reject("keychain." + method + " necesita una clave no vacía en 'key'");
+            respond.reject("keychain." + method + " needs a non-empty key in 'key'");
             return;
         }
 
         switch (method) {
             case "set": {
                 if (!args.has("value")) {
-                    respond.reject("keychain.set necesita el secreto en 'value'");
+                    respond.reject("keychain.set needs the secret in 'value'");
                     return;
                 }
                 String value = args.optString("value");
@@ -103,8 +103,8 @@ public final class KeychainPlugin implements AnPlugin {
                 String reason = args.optString("reason", "");
                 if (biometrics && reason.isEmpty()) {
                     respond.reject(
-                            "keychain.set con requireBiometrics necesita un 'reason': es el título"
-                                    + " del diálogo del sistema");
+                            "keychain.set with requireBiometrics needs a 'reason': it is the title"
+                                    + " of the system dialog");
                     return;
                 }
                 set(key, value, biometrics, reason, respond);
@@ -120,194 +120,200 @@ public final class KeychainPlugin implements AnPlugin {
                 return;
 
             case "remove": {
-                boolean habia = prefs().contains(key);
+                boolean existed = prefs().contains(key);
                 prefs().edit().remove(key).apply();
-                respond.resolve(habia);
+                respond.resolve(existed);
                 return;
             }
 
             default:
-                respond.reject("el plugin keychain no tiene ningún método " + method);
+                respond.reject("the keychain plugin has no method " + method);
         }
     }
 
-    // ── Guardar ─────────────────────────────────────────────────────────────
+    // ── Storing ─────────────────────────────────────────────────────────────
 
     /**
-     * Guarda un secreto.
+     * Stores a secret.
      *
-     * <p>Con biometría, <b>guardar también pide la huella</b>. No es un descuido: el almacén de
-     * claves de Android ata la autenticación a cada uso de la clave, y cifrar es un uso. iOS no
-     * funciona así —allí solo pregunta la lectura—, y esa diferencia está dicha en el contrato de
-     * TypeScript y en la documentación, porque disimularla obligaría a guardar el secreto con otra
-     * clave y entonces la protección sería otra.
+     * <p>With biometrics, <b>storing asks for the fingerprint too</b>. It is not an oversight: the
+     * Android key store ties authentication to every use of the key, and encrypting is a use. iOS
+     * does not work like this —over there only reading asks—, and that difference is written down in
+     * the TypeScript contract and in the documentation, because papering over it would mean storing
+     * the secret with a different key and then the protection would be a different protection.
      */
     private void set(
             String key, String value, boolean biometrics, String reason, AnPluginCall respond) {
         Cipher cipher;
         try {
-            SecretKey secret = clave(biometrics ? ALIAS_BIO : ALIAS_LLANO, biometrics);
+            SecretKey secret = secretKey(biometrics ? ALIAS_BIO : ALIAS_PLAIN, biometrics);
             cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.ENCRYPT_MODE, secret);
-        } catch (KeyPermanentlyInvalidatedException invalidada) {
-            // Cambiaron las huellas registradas. Lo guardado con la clave vieja
-            // ya no se abre; para lo nuevo hace falta una clave nueva.
+        } catch (KeyPermanentlyInvalidatedException invalidated) {
+            // The enrolled fingerprints changed. Whatever was stored with the old
+            // key cannot be opened any more; anything new needs a new key.
             try {
-                borrarClave(ALIAS_BIO);
-                SecretKey secret = clave(ALIAS_BIO, true);
+                deleteKey(ALIAS_BIO);
+                SecretKey secret = secretKey(ALIAS_BIO, true);
                 cipher = Cipher.getInstance(TRANSFORMATION);
                 cipher.init(Cipher.ENCRYPT_MODE, secret);
             } catch (Exception error) {
-                respond.resolve(escritura("unavailable", "no se pudo rehacer la clave: " + error));
+                respond.resolve(writeResult("unavailable", "the key could not be remade: " + error));
                 return;
             }
         } catch (Exception error) {
-            respond.resolve(escritura("unavailable", motivo(error)));
+            respond.resolve(writeResult("unavailable", describe(error)));
             return;
         }
 
         if (!biometrics) {
             try {
-                guardar(key, cipher, value);
-                respond.resolve(escritura("saved", "AES/GCM con clave del AndroidKeyStore"));
+                store(key, cipher, value);
+                respond.resolve(writeResult("saved", "AES/GCM with an AndroidKeyStore key"));
             } catch (Exception error) {
-                respond.resolve(escritura("unavailable", motivo(error)));
+                respond.resolve(writeResult("unavailable", describe(error)));
             }
             return;
         }
 
-        if (Build.VERSION.SDK_INT < MINIMO_BIO) {
+        if (Build.VERSION.SDK_INT < MIN_BIO_API) {
             respond.resolve(
-                    escritura(
+                    writeResult(
                             "unavailable",
-                            "guardar con biometría necesita Android 9 (API " + MINIMO_BIO
-                                    + ") y el aparato tiene API " + Build.VERSION.SDK_INT));
+                            "storing with biometrics needs Android 9 (API " + MIN_BIO_API
+                                    + ") and the device is on API " + Build.VERSION.SDK_INT));
             return;
         }
-        final Cipher listo = cipher;
-        preguntar(
+        final Cipher ready = cipher;
+        ask(
                 reason,
                 cipher,
-                new Respuesta() {
+                new Answer() {
                     @Override
-                    public void autenticado(Cipher autorizado) {
+                    public void authenticated(Cipher authorised) {
                         try {
-                            guardar(key, autorizado == null ? listo : autorizado, value);
+                            store(key, authorised == null ? ready : authorised, value);
                             respond.resolve(
-                                    escritura("saved", "AES/GCM con clave de un solo uso autenticado"));
+                                    writeResult(
+                                            "saved",
+                                            "AES/GCM with a single-use authenticated key"));
                         } catch (Exception error) {
-                            respond.resolve(escritura("unavailable", motivo(error)));
+                            respond.resolve(writeResult("unavailable", describe(error)));
                         }
                     }
 
                     @Override
-                    public void denegado(String detail) {
-                        respond.resolve(escritura("denied", detail));
+                    public void denied(String detail) {
+                        respond.resolve(writeResult("denied", detail));
                     }
                 });
     }
 
-    /** Cifra y escribe. El vector de inicialización lo elige el almacén, no este código. */
-    private void guardar(String key, Cipher cipher, String value) throws Exception {
-        byte[] cifrado = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
-        String linea =
+    /** Encrypts and writes. The initialisation vector is picked by the store, not by this code. */
+    private void store(String key, Cipher cipher, String value) throws Exception {
+        byte[] encrypted = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
+        String line =
                 Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP)
                         + ":"
-                        + Base64.encodeToString(cifrado, Base64.NO_WRAP);
-        prefs().edit().putString(key, linea).apply();
+                        + Base64.encodeToString(encrypted, Base64.NO_WRAP);
+        prefs().edit().putString(key, line).apply();
     }
 
-    // ── Leer ────────────────────────────────────────────────────────────────
+    // ── Reading ─────────────────────────────────────────────────────────────
 
     private void get(String key, String reason, AnPluginCall respond) {
-        String linea = prefs().getString(key, null);
-        if (linea == null) {
-            respond.resolve(lectura("notFound", null, "no hay nada guardado con esa clave"));
+        String line = prefs().getString(key, null);
+        if (line == null) {
+            respond.resolve(readResult("notFound", null, "nothing is stored under that key"));
             return;
         }
-        int corte = linea.indexOf(':');
-        if (corte < 0) {
-            // Un valor que no tiene la forma que escribe este plugin. Se dice;
-            // devolver `notFound` haría creer que nunca se guardó nada.
+        int cut = line.indexOf(':');
+        if (cut < 0) {
+            // A value that does not have the shape this plugin writes. It is said
+            // so; returning `notFound` would make you believe nothing was ever
+            // stored.
             respond.resolve(
-                    lectura("unavailable", null, "lo guardado no tiene la forma <iv>:<cifrado>"));
+                    readResult(
+                            "unavailable",
+                            null,
+                            "what is stored does not have the shape <iv>:<ciphertext>"));
             return;
         }
-        byte[] iv = Base64.decode(linea.substring(0, corte), Base64.NO_WRAP);
-        byte[] cifrado = Base64.decode(linea.substring(corte + 1), Base64.NO_WRAP);
+        byte[] iv = Base64.decode(line.substring(0, cut), Base64.NO_WRAP);
+        byte[] encrypted = Base64.decode(line.substring(cut + 1), Base64.NO_WRAP);
 
-        // No se sabe de antemano con cuál de las dos claves se cifró, así que
-        // se prueba la llana primero: si no descifra, es de las de biometría.
-        // Probar es barato y evita guardar un indicador que podría dejar de
-        // coincidir con la realidad.
-        Cipher cipher = descifrador(ALIAS_LLANO, iv);
+        // There is no way of knowing beforehand which of the two keys it was
+        // encrypted with, so the plain one is tried first: if it does not
+        // decrypt, it is one of the biometric ones. Trying is cheap and it saves
+        // storing a marker that could stop matching reality.
+        Cipher cipher = decryptor(ALIAS_PLAIN, iv);
         if (cipher != null) {
             try {
-                byte[] claro = cipher.doFinal(cifrado);
+                byte[] plain = cipher.doFinal(encrypted);
                 respond.resolve(
-                        lectura("found", new String(claro, StandardCharsets.UTF_8), "AES/GCM"));
+                        readResult("found", new String(plain, StandardCharsets.UTF_8), "AES/GCM"));
                 return;
-            } catch (Exception noEsSuya) {
-                // La etiqueta de GCM no cuadra: no lo cifró esta clave. Se sigue.
+            } catch (Exception notThisKey) {
+                // The GCM tag does not add up: this key did not encrypt it. Carry on.
             }
         }
 
-        if (Build.VERSION.SDK_INT < MINIMO_BIO) {
+        if (Build.VERSION.SDK_INT < MIN_BIO_API) {
             respond.resolve(
-                    lectura(
+                    readResult(
                             "unavailable",
                             null,
-                            "está guardado con biometría y eso necesita Android 9 (API "
-                                    + MINIMO_BIO + ")"));
+                            "it is stored with biometrics and that needs Android 9 (API "
+                                    + MIN_BIO_API + ")"));
             return;
         }
         Cipher bio;
         try {
-            SecretKey secret = clave(ALIAS_BIO, true);
+            SecretKey secret = secretKey(ALIAS_BIO, true);
             bio = Cipher.getInstance(TRANSFORMATION);
             bio.init(Cipher.DECRYPT_MODE, secret, new GCMParameterSpec(TAG_BITS, iv));
-        } catch (KeyPermanentlyInvalidatedException invalidada) {
-            // Cambiaron las huellas o las caras registradas. El secreto sigue
-            // ahí y ya no se puede abrir nunca. Es distinto de `denied` —eso se
-            // arregla volviendo a intentarlo— y distinto de `notFound`.
+        } catch (KeyPermanentlyInvalidatedException invalidated) {
+            // The enrolled fingerprints or faces changed. The secret is still
+            // there and it can never be opened again. It is not `denied` —that
+            // one is fixed by trying again— and not `notFound` either.
             respond.resolve(
-                    lectura(
+                    readResult(
                             "invalidated",
                             null,
-                            "la clave se invalidó al cambiar la biometría registrada"));
+                            "the key was invalidated when the enrolled biometrics changed"));
             return;
         } catch (Exception error) {
-            respond.resolve(lectura("unavailable", null, motivo(error)));
+            respond.resolve(readResult("unavailable", null, describe(error)));
             return;
         }
 
-        preguntar(
-                reason.isEmpty() ? "Desbloquear" : reason,
+        ask(
+                reason.isEmpty() ? "Unlock" : reason,
                 bio,
-                new Respuesta() {
+                new Answer() {
                     @Override
-                    public void autenticado(Cipher autorizado) {
+                    public void authenticated(Cipher authorised) {
                         try {
-                            byte[] claro = (autorizado == null ? bio : autorizado).doFinal(cifrado);
+                            byte[] plain = (authorised == null ? bio : authorised).doFinal(encrypted);
                             respond.resolve(
-                                    lectura(
+                                    readResult(
                                             "found",
-                                            new String(claro, StandardCharsets.UTF_8),
-                                            "AES/GCM tras autenticar"));
+                                            new String(plain, StandardCharsets.UTF_8),
+                                            "AES/GCM after authenticating"));
                         } catch (Exception error) {
-                            respond.resolve(lectura("unavailable", null, motivo(error)));
+                            respond.resolve(readResult("unavailable", null, describe(error)));
                         }
                     }
 
                     @Override
-                    public void denegado(String detail) {
-                        respond.resolve(lectura("denied", null, detail));
+                    public void denied(String detail) {
+                        respond.resolve(readResult("denied", null, detail));
                     }
                 });
     }
 
-    /** Un descifrador con la clave llana, o {@code null} si esa clave no existe todavía. */
-    private Cipher descifrador(String alias, byte[] iv) {
+    /** A decryptor with the plain key, or {@code null} if that key does not exist yet. */
+    private Cipher decryptor(String alias, byte[] iv) {
         try {
             KeyStore store = KeyStore.getInstance(KEYSTORE);
             store.load(null);
@@ -325,36 +331,36 @@ public final class KeychainPlugin implements AnPlugin {
         }
     }
 
-    // ── El diálogo del sistema ──────────────────────────────────────────────
+    // ── The system dialog ───────────────────────────────────────────────────
 
-    /** Qué hacer cuando el diálogo termina. */
-    private interface Respuesta {
-        /** Autenticó. El {@code Cipher} que llega es el que el sistema autorizó. */
-        void autenticado(Cipher autorizado);
+    /** What to do when the dialog ends. */
+    private interface Answer {
+        /** Authenticated. The {@code Cipher} that arrives is the one the system authorised. */
+        void authenticated(Cipher authorised);
 
-        void denegado(String detail);
+        void denied(String detail);
     }
 
     /**
-     * Enseña {@code BiometricPrompt} atado a este {@code Cipher}.
+     * Shows {@code BiometricPrompt} tied to this {@code Cipher}.
      *
-     * <p>El {@code CryptoObject} es lo que hace que esto no sea teatro: sin él, la app preguntaría
-     * por la huella y luego descifraría igual, y quien pudiera saltarse el diálogo tendría el
-     * secreto. Con él, la clave no se puede usar hasta que el sistema la desbloquea, y el que
-     * decide es el hardware, no este código.
+     * <p>The {@code CryptoObject} is what keeps this from being theatre: without it, the app would
+     * ask for the fingerprint and then decrypt all the same, and whoever could get past the dialog
+     * would have the secret. With it, the key cannot be used until the system unlocks it, and the
+     * one deciding is the hardware, not this code.
      */
-    private void preguntar(String reason, Cipher cipher, Respuesta respuesta) {
+    private void ask(String reason, Cipher cipher, Answer answer) {
         BiometricPrompt prompt =
                 new BiometricPrompt.Builder(host)
                         .setTitle(reason)
                         .setNegativeButton(
-                                "Cancelar",
+                                "Cancel",
                                 host.getMainExecutor(),
                                 (dialog, which) -> {
-                                    // El sistema manda además ERROR_NEGATIVE_BUTTON
-                                    // por el callback de error, y es ahí donde se
-                                    // contesta: hacerlo dos veces dejaría la
-                                    // segunda respuesta en el aire.
+                                    // The system also sends ERROR_NEGATIVE_BUTTON
+                                    // through the error callback, and that is where
+                                    // the answer is given: doing it twice would
+                                    // leave the second answer hanging.
                                 })
                         .build();
         prompt.authenticate(
@@ -364,39 +370,39 @@ public final class KeychainPlugin implements AnPlugin {
                 new BiometricPrompt.AuthenticationCallback() {
                     @Override
                     public void onAuthenticationSucceeded(
-                            BiometricPrompt.AuthenticationResult resultado) {
-                        BiometricPrompt.CryptoObject objeto = resultado.getCryptoObject();
-                        respuesta.autenticado(objeto == null ? null : objeto.getCipher());
+                            BiometricPrompt.AuthenticationResult result) {
+                        BiometricPrompt.CryptoObject crypto = result.getCryptoObject();
+                        answer.authenticated(crypto == null ? null : crypto.getCipher());
                     }
 
                     @Override
                     public void onAuthenticationError(int code, CharSequence message) {
-                        respuesta.denegado("BiometricPrompt error " + code + ": " + message);
+                        answer.denied("BiometricPrompt error " + code + ": " + message);
                     }
 
                     @Override
                     public void onAuthenticationFailed() {
-                        // Un intento que no reconoce a nadie. No se contesta: el
-                        // diálogo sigue en pantalla y el usuario puede repetir.
+                        // An attempt that recognises nobody. No answer is given: the
+                        // dialog stays on screen and the user can try again.
                     }
                 });
     }
 
-    // ── El almacén de claves ────────────────────────────────────────────────
+    // ── The key store ───────────────────────────────────────────────────────
 
     /**
-     * La clave del almacén, creándola la primera vez.
+     * The key from the store, creating it the first time round.
      *
-     * <p>{@code setInvalidatedByBiometricEnrollment} es lo que hace que la variante con biometría
-     * valga de algo: sin él, alguien que conociera el código del aparato podría registrar su propia
-     * huella y quedarse con el secreto. Con él, registrar otra huella tira la clave.
+     * <p>{@code setInvalidatedByBiometricEnrollment} is what makes the biometric variant worth
+     * anything: without it, somebody who knew the device passcode could enrol their own fingerprint
+     * and help themselves to the secret. With it, enrolling another fingerprint throws the key away.
      */
-    private static SecretKey clave(String alias, boolean biometrics) throws Exception {
+    private static SecretKey secretKey(String alias, boolean biometrics) throws Exception {
         KeyStore store = KeyStore.getInstance(KEYSTORE);
         store.load(null);
-        SecretKey existente = (SecretKey) store.getKey(alias, null);
-        if (existente != null) {
-            return existente;
+        SecretKey existing = (SecretKey) store.getKey(alias, null);
+        if (existing != null) {
+            return existing;
         }
         KeyGenParameterSpec.Builder builder =
                 new KeyGenParameterSpec.Builder(
@@ -413,82 +419,82 @@ public final class KeychainPlugin implements AnPlugin {
         return generator.generateKey();
     }
 
-    private static void borrarClave(String alias) throws Exception {
+    private static void deleteKey(String alias) throws Exception {
         KeyStore store = KeyStore.getInstance(KEYSTORE);
         store.load(null);
         store.deleteEntry(alias);
     }
 
-    /** Dónde vive de verdad la clave de este aparato. */
+    /** Where this device's key really lives. */
     private JSONObject backing() {
         boolean hardware = false;
         String detail;
         try {
-            SecretKey secret = clave(ALIAS_LLANO, false);
+            SecretKey secret = secretKey(ALIAS_PLAIN, false);
             SecretKeyFactory factory =
                     SecretKeyFactory.getInstance(secret.getAlgorithm(), KEYSTORE);
             KeyInfo info = (KeyInfo) factory.getKeySpec(secret, KeyInfo.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                int nivel = info.getSecurityLevel();
-                hardware = nivel == KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT
-                        || nivel == KeyProperties.SECURITY_LEVEL_STRONGBOX;
-                detail = "KeyInfo.getSecurityLevel() = " + nivel;
+                int level = info.getSecurityLevel();
+                hardware = level == KeyProperties.SECURITY_LEVEL_TRUSTED_ENVIRONMENT
+                        || level == KeyProperties.SECURITY_LEVEL_STRONGBOX;
+                detail = "KeyInfo.getSecurityLevel() = " + level;
             } else {
-                // Obsoleto desde API 31, y es lo único que hay por debajo.
+                // Deprecated since API 31, and it is the only thing there is below that.
                 hardware = info.isInsideSecureHardware();
                 detail = "KeyInfo.isInsideSecureHardware() = " + hardware;
             }
         } catch (Exception error) {
-            // Que no se pueda averiguar no se disimula con un `false`, que se
-            // leería como «es software» y puede no serlo.
-            detail = "no se pudo preguntar al almacén: " + motivo(error);
+            // Not being able to find out is not papered over with a `false`, which
+            // would read as "it is software" and it may not be.
+            detail = "the store could not be asked: " + describe(error);
         }
         JSONObject json = new JSONObject();
         try {
             json.put("platform", "android");
             json.put("hardwareBacked", hardware);
-            json.put("accessible", "mientras la app esté instalada; el fichero es MODE_PRIVATE");
+            json.put("accessible", "for as long as the app is installed; the file is MODE_PRIVATE");
             json.put("detail", detail);
         } catch (JSONException error) {
-            throw new IllegalStateException("no se pudo armar la respuesta de keychain", error);
+            throw new IllegalStateException("the keychain answer could not be built", error);
         }
         return json;
     }
 
-    // ── Auxiliares ──────────────────────────────────────────────────────────
+    // ── Helpers ─────────────────────────────────────────────────────────────
 
     private SharedPreferences prefs() {
         return host.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 
-    private static JSONObject lectura(String outcome, String value, String detail) {
+    private static JSONObject readResult(String outcome, String value, String detail) {
         JSONObject json = new JSONObject();
         try {
             json.put("outcome", outcome);
-            // `JSONObject.put` con null borra la clave, y el contrato dice que
-            // `value` va siempre. `JSONObject.NULL` es lo que viaja como null.
+            // `JSONObject.put` with null deletes the key, and the contract says
+            // `value` is always there. `JSONObject.NULL` is what travels as null.
             json.put("value", value == null ? JSONObject.NULL : value);
             json.put("detail", detail);
         } catch (JSONException error) {
-            throw new IllegalStateException("no se pudo armar la respuesta de keychain", error);
+            throw new IllegalStateException("the keychain answer could not be built", error);
         }
         return json;
     }
 
-    private static JSONObject escritura(String outcome, String detail) {
+    private static JSONObject writeResult(String outcome, String detail) {
         JSONObject json = new JSONObject();
         try {
             json.put("outcome", outcome);
             json.put("detail", detail);
         } catch (JSONException error) {
-            throw new IllegalStateException("no se pudo armar la respuesta de keychain", error);
+            throw new IllegalStateException("the keychain answer could not be built", error);
         }
         return json;
     }
 
-    /** El nombre de la excepción y su mensaje. La traza entera no cabe en un `detail`. */
-    private static String motivo(Throwable error) {
-        String mensaje = error.getMessage();
-        return error.getClass().getSimpleName() + (mensaje == null ? "" : ": " + mensaje);
+    /** The exception's name and its message. The whole trace does not fit in a `detail`. */
+    private static String describe(Throwable error) {
+        String message = error.getMessage();
+        return error.getClass().getSimpleName() + (message == null ? "" : ": " + message);
     }
 }

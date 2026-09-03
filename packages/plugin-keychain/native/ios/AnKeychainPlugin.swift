@@ -2,63 +2,63 @@ import Foundation
 import LocalAuthentication
 import Security
 
-/// El llavero de iOS: Keychain Services.
+/// The iOS keychain: Keychain Services.
 ///
-/// Cada secreto es un `kSecClassGenericPassword` con el identificador del
-/// bundle como servicio y la clave de la app como cuenta. El servicio no es
-/// decorativo: es lo que separa los secretos de esta app de los de cualquier
-/// otra que use el mismo llavero.
+/// Each secret is a `kSecClassGenericPassword` with the bundle identifier as its
+/// service and the app's key as its account. The service is not decorative: it
+/// is what separates this app's secrets from those of any other app using the
+/// same keychain.
 ///
-/// Dos cosas que no se ven en el código y mandan sobre todo lo demás:
+/// Two things that cannot be seen in the code and rule over everything else:
 ///
-///   · **`…ThisDeviceOnly`.** Sin ese sufijo, un elemento del llavero viaja en
-///     la copia de seguridad cifrada y aparece en el teléfono nuevo. Con él, no
-///     sale de este aparato. Para un testigo de sesión es lo que se quiere; si
-///     alguien quisiera lo contrario tendría que ser una decisión escrita, no
-///     el valor por defecto.
+///   · **`…ThisDeviceOnly`.** Without that suffix, a keychain item travels in
+///     the encrypted backup and turns up on the new phone. With it, it does not
+///     leave this device. For a session token that is what you want; anyone who
+///     wanted the opposite would have to make that a written decision, not the
+///     default.
 ///
-///   · **`.biometryCurrentSet`.** Ata el elemento al juego de caras y huellas
-///     que hay registrado en el momento de guardarlo. Si mañana se añade otra
-///     cara, el sistema tira la clave y el secreto ya no se puede leer. Sin
-///     eso, quien pudiera añadir su propia huella —alguien con el código del
-///     aparato— tendría también el secreto.
+///   · **`.biometryCurrentSet`.** It binds the item to the set of faces and
+///     fingerprints enrolled at the moment it is saved. If another face is added
+///     tomorrow, the system throws the key away and the secret can no longer be
+///     read. Without that, whoever could enrol their own fingerprint —somebody
+///     who knows the device passcode— would have the secret too.
 final class AnKeychainPlugin: AnPlugin {
 
-    /// El servicio con el que se guardan los elementos.
+    /// The service the items are stored under.
     ///
-    /// Del identificador del bundle, que es único por app. Si algún día
-    /// faltara, se usa un nombre fijo: compartir servicio con otra app de
-    /// angular-native sería peor que no guardar nada, así que se avisa.
+    /// Taken from the bundle identifier, which is unique per app. If it were
+    /// ever missing, a fixed name is used: sharing a service with another
+    /// angular-native app would be worse than storing nothing, so it says so.
     private static var service: String {
         guard let identifier = Bundle.main.bundleIdentifier else {
-            NSLog("angular-native: el bundle no tiene identificador; el llavero usará un nombre fijo")
+            NSLog("angular-native: the bundle has no identifier; the keychain will use a fixed name")
             return "dev.angularnative.keychain"
         }
         return identifier
     }
 
     func call(_ method: String, _ args: [String: Any], _ respond: AnPluginCall) {
-        // `backing` es lo único que no necesita clave.
+        // `backing` is the only one that does not need a key.
         if method == "backing" {
             respond.resolve(Self.backing())
             return
         }
         guard let key = args["key"] as? String, !key.isEmpty else {
-            respond.reject("keychain.\(method) necesita una clave no vacía en 'key'")
+            respond.reject("keychain.\(method) needs a non-empty key in 'key'")
             return
         }
 
         switch method {
         case "set":
             guard let value = args["value"] as? String else {
-                respond.reject("keychain.set necesita el secreto en 'value'")
+                respond.reject("keychain.set needs the secret in 'value'")
                 return
             }
             let biometrics = args["requireBiometrics"] as? Bool ?? false
             if biometrics && (args["reason"] as? String ?? "").isEmpty {
                 respond.reject(
-                    "keychain.set con requireBiometrics necesita un 'reason': es lo que el "
-                        + "sistema enseña dentro del diálogo al leerlo")
+                    "keychain.set with requireBiometrics needs a 'reason': it is what the "
+                        + "system shows inside the dialog when reading it back")
                 return
             }
             set(key: key, value: value, biometrics: biometrics, respond: respond)
@@ -73,21 +73,21 @@ final class AnKeychainPlugin: AnPlugin {
             respond.resolve(Self.remove(key))
 
         default:
-            respond.reject("el plugin keychain no tiene ningún método \(method)")
+            respond.reject("the keychain plugin has no method \(method)")
         }
     }
 
-    // MARK: - Guardar
+    // MARK: - Storing
 
-    /// Guardar nunca pregunta nada en iOS, ni siquiera con biometría: el
-    /// diálogo lo enseña la lectura. Aun así se hace fuera del hilo principal,
-    /// porque `SecItemAdd` con control de acceso puede tardar.
+    /// Storing never asks anything on iOS, not even with biometrics: the dialog
+    /// is shown by the read. Even so it is done off the main thread, because
+    /// `SecItemAdd` with an access control can take a while.
     private func set(key: String, value: String, biometrics: Bool, respond: AnPluginCall) {
         DispatchQueue.global(qos: .userInitiated).async {
-            // Reemplazar es borrar y volver a añadir. `SecItemUpdate` no puede
-            // cambiar el control de acceso de un elemento que ya existe, así
-            // que guardar encima de uno sin biometría uno con biometría se
-            // quedaría a medias: el valor nuevo con la protección vieja.
+            // Replacing means deleting and adding again. `SecItemUpdate` cannot
+            // change the access control of an item that already exists, so
+            // storing an item with biometrics over one without them would end up
+            // half done: the new value with the old protection.
             _ = Self.remove(key)
 
             var attributes: [String: Any] = [
@@ -101,17 +101,17 @@ final class AnKeychainPlugin: AnPlugin {
                 guard
                     let control = SecAccessControlCreateWithFlags(
                         nil,
-                        // Con código de aparato obligatorio: sin código no hay
-                        // biometría que valga, y un elemento que se pueda leer
-                        // en un teléfono sin bloqueo no protege de nada.
+                        // With a device passcode required: without a passcode
+                        // there is no biometry worth anything, and an item that
+                        // can be read on a phone with no lock protects nothing.
                         kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly,
                         .biometryCurrentSet,
                         &error)
                 else {
-                    let detail = (error?.takeRetainedValue()).map { "\($0)" } ?? "sin motivo"
+                    let detail = (error?.takeRetainedValue()).map { "\($0)" } ?? "no reason given"
                     respond.resolve([
                         "outcome": "unavailable",
-                        "detail": "no se pudo crear el control de acceso: \(detail)"
+                        "detail": "the access control could not be created: \(detail)"
                     ])
                     return
                 }
@@ -126,20 +126,20 @@ final class AnKeychainPlugin: AnPlugin {
                 respond.resolve(["outcome": "saved", "detail": "SecItemAdd"])
                 return
             }
-            // errSecAuthFailed aquí quiere decir que el aparato no tiene
-            // código: el control de acceso lo exige.
+            // errSecAuthFailed here means the device has no passcode: the access
+            // control demands one.
             let outcome = status == errSecAuthFailed ? "denied" : "unavailable"
             respond.resolve(["outcome": outcome, "detail": Self.describe(status)])
         }
     }
 
-    // MARK: - Leer
+    // MARK: - Reading
 
-    /// Leer un elemento con biometría **bloquea el hilo mientras el diálogo
-    /// está en pantalla**. Si eso pasara en el hilo principal, la app se
-    /// quedaría congelada detrás del propio diálogo del sistema y el core no
-    /// avanzaría ni un frame. De ahí la cola de fondo, que es también el
-    /// motivo por el que este método no contesta en el acto.
+    /// Reading an item with biometrics **blocks the thread while the dialog is
+    /// on screen**. If that happened on the main thread, the app would be frozen
+    /// behind the system's own dialog and the core would not advance a single
+    /// frame. Hence the background queue, which is also the reason this method
+    /// does not answer on the spot.
     private func get(key: String, reason: String?, respond: AnPluginCall) {
         DispatchQueue.global(qos: .userInitiated).async {
             var query: [String: Any] = [
@@ -152,9 +152,9 @@ final class AnKeychainPlugin: AnPlugin {
             if let reason, !reason.isEmpty {
                 query[kSecUseOperationPrompt as String] = reason
             }
-            // Sin botón de «Introducir código»: quien quiera esa puerta que la
-            // pida por su cuenta con el plugin de biometría. Aquí, si el
-            // elemento se guardó con biometría, se lee con biometría.
+            // No "Enter passcode" button: whoever wants that door should ask for
+            // it themselves with the biometrics plugin. Here, if the item was
+            // stored with biometrics, it is read with biometrics.
             let context = LAContext()
             context.localizedFallbackTitle = ""
             query[kSecUseAuthenticationContext as String] = context
@@ -167,16 +167,17 @@ final class AnKeychainPlugin: AnPlugin {
                 else {
                     respond.resolve([
                         "outcome": "unavailable", "value": NSNull(),
-                        "detail": "el llavero devolvió algo que no es texto UTF-8"
+                        "detail": "the keychain returned something that is not UTF-8 text"
                     ])
                     return
                 }
                 respond.resolve(["outcome": "found", "value": text, "detail": "SecItemCopyMatching"])
 
             case errSecItemNotFound:
-                // También es lo que sale cuando el elemento estaba atado a unas
-                // huellas que ya no existen: iOS lo borra, no lo deja inservible.
-                // Por eso `invalidated` no llega nunca desde iOS.
+                // This is also what comes out when the item was bound to a set of
+                // fingerprints that no longer exists: iOS deletes it rather than
+                // leaving it useless. That is why `invalidated` never arrives
+                // from iOS.
                 respond.resolve([
                     "outcome": "notFound", "value": NSNull(), "detail": Self.describe(status)
                 ])
@@ -194,13 +195,13 @@ final class AnKeychainPlugin: AnPlugin {
         }
     }
 
-    // MARK: - Mirar y borrar
+    // MARK: - Looking and deleting
 
-    /// Si hay algo, sin abrirlo.
+    /// Whether there is anything, without opening it.
     ///
-    /// Se piden los atributos y **no** los datos. Es lo que hace que esto no
-    /// saque un Face ID: la autenticación la exige leer el contenido, no saber
-    /// que el elemento existe.
+    /// The attributes are asked for and the data is **not**. That is what keeps
+    /// this from throwing up a Face ID: authentication is demanded by reading
+    /// the contents, not by knowing the item exists.
     private static func has(_ key: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -212,9 +213,9 @@ final class AnKeychainPlugin: AnPlugin {
         return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
     }
 
-    /// Borrar tampoco autentica: el llavero deja tirar un elemento que no se
-    /// puede leer, y menos mal, o un secreto atado a una huella borrada se
-    /// quedaría ahí para siempre.
+    /// Deleting does not authenticate either: the keychain lets you throw away
+    /// an item that cannot be read, and just as well, or a secret bound to a
+    /// deleted fingerprint would sit there forever.
     private static func remove(_ key: String) -> Bool {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -224,22 +225,23 @@ final class AnKeychainPlugin: AnPlugin {
         return SecItemDelete(query as CFDictionary) == errSecSuccess
     }
 
-    // MARK: - Qué hay debajo
+    // MARK: - What is underneath
 
     private static func backing() -> [String: Any] {
         [
             "platform": "ios",
-            // Todo iPhone que llegue a iOS 17 tiene Secure Enclave, y es él
-            // quien guarda las claves de clase con las que se cifra el llavero.
+            // Every iPhone that gets as far as iOS 17 has a Secure Enclave, and
+            // it is the one holding the class keys the keychain is encrypted
+            // with.
             "hardwareBacked": true,
             "accessible": "kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly",
-            "detail": "Keychain Services, servicio \(service)"
+            "detail": "Keychain Services, service \(service)"
         ]
     }
 
-    /// El código de `OSStatus` con su descripción, para el registro.
+    /// The `OSStatus` code with its description, for the log.
     private static func describe(_ status: OSStatus) -> String {
-        let text = SecCopyErrorMessageString(status, nil) as String? ?? "sin descripción"
+        let text = SecCopyErrorMessageString(status, nil) as String? ?? "no description"
         return "OSStatus \(status): \(text)"
     }
 }
