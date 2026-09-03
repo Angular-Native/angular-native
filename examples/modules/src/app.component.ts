@@ -174,14 +174,10 @@ export class AppComponent {
   }
 
   /**
-   * On the screen and in the log, both on purpose. The screen is what a person
-   * sees; the log is what a check reads, and on Android it is the only one it
-   * can read without a working `uiautomator`.
-   */
-  /**
-   * The sheet is not opened on startup either. What is checked without anybody
-   * present is the one thing that can be: whether this platform has a sheet at
-   * all, which is a question three of the seven answer `false`.
+   * The sheet is not opened on startup either. What can be asked with nobody
+   * present is whether there is anywhere to share to at all — which tvOS and
+   * watchOS answer `false` from the platform, and a Wear watch answers from
+   * whatever is installed on it.
    */
   private async exerciseShare(): Promise<void> {
     try {
@@ -211,8 +207,9 @@ export class AppComponent {
 
   /**
    * Nothing is played on startup: a tap somebody did not ask for is rude, and on
-   * a watch it is worse. What is asked is what the device can do, which is the
-   * one question with an interesting answer on four of the seven platforms.
+   * a watch it is worse. What is asked is what the device can do — which is a
+   * flat no on a television and in the headset, a yes with a caveat on a Mac,
+   * and on Android an answer that depends on there being a motor at all.
    */
   private async exerciseHaptics(): Promise<void> {
     try {
@@ -243,6 +240,11 @@ export class AppComponent {
       .catch((error: unknown) => this.say(`share.share: no ${error}`))
   }
 
+  /**
+   * On the screen and in the log, both on purpose. The screen is what a person
+   * sees; the log is what a check reads, and on Android it is the only one it
+   * can read without a working `uiautomator`.
+   */
   private say(line: string): void {
     this.lines.update((lines) => [...lines, line])
     console.log(`[modules] ${line}`)

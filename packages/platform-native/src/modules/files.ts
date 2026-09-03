@@ -71,7 +71,10 @@ export type DurableStoragePlatform = Exclude<NativePlatform, 'tvos'>
  * arriving from JS would be a path to anywhere on the disk.
  *
  * A relative path is resolved against `documentsDirectory()`, so
- * `read('notes.txt')` works without asking where that is first.
+ * `read('notes.txt')` works without asking where that is first — except on
+ * tvOS, where there is no such directory and it lands in the cache. That is the
+ * only place a television lets an app write, and it is a session's worth of
+ * storage rather than none.
  */
 @Injectable({ providedIn: 'root' })
 export class Files {

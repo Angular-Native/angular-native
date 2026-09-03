@@ -49,7 +49,11 @@ enum AnFilePath {
 /// path arriving from JS is a path to anywhere on the disk.
 ///
 /// A relative path is resolved against the durable directory, so
-/// `read({ path: 'notes.txt' })` works without ever asking where that is.
+/// `read({ path: 'notes.txt' })` works without ever asking where that is. On
+/// tvOS, where there is no durable directory, it lands in the cache instead:
+/// that is the only place a television lets an app write, and refusing every
+/// relative path there would leave the module unusable on a platform that can
+/// still perfectly well keep something for the length of a session.
 final class AnBuiltinFiles: AnBuiltinModule {
     /// What the person picked, by the path handed back to JS.
     ///
