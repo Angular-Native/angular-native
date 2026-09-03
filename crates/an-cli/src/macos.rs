@@ -136,8 +136,8 @@ pub fn assemble(
     // module depends on, but the `.a` that comes out carries nothing that tells
     // the linker. The one that really links is this `swiftc`, and if they are
     // not here, the app builds, signs and starts without a single complaint: it
-    // blows up later, on mounting the first view of that class, with a «class
-    // AVPlayerView could not be found» that points nowhere.
+    // blows up later, on mounting the first view of that class, with a "class
+    // AVPlayerView could not be found" that points nowhere.
     //
     // The list must not fall behind: `scripts/check-macos.py` compares it with
     // the crate's `#[link]`s.

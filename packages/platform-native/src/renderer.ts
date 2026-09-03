@@ -112,7 +112,7 @@ export class NativeRenderer extends Renderer2 {
 
   override destroyNode = (node: NativeNode): void => {
     if (node.destroyed) return
-    // It is asked before marking: `mounted` means «materialised and alive», so
+    // It is asked before marking: `mounted` means "materialised and alive", so
     // marking first sets it to `false` and the removal would never reach the
     // core. Normally nobody notices —Angular takes things out of the tree before
     // destroying them— but on a hot refresh it destroys first, and then the old

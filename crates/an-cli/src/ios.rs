@@ -349,7 +349,7 @@ pub fn assemble(
 /// Entitlements are what lets the app ask the system for something. The case
 /// that forced this into existence is the keychain: without
 /// `keychain-access-groups` or `application-identifier`, `SecItemAdd` answers
-/// −34018 —«the client has neither of the two»— because the app belongs to no
+/// −34018 —"the client has neither of the two"— because the app belongs to no
 /// keychain group and there is nowhere to save. From the outside it looks like a
 /// keychain bug.
 ///
@@ -359,7 +359,7 @@ pub fn assemble(
 /// development identity— does not work: `keychain-access-groups` is a restricted
 /// entitlement, and macOS refuses to run a binary that carries it in its
 /// signature without a provisioning profile backing it up. The symptom is that
-/// the app stops starting, with a «request denied by SBMainWorkspace» that
+/// the app stops starting, with a "request denied by SBMainWorkspace" that
 /// mentions entitlements nowhere. Xcode does exactly this same thing for the
 /// simulator.
 ///

@@ -209,7 +209,7 @@ impl From<PlatformArg> for plugins::Platform {
 const DEFAULT_PHONE: &str = "iPhone 17 Pro";
 const DEFAULT_WATCH: &str = "Apple Watch Series 11 (46mm)";
 /// The third-generation Apple TV 4K, which is the one the runtime ships with.
-/// The other one on the list, «Apple TV», is the same thing at 1080p.
+/// The other one on the list, "Apple TV", is the same thing at 1080p.
 const DEFAULT_TV: &str = "Apple TV 4K (3rd generation)";
 /// The only headset there is: the visionOS runtime ships one model.
 const DEFAULT_HEADSET: &str = "Apple Vision Pro";
