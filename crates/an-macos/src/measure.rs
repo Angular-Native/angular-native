@@ -90,6 +90,19 @@ impl AppKitMeasurer {
 impl TextMeasurer for AppKitMeasurer {
     fn measure_control(&self, name: &str, available_width: Option<f32>) -> (f32, f32) {
         let Some((width, height)) = self.controls.get(name).copied() else {
+            // Never a silent zero: the same as on iOS, and for the same
+            // reason. What is not in the table is laid out 0x0 and reads on
+            // screen as a layout that went wrong. `controls.rs` is where the
+            // entry goes; `scripts/check-measure.sh` is what makes sure it is
+            // there.
+            warn_once(
+                &format!("unmeasured:{name}"),
+                &format!(
+                    "{name} has no measurement in this host: the core asks for it in \
+                     NodeKind::control_name() and controls.rs never recorded it, so it is \
+                     laid out 0x0 and cannot be seen"
+                ),
+            );
             return (0.0, 0.0);
         };
         // The same ones as on iOS take whatever width they are given; their
@@ -174,4 +187,19 @@ impl TextMeasurer for AppKitMeasurer {
         self.cache.borrow_mut().insert(key, result);
         result
     }
+}
+
+/// What has already been said. The layout measures several times per node and
+/// per frame, so a warning said here without this would be said hundreds of
+/// times a second. Same reason and same shape as `accessibility.rs`'s.
+fn warn_once(key: &str, message: &str) {
+    thread_local! {
+        static SAID: std::cell::RefCell<std::collections::HashSet<String>> =
+            std::cell::RefCell::new(std::collections::HashSet::new());
+    }
+    SAID.with(|said| {
+        if said.borrow_mut().insert(key.to_owned()) {
+            eprintln!("angular-native: {message}");
+        }
+    });
 }

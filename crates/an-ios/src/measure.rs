@@ -83,11 +83,28 @@ impl UikitMeasurer {
 impl TextMeasurer for UikitMeasurer {
     fn measure_control(&self, name: &str, available_width: Option<f32>) -> (f32, f32) {
         let Some((width, height)) = self.controls.get(name).copied() else {
+            // Never a silent zero. A control the core asks about and that is
+            // not in the table is laid out 0x0, which looks like a layout gone
+            // wrong and not like a table missing an entry —which is how
+            // `<an-navigation-bar>` went unnoticed here. `controls.rs` is
+            // where the entry goes, and `scripts/check-measure.sh` is what
+            // stops the next one from shipping.
+            warn_once(
+                &format!("unmeasured:{name}"),
+                &format!(
+                    "{name} has no measurement in this host: the core asks for it in \
+                     NodeKind::control_name() and controls.rs never recorded it, so it is \
+                     laid out 0x0 and cannot be seen"
+                ),
+            );
             return (0.0, 0.0);
         };
-        // Sliders, progress bars and tab bars take whatever width they are
-        // given; their natural measurement only rules the height.
-        let stretches = matches!(name, "Slider" | "ProgressBar" | "TabBar" | "SearchBar" | "SegmentedControl");
+        // Sliders, progress bars, tab bars and the header take whatever width
+        // they are given; their natural measurement only rules the height.
+        let stretches = matches!(
+            name,
+            "Slider" | "ProgressBar" | "TabBar" | "SearchBar" | "SegmentedControl" | "NavigationBar"
+        );
         match available_width {
             Some(available) if stretches && available.is_finite() => (available, height),
             _ => (width, height),
@@ -158,4 +175,19 @@ impl TextMeasurer for UikitMeasurer {
         self.cache.borrow_mut().insert(key, result);
         result
     }
+}
+
+/// What has already been said. The layout measures several times per node and
+/// per frame, so a warning said here without this would be said hundreds of
+/// times a second. Same reason and same shape as `accessibility.rs`'s.
+fn warn_once(key: &str, message: &str) {
+    thread_local! {
+        static SAID: std::cell::RefCell<std::collections::HashSet<String>> =
+            std::cell::RefCell::new(std::collections::HashSet::new());
+    }
+    SAID.with(|said| {
+        if said.borrow_mut().insert(key.to_owned()) {
+            eprintln!("angular-native: {message}");
+        }
+    });
 }
