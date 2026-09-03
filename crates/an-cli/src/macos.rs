@@ -54,8 +54,8 @@ pub fn reject_plugins(plugins: &[Plugin]) -> Result<()> {
     }
     let names: Vec<&str> = plugins.iter().map(|plugin| plugin.package.as_str()).collect();
     bail!(
-        "esta app no se puede compilar para macOS: el host de escritorio todavía no carga \
-         plugins, y depende de {}. Ver https://angular-native.dev/extending/plugins/.",
+        "this app cannot be built for macOS: the desktop host does not load plugins yet, \
+         and it depends on {}. See https://angular-native.dev/extending/plugins/.",
         names.join(", ")
     )
 }
@@ -89,9 +89,9 @@ pub fn assemble(
         .env("MACOSX_DEPLOYMENT_TARGET", DEPLOYMENT)
         .current_dir(root)
         .status()
-        .context("no se pudo ejecutar cargo")?;
+        .context("cargo could not be run")?;
     if !status.success() {
-        bail!("la compilación del core para macOS falló");
+        bail!("the core build for macOS failed");
     }
 
     eprintln!("==> shell AppKit");
@@ -104,7 +104,7 @@ pub fn assemble(
     // server's client—, compiled by all three Apple shells.
     let mut sources: Vec<String> = swift_sources(&root.join("shells/macos/Sources"))?;
     if sources.is_empty() {
-        bail!("no hay fuentes Swift en shells/macos/Sources");
+        bail!("there are no Swift sources in shells/macos/Sources");
     }
     sources.extend(swift_sources(&root.join("shells/shared"))?);
 
@@ -150,7 +150,7 @@ pub fn assemble(
     }
     args.extend(sources);
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
-    run(workspace, "xcrun", &borrowed, "el enlazado del shell falló")?;
+    run(workspace, "xcrun", &borrowed, "the shell link step failed")?;
 
     std::fs::copy(root.join("shells/macos/Resources/Info.plist"), contents.join("Info.plist"))?;
     std::fs::copy(bundle, resources.join("main.js"))?;
@@ -168,9 +168,9 @@ pub fn assemble(
         .args(["--force", "--sign", "-"])
         .arg(&app_dir)
         .status()
-        .context("no se pudo ejecutar codesign")?;
+        .context("codesign could not be run")?;
     if !signed.success() {
-        bail!("la firma ad-hoc del .app falló");
+        bail!("the ad-hoc signing of the .app failed");
     }
 
     Ok(Package { dir: app_dir })
@@ -186,9 +186,9 @@ pub fn launch(package: &Package) -> Result<()> {
         .arg("-n")
         .arg(&package.dir)
         .status()
-        .context("no se pudo lanzar la app")?;
+        .context("the app could not be launched")?;
     if !launched.success() {
-        bail!("el lanzamiento falló");
+        bail!("the launch failed");
     }
     let _ = BUNDLE_ID;
     Ok(())
@@ -198,9 +198,9 @@ fn capture(program: &str, args: &[&str]) -> Result<String> {
     let output = Command::new(program)
         .args(args)
         .output()
-        .with_context(|| format!("no se pudo ejecutar {program}"))?;
+        .with_context(|| format!("{program} could not be run"))?;
     if !output.status.success() {
-        bail!("{program} {args:?} falló");
+        bail!("{program} {args:?} failed");
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }

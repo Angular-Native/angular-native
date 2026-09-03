@@ -152,7 +152,7 @@ impl RuntimeWorker {
                                     Ok(commands) => {
                                         if let Err(protocol) = apply(&commands, &mut shadow.tree) {
                                             error = Some(format!(
-                                                "búfer de comandos inválido: {protocol:?}"
+                                                "invalid command buffer: {protocol:?}"
                                             ));
                                         }
                                     }
@@ -166,7 +166,7 @@ impl RuntimeWorker {
                                 }
                                 Err(commit) => Reply {
                                     error: Some(
-                                        error.unwrap_or_else(|| format!("el commit falló: {commit:?}")),
+                                        error.unwrap_or_else(|| format!("the commit failed: {commit:?}")),
                                     ),
                                     ..Reply::default()
                                 },
@@ -178,7 +178,7 @@ impl RuntimeWorker {
                     }
                 }
             })
-            .map_err(|e| JsError::Engine(format!("no se pudo crear el hilo del runtime: {e}")))?;
+            .map_err(|e| JsError::Engine(format!("the runtime thread could not be created: {e}")))?;
 
         match ready_rx.recv() {
             Ok(Ok(())) => Ok(RuntimeWorker {
@@ -188,7 +188,7 @@ impl RuntimeWorker {
                 in_flight: Cell::new(0),
             }),
             Ok(Err(message)) => Err(JsError::Engine(message)),
-            Err(_) => Err(JsError::Engine("el hilo del runtime murió al arrancar".to_owned())),
+            Err(_) => Err(JsError::Engine("the runtime thread died on startup".to_owned())),
         }
     }
 
@@ -213,7 +213,7 @@ impl RuntimeWorker {
             Err(TryRecvError::Disconnected) => {
                 self.in_flight.set(0);
                 Some(Reply {
-                    error: Some("el hilo del runtime murió".to_owned()),
+                    error: Some("the runtime thread died".to_owned()),
                     ..Reply::default()
                 })
             }
@@ -238,7 +238,7 @@ impl RuntimeWorker {
             Err(RecvTimeoutError::Disconnected) => {
                 self.in_flight.set(0);
                 Some(Reply {
-                    error: Some("el hilo del runtime murió".to_owned()),
+                    error: Some("the runtime thread died".to_owned()),
                     ..Reply::default()
                 })
             }
@@ -251,7 +251,7 @@ impl RuntimeWorker {
             return None;
         }
         let reply = self.replies.recv().unwrap_or_else(|_| Reply {
-            error: Some("el hilo del runtime murió".to_owned()),
+            error: Some("the runtime thread died".to_owned()),
             ..Reply::default()
         });
         self.in_flight.set(self.in_flight.get().saturating_sub(1));
@@ -267,12 +267,12 @@ impl RuntimeWorker {
     pub fn request(&self, request: Request) -> Reply {
         if !self.post(request) {
             return Reply {
-                error: Some("el hilo del runtime no responde".to_owned()),
+                error: Some("the runtime thread is not responding".to_owned()),
                 ..Reply::default()
             };
         }
         self.wait_reply().unwrap_or_else(|| Reply {
-            error: Some("el hilo del runtime murió".to_owned()),
+            error: Some("the runtime thread died".to_owned()),
             ..Reply::default()
         })
     }

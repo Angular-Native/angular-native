@@ -36,8 +36,8 @@ pub fn reject_plugins(plugins: &[Plugin]) -> Result<()> {
     }
     let names: Vec<&str> = plugins.iter().map(|plugin| plugin.package.as_str()).collect();
     bail!(
-        "esta app no se puede compilar para watchOS: el reloj todavía no carga plugins, \
-         y depende de {}. Ver https://angular-native.dev/extending/plugins/.",
+        "this app cannot be built for watchOS: the watch does not load plugins yet, \
+         and it depends on {}. See https://angular-native.dev/extending/plugins/.",
         names.join(", ")
     )
 }
@@ -87,10 +87,10 @@ pub fn assemble(
         .env("WATCHOS_DEPLOYMENT_TARGET", DEPLOYMENT)
         .current_dir(root)
         .status()
-        .context("no se pudo ejecutar cargo")?;
+        .context("cargo could not be run")?;
     if !status.success() {
         bail!(
-            "la compilación del core para watchOS falló. Hace falta nightly con rust-src: \
+            "the core build for watchOS failed. It needs nightly with rust-src: \
              rustup toolchain install nightly && rustup component add rust-src --toolchain nightly"
         );
     }
@@ -104,7 +104,7 @@ pub fn assemble(
     // server's client—, compiled by both shells.
     let mut sources: Vec<String> = swift_sources(&root.join("shells/watchos/Sources"))?;
     if sources.is_empty() {
-        bail!("no hay fuentes Swift en shells/watchos/Sources");
+        bail!("there are no Swift sources in shells/watchos/Sources");
     }
     sources.extend(swift_sources(&root.join("shells/shared"))?);
 
@@ -137,7 +137,7 @@ pub fn assemble(
     }
     args.extend(sources);
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
-    run(workspace, "xcrun", &borrowed, "el enlazado del shell falló")?;
+    run(workspace, "xcrun", &borrowed, "the shell link step failed")?;
 
     std::fs::copy(root.join("shells/watchos/Resources/Info.plist"), app_dir.join("Info.plist"))?;
     std::fs::copy(bundle, app_dir.join("main.js"))?;
@@ -163,9 +163,9 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
     let ready = Command::new("xcrun")
         .args(["simctl", "bootstatus", &udid, "-b"])
         .status()
-        .context("no se pudo esperar al arranque del simulador")?;
+        .context("waiting for the simulator to boot was not possible")?;
     if !ready.success() {
-        bail!("el simulador {device} no llegó a arrancar");
+        bail!("the simulator {device} never got as far as booting");
     }
 
     // Quit and uninstall before installing: `simctl install` over an app that is
@@ -177,17 +177,17 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
         .args(["simctl", "install", &udid])
         .arg(&package.dir)
         .status()
-        .context("no se pudo instalar la app")?;
+        .context("the app could not be installed")?;
     if !install.success() {
-        bail!("la instalación en el simulador falló");
+        bail!("installing on the simulator failed");
     }
 
     let launch = Command::new("xcrun")
         .args(["simctl", "launch", &udid, BUNDLE_ID])
         .status()
-        .context("no se pudo lanzar la app")?;
+        .context("the app could not be launched")?;
     if !launch.success() {
-        bail!("el lanzamiento falló");
+        bail!("the launch failed");
     }
     Ok(())
 }
@@ -200,11 +200,11 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
 fn find_device(name: &str) -> Result<String> {
     let json = capture("xcrun", &["simctl", "list", "devices", "available", "-j"])?;
     let parsed: serde_json::Value =
-        serde_json::from_str(&json).context("simctl devolvió un JSON que no se entiende")?;
+        serde_json::from_str(&json).context("simctl returned a JSON nobody can make sense of")?;
     let runtimes = parsed
         .get("devices")
         .and_then(serde_json::Value::as_object)
-        .context("el JSON de simctl no trae dispositivos")?;
+        .context("simctl's JSON carries no devices")?;
 
     let mut fallback = None;
     for (runtime, devices) in runtimes {
@@ -226,16 +226,16 @@ fn find_device(name: &str) -> Result<String> {
             fallback.get_or_insert_with(|| udid.to_owned());
         }
     }
-    fallback.with_context(|| format!("no hay ningún simulador de reloj llamado {name:?}"))
+    fallback.with_context(|| format!("there is no watch simulator called {name:?}"))
 }
 
 fn capture(program: &str, args: &[&str]) -> Result<String> {
     let output = Command::new(program)
         .args(args)
         .output()
-        .with_context(|| format!("no se pudo ejecutar {program}"))?;
+        .with_context(|| format!("{program} could not be run"))?;
     if !output.status.success() {
-        bail!("{program} {args:?} falló");
+        bail!("{program} {args:?} failed");
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }

@@ -199,8 +199,8 @@ pub fn assemble(
     plugins::require(plugins, Platform::Ios)?;
     if family != Family::Ios && !plugins.is_empty() {
         eprintln!(
-            "==> aviso: los plugins se compilan con sus fuentes de iOS, que es lo único que \
-             declaran. Si alguna usa API que {} no tiene, el enlazado se para y lo dice.",
+            "==> warning: the plugins are compiled with their iOS sources, which is all they \
+             declare. If one of them uses an API {} does not have, the link step stops and says so.",
             family.label()
         );
     }
@@ -243,23 +243,23 @@ pub fn assemble(
         .env(family.deployment_env(), family.deployment())
         .current_dir(root)
         .status()
-        .context("no se pudo ejecutar cargo")?;
+        .context("cargo could not be run")?;
     if !status.success() {
         if family.needs_build_std() {
             bail!(
-                "la compilación del core para {} falló. Hace falta nightly con rust-src: \
+                "the core build for {} failed. It needs nightly with rust-src: \
                  rustup toolchain install nightly && \
                  rustup component add rust-src --toolchain nightly",
                 family.label()
             );
         }
-        bail!("la compilación del core falló");
+        bail!("the core build failed");
     }
 
     eprintln!("==> shell Swift ({})", family.label());
     let sdk = capture("xcrun", &["--sdk", family.sdk(), "--show-sdk-path"]).with_context(|| {
         format!(
-            "no está el SDK de {}. Xcode lo instala con: {}",
+            "the {} SDK is not there. Xcode installs it with: {}",
             family.label(),
             family.download_hint()
         )
@@ -273,7 +273,7 @@ pub fn assemble(
     // what colour the root's background is.
     let mut sources: Vec<String> = swift_sources(&root.join("shells/ios/Sources"))?;
     if sources.is_empty() {
-        bail!("no hay fuentes Swift en shells/ios/Sources");
+        bail!("there are no Swift sources in shells/ios/Sources");
     }
     // `shells/shared` brings what does not depend on the platform —the dev
     // server's client—, compiled by every shell.
@@ -284,7 +284,7 @@ pub fn assemble(
     // `AnPlugin` and `AnPluginCall` without importing anything.
     for plugin in plugins {
         let contributed = plugins::sources(plugin, Platform::Ios)?;
-        eprintln!("==> plugin {} ({} fuentes Swift)", plugin.module, contributed.len());
+        eprintln!("==> plugin {} ({} Swift sources)", plugin.module, contributed.len());
         sources.extend(contributed);
     }
     sources.push(
@@ -329,7 +329,7 @@ pub fn assemble(
     }
     args.extend(sources);
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
-    run(workspace, "xcrun", &borrowed, "el enlazado del shell falló")?;
+    run(workspace, "xcrun", &borrowed, "the shell link step failed")?;
 
     write_plist(&plist, &app_dir.join("Info.plist"), plugins)?;
     std::fs::copy(bundle, app_dir.join("main.js"))?;
@@ -384,7 +384,7 @@ fn write_entitlements(
         serde_json::Value::String(bundle_id.to_owned()),
     );
     for (key, contributed) in &requested {
-        eprintln!("==> derechos: {key} (de {})", contributed.package);
+        eprintln!("==> entitlements: {key} (from {})", contributed.package);
         entitlements.insert(key.clone(), substitute(&contributed.value, bundle_id));
     }
 
@@ -398,7 +398,7 @@ fn write_entitlements(
         out,
         "plutil",
         &["-convert", "xml1", "-o", &plist.to_string_lossy(), &json.to_string_lossy()],
-        "no se pudo escribir el fichero de derechos",
+        "the entitlements file could not be written",
     )?;
     Ok(Some(plist))
 }
@@ -443,14 +443,14 @@ fn write_plist(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result<()
         if let Some(current) = already_there.get(key) {
             if current != &contributed.value {
                 eprintln!(
-                    "==> Info.plist: {key} ya la declara la app ({current}); \
-                     se ignora la de {} ({})",
+                    "==> Info.plist: {key} is already declared by the app\n    \
+                     ({current}); ignoring {}'s ({})",
                     contributed.package, contributed.value
                 );
             }
             continue;
         }
-        eprintln!("==> Info.plist: {key} (de {})", contributed.package);
+        eprintln!("==> Info.plist: {key} (from {})", contributed.package);
         run_in(
             destination.parent().unwrap_or(destination),
             "plutil",
@@ -461,7 +461,7 @@ fn write_plist(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result<()
                 &contributed.value.to_string(),
                 &destination.to_string_lossy(),
             ],
-            "no se pudo escribir en el Info.plist la clave que pide un plugin",
+            "the key a plugin asks for could not be written into the Info.plist",
         )?;
     }
     Ok(())
@@ -475,12 +475,12 @@ fn write_plist(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result<()
 /// all.
 fn plist_keys(plist: &Path) -> Result<serde_json::Map<String, serde_json::Value>> {
     let json = capture("plutil", &["-convert", "json", "-o", "-", &plist.to_string_lossy()])
-        .with_context(|| format!("{}: no se pudo leer", plist.display()))?;
+        .with_context(|| format!("{}: it could not be read", plist.display()))?;
     let parsed: serde_json::Value = serde_json::from_str(&json)
-        .with_context(|| format!("{}: plutil devolvió algo que no es JSON", plist.display()))?;
+        .with_context(|| format!("{}: plutil returned something that is not JSON", plist.display()))?;
     match parsed {
         serde_json::Value::Object(map) => Ok(map),
-        _ => bail!("{}: la raíz de un Info.plist tiene que ser un diccionario", plist.display()),
+        _ => bail!("{}: the root of an Info.plist has to be a dictionary", plist.display()),
     }
 }
 
@@ -506,7 +506,7 @@ fn check_plist(
             "plutil",
             &["-extract", key, "raw", "-o", "-", &plist.to_string_lossy()],
         )
-        .with_context(|| format!("{}: no se pudo leer {key}", plist.display()))?;
+        .with_context(|| format!("{}: {key} could not be read", plist.display()))?;
         if read != expected {
             // Outside the monorepo and with no overlay, what is being compared
             // is the SDK's plist against the project's name: they never match,
@@ -515,16 +515,16 @@ fn check_plist(
                 && workspace.overlay(family.slug(), "Info.plist").is_none()
             {
                 format!(
-                    "Este proyecto todavía no tiene el suyo: ejecuta `an add {}`.",
+                    "This project has not got one of its own yet: run `an add {}`.",
                     family.slug()
                 )
             } else {
-                "O se corrige el plist, o se corrige angular-native.json; \
-                 con los dos distintos la app se instala y no abre."
+                "Either the plist is fixed or angular-native.json is; with the two of \
+                 them different the app installs and does not open."
                     .to_owned()
             };
             bail!(
-                "{}: {key} es {read:?} y el proyecto dice {expected:?}.\n{way_out}",
+                "{}: {key} is {read:?} and the project says {expected:?}.\n{way_out}",
                 plist.display()
             );
         }
@@ -559,9 +559,9 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
     let ready = Command::new("xcrun")
         .args(["simctl", "bootstatus", &udid, "-b"])
         .status()
-        .context("no se pudo esperar al arranque del simulador")?;
+        .context("waiting for the simulator to boot was not possible")?;
     if !ready.success() {
-        bail!("el simulador {device} no llegó a arrancar");
+        bail!("the simulator {device} never got as far as booting");
     }
 
     // Quit and uninstall before installing.
@@ -582,17 +582,17 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
         .args(["simctl", "install", &udid])
         .arg(&package.dir)
         .status()
-        .context("no se pudo instalar la app")?;
+        .context("the app could not be installed")?;
     if !install.success() {
-        bail!("la instalación en el simulador falló");
+        bail!("installing on the simulator failed");
     }
 
     let launch = Command::new("xcrun")
         .args(["simctl", "launch", &udid, &package.bundle_id])
         .status()
-        .context("no se pudo lanzar la app")?;
+        .context("the app could not be launched")?;
     if !launch.success() {
-        bail!("el lanzamiento falló");
+        bail!("the launch failed");
     }
     Ok(())
 }
@@ -609,11 +609,11 @@ pub fn launch(package: &Package, device: &str) -> Result<()> {
 fn find_device(family: Family, name: &str) -> Result<String> {
     let json = capture("xcrun", &["simctl", "list", "devices", "available", "-j"])?;
     let parsed: serde_json::Value =
-        serde_json::from_str(&json).context("simctl devolvió un JSON que no se entiende")?;
+        serde_json::from_str(&json).context("simctl returned a JSON nobody can make sense of")?;
     let runtimes = parsed
         .get("devices")
         .and_then(serde_json::Value::as_object)
-        .context("el JSON de simctl no trae dispositivos")?;
+        .context("simctl's JSON carries no devices")?;
 
     // An already-booted one is preferred: if there are several with the same
     // name on different versions of the system, that is the one the user is
@@ -645,26 +645,26 @@ fn find_device(family: Family, name: &str) -> Result<String> {
     // With no runtime of the family at all the problem is not the device's
     // name: it is that the download is missing. Having the SDK installed —which
     // is what compiling and linking need— does not bring the runtime, which is
-    // what running needs. They are separate gigabytes, and saying «there is no
-    // simulator called X» would send people looking in the wrong place.
+    // what running needs. They are separate gigabytes, and saying "there is no
+    // simulator called X" would send people looking in the wrong place.
     if !family_present {
         bail!(
-            "no hay ningún runtime de {} instalado, así que no hay simulador que arrancar.\n\
-             El `.app` está armado; para poder ejecutarlo:\n    {}",
+            "there is no {} runtime installed, so there is no simulator to boot.\n\
+             The `.app` is built; to be able to run it:\n    {}",
             family.label(),
             family.download_hint()
         );
     }
-    bail!("no hay ningún simulador de {} llamado {name:?}", family.label())
+    bail!("there is no {} simulator called {name:?}", family.label())
 }
 
 fn capture(program: &str, args: &[&str]) -> Result<String> {
     let output = Command::new(program)
         .args(args)
         .output()
-        .with_context(|| format!("no se pudo ejecutar {program}"))?;
+        .with_context(|| format!("{program} could not be run"))?;
     if !output.status.success() {
-        bail!("{program} {args:?} falló");
+        bail!("{program} {args:?} failed");
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }

@@ -61,9 +61,9 @@ impl Project {
     pub fn read(root: &Path) -> Result<Self> {
         let path = root.join(MARKER);
         let text = std::fs::read_to_string(&path)
-            .with_context(|| format!("no se pudo leer {}", path.display()))?;
+            .with_context(|| format!("{} could not be read", path.display()))?;
         let parsed: Value = serde_json::from_str(&text)
-            .with_context(|| format!("{} no es JSON válido", path.display()))?;
+            .with_context(|| format!("{} is not valid JSON", path.display()))?;
         let app = parsed.get("app").and_then(Value::as_object);
         let read = |key: &str| -> Option<String> {
             app.and_then(|app| app.get(key)).and_then(Value::as_str).map(str::to_owned)
@@ -111,7 +111,7 @@ impl Workspace {
     /// the marker sits lower than the `Cargo.toml` and it is the one in
     /// charge.
     pub fn discover() -> Result<Self> {
-        let cwd = std::env::current_dir().context("no se pudo leer el directorio actual")?;
+        let cwd = std::env::current_dir().context("the current directory could not be read")?;
         let mut dir = cwd.clone();
         loop {
             if dir.join(MARKER).is_file() {
@@ -127,18 +127,18 @@ impl Workspace {
         }
         // Nothing. Before giving up it is worth looking at whether this is an
         // uninitialised Angular project: it is the error that will come up most
-        // often, and saying «I cannot find the root» when the answer is «run
-        // `an init`» sends people off to read the CLI's source.
+        // often, and saying "I cannot find the root" when the answer is "run
+        // `an init`" sends people off to read the CLI's source.
         if let Some(angular) = uninitialised_angular(&cwd) {
             bail!(
-                "{} es un proyecto Angular, pero no está inicializado para angular-native.\n\
-                 Ejecuta `an init` ahí dentro.",
+                "{} is an Angular project, but it is not initialised for angular-native.\n\
+                 Run `an init` in there.",
                 angular.display()
             );
         }
         bail!(
-            "aquí no hay ni un proyecto de angular-native ni el monorepo.\n\
-             Desde un proyecto Angular, ejecuta primero `an init`."
+            "there is neither an angular-native project nor the monorepo here.\n\
+             From an Angular project, run `an init` first."
         )
     }
 
@@ -153,9 +153,9 @@ impl Workspace {
                 let asked_for = absolute(given);
                 if asked_for != project.root {
                     bail!(
-                        "fuera del monorepo `an` trabaja sobre el proyecto en el que se ejecuta \
-                         ({}), y se le ha pedido {}.\n\
-                         Ejecuta `an` desde ese otro proyecto.",
+                        "outside the monorepo `an` works on the project it is run in \
+                         ({}), and it has been asked for {}.\n\
+                         Run `an` from that other project.",
                         project.root.display(),
                         asked_for.display()
                     );
@@ -171,11 +171,11 @@ impl Workspace {
             self.root.join(raw)
         };
         if !absolute.join("tsconfig.json").is_file() {
-            bail!("{} no parece una app: falta tsconfig.json", absolute.display());
+            bail!("{} does not look like an app: tsconfig.json is missing", absolute.display());
         }
         let relative = absolute
             .strip_prefix(&self.root)
-            .context("la app tiene que estar dentro del proyecto")?;
+            .context("the app has to be inside the project")?;
         Ok(relative.to_path_buf())
     }
 
@@ -183,8 +183,8 @@ impl Workspace {
     /// commands that only make sense in there.
     pub fn project(&self) -> Result<&Project> {
         self.project.as_ref().context(
-            "este comando es para un proyecto Angular de fuera del monorepo, \
-             y `an` se está ejecutando dentro del monorepo",
+            "this command is for an Angular project from outside the monorepo, \
+             and `an` is being run inside the monorepo",
         )
     }
 
@@ -287,15 +287,15 @@ pub fn sdk_root() -> Result<PathBuf> {
     if let Some(dir) = std::env::var_os("AN_HOME") {
         let dir = absolute(&dir.to_string_lossy());
         return validate_sdk(&dir).with_context(|| {
-            format!("AN_HOME apunta a {}, que no es un SDK de angular-native", dir.display())
+            format!("AN_HOME points at {}, which is not an angular-native SDK", dir.display())
         });
     }
     let compiled_from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let compiled_from = compiled_from.canonicalize().unwrap_or(compiled_from);
     validate_sdk(&compiled_from).with_context(|| {
         format!(
-            "este `an` se compiló desde {}, y ahí ya no está el SDK.\n\
-             Define AN_HOME con la ruta del repositorio de angular-native.",
+            "this `an` was compiled from {}, and the SDK is no longer there.\n\
+             Set AN_HOME to the path of the angular-native repository.",
             compiled_from.display()
         )
     })

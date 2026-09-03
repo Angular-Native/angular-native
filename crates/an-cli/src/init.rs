@@ -41,7 +41,7 @@ const PACKAGES: [(&str, &str); 2] = [
 pub fn init(dir: Option<&str>, name: Option<&str>, id: Option<&str>, force: bool) -> Result<()> {
     let root = match dir {
         Some(dir) => workspace::absolute(dir),
-        None => std::env::current_dir().context("no se pudo leer el directorio actual")?,
+        None => std::env::current_dir().context("the current directory could not be read")?,
     };
     let sdk = workspace::sdk_root()?;
 
@@ -49,7 +49,7 @@ pub fn init(dir: Option<&str>, name: Option<&str>, id: Option<&str>, force: bool
     check_angular(&root)?;
     let already = root.join(MARKER).is_file();
     if already && !force {
-        eprintln!("==> {} ya está inicializado; solo se añade lo que falte", root.display());
+        eprintln!("==> {} is already initialised; only what is missing is added", root.display());
     }
 
     let previous = already.then(|| Project::read(&root)).transpose()?;
@@ -70,8 +70,8 @@ pub fn init(dir: Option<&str>, name: Option<&str>, id: Option<&str>, force: bool
         .unwrap_or_else(|| PathBuf::from("src/main.native.ts"));
     let platforms_list = previous.map(|previous| previous.platforms).unwrap_or_default();
 
-    eprintln!("==> proyecto Angular en {}", root.display());
-    eprintln!("==> SDK de angular-native en {}", sdk.display());
+    eprintln!("==> Angular project at {}", root.display());
+    eprintln!("==> angular-native SDK at {}", sdk.display());
 
     // ---- Dependencies ----------------------------------------------------
     ensure_compiler(&root)?;
@@ -88,16 +88,16 @@ pub fn init(dir: Option<&str>, name: Option<&str>, id: Option<&str>, force: bool
     write_project_manifest(&root, &app_name, &bundle_id, &entry, &platforms_list)?;
 
     eprintln!();
-    eprintln!("Listo. {app_name} ({bundle_id})");
-    eprintln!("  an add ios        crea ios/Info.plist, que a partir de ahí es tuyo");
-    eprintln!("  an build          solo el bundle JS");
-    eprintln!("  an ios            compila, arma el .app y lo lanza en el simulador");
-    eprintln!("  an dev            lo mismo, recargando al guardar");
+    eprintln!("Done. {app_name} ({bundle_id})");
+    eprintln!("  an add ios        creates ios/Info.plist, which is yours from then on");
+    eprintln!("  an build          the JS bundle alone");
+    eprintln!("  an ios            compiles, puts the .app together and launches it on the simulator");
+    eprintln!("  an dev            the same, reloading when you save");
     eprintln!();
     eprintln!(
-        "La app nativa arranca en {} y su componente raíz es src/app/app-native.ts.\n\
-         Tu app web sigue como estaba: las plantillas no se comparten, porque una es HTML\n\
-         y la otra son vistas nativas.",
+        "The native app starts at {} and its root component is src/app/app-native.ts.\n\
+         Your web app stays as it was: the templates are not shared, because one of them is\n\
+         HTML and the other one is native views.",
         entry.display()
     );
     Ok(())
@@ -133,22 +133,22 @@ pub fn add(workspace: &Workspace, platform: &str) -> Result<()> {
             android_manifest(workspace, &project.name)?,
         ),
         other => bail!(
-            "no sé añadir {other:?}. `an add` conoce ios, tvos, visionos y android; \
-             las demás plataformas todavía no tienen nada que el proyecto deba guardar."
+            "I do not know how to add {other:?}. `an add` knows ios, tvos, visionos and android; \
+             the other platforms have nothing yet the project needs to keep."
         ),
     };
 
     let path = project.root.join(dir).join(file_name);
     if path.is_file() {
-        eprintln!("==> {} ya existe; no se toca", path.display());
+        eprintln!("==> {} already exists; it is left alone", path.display());
     } else {
         write_file(&path, &contents, false)?;
     }
     register_platform(&project.root, platform)?;
     eprintln!();
     eprintln!(
-        "{} es tuyo a partir de ahora: `an` lo copia al build y no lo reescribe nunca.\n\
-         Lo que sí se rehace entero en cada compilación es {}, que no es fuente.",
+        "{} is yours from now on: `an` copies it into the build and never rewrites it.\n\
+         What does get remade from scratch on every compilation is {}, which is not source.",
         path.display(),
         workspace.build_dir().join(dir).display()
     );
@@ -161,24 +161,24 @@ pub fn add(workspace: &Workspace, platform: &str) -> Result<()> {
 
 fn check_angular(root: &Path) -> Result<()> {
     if !root.is_dir() {
-        bail!("{} no existe", root.display());
+        bail!("{} does not exist", root.display());
     }
     let mut missing: Vec<&str> = Vec::new();
     if !root.join("angular.json").is_file() {
         missing.push("angular.json");
     }
     if !workspace::depends_on_angular(root) {
-        missing.push("@angular/core en las dependencias del package.json");
+        missing.push("@angular/core in the package.json dependencies");
     }
     if missing.is_empty() {
         return Ok(());
     }
     bail!(
-        "{} no parece un proyecto Angular: falta {}.\n\
-         `an init` se ejecuta dentro de un proyecto ya creado; si aún no lo tienes:\n\
-         \x20   npx @angular/cli new mi-app",
+        "{} does not look like an Angular project: {} is missing.\n\
+         `an init` is run inside a project that already exists; if you do not have one yet:\n\
+         \x20   npx @angular/cli new my-app",
         root.display(),
-        missing.join(" y ")
+        missing.join(" and ")
     )
 }
 
@@ -194,9 +194,9 @@ fn check_identifier(id: &str) -> Result<()> {
         });
     if !valid {
         bail!(
-            "{id:?} no vale como identificador de app: tienen que ser al menos dos tramos \
-             separados por puntos, cada uno empezando por letra y sin guiones ni subrayados. \
-             Por ejemplo: com.ejemplo.miapp"
+            "{id:?} is no good as an app identifier: it has to be at least two parts \
+             separated by dots, each one starting with a letter and with no hyphens or \
+             underscores. For example: com.example.myapp"
         );
     }
     Ok(())
@@ -214,11 +214,11 @@ fn ensure_compiler(root: &Path) -> Result<()> {
     if has_ngc(root) {
         return Ok(());
     }
-    eprintln!("==> falta @angular/compiler-cli; instalándolo");
+    eprintln!("==> @angular/compiler-cli is missing; installing it");
     npm(root, &["install", "--save-dev", "--no-audit", "--no-fund", "@angular/compiler-cli"])
-        .context("no se pudo instalar @angular/compiler-cli")?;
+        .context("@angular/compiler-cli could not be installed")?;
     if !has_ngc(root) {
-        bail!("npm terminó bien pero sigue sin haber un node_modules/.bin/ngc alcanzable");
+        bail!("npm finished fine but there is still no reachable node_modules/.bin/ngc");
     }
     Ok(())
 }
@@ -272,7 +272,7 @@ fn install_packages(sdk: &Path, root: &Path, force: bool) -> Result<()> {
         .iter()
         .all(|(name, _)| root.join("node_modules").join(name).join("package.json").is_file());
     if installed && !force {
-        eprintln!("==> los paquetes del framework ya están instalados");
+        eprintln!("==> the framework packages are already installed");
         return Ok(());
     }
 
@@ -283,19 +283,19 @@ fn install_packages(sdk: &Path, root: &Path, force: bool) -> Result<()> {
     for (name, short) in PACKAGES {
         let source = sdk.join("packages").join(short);
         if !source.join("src/public-api.ts").is_file() {
-            bail!("el SDK no trae {name}: falta {}", source.join("src/public-api.ts").display());
+            bail!("the SDK does not carry {name}: {} is missing", source.join("src/public-api.ts").display());
         }
         let destination = staging.join(short);
         let _ = std::fs::remove_dir_all(&destination);
         std::fs::create_dir_all(&destination)?;
 
-        eprintln!("==> compilando {name}");
+        eprintln!("==> compiling {name}");
         std::fs::write(destination.join("tsconfig.json"), package_tsconfig(&source, &staging))?;
         npm(root, &["exec", "--", "ngc", "-p", &destination.join("tsconfig.json").to_string_lossy()])
-            .with_context(|| format!("no se pudo compilar {name}"))?;
+            .with_context(|| format!("{name} could not be compiled"))?;
         let api = destination.join("dist/public-api.js");
         if !api.is_file() {
-            bail!("`ngc` terminó bien pero no dejó {}", api.display());
+            bail!("`ngc` finished fine but left no {}", api.display());
         }
         std::fs::write(destination.join("package.json"), package_json(name, &source)?)?;
 
@@ -313,15 +313,15 @@ fn install_packages(sdk: &Path, root: &Path, force: bool) -> Result<()> {
                 "--silent",
             ],
         )
-        .with_context(|| format!("no se pudo empaquetar {name}"))?;
+        .with_context(|| format!("{name} could not be packed"))?;
         let file_name = output
             .lines()
             .rfind(|line| line.trim().ends_with(".tgz"))
-            .with_context(|| format!("npm pack no dijo qué fichero escribió para {name}"))?
+            .with_context(|| format!("npm pack did not say which file it wrote for {name}"))?
             .trim()
             .to_owned();
         if !vendor.join(&file_name).is_file() {
-            bail!("npm pack dijo haber escrito {file_name}, pero no está en {}", vendor.display());
+            bail!("npm pack said it wrote {file_name}, but it is not in {}", vendor.display());
         }
         // Relative: it is what ends up in the user's `package.json`, and an
         // absolute path would only work on this machine.
@@ -331,12 +331,12 @@ fn install_packages(sdk: &Path, root: &Path, force: bool) -> Result<()> {
     eprintln!("==> npm install {}", tarballs.join(" "));
     let mut args: Vec<&str> = vec!["install", "--save", "--save-exact", "--no-audit", "--no-fund"];
     args.extend(tarballs.iter().map(String::as_str));
-    npm(root, &args).context("no se pudieron instalar los paquetes del framework")?;
+    npm(root, &args).context("the framework packages could not be installed")?;
 
     for (name, _) in PACKAGES {
         let dir = root.join("node_modules").join(name);
         if !dir.join("package.json").is_file() {
-            bail!("npm terminó bien pero {name} no está instalado");
+            bail!("npm finished fine but {name} is not installed");
         }
     }
     Ok(())
@@ -388,13 +388,13 @@ fn package_tsconfig(source: &Path, staging: &Path) -> String {
 fn package_json(name: &str, source: &Path) -> Result<String> {
     let manifest = source.join("package.json");
     let text = std::fs::read_to_string(&manifest)
-        .with_context(|| format!("no se pudo leer {}", manifest.display()))?;
+        .with_context(|| format!("{} could not be read", manifest.display()))?;
     let parsed: Value = serde_json::from_str(&text)
-        .with_context(|| format!("{} no es JSON válido", manifest.display()))?;
+        .with_context(|| format!("{} is not valid JSON", manifest.display()))?;
     let version = parsed
         .get("version")
         .and_then(Value::as_str)
-        .with_context(|| format!("{}: falta version", manifest.display()))?;
+        .with_context(|| format!("{}: version is missing", manifest.display()))?;
     let peers = parsed
         .get("peerDependencies")
         .cloned()
@@ -410,7 +410,7 @@ fn package_json(name: &str, source: &Path) -> Result<String> {
   "peerDependencies": {peers}
 }}
 "#,
-        peers = serde_json::to_string_pretty(&peers).expect("un objeto siempre serializa")
+        peers = serde_json::to_string_pretty(&peers).expect("an object always serialises")
     ))
 }
 
@@ -423,15 +423,15 @@ fn package_json(name: &str, source: &Path) -> Result<String> {
 fn write_file(path: &Path, contents: &str, force: bool) -> Result<()> {
     let short_name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     if path.is_file() && !force {
-        eprintln!("    ya estaba  {short_name}  ({})", path.display());
+        eprintln!("    already there  {short_name}  ({})", path.display());
         return Ok(());
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(path, contents)
-        .with_context(|| format!("no se pudo escribir {}", path.display()))?;
-    eprintln!("    escrito     {short_name}  ({})", path.display());
+        .with_context(|| format!("{} could not be written", path.display()))?;
+    eprintln!("    written        {short_name}  ({})", path.display());
     Ok(())
 }
 
@@ -485,7 +485,7 @@ fn extend_gitignore(root: &Path) -> Result<()> {
     let current = std::fs::read_to_string(&path).unwrap_or_default();
     let line = "/.angular-native/build/";
     if current.lines().any(|l| l.trim() == line) {
-        eprintln!("    ya estaba  .gitignore");
+        eprintln!("    already there  .gitignore");
         return Ok(());
     }
     let mut updated = current;
@@ -493,11 +493,11 @@ fn extend_gitignore(root: &Path) -> Result<()> {
         updated.push('\n');
     }
     updated.push_str(&format!(
-        "\n# angular-native: el .app, el APK y el JS compilado se rehacen enteros.\n{line}\n"
+        "\n# angular-native: the .app, the APK and the compiled JS are remade from scratch.\n{line}\n"
     ));
     std::fs::write(&path, updated)
-        .with_context(|| format!("no se pudo escribir {}", path.display()))?;
-    eprintln!("    ampliado    .gitignore");
+        .with_context(|| format!("{} could not be written", path.display()))?;
+    eprintln!("    extended       .gitignore");
     Ok(())
 }
 
@@ -515,19 +515,20 @@ fn extend_gitignore(root: &Path) -> Result<()> {
 /// in `node_modules`, and they resolve like any other dependency.
 fn tsconfig(entry: &Path) -> String {
     format!(
-        r#"// Generado por `an init`. Es el tsconfig del build nativo: `ngc` lo usa para
-// compilar las plantillas a vistas nativas, no a DOM.
+        r#"// Generated by `an init`. This is the tsconfig of the native build: `ngc` uses
+// it to compile the templates into native views, not into DOM.
 //
-// Se puede editar —`an` no lo reescribe si ya existe— pero dos cosas tienen que
-// quedarse como están: `rootDir` en la raíz del proyecto y `outDir` dentro de
-// `.angular-native/build/js`. De ahí saca `an build` el punto de entrada.
+// It can be edited —`an` does not rewrite it if it already exists— but two things
+// have to stay as they are: `rootDir` at the root of the project and `outDir`
+// inside `.angular-native/build/js`. That is where `an build` picks the entry
+// point up from.
 {{
   "compilerOptions": {{
     "target": "es2022",
     "module": "esnext",
     "moduleResolution": "bundler",
-    // `dom` entra solo por los tipos: los .d.ts de Angular referencian Document,
-    // Element y Event. En tiempo de ejecución no existe ninguno de los tres.
+    // `dom` is in for the types alone: Angular's .d.ts files reference Document,
+    // Element and Event. At runtime none of the three exists.
     "lib": ["es2022", "dom"],
     "strict": true,
     "skipLibCheck": true,
@@ -549,13 +550,13 @@ fn tsconfig(entry: &Path) -> String {
     )
 }
 
-const ENTRY_POINT: &str = r#"// El arranque de la app nativa. El de la web sigue siendo src/main.ts.
+const ENTRY_POINT: &str = r#"// The native app's startup. The web one is still src/main.ts.
 import { bootstrapNativeApplication } from '@angular-native/platform'
 
 import { AppNative } from './app/app-native'
 
 bootstrapNativeApplication(AppNative).catch((error) => {
-  console.error('el arranque falló:', error)
+  console.error('the startup failed:', error)
 })
 "#;
 
@@ -565,15 +566,15 @@ fn root_component(name: &str) -> String {
 import {{ NATIVE_PRIMITIVES }} from '@angular-native/primitives'
 
 /**
- * El componente raíz de la app nativa.
+ * The native app's root component.
  *
- * Es un componente de Angular normal: señales, `@if`, `@for` y bindings, los de
- * siempre. Lo único distinto es que los elementos no son HTML: `<an-view>` acaba
- * siendo una `UIView` en iOS y un `AnViewGroup` en Android.
+ * It is an ordinary Angular component: signals, `@if`, `@for` and bindings, the
+ * usual ones. The only difference is that the elements are not HTML:
+ * `<an-view>` ends up being a `UIView` on iOS and an `AnViewGroup` on Android.
  *
- * Las plantillas no se comparten con la app web. Un `<div>` no tiene
- * equivalente nativo y `<an-view>` no se puede pintar en un navegador, así que
- * hay dos raíces y cada una con lo suyo.
+ * The templates are not shared with the web app. A `<div>` has no native
+ * equivalent and an `<an-view>` cannot be painted in a browser, so there are two
+ * roots and each one has its own.
  */
 @Component({{
   selector: 'app-native',
@@ -589,17 +590,17 @@ import {{ NATIVE_PRIMITIVES }} from '@angular-native/primitives'
       [backgroundColor]="'#0b1020'">
       <an-text [fontSize]="30" [fontWeight]="'bold'" [color]="'#f4f7ff'">{name}</an-text>
       <an-text [fontSize]="16" [color]="'#9fb0d4'">
-        Corriendo sobre vistas nativas. Sin DOM y sin WebView.
+        Running on native views. No DOM and no WebView.
       </an-text>
-      <an-button [title]="'Van ' + toques() + ' toques'" [variant]="'filled'" (press)="toca()" />
+      <an-button [title]="'Taps: ' + taps()" [variant]="'filled'" (press)="tap()" />
     </an-view>
   `
 }})
 export class AppNative {{
-  readonly toques = signal(0)
+  readonly taps = signal(0)
 
-  toca(): void {{
-    this.toques.update((valor) => valor + 1)
+  tap(): void {{
+    this.taps.update((count) => count + 1)
   }}
 }}
 "#
@@ -630,7 +631,7 @@ fn plist(
         Family::VisionOs => "shells/visionos/Resources/Info.plist",
     });
     let text = std::fs::read_to_string(&source)
-        .with_context(|| format!("no se pudo leer {}", source.display()))?;
+        .with_context(|| format!("{} could not be read", source.display()))?;
     let text = substitute(
         &text,
         &source,
@@ -659,7 +660,7 @@ fn plist(
 fn android_manifest(workspace: &Workspace, name: &str) -> Result<String> {
     let source = workspace.root.join("shells/android/AndroidManifest.xml");
     let text = std::fs::read_to_string(&source)
-        .with_context(|| format!("no se pudo leer {}", source.display()))?;
+        .with_context(|| format!("{} could not be read", source.display()))?;
     let text = substitute(
         &text,
         &source,
@@ -686,8 +687,8 @@ fn substitute(text: &str, source: &Path, changes: &[(&str, &str, usize)]) -> Res
         let found = output.matches(needle).count();
         if found != *times {
             bail!(
-                "{}: se esperaba encontrar {needle:?} {times} vez/veces y aparece {found}. \
-                 El shell ha cambiado y esta plantilla se ha quedado atrás.",
+                "{}: {needle:?} was expected {times} time(s) and it turns up {found}. \
+                 The shell has changed and this template has been left behind.",
                 source.display()
             );
         }
@@ -697,18 +698,18 @@ fn substitute(text: &str, source: &Path, changes: &[(&str, &str, usize)]) -> Res
 }
 
 const PLIST_HEADER: &str = "<!--\n  \
-    Creado por `an add`. A partir de aquí es tuyo: `an` lo copia dentro del\n  \
-    .app en cada compilación y no lo reescribe nunca.\n\n  \
-    CFBundleExecutable y CFBundleIdentifier tienen que seguir coincidiendo con\n  \
-    app.name y app.bundleId de angular-native.json. Si dejan de coincidir, el\n  \
-    build se para y lo dice.\n-->\n";
+    Created by `an add`. From here on it is yours: `an` copies it into the .app\n  \
+    on every compilation and never rewrites it.\n\n  \
+    CFBundleExecutable and CFBundleIdentifier have to go on matching app.name\n  \
+    and app.bundleId in angular-native.json. If they stop matching, the build\n  \
+    stops and says so.\n-->\n";
 
 const MANIFEST_HEADER: &str = "<!--\n  \
-    Creado por `an add android`. A partir de aquí es tuyo: aquí van los permisos\n  \
-    y lo que la app declare.\n\n  \
-    El atributo package no se cambia: es el paquete de las clases del shell. El\n  \
-    identificador con el que Android instala la app sale de app.bundleId de\n  \
-    angular-native.json.\n-->\n";
+    Created by `an add android`. From here on it is yours: the permissions and\n  \
+    whatever the app declares go in here.\n\n  \
+    The package attribute is not changed: it is the package of the shell's\n  \
+    classes. The identifier Android installs the app under comes from\n  \
+    app.bundleId in angular-native.json.\n-->\n";
 
 // ---------------------------------------------------------------------------
 // Odds and ends
@@ -716,17 +717,17 @@ const MANIFEST_HEADER: &str = "<!--\n  \
 
 /// The app's name, taken from the `package.json`. It ends up being the
 /// executable's inside the `.app` and the one read under the icon, so it is
-/// turned into PascalCase: `mi-app` is «MiApp».
+/// turned into PascalCase: `my-app` becomes "MyApp".
 fn app_name_from_package_json(root: &Path) -> Result<String> {
     let manifest = root.join("package.json");
     let text = std::fs::read_to_string(&manifest)
-        .with_context(|| format!("no se pudo leer {}", manifest.display()))?;
+        .with_context(|| format!("{} could not be read", manifest.display()))?;
     let parsed: Value = serde_json::from_str(&text)
-        .with_context(|| format!("{} no es JSON válido", manifest.display()))?;
+        .with_context(|| format!("{} is not valid JSON", manifest.display()))?;
     let raw = parsed
         .get("name")
         .and_then(Value::as_str)
-        .with_context(|| format!("{}: falta name", manifest.display()))?;
+        .with_context(|| format!("{}: name is missing", manifest.display()))?;
     let name: String = raw
         .rsplit('/')
         .next()
@@ -742,7 +743,7 @@ fn app_name_from_package_json(root: &Path) -> Result<String> {
         })
         .collect();
     if name.is_empty() {
-        bail!("{}: del name {raw:?} no sale ningún nombre de app; pasa --name", manifest.display());
+        bail!("{}: the name {raw:?} yields no app name; pass --name", manifest.display());
     }
     Ok(name)
 }
@@ -752,7 +753,7 @@ fn slug(name: &str) -> String {
 }
 
 fn npm(cwd: &Path, args: &[&str]) -> Result<()> {
-    crate::build::run_in(cwd, "npm", args, "npm falló")
+    crate::build::run_in(cwd, "npm", args, "npm failed")
 }
 
 fn capture(cwd: &Path, program: &str, args: &[&str]) -> Result<String> {
@@ -760,9 +761,9 @@ fn capture(cwd: &Path, program: &str, args: &[&str]) -> Result<String> {
         .args(args)
         .current_dir(cwd)
         .output()
-        .with_context(|| format!("no se pudo ejecutar {program}"))?;
+        .with_context(|| format!("{program} could not be run"))?;
     if !output.status.success() {
-        bail!("{program} falló:\n{}", String::from_utf8_lossy(&output.stderr).trim());
+        bail!("{program} failed:\n{}", String::from_utf8_lossy(&output.stderr).trim());
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }

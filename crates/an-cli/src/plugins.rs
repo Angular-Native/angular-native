@@ -620,8 +620,8 @@ fn clash(what: &str, one: &str, one_value: &str, other: &str, other_value: &str)
          \x20     {one_value}\n\
          \x20 · {other}\n\
          \x20     {other_value}\n\n\
-         Only one of them can stay, and picking it by order would be silently deciding \
-         something that shows up on screen.\n\
+         Only one can stay, and picking by order would silently decide something \
+         that shows up on screen.\n\
          Either the two plugins agree, or the app keeps one of the two."
     )
 }
