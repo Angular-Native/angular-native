@@ -116,6 +116,11 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeNew(
         // The plugins the shell registered before getting here. One per name;
         // what they do lives in Java, so these only carry and fetch.
         let plugins = crate::plugins::host_plugins();
+        // The modules the framework brings. They are not plugins —nobody
+        // declares them and there is no npm package— but they answer the same
+        // way, because what they call lives on the UI thread too. See
+        // `an_bridge::builtins`.
+        let builtins = an_bridge::builtins::builtin_modules();
 
         let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
             let sink = crate::logging::AndroidLog::new(vm_device, device_ref);
@@ -124,6 +129,9 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeNew(
                 vm_module,
                 module_ref,
             )));
+            for builtin in builtins {
+                js.register_module(Box::new(builtin));
+            }
             for plugin in plugins {
                 js.register_module(Box::new(plugin));
             }
@@ -218,6 +226,9 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeFrame(
         // UI thread. It goes before JS's turn so that an answer arriving on the
         // spot makes it into this very frame.
         crate::plugins::pump(env);
+        // And the built-ins', through their own mailbox and their own Java
+        // object.
+        crate::builtins::pump(env);
 
         // Whatever the worker finished since the previous frame is mounted, the
         // next turn is sent to it if it is not still busy, and it is waited on

@@ -148,6 +148,10 @@ pub unsafe extern "C" fn an_watch_runtime_new(
     // Read before the worker starts, because it names the plugins that are
     // there and the registry is closed the moment the engine is built.
     let absent = crate::plugins::absent_note();
+    // The modules the framework brings. These are not plugins: nobody declares
+    // them, and the SwiftUI shell serves them on the main actor. See
+    // `an_bridge::builtins`.
+    let builtins = an_bridge::builtins::builtin_modules();
 
     let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
         let mut js = QuickJsRuntime::new()?;
@@ -158,6 +162,9 @@ pub unsafe extern "C" fn an_watch_runtime_new(
         // A call to a module that is not here has to be told why and not only
         // that the name is unknown. See `plugins::absent_note`.
         js.explain_absent_modules(absent);
+        for builtin in builtins {
+            js.register_module(Box::new(builtin));
+        }
         Ok((js, ShadowSide::new(WatchMeasurer::new(controls), (width, height))))
     });
     let worker = match worker {
@@ -251,6 +258,10 @@ pub unsafe extern "C" fn an_watch_runtime_frame(rt: *mut AnWatchRuntime, now_ms:
     // WatchKit. It goes before JS's turn so that an answer arriving on the spot
     // makes it into this very frame.
     crate::plugins::pump();
+    // The built-in calls the engine left behind are served here, on the main
+    // actor: it is where WatchKit lives. Before JS's turn, so that an answer
+    // arriving on the spot makes it into this very frame.
+    an_bridge::builtins::pump_c();
 
     let mut applied = rt.pump();
     // If the worker is still busy it is not queued another turn: the queue

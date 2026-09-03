@@ -66,6 +66,9 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
         // plugin when the engine starts, and whatever is registered afterwards
         // does not get in.
         AnPluginRegistry.install(this);
+        // And the modules the framework brings, which are not plugins: nobody
+        // declares them and every host has them.
+        AnBuiltinModules.install(this);
 
         host = new AnHost(this, container);
         runtime = new AnRuntime(host, widthDp, heightDp);
@@ -134,6 +137,18 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
                     }
                 };
         Choreographer.getInstance().postFrameCallback(frameCallback);
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        // A built-in that opened a system chooser is waiting for this: without
+        // it the promise behind `files.pick()` would never be answered. What
+        // does not belong to one is passed on, so the runtime does not swallow
+        // results the app itself asked for.
+        if (!AnBuiltinModules.onActivityResult(requestCode, resultCode, data)) {
+            super.onActivityResult(requestCode, resultCode, data);
+        }
     }
 
     @Override

@@ -11,6 +11,8 @@
 //! those. View logic lives where it is natural to write it.
 
 #[cfg(target_os = "android")]
+mod builtins;
+#[cfg(target_os = "android")]
 mod host;
 #[cfg(target_os = "android")]
 mod jni_bridge;

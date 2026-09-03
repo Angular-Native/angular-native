@@ -21,6 +21,48 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
+      What the `network` built-in module reads. It is an install-time
+      permission: there is no dialog and nothing the person grants at run time,
+      so without this line every call to `network.status()` would throw
+      SecurityException. The module checks for it and answers with this very
+      line rather than dying, but an app that ships without it has a module that
+      only ever says no.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!--
+      What the `haptics` built-in module needs. Install-time as well, and the
+      same arrangement: the module checks for it and answers with this line
+      rather than throwing SecurityException at the first tap.
+    -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!--
+      Package visibility. Since Android 11 an app cannot see which other apps
+      are installed unless it says what it is looking for, and `resolveActivity`
+      answers `null` for everything it cannot see. Without this the `files` and
+      `share` modules would conclude that a device with a perfectly good
+      document picker has none, and say so — which is worse than not asking, as
+      it is a confident wrong answer.
+
+      Only these two, and only because the two built-in modules ask them.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND_MULTIPLE" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.OPEN_DOCUMENT" />
+            <data android:mimeType="*/*" />
+        </intent>
+    </queries>
+
+    <!--
       No action bar: the whole screen is drawn by the app, just as on iOS, and
       the layout already reserves the gap for the status bar.
 
@@ -40,6 +82,29 @@
         android:hardwareAccelerated="true"
         android:extractNativeLibs="true"
         android:usesCleartextTraffic="true">
+
+        <!--
+          How a file leaves the app.
+
+          Since Android 7 handing another app a `file://` path throws
+          `FileUriExposedException`, so the `share` module wraps what it sends in
+          a `content://` URI from this provider. It is not exported and it grants
+          permission per URI and per share: what crosses is the one file, to the
+          one app the person picked, for as long as that app needs it.
+
+          `@xml/an_file_paths` says which directories may be handed over, and it
+          is only the two the `files` module owns.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="dev.angularnative.anfiles"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/an_file_paths" />
+        </provider>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -28,6 +28,11 @@ final class RootViewController: UIViewController {
         // plugin when the engine starts, and whatever is registered afterwards
         // does not get in.
         AnPluginRegistry.install(host: self)
+        // And the modules the framework brings, which are not plugins: nobody
+        // declares them and every host has them. They present from this
+        // controller when they have something to show.
+        AnBuiltinHost.viewController = self
+        AnBuiltinModules.install()
 
         let bounds = view.bounds
         runtime = an_runtime_new(

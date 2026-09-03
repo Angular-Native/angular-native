@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What the FileProvider is allowed to hand to another app.
+
+  Only the two directories the `files` module owns, which is the same line it
+  draws itself: an app shares what it wrote, never an arbitrary path somebody
+  passed in. `files-path` is `getFilesDir()` and `cache-path` is
+  `getCacheDir()`; anything outside them makes `getUriForFile` throw, and the
+  share module turns that into a message rather than a crash.
+-->
+<paths>
+    <files-path name="an-files" path="." />
+    <cache-path name="an-cache" path="." />
+</paths>

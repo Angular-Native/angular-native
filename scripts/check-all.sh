@@ -73,6 +73,12 @@ echo
 "$ROOT/scripts/check-modules.sh"
 
 echo
+# And the four the framework brings on top of it, which have a second way of
+# going wrong that `device` did not: a platform without the hardware. The half
+# that needs a real phone or a real watch is `check-builtins-device.sh`.
+"$ROOT/scripts/check-builtins.sh"
+
+echo
 "$ROOT/scripts/check-permissions.sh"
 
 echo

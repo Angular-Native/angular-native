@@ -55,5 +55,33 @@ int32_t an_plugin_resolve(uint64_t id, const char *json);
 
 /// Rejects a call. 0 if the call was waiting, -1 if it was not.
 int32_t an_plugin_reject(uint64_t id, const char *message);
+// ── Built-in modules ────────────────────────────────────────────────────────
+//
+// The modules the framework brings: files, share, network status and haptics.
+// They are not plugins —nobody declares them, there is no npm package and no
+// host can be without them— but they travel the same way, because what they
+// call belongs to the main thread. See `crates/an-bridge/src/builtins.rs`.
+//
+// This block is written the same in the three Apple headers, which are never
+// imported together: `scripts/check-builtins.sh` is what keeps the three
+// copies from drifting apart.
+//
+// Like the plugins', all of this is global to the process and not to the
+// runtime: it is installed before the runtime is created and survives a hot
+// restart.
+
+/// Installs the dispatcher Rust hands every built-in call to. The strings only
+/// hold for the duration of the call: they have to be copied. `NULL`
+/// uninstalls it.
+typedef void (*AnBuiltinDispatch)(uint64_t id, const char *module,
+                                  const char *method, const char *args);
+void an_builtin_set_dispatch(AnBuiltinDispatch dispatch);
+
+/// Answers a call. `json` is the return value, already serialised ("null" for
+/// a method that returns nothing). 0 if the call existed.
+int32_t an_builtin_resolve(uint64_t id, const char *json);
+
+/// Rejects a call. 0 if the call existed.
+int32_t an_builtin_reject(uint64_t id, const char *message);
 
 #endif

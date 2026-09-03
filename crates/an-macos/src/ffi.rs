@@ -145,6 +145,10 @@ pub unsafe extern "C" fn an_runtime_new(
     // there and after this point the answer can no longer change: the registry
     // is closed the moment the engine is built.
     let absent = crate::modules::absent_note();
+    // The modules the framework brings. These are not plugins: nobody declares
+    // them, and the shell serves them on the main thread, which is where AppKit
+    // lives. See `an_bridge::builtins`.
+    let builtins = an_bridge::builtins::builtin_modules();
 
     let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
         let mut js = QuickJsRuntime::new()?;
@@ -155,6 +159,9 @@ pub unsafe extern "C" fn an_runtime_new(
         // A call to a module that is not here has to be told why and not only
         // that the name is unknown. See `modules::absent_note`.
         js.explain_absent_modules(absent);
+        for builtin in builtins {
+            js.register_module(Box::new(builtin));
+        }
         Ok((
             js,
             ShadowSide::new(crate::measure::AppKitMeasurer::new(control_sizes), (width, height)),
@@ -260,6 +267,11 @@ pub unsafe extern "C" fn an_runtime_frame(rt: *mut AnRuntime, now_ms: f64) -> i3
     // goes before JS's turn so that an answer arriving on the spot makes it
     // into this very frame.
     crate::modules::pump();
+    // The built-in calls the engine left behind are served here, which is the
+    // main thread: it is the only place where AppKit may be touched. It goes
+    // before JS's turn so that an answer arriving on the spot makes it into
+    // this very frame.
+    an_bridge::builtins::pump_c();
 
     // Whatever the worker finished since the previous frame is mounted.
     let mut applied = rt.pump();

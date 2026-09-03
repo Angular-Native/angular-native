@@ -77,9 +77,12 @@ final class AnRuntime {
     func start(width: Double, height: Double) {
         guard runtime == nil else { return }
         // Before the runtime and not after: the core builds one module per
-        // registered plugin the moment the engine starts, so a plugin that
-        // registered later would exist in this registry and nowhere else.
+        // registered name the moment the engine starts, so anything registered
+        // later would exist in this registry and nowhere else. Both kinds go in
+        // here — the plugins an app depends on, and the built-ins, which are not
+        // plugins and ship whether an app asks for them or not.
         AnPluginRegistry.install()
+        AnBuiltinModules.install()
         runtime = an_watch_runtime_new(
             Float(width),
             Float(height),
