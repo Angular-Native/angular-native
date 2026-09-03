@@ -3,12 +3,29 @@ import { ChangeDetectionStrategy, Component, computed, input, signal } from '@an
 import { type NativeSafeAreaInsets } from './primitives'
 
 /**
- * Keeps the content clear of whatever the system reserves for itself: the notch,
- * the status bar, the home indicator, Android's navigation bar.
+ * Keeps the content clear of whatever the system is covering it with: the
+ * notch, the status bar, the home indicator, Android's navigation bar, the
+ * round bezel of a watch — and the keyboard.
  *
- * The margins are neither constant nor computable: they change on rotation, when
- * the keyboard comes up and on going into split screen. The host measures them
- * every time they change.
+ * The margins are neither constant nor computable: they change on rotation, on
+ * going into split screen, and when the keyboard comes up. The host measures
+ * them every time they change and reports the lot through one `safeArea`
+ * event, so a template asks one question and gets one answer.
+ *
+ * **The keyboard is in the bottom inset.** It is not a sum: while the keyboard
+ * is up it is drawn over the home indicator and the navigation bar, so what
+ * arrives is the larger of the two. A form whose last field would otherwise sit
+ * under the keyboard therefore needs nothing but `'bottom'` among its edges —
+ * and, symmetrically, a safe area that does *not* list `'bottom'` is asking not
+ * to be kept clear of the bottom of the screen, keyboard included.
+ *
+ * The inset does not jump to its final value: it arrives once per frame,
+ * following the animation the system is already running, so the layout travels
+ * with the keyboard instead of arriving before it. On iOS that is the duration
+ * and the curve out of the keyboard notification; on Android it is
+ * `WindowInsetsAnimation.Callback`, which exists from API 30 — below that the
+ * keyboard is not reported at all and a field at the bottom stays under it.
+ * See `AnHost.installWindowInsets` for why that gap is not papered over.
  *
  * ```html
  * <an-safe-area [edges]="['top', 'bottom']" [padding]="20" [style.gap]="'12'">

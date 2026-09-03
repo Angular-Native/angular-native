@@ -117,6 +117,16 @@ public final class AnHost {
     private final java.util.List<Integer> backListeners = new java.util.ArrayList<>();
     /** Nodes subscribed to the safe area, with the insets they were already told. */
     private final SparseArray<float[]> safeArea = new SparseArray<>();
+
+    /**
+     * What the keyboard is covering of the container, in points.
+     *
+     * It is kept apart from the rest of the insets because it arrives from
+     * somewhere else: the system bars and the cutout are in every
+     * `WindowInsets` the view is handed, and the IME is only in the ones that
+     * come from the animation callback while it is moving.
+     */
+    private float keyboardInset = 0f;
     /**
      * What the template has said about each node's accessibility.
      *
@@ -242,6 +252,109 @@ public final class AnHost {
                 context.getPackageManager()
                         .hasSystemFeature(android.content.pm.PackageManager.FEATURE_WATCH);
         this.round = context.getResources().getConfiguration().isScreenRound();
+        installWindowInsets();
+    }
+
+    /**
+     * Subscribes to the window's insets, and with them to the keyboard — the
+     * one inset the platform does not hand over with the others.
+     *
+     * `getRootWindowInsets()` carries the bars and the cutout from API 24, and
+     * the IME **only from API 30**: `WindowInsets.Type.ime()` does not exist
+     * before then, and neither does `WindowInsetsAnimation.Callback`, which is
+     * what turns the keyboard's own animation into a value per frame. So:
+     *
+     *   API 30 and up — the inset arrives and it arrives *moving*: `onProgress`
+     *       is called once per frame with the insets interpolated to where the
+     *       keyboard actually is, so the form travels with it. Everything the
+     *       keyboard can do lands here — opened, closed, dragged away with a
+     *       finger, resized because the language changed, and the whole thing
+     *       again after a rotation or a split-screen drag.
+     *
+     *   API 24 to 29 — **nothing arrives, and a field at the bottom stays
+     *       under the keyboard.** It is said here rather than papered over.
+     *       What existed before R was the trick of watching the window's
+     *       visible frame shrink, and it only reports anything when the window
+     *       is allowed to resize; this shell asks it not to, precisely so that
+     *       the layout the core computed is the one that gets drawn. Wiring
+     *       that trick back in would mean two layout models on one screen,
+     *       which is a worse thing to own than a documented gap on API levels
+     *       that Play has not accepted an upload for since 2024.
+     *
+     * `setDecorFitsSystemWindows(false)` is what stops the window from being
+     * resized under the keyboard. Without it the platform shrinks the window
+     * and the inset would be counted twice: once by the smaller container and
+     * again by the padding. It is also what the app already wanted — the whole
+     * screen is drawn by the app and `an-safe-area` is what reserves the bars —
+     * and it is already the default for the target SDK this builds against.
+     */
+    private void installWindowInsets() {
+        // The ordinary dispatch, which every API level has. It is what arrives
+        // when nothing was animated: a hardware keyboard being attached, a
+        // rotation, a split-screen drag, the app coming back to the front —
+        // and the very first insets of all, which turn up **after** the first
+        // views have been mounted and which nothing else would go back and ask
+        // for. Without this the notch was reported as zero whenever the bundle
+        // won the race, which it does on a loaded machine.
+        container.setOnApplyWindowInsetsListener(
+                (view, insets) -> {
+                    applyWindowInsets(insets);
+                    return insets;
+                });
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
+            return;
+        }
+        if (context instanceof android.app.Activity) {
+            ((android.app.Activity) context).getWindow().setDecorFitsSystemWindows(false);
+        }
+        container.setWindowInsetsAnimationCallback(
+                new android.view.WindowInsetsAnimation.Callback(
+                        android.view.WindowInsetsAnimation.Callback
+                                .DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+                    @Override
+                    public android.view.WindowInsets onProgress(
+                            android.view.WindowInsets insets,
+                            java.util.List<android.view.WindowInsetsAnimation> running) {
+                        applyWindowInsets(insets);
+                        return insets;
+                    }
+
+                    @Override
+                    public void onEnd(android.view.WindowInsetsAnimation animation) {
+                        // The last frame of an animation is not always the
+                        // resting value —a dismissal let go halfway is finished
+                        // by the system without another `onProgress`— so the
+                        // settled insets are asked for once more.
+                        android.view.WindowInsets settled = container.getRootWindowInsets();
+                        if (settled != null) {
+                            applyWindowInsets(settled);
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Takes the keyboard's height out of one `WindowInsets` and reports the
+     * safe area again.
+     *
+     * The inset is read and never the keyboard's own height: a floating or a
+     * split keyboard covers less than it measures, and a hardware one covers
+     * nothing at all while the IME reports zero.
+     *
+     * Everything subscribed is reported, not only what the keyboard touched:
+     * the bars and the cutout arrive through this same dispatch, and this is
+     * the only place that hears about them changing.
+     */
+    private void applyWindowInsets(android.view.WindowInsets insets) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            keyboardInset = insets.getInsets(android.view.WindowInsets.Type.ime()).bottom / density;
+        }
+        // `reportSafeArea` replaces the value of a key that is already there
+        // and sends nothing when nothing moved, so the indices hold and a
+        // dispatch that changed nothing costs a comparison.
+        for (int i = 0; i < safeArea.size(); i++) {
+            reportSafeArea(safeArea.keyAt(i));
+        }
     }
 
     /** The Activity consults it to decide things of its own. */
@@ -1111,7 +1224,15 @@ public final class AnHost {
         return index > 0 ? parent.getChildAt(index - 1) : null;
     }
 
-    /** Reports the system insets if they changed since last time. */
+    /**
+     * Reports the insets if they changed since last time.
+     *
+     * The keyboard goes into the bottom one and not into an event of its own:
+     * from the template it is the same question the cutout asks —"how far can
+     * I paint?"— and a second event would be a second way of knowing one
+     * thing. It is a `max` and not a sum, because the keyboard is drawn over
+     * the navigation bar and the two do not stack.
+     */
     private void reportSafeArea(int id) {
         float[] previous = safeArea.get(id);
         if (previous == null || runtime == null) {
@@ -1149,6 +1270,7 @@ public final class AnHost {
             bottom = Math.max(bottom, inset);
             left = Math.max(left, inset);
         }
+        bottom = Math.max(bottom, keyboardInset);
         if (previous[0] == top && previous[1] == right && previous[2] == bottom && previous[3] == left) {
             return;
         }
@@ -2327,7 +2449,9 @@ public final class AnHost {
             return;
         }
         // The safe area is produced by no gesture: the system knows it, and it
-        // changes on rotating or when the navigation bar appears.
+        // changes on rotating, when the navigation bar appears and when the
+        // keyboard comes up. It is reported on subscribing, on every layout,
+        // and on every frame of the keyboard's animation.
         if ("safeArea".equals(event)) {
             if (enabled) {
                 safeArea.put(id, new float[] {Float.NaN, Float.NaN, Float.NaN, Float.NaN});

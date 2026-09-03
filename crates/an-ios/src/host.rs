@@ -10,10 +10,13 @@ use objc2::rc::Retained;
 use objc2::{MainThreadMarker, Message};
 use core::ptr::NonNull;
 use objc2_core_foundation::{CGAffineTransform, CGPoint, CGRect, CGSize};
-use objc2_foundation::NSString;
+use objc2_foundation::{NSNotification, NSNotificationCenter, NSNumber, NSString, NSValue};
 use block2::RcBlock;
 use objc2_quartz_core::CAShapeLayer;
 use objc2_ui_kit::{
+    UIKeyboardAnimationCurveUserInfoKey, UIKeyboardAnimationDurationUserInfoKey,
+    UIKeyboardFrameEndUserInfoKey, UIKeyboardWillChangeFrameNotification,
+    UIKeyboardWillHideNotification,
     UIViewAnimationOptions,
     NSLineBreakMode, NSTextAlignment, UIAccessibilityIdentification, UIActivityIndicatorView,
     UIBezierPath, UIButton, UIControlState, UIFont, UIImageView, UILabel, UIProgressView,
@@ -141,6 +144,166 @@ fn apply_text_traits(traits: &objc2_foundation::NSObject, key: &str, text: Optio
     };
     let setter: Setter = unsafe { std::mem::transmute(implementation) };
     unsafe { setter(traits, selector, setting) };
+}
+
+/// How much of the container the keyboard is covering, and the way it gets
+/// there.
+///
+/// **`safeAreaInsets` never counts the keyboard.** Those insets are the
+/// system's own furniture — the notch, the status bar, the home indicator —
+/// and the keyboard is not furniture: it comes and goes with the focus. UIKit
+/// says so through the notification centre and nowhere else, so a host that
+/// only reads `safeAreaInsets` leaves a field at the bottom of a form sitting
+/// underneath it, which is the layout problem this platform has most of.
+///
+/// The notification carries three things: the frame the keyboard is **going**
+/// to have, and the duration and the curve of the animation it has already
+/// started. The last two are why this is a view and not a number. Jumping to
+/// the final inset the moment the notification lands moves the form a fifth of
+/// a second before the keyboard arrives, and the eye reads that as a glitch
+/// rather than as a layout.
+///
+/// So the number is handed to UIKit and read back: an invisible one-point view
+/// is animated with that very duration, that very curve and
+/// `beginFromCurrentState`, and every frame Core Animation's in-flight copy of
+/// its layer — the *presentation* layer — is asked where it has got to. The
+/// curve the keyboard uses is 7, which is not one of the four public ones and
+/// has no published control points; any easing written here would be a guess,
+/// and this way the number being followed is the one UIKit is computing
+/// itself.
+struct Keyboard {
+    /// Animated, never seen: one point, fully transparent and deaf to
+    /// touches. Its `y` **is** the inset, in points.
+    probe: Retained<UIView>,
+    /// The notification-centre tokens. Nothing reads them; they are held
+    /// because dropping one unregisters its observer, and an observer that
+    /// outlives the host would run a block over a container that is gone.
+    _observers: Vec<Retained<objc2::runtime::ProtocolObject<dyn objc2::runtime::NSObjectProtocol>>>,
+}
+
+impl Keyboard {
+    /// Subscribes to the two notifications that between them cover every way
+    /// the keyboard can move.
+    ///
+    /// `willChangeFrame` is the one that carries the work: it fires when the
+    /// keyboard comes up, when it goes down, when it changes height because
+    /// the language changed or the predictive bar appeared, when the device
+    /// rotates and when the window is resized in split screen. `willHide` is
+    /// added because it is the only one guaranteed on some dismissals, and a
+    /// second report of a frame that has not moved costs nothing: the report
+    /// is compared before it is sent.
+    fn install(mtm: MainThreadMarker, container: &UIView) -> Self {
+        let probe = UIView::initWithFrame(
+            mtm.alloc::<UIView>(),
+            CGRect {
+                origin: CGPoint { x: 0.0, y: 0.0 },
+                size: CGSize { width: 1.0, height: 1.0 },
+            },
+        );
+        probe.setAlpha(0.0);
+        probe.setUserInteractionEnabled(false);
+        // In the hierarchy on purpose: a layer outside a window is not
+        // guaranteed to be given a presentation layer, and without one there
+        // is nothing to read mid-animation.
+        container.addSubview(&probe);
+
+        let center = NSNotificationCenter::defaultCenter();
+        let mut observers = Vec::new();
+        for name in [
+            unsafe { UIKeyboardWillChangeFrameNotification },
+            unsafe { UIKeyboardWillHideNotification },
+        ] {
+            let container = container.retain();
+            let probe = probe.clone();
+            let block = RcBlock::new(move |note: NonNull<NSNotification>| {
+                // The queue is nil, so the block runs on whatever thread
+                // posted — and UIKit posts these on the main one.
+                Keyboard::follow(&container, &probe, unsafe { note.as_ref() });
+            });
+            observers.push(unsafe {
+                center.addObserverForName_object_queue_usingBlock(Some(name), None, None, &block)
+            });
+        }
+        Keyboard { probe, _observers: observers }
+    }
+
+    /// Starts the probe on the same journey the keyboard has just started.
+    fn follow(container: &UIView, probe: &UIView, note: &NSNotification) {
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(info) = note.userInfo() else { return };
+
+        let end = unsafe { info.objectForKey(UIKeyboardFrameEndUserInfoKey) }
+            .and_then(|value| value.downcast::<NSValue>().ok())
+            .and_then(|value| value.get_rect());
+        let Some(end) = end else { return };
+
+        // **The frame is intersected with the view, never used as a height.**
+        // A hardware keyboard leaves the software one off screen with only the
+        // shortcuts bar showing, an iPad's undocked keyboard floats in the
+        // middle, and a view that does not reach the bottom of the window is
+        // covered by less than the keyboard is tall. All three come out right
+        // from the overlap and wrong from `end.size.height`.
+        let local = container.convertRect_fromView(end, None);
+        let bounds = container.bounds();
+        let covered = (bounds.origin.y + bounds.size.height - local.origin.y)
+            .clamp(0.0, bounds.size.height);
+
+        let duration = unsafe { info.objectForKey(UIKeyboardAnimationDurationUserInfoKey) }
+            .and_then(|value| value.downcast::<NSNumber>().ok())
+            .map(|value| value.doubleValue())
+            .unwrap_or(0.0);
+        let curve = unsafe { info.objectForKey(UIKeyboardAnimationCurveUserInfoKey) }
+            .and_then(|value| value.downcast::<NSNumber>().ok())
+            .map(|value| value.integerValue())
+            .unwrap_or(0);
+
+        let mut frame = probe.frame();
+        if (frame.origin.y - covered).abs() < f64::EPSILON {
+            return;
+        }
+        frame.origin.y = covered;
+
+        // A keyboard dragged away with the finger, and a hardware one being
+        // attached, both arrive with a duration of zero: there is nothing to
+        // follow, and animating over zero seconds would still take a frame to
+        // land. Whatever animation was in flight is stopped first, or the
+        // number would carry on towards a target that no longer applies.
+        if duration <= 0.0 {
+            probe.layer().removeAllAnimations();
+            probe.setFrame(frame);
+            return;
+        }
+
+        // The curve travels as the number that goes in the top half of the
+        // options mask; this is the shift UIKit's own header documents, and it
+        // is what makes curve 7 —the keyboard's, which has no name— reachable
+        // at all. `beginFromCurrentState` is what makes a second notification
+        // arriving mid-flight carry on from where the eye can see the layout,
+        // instead of snapping back to where the last one started.
+        let options = UIViewAnimationOptions((curve as usize) << 16)
+            | UIViewAnimationOptions::BeginFromCurrentState;
+        let animated = probe.retain();
+        let animations = RcBlock::new(move || animated.setFrame(frame));
+        UIView::animateWithDuration_delay_options_animations_completion(
+            duration,
+            0.0,
+            options,
+            &animations,
+            None,
+            mtm,
+        );
+    }
+
+    /// What the keyboard is covering **right now**, in points: while it is
+    /// moving this is where it has got to, not where it is going.
+    fn covered(&self) -> f32 {
+        let layer = self.probe.layer();
+        let live = unsafe { layer.presentationLayer() };
+        // With no animation running there is no presentation layer, and the
+        // model value is the answer.
+        let y = live.map(|l| l.frame().origin.y).unwrap_or_else(|| self.probe.frame().origin.y);
+        y.max(0.0) as f32
+    }
 }
 
 /// The view immediately below another inside a container.
@@ -487,6 +650,9 @@ pub struct UikitHost {
     /// The nodes subscribed to the safe area, with the last insets they were
     /// told about. They are only notified when those really change.
     safe_area: HashMap<NodeId, [f32; 4]>,
+    /// The keyboard, which is part of the safe area and is the one part of it
+    /// UIKit does not put in `safeAreaInsets`.
+    keyboard: Keyboard,
     /// The dialogs that have been declared. They are presented as the frame
     /// closes, once all of their props have arrived: presenting the moment
     /// `visible` changes would show a dialog with no title.
@@ -513,6 +679,7 @@ impl UikitHost {
     /// `container` has to be a live `UIView` and this has to be called from
     /// the main thread.
     pub fn new(mtm: MainThreadMarker, container: Retained<UIView>, events: EventQueue) -> Self {
+        let keyboard = Keyboard::install(mtm, &container);
         UikitHost {
             mtm,
             container,
@@ -547,6 +714,7 @@ impl UikitHost {
             leaving: Vec::new(),
             animating_out: std::collections::HashSet::new(),
             safe_area: HashMap::new(),
+            keyboard,
             alerts: HashMap::new(),
             dirty_alerts: Vec::new(),
             modals: HashMap::new(),
@@ -1018,14 +1186,20 @@ impl UikitHost {
         self.animating_out.clear();
     }
 
-    /// Reports the system's insets if they changed since last time.
+    /// Reports the insets if they changed since last time.
+    ///
+    /// The keyboard goes in the bottom one and not in an event of its own,
+    /// because from the template it is the same question the notch asks —"how
+    /// far can I paint?"— and a second event would be a second way of knowing
+    /// one thing. `max` and not a sum: while the keyboard is up it is drawn
+    /// over the home indicator, so the two do not stack.
     fn report_safe_area(&mut self, id: NodeId) {
         let Some(previous) = self.safe_area.get(&id).copied() else { return };
         let insets = self.container.safeAreaInsets();
         let current = [
             insets.top as f32,
             insets.right as f32,
-            insets.bottom as f32,
+            (insets.bottom as f32).max(self.keyboard.covered()),
             insets.left as f32,
         ];
         if current
@@ -2348,6 +2522,19 @@ impl HostRenderer for UikitHost {
     }
 
     fn flush(&mut self) {
+        // The keyboard is asked about here and not in `set_layout`, which is
+        // where the notch is asked about, because it moves while nothing else
+        // does: no layout runs between the keyboard leaving the bottom of the
+        // screen and arriving at its height, so `set_layout` never comes round
+        // to ask. The frame does, sixty times a second, and that is what makes
+        // the form travel *with* the keyboard instead of after it.
+        //
+        // It costs one comparison per subscribed node on a settled frame:
+        // `report_safe_area` sends nothing when nothing moved.
+        for id in self.safe_area.keys().copied().collect::<Vec<_>>() {
+            self.report_safe_area(id);
+        }
+
         // Ask again for whatever ought to be playing to play.
         //
         // `play()` on a player that has not loaded anything yet does not
