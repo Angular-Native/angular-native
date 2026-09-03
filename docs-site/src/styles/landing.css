@@ -39,6 +39,11 @@
 	align-items: center;
 }
 
+.an-hero__copy,
+.an-hero__sample {
+	min-width: 0;
+}
+
 .an-hero__eyebrow {
 	font-size: 0.75rem;
 	font-weight: 600;
@@ -81,9 +86,10 @@
 
 /* The command line: a terminal without pretending to be a screenshot of one. */
 .an-command {
-	display: flex;
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
 	align-items: center;
-	gap: 0.625rem;
+	gap: 0.5rem 0.625rem;
 	margin-top: 1.5rem;
 	padding: 0.6rem 0.6rem 0.6rem 0.875rem;
 	border: 1px solid var(--an-border);
@@ -91,27 +97,32 @@
 	background-color: var(--an-surface);
 	font-family: var(--sl-font-mono);
 	font-size: 0.8125rem;
-	max-width: 30rem;
+	max-width: min(32rem, 100%);
 	overflow-x: auto;
 }
 
 .an-command__prompt {
+	grid-column: 1;
 	color: var(--sl-color-text-accent);
 	font-weight: 700;
-	flex-shrink: 0;
 }
 
 .an-command code {
+	grid-column: 2;
 	color: var(--sl-color-gray-1);
 	white-space: nowrap;
-	flex: 1;
+	min-width: 0;
 }
 
+/* Two commands, one copy button: the prompt of the second line sits under the
+   first and the button spans both rows. */
 .an-command__copy {
+	grid-column: 3;
+	grid-row: 1 / -1;
+	align-self: center;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	flex-shrink: 0;
 	width: 1.75rem;
 	height: 1.75rem;
 	border: 1px solid transparent;
@@ -163,20 +174,23 @@
 
 /* -------------------------------------------------------------- sections -- */
 
-/* On the home page an h2 is a section marker, not a heading in a document, so
-   it is centred, small and quiet, and the hairline the docs pages use would
-   only cut the page into strips. */
+/* On the home page an h2 is a section marker rather than a heading in a
+   document, so it loses the hairline the docs pages use — eight of those would
+   cut the page into strips — and keeps only the space around it. */
 :root[data-has-hero] .sl-markdown-content h2 {
-	margin-top: 4.5rem;
+	margin-top: 0;
 	padding-top: 0;
 	border-top: none;
-	text-align: center;
 	font-size: clamp(1.375rem, 1.1rem + 1vw, 1.75rem);
 	letter-spacing: -0.02em;
 }
 
-:root[data-has-hero] .sl-markdown-content h2 + * {
-	margin-top: 1.75rem;
+:root[data-has-hero] .sl-markdown-content .sl-heading-wrapper {
+	margin-top: 4.5rem;
+}
+
+:root[data-has-hero] .sl-markdown-content .sl-heading-wrapper + * {
+	margin-top: 1.5rem;
 }
 
 :root[data-has-hero] .card-grid {
@@ -282,19 +296,31 @@
 
 /* The quick start, as the last thing on the page: a surface under it so the
    page ends on something rather than trailing off after a paragraph. */
-:root[data-has-hero] .sl-markdown-content h2:last-of-type ~ .expressive-code {
-	max-width: 34rem;
+/* The last section is a panel rather than more page, so the home page ends on
+   something instead of trailing off after a paragraph. Inside it the surfaces
+   move up one step, which is what keeps the code block from disappearing into
+   the panel it sits on. */
+.an-band {
+	margin-top: 4.5rem;
+	margin-bottom: 4rem;
+	padding: 0.5rem clamp(1.25rem, 4vw, 3rem) 2.25rem;
+	border: 1px solid var(--an-border);
+	border-radius: var(--an-radius-lg);
+	background-color: var(--an-surface);
+	--an-surface: var(--an-surface-raised);
+}
+
+.an-band__inner {
+	max-width: 42rem;
 	margin-inline: auto;
 }
 
-:root[data-has-hero] .sl-markdown-content h2:last-of-type ~ p {
-	max-width: 34rem;
-	margin-inline: auto;
-	text-align: center;
+:root[data-has-hero] .an-band .sl-heading-wrapper {
+	margin-top: 2rem;
+}
+
+.an-band p:last-child {
+	margin-bottom: 0;
 	color: var(--sl-color-gray-3);
 	font-size: 0.9375rem;
-}
-
-:root[data-has-hero] .sl-markdown-content > :last-child {
-	margin-bottom: 4rem;
 }

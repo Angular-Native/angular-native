@@ -49,7 +49,12 @@
 	/* Surfaces that are neither the page nor the sidebar: cards, table heads,
 	   the strip under the hero. */
 	--an-surface: hsl(220 14% 12%);
-	--an-surface-raised: hsl(220 13% 14%);
+	--an-surface-raised: hsl(220 13% 15%);
+	/* A code block is a window: the bar is a step away from the page, the code
+	   sits under it. Named apart from the general surfaces because in the light
+	   theme the two go in opposite directions. */
+	--an-code-bg: hsl(220 14% 12%);
+	--an-code-bar: hsl(220 13% 16%);
 	--an-border: hsl(220 10% 22%);
 	--an-border-strong: hsl(220 10% 30%);
 
@@ -73,7 +78,7 @@
 	/* Type. Tighter than the stock scale: a reference page is read in long
 	   stretches and a 42px h1 over 16px body makes every section look like the
 	   start of a new document. */
-	--sl-text-h1: 2rem;
+	--sl-text-h1: 1.875rem;
 	--sl-text-h2: 1.5rem;
 	--sl-text-h3: 1.1875rem;
 	--sl-text-h4: 1.0625rem;
@@ -83,7 +88,8 @@
 	--sl-text-code: 0.8438rem;
 	--sl-text-code-sm: 0.8125rem;
 
-	--sl-content-width: 46rem;
+	--sl-text-body: 1.0625rem;
+	--sl-content-width: 42rem;
 	--sl-sidebar-width: 17.5rem;
 	--sl-nav-height: 3.5rem;
 
@@ -120,6 +126,8 @@
 
 	--an-surface: hsl(220 33% 98.5%);
 	--an-surface-raised: hsl(0 0% 100%);
+	--an-code-bg: hsl(220 33% 98.5%);
+	--an-code-bar: hsl(220 24% 95%);
 	--an-border: hsl(220 16% 89%);
 	--an-border-strong: hsl(220 14% 80%);
 
@@ -136,7 +144,7 @@
 @media (min-width: 50em) {
 	:root {
 		--sl-nav-height: 3.75rem;
-		--sl-text-h1: 2.5rem;
+		--sl-text-h1: 2.25rem;
 		--sl-text-h2: 1.75rem;
 		--sl-text-h3: 1.3125rem;
 		--sl-text-h4: 1.0938rem;
@@ -144,6 +152,18 @@
 }
 
 /* ---------------------------------------------------------------- chrome -- */
+
+/* Starlight puts the title and the prose in two panels of their own, each with
+   its own padding, which adds up to a gap the size of a paragraph between a
+   page's name and its first line. */
+.content-panel {
+	padding-block: 1.25rem;
+}
+
+.content-panel:first-of-type {
+	padding-bottom: 0.5rem;
+}
+
 
 body {
 	-webkit-font-smoothing: antialiased;
@@ -171,6 +191,23 @@ header.header {
 .site-title img {
 	height: 1.5rem;
 	width: auto;
+}
+
+starlight-menu-button button {
+	border: 1px solid var(--an-border-strong);
+	border-radius: var(--an-radius-sm);
+	background-color: var(--an-surface);
+	color: var(--sl-color-white);
+	box-shadow: none;
+}
+
+starlight-menu-button button:hover {
+	background-color: var(--an-surface-raised);
+}
+
+starlight-menu-button[aria-expanded='true'] button {
+	border-color: var(--sl-color-accent);
+	color: var(--sl-color-text-accent);
 }
 
 /* --------------------------------------------------------------- sidebar -- */
@@ -293,32 +330,32 @@ mobile-starlight-toc nav > button {
 
 /* A hairline above every h2 gives a long reference page a rhythm you can scroll
    past and still know where you are. */
-.sl-markdown-content h2:not(:where(.not-content *)) {
+.sl-markdown-content .sl-heading-wrapper.level-h2 {
 	margin-top: 3rem;
 	padding-top: 1.75rem;
 	border-top: 1px solid var(--sl-color-hairline-light);
 }
 
-.sl-markdown-content h2:first-child:not(:where(.not-content *)) {
+.sl-markdown-content .sl-heading-wrapper.level-h2:first-child {
 	margin-top: 0;
 	padding-top: 0;
 	border-top: none;
 }
 
-.sl-markdown-content h3:not(:where(.not-content *)) {
+.sl-markdown-content .sl-heading-wrapper.level-h3 {
 	margin-top: 2rem;
 }
 
-.sl-markdown-content
-	:is(h2, h3, h4, h5, h6)
-	+ :is(p, ul, ol, table, .expressive-code, .starlight-aside) {
-	margin-top: 0.75rem;
+.sl-markdown-content .sl-heading-wrapper + * {
+	margin-top: 0.875rem;
 }
 
-/* The page's own header block: the description under the title is the second
-   thing read on every page, so it gets its own size rather than body size. */
-.content-panel:first-of-type .sl-markdown-content > p:first-child {
-	font-size: 1.0625rem;
+/* The opening paragraph is the second thing read on every page, so it is set a
+   step above body size rather than disappearing into it. */
+:root:not([data-has-hero]) .sl-markdown-content > p:first-child {
+	font-size: 1.1875rem;
+	line-height: 1.6;
+	color: var(--sl-color-gray-2);
 }
 
 /* ----------------------------------------------------------------- prose -- */
@@ -367,8 +404,7 @@ mobile-starlight-toc nav > button {
  * scroll started, and the frame says the thing is scrollable at all.
  */
 .sl-markdown-content table:not(:where(.not-content *)) {
-	width: max-content;
-	min-width: 100%;
+	width: 100%;
 	border: 1px solid var(--an-border);
 	border-radius: var(--an-radius);
 	border-spacing: 0;
@@ -470,7 +506,10 @@ mobile-starlight-toc nav > button {
 	--sl-card-bg: var(--an-accent-tint-strong);
 	color: var(--sl-color-text-accent);
 	border-radius: var(--an-radius-sm);
-	padding: 0.28em;
+	box-sizing: content-box;
+	width: 1.15rem;
+	height: 1.15rem;
+	padding: 0.4rem;
 }
 
 .card .body {

@@ -3,7 +3,9 @@ title: angular-native
 description: Angular apps that render real native views on eight platforms. No WebView anywhere.
 template: splash
 eyebrow: 25 primitives · 8 platforms · one Rust core
-command: npx @angular/cli@latest new my-app && cd my-app && an init
+command: |
+  npx @angular/cli@latest new my-app
+  cd my-app && an init
 sample: |
   An <code>&lt;an-switch&gt;</code> <strong>is</strong> a <code>UISwitch</code> on
   iOS and a <code>MaterialSwitch</code> on Android — the control the system
@@ -26,6 +28,7 @@ hero:
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components'
+import Band from '../../components/Band.astro'
 import PlatformGrid from '../../components/PlatformGrid.astro'
 
 <CardGrid>
@@ -39,7 +42,7 @@ import PlatformGrid from '../../components/PlatformGrid.astro'
     absolute frames. The same template lays out identically on a phone, a TV
     and a watch — what differs is which control gets mounted.
   </Card>
-  <Card title="Angular as it is" icon="seti:angular">
+  <Card title="Angular as it is" icon="list-format">
     Signals, `@if`, `@for`, the router, AOT templates, dependency injection.
     Zoneless, because the frame loop is what drives change detection. No
     dialect, no subset.
@@ -82,6 +85,8 @@ import PlatformGrid from '../../components/PlatformGrid.astro'
   ]}
 />
 
+<Band>
+
 ## In one minute
 
 ```bash
@@ -93,3 +98,5 @@ an ios
 
 That is an Angular project created by the Angular CLI, unmodified, running on
 native views. Nothing moves into this repository and `ng build` keeps working.
+
+</Band>

@@ -26,6 +26,9 @@ const { eyebrow, command, sample } = data as {
   sample?: string
 }
 
+// One box, one copy, however many lines the page put in it.
+const commands = command?.trim().split('\n').map((line) => line.trim()) ?? []
+
 // An Angular component with nothing special about it except that the elements
 // are native primitives. Identifiers are code and read the same in every
 // language, so this one lives here rather than in the frontmatter.
@@ -34,8 +37,8 @@ const snippet = `@Component({
   imports: [NATIVE_PRIMITIVES],
   template: \`
     <an-view [style.gap]="'16'">
-      <an-text [fontSize]="28">angular-native</an-text>
-      <an-switch [on]="alerts()" (onChange)="alerts.set($event)" />
+      <an-text [fontSize]="28">Alerts</an-text>
+      <an-switch [on]="alerts()" />
     </an-view>
   \`
 })
@@ -64,16 +67,20 @@ const copiedLabel = Astro.locals.t('expressiveCode.copyButtonCopied')
       )
     }
     {
-      command && (
+      commands.length > 0 && (
         <div class="an-command">
-          <span class="an-command__prompt" aria-hidden="true">
-            $
-          </span>
-          <code>{command}</code>
+          {commands.map((line) => (
+            <Fragment>
+              <span class="an-command__prompt" aria-hidden="true">
+                $
+              </span>
+              <code>{line}</code>
+            </Fragment>
+          ))}
           <button
             class="an-command__copy"
             type="button"
-            data-command={command}
+            data-command={commands.join('\n')}
             data-copied={copiedLabel}
             aria-label={copyLabel}
             title={copyLabel}

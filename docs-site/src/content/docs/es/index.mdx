@@ -3,7 +3,9 @@ title: angular-native
 description: Apps de Angular que pintan vistas nativas de verdad en ocho plataformas. Sin WebView por ninguna parte.
 template: splash
 eyebrow: 25 primitivas · 8 plataformas · un núcleo en Rust
-command: npx @angular/cli@latest new mi-app && cd mi-app && an init
+command: |
+  npx @angular/cli@latest new mi-app
+  cd mi-app && an init
 sample: |
   Un <code>&lt;an-switch&gt;</code> <strong>es</strong> un <code>UISwitch</code>
   en iOS y un <code>MaterialSwitch</code> en Android — el control que pinta el
@@ -27,6 +29,7 @@ hero:
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components'
+import Band from '../../../components/Band.astro'
 import PlatformGrid from '../../../components/PlatformGrid.astro'
 
 <CardGrid>
@@ -41,7 +44,7 @@ import PlatformGrid from '../../../components/PlatformGrid.astro'
     le dan marcos absolutos. La misma plantilla se coloca igual en un teléfono,
     en una tele y en un reloj — lo que cambia es qué control se monta.
   </Card>
-  <Card title="Angular tal cual" icon="seti:angular">
+  <Card title="Angular tal cual" icon="list-format">
     Señales, `@if`, `@for`, el router, plantillas AOT, inyección de
     dependencias. Sin zonas, porque el bucle de frames es lo que dispara la
     detección de cambios. Ni dialecto ni subconjunto.
@@ -85,6 +88,8 @@ import PlatformGrid from '../../../components/PlatformGrid.astro'
   ]}
 />
 
+<Band>
+
 ## En un minuto
 
 ```bash
@@ -97,3 +102,5 @@ an ios
 Eso es un proyecto de Angular creado por el CLI de Angular, sin tocar, corriendo
 sobre vistas nativas. No se mueve nada a este repositorio y `ng build` sigue
 funcionando.
+
+</Band>
