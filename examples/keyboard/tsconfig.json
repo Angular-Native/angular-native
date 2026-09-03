@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    // `dom` is in for the types alone: Angular's .d.ts files reference Document,
+    // Element and Event. At runtime none of the three exists.
+    "lib": ["es2022", "dom"],
+    "strict": true,
+    "skipLibCheck": true,
+    "useDefineForClassFields": false,
+    "experimentalDecorators": false,
+    "moduleDetection": "force",
+    "outDir": "../../build/js/keyboard",
+    "rootDir": "../..",
+    "paths": {
+      "@angular-native/platform": ["../../packages/platform-native/src/public-api.ts"],
+      "@angular-native/primitives": ["../../packages/primitives/src/public-api.ts"]
+    },
+    "types": []
+  },
+  "files": ["src/main.ts"],
+  "angularCompilerOptions": {
+    "strictTemplates": true,
+    "compilationMode": "full"
+  }
+}
