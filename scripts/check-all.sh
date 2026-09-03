@@ -46,12 +46,23 @@ echo
 "$ROOT/scripts/check-macos.sh"
 
 echo
+# The development loop, end to end. It goes here and not next to `check-hot.sh`
+# because it needs the `.app` the line above just built: macOS is the one
+# platform where the whole round trip —serve, build, launch, save, refresh— can
+# be watched without a simulator or a person.
+"$ROOT/scripts/check-dev-macos.sh"
+
+echo
 "$ROOT/scripts/check-accessibility.sh"
 
 "$ROOT/scripts/check-external.sh"
 
 echo
 "$ROOT/scripts/check-plugins.sh"
+
+echo
+# What is not a plugin: the module every host is supposed to have compiled in.
+"$ROOT/scripts/check-modules.sh"
 
 echo
 "$ROOT/scripts/check-permissions.sh"
