@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# Wear OS: que el APK del reloj sea el del reloj, y que lo que no va lo diga.
+# Wear OS: that the watch APK really is the watch's, and that what does not
+# belong says so.
 #
-# Un reloj con Wear OS corre `android.view.View` como cualquier teléfono, así
-# que casi todo lo que hay que comprobar del reloj ya lo comprueban los otros
-# scripts: es el mismo core, el mismo Java y las mismas primitivas. Lo que no
-# comprueba nadie es lo poco que sí cambia, y que además cambia en sitios
-# distintos que se pueden desincronizar entre sí:
+# A Wear OS watch runs `android.view.View` like any phone, so almost everything
+# about the watch that has to be checked is already checked by the other
+# scripts: it is the same core, the same Java and the same primitives. What
+# nobody checks is the little that does change, and that on top of that changes
+# in different places that can drift apart from one another:
 #
-#   - el manifiesto del reloj, que es el que declara la forma del aparato;
-#   - el tema, que ahora vive en un recurso y no en el manifiesto;
-#   - la lista de primitivas que no se montan, que está en Java y se documenta
-#     en `docs/wearos.md`: si una entra en la lista y no en el documento, el
-#     hueco solo aparece cuando alguien lo pisa;
-#   - que el APK que sale de `an wearos` no sea el del teléfono, que es
-#     exactamente el fallo que no se ve —se instala igual y arranca igual—.
+#   - the watch manifest, which is what declares the device's form factor;
+#   - the theme, which now lives in a resource and not in the manifest;
+#   - the list of primitives that are not mounted, which is in Java and
+#     documented in `docs/wearos.md`: if one enters the list and not the
+#     document, the gap only shows up when somebody steps in it;
+#   - that the APK `an wearos` produces is not the phone's, which is exactly the
+#     failure nobody sees — it installs the same and starts the same.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,57 +27,57 @@ python3 "$ROOT/scripts/check-wearos.py" "$ROOT"
 LOG="$(mktemp)"
 trap 'rm -f "$LOG"' EXIT
 
-# Armar un APK y devolver su ruta. Con `set -e` y `pipefail`, meter el build
-# dentro de un `$(...)` y tirar su salida a /dev/null hace que un fallo de
-# compilación mate el script sin imprimir nada: el propio comprobador se
-# quedaría callado, que es lo contrario de lo que hace falta.
-armar() {
+# Build an APK and return its path. With `set -e` and `pipefail`, putting the
+# build inside a `$(...)` and throwing its output at /dev/null makes a
+# compilation failure kill the script without printing anything: the checker
+# itself would go silent, which is the opposite of what is needed.
+build() {
   if ! cargo an "$@" --no-launch >"$LOG" 2>&1; then
-    echo "  FALLO 'cargo an $*' no compiló"
+    echo "  FAIL 'cargo an $*' did not compile"
     tail -30 "$LOG"
     exit 1
   fi
   tail -1 "$LOG"
 }
 
-# El manifiesto se lee del APK con `aapt2 dump`, que es lo que lee el sistema.
-# Mirar el XML de entrada no valdría: lo que se instala es lo que salió del
-# enlace, y es en el enlace donde se elige el fichero.
-APK="$(armar wearos)"
+# The manifest is read out of the APK with `aapt2 dump`, which is what the
+# system reads. Looking at the input XML would not do: what gets installed is
+# what came out of the link, and it is at the link that the file is chosen.
+APK="$(build wearos)"
 if [ ! -f "$APK" ]; then
-  echo "  FALLO el APK del reloj no llegó a armarse"
+  echo "  FAIL the watch APK never got built"
   exit 1
 fi
-echo "  ok   an wearos arma examples/hello-wear"
+echo "  ok   an wearos builds examples/hello-wear"
 
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
 AAPT2="$(ls -d "$SDK"/build-tools/*/aapt2 2>/dev/null | sort | tail -1)"
 if [ -z "$AAPT2" ]; then
-  echo "  aviso no encuentro aapt2; no se puede leer el manifiesto del APK"
+  echo "  warn aapt2 not found; the APK's manifest cannot be read"
   exit 0
 fi
 
-VOLCADO="$("$AAPT2" dump badging "$APK")"
-for esperado in \
+DUMP="$("$AAPT2" dump badging "$APK")"
+for expected in \
   "uses-feature: name='android.hardware.type.watch'" \
   "package: name='dev.angularnative'"
 do
-  if ! printf '%s' "$VOLCADO" | grep -qF "$esperado"; then
-    echo "  FALLO el APK del reloj no declara: $esperado"
+  if ! printf '%s' "$DUMP" | grep -qF "$expected"; then
+    echo "  FAIL the watch APK does not declare: $expected"
     exit 1
   fi
 done
-echo "  ok   el APK declara android.hardware.type.watch"
+echo "  ok   the APK declares android.hardware.type.watch"
 
-# Y el del teléfono no la declara: si la declarara, la Play Store dejaría de
-# ofrecerlo para teléfonos y nadie se enteraría hasta publicarlo.
-APK_TEL="$(armar android examples/hello-angular)"
-if [ ! -f "$APK_TEL" ]; then
-  echo "  FALLO el APK del teléfono no llegó a armarse"
+# And the phone's does not declare it: if it did, the Play Store would stop
+# offering it for phones and nobody would find out until it was published.
+PHONE_APK="$(build android examples/hello-angular)"
+if [ ! -f "$PHONE_APK" ]; then
+  echo "  FAIL the phone APK never got built"
   exit 1
 fi
-if "$AAPT2" dump badging "$APK_TEL" | grep -qF "name='android.hardware.type.watch'"; then
-  echo "  FALLO el APK del teléfono declara ser de reloj"
+if "$AAPT2" dump badging "$PHONE_APK" | grep -qF "name='android.hardware.type.watch'"; then
+  echo "  FAIL the phone APK claims to be a watch one"
   exit 1
 fi
-echo "  ok   el del teléfono sigue sin declararla"
+echo "  ok   the phone's still does not declare it"

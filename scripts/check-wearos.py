@@ -1,216 +1,217 @@
 #!/usr/bin/env python3
-"""Las cuatro cosas que solo existen para el reloj, y que están en cuatro
-sitios distintos.
+"""The four things that only exist for the watch, and that live in four
+different places.
 
-Va aparte del `.sh` porque son comprobaciones de texto y no de proceso, y
-porque el shell no es sitio para leer XML.
+It is kept apart from the `.sh` because these are text checks and not process
+ones, and because the shell is no place to read XML.
 """
 
 import pathlib
 import re
 import sys
 
-raiz = pathlib.Path(sys.argv[1])
-fallos: list[str] = []
+root = pathlib.Path(sys.argv[1])
+failures: list[str] = []
 
 
-def leer(ruta: str) -> str:
-    fichero = raiz / ruta
-    if not fichero.is_file():
-        fallos.append(f'  FALLO falta {ruta}')
+def read(path: str) -> str:
+    file = root / path
+    if not file.is_file():
+        failures.append(f'  FAIL {path} is missing')
         return ''
-    return fichero.read_text()
+    return file.read_text()
 
 
-manifiesto_reloj = leer('shells/android/AndroidManifest.wear.xml')
-manifiesto_movil = leer('shells/android/AndroidManifest.xml')
-estilos = leer('shells/android/res/values/styles.xml')
-host = leer('shells/android/java/dev/angularnative/AnHost.java')
-scroll = leer('shells/android/java/dev/angularnative/AnScrollView.java')
-cli = leer('crates/an-cli/src/android.rs')
-doc = leer('docs/wearos.md')
-primitivas = leer('packages/primitives/src/primitives.ts')
+watch_manifest = read('shells/android/AndroidManifest.wear.xml')
+phone_manifest = read('shells/android/AndroidManifest.xml')
+styles = read('shells/android/res/values/styles.xml')
+host = read('shells/android/java/dev/angularnative/AnHost.java')
+scroll = read('shells/android/java/dev/angularnative/AnScrollView.java')
+cli = read('crates/an-cli/src/android.rs')
+doc = read('docs/wearos.md')
+primitives = read('packages/primitives/src/primitives.ts')
 
-# 1. El manifiesto del reloj declara la forma del aparato. Sin esto el APK es
-#    el del teléfono con otro nombre: se instala igual y arranca igual, y por
-#    eso no lo pilla nadie.
-for exigido, motivo in [
-    ('android.hardware.type.watch', 'la característica que lo hace una app de reloj'),
-    ('com.google.android.wearable.standalone', 'que no necesita un teléfono emparejado'),
+# 1. The watch manifest declares the device's form factor. Without this the APK
+#    is the phone's under another name: it installs the same and starts the
+#    same, and that is why nobody catches it.
+for required, reason in [
+    ('android.hardware.type.watch', 'the feature that makes it a watch app'),
+    ('com.google.android.wearable.standalone', 'that it needs no paired phone'),
 ]:
-    if exigido not in manifiesto_reloj:
-        fallos.append(f'  FALLO el manifiesto del reloj no declara {exigido}: {motivo}')
-if 'android.hardware.type.watch' in manifiesto_movil:
-    fallos.append('  FALLO el manifiesto del teléfono declara ser de reloj')
+    if required not in watch_manifest:
+        failures.append(f'  FAIL the watch manifest does not declare {required}: {reason}')
+if 'android.hardware.type.watch' in phone_manifest:
+    failures.append('  FAIL the phone manifest claims to be a watch one')
 
-# 2. Cada manifiesto apunta a un tema, y el tema tiene que existir. Un
-#    `@style/` que no resuelve lo caza aapt2; uno que resuelve al tema del otro
-#    aparato, no.
-declarados = set(re.findall(r'<style name="([^"]+)"', estilos))
-for ruta, texto in [
-    ('AndroidManifest.xml', manifiesto_movil),
-    ('AndroidManifest.wear.xml', manifiesto_reloj),
+# 2. Each manifest points at a theme, and the theme has to exist. A `@style/`
+#    that does not resolve is caught by aapt2; one that resolves to the other
+#    device's theme is not.
+declared = set(re.findall(r'<style name="([^"]+)"', styles))
+for path, text in [
+    ('AndroidManifest.xml', phone_manifest),
+    ('AndroidManifest.wear.xml', watch_manifest),
 ]:
-    usado = re.search(r'android:theme="@style/([^"]+)"', texto)
-    if not usado:
-        fallos.append(f'  FALLO {ruta} no fija ningún android:theme')
-    elif usado.group(1) not in declarados:
-        fallos.append(
-            f'  FALLO {ruta} usa @style/{usado.group(1)}, que no está en res/values/styles.xml'
+    used = re.search(r'android:theme="@style/([^"]+)"', text)
+    if not used:
+        failures.append(f'  FAIL {path} sets no android:theme')
+    elif used.group(1) not in declared:
+        failures.append(
+            f'  FAIL {path} uses @style/{used.group(1)}, which is not in res/values/styles.xml'
         )
 
-# El «atrás» del reloj. No hay botón físico: si el tema no lo trae, la app no
-# tiene salida y no da ningún error, simplemente no pasa nada al deslizar.
-if 'android:windowSwipeToDismiss' not in estilos:
-    fallos.append('  FALLO el tema del reloj no activa windowSwipeToDismiss')
+# The watch's "back". There is no hardware button: if the theme does not bring
+# it, the app has no way out and gives no error at all, nothing simply happens
+# on swiping.
+if 'android:windowSwipeToDismiss' not in styles:
+    failures.append('  FAIL the watch theme does not turn windowSwipeToDismiss on')
 
-# 3. La lista de primitivas que no se montan.
+# 3. The list of primitives that are not mounted.
 #
-#    Vive en dos métodos de Java —el motivo y la etiqueta— y se documenta en
-#    `docs/wearos.md`. Tres sitios que se pueden separar: una primitiva con
-#    motivo y sin etiqueta sale como «kind 7», y una en Java y no en el
-#    documento solo se descubre cuando alguien la usa.
-def kinds_de(metodo: str) -> set[str]:
-    cuerpo = re.search(
-        r'private static String ' + metodo + r'\(int kind\) \{(.*?)\n    \}',
+#    It lives in two Java methods —the reason and the tag— and is documented in
+#    `docs/wearos.md`. Three places that can drift apart: a primitive with a
+#    reason and no tag comes out as "kind 7", and one in Java and not in the
+#    document is only discovered when somebody uses it.
+def kinds_of(method: str) -> set[str]:
+    body = re.search(
+        r'private static String ' + method + r'\(int kind\) \{(.*?)\n    \}',
         host,
         re.S,
     )
-    if not cuerpo:
-        fallos.append(f'  FALLO no encuentro AnHost.{metodo}')
+    if not body:
+        failures.append(f'  FAIL AnHost.{method} not found')
         return set()
-    return set(re.findall(r'case (KIND_\w+):', cuerpo.group(1)))
+    return set(re.findall(r'case (KIND_\w+):', body.group(1)))
 
 
-con_motivo = kinds_de('noVaEnElReloj')
-con_etiqueta = kinds_de('kindName')
-if con_motivo != con_etiqueta:
-    solo_motivo = ', '.join(sorted(con_motivo - con_etiqueta))
-    solo_etiqueta = ', '.join(sorted(con_etiqueta - con_motivo))
-    if solo_motivo:
-        fallos.append(f'  FALLO sin etiqueta en kindName: {solo_motivo}')
-    if solo_etiqueta:
-        fallos.append(f'  FALLO kindName nombra lo que sí se monta: {solo_etiqueta}')
+with_reason = kinds_of('notOnTheWatch')
+with_tag = kinds_of('kindName')
+if with_reason != with_tag:
+    reason_only = ', '.join(sorted(with_reason - with_tag))
+    tag_only = ', '.join(sorted(with_tag - with_reason))
+    if reason_only:
+        failures.append(f'  FAIL no tag in kindName: {reason_only}')
+    if tag_only:
+        failures.append(f'  FAIL kindName names things that do get mounted: {tag_only}')
 
-etiquetas_reales = set(re.findall(r"@Directive\(\{ selector: '(an-[^']+)' \}\)", primitivas))
-if not etiquetas_reales:
-    fallos.append('  FALLO no pude leer ninguna etiqueta de packages/primitives')
+real_tags = set(re.findall(r"@Directive\(\{ selector: '(an-[^']+)' \}\)", primitives))
+if not real_tags:
+    failures.append('  FAIL not one tag could be read from packages/primitives')
 
-cuerpo_etiquetas = re.search(
+tag_body = re.search(
     r'private static String kindName\(int kind\) \{(.*?)\n    \}', host, re.S
 )
-etiquetas_declaradas = (
-    set(re.findall(r'return "(an-[^"]+)";', cuerpo_etiquetas.group(1)))
-    if cuerpo_etiquetas
+declared_tags = (
+    set(re.findall(r'return "(an-[^"]+)";', tag_body.group(1)))
+    if tag_body
     else set()
 )
-inventadas = sorted(etiquetas_declaradas - etiquetas_reales)
-if inventadas:
-    fallos.append(
-        '  FALLO el reloj rechaza etiquetas que no existen: ' + ', '.join(inventadas)
+invented = sorted(declared_tags - real_tags)
+if invented:
+    failures.append(
+        '  FAIL the watch rejects tags that do not exist: ' + ', '.join(invented)
     )
-sin_documentar = sorted(t for t in etiquetas_declaradas if f'`{t}`' not in doc)
-if sin_documentar:
-    fallos.append(
-        '  FALLO no van en el reloj y docs/wearos.md no las nombra: '
-        + ', '.join(sin_documentar)
+undocumented = sorted(t for t in declared_tags if f'`{t}`' not in doc)
+if undocumented:
+    failures.append(
+        '  FAIL these do not go on the watch and docs/wearos.md does not name them: '
+        + ', '.join(undocumented)
     )
 
-# 4. La corona. Es un evento genérico y no un toque: si alguien la moviera a
-#    `onTouchEvent` dejaría de llegar, y en el teléfono —donde no hay corona—
-#    no fallaría ninguna otra comprobación.
-for exigido, motivo in [
-    ('SOURCE_ROTARY_ENCODER', 'la fuente de la corona'),
-    ('onGenericMotionEvent', 'el camino por el que llegan sus eventos'),
-    ('AXIS_SCROLL', 'el eje que trae las muescas'),
-    ('setFocusableInTouchMode', 'sin foco, la corona no llega a la lista'),
+# 4. The crown. It is a generic event and not a touch: if somebody moved it to
+#    `onTouchEvent` it would stop arriving, and on the phone —where there is no
+#    crown— no other check would fail.
+for required, reason in [
+    ('SOURCE_ROTARY_ENCODER', "the crown's source"),
+    ('onGenericMotionEvent', 'the path its events arrive by'),
+    ('AXIS_SCROLL', 'the axis that carries the detents'),
+    ('setFocusableInTouchMode', 'without focus, the crown does not reach the list'),
 ]:
-    if exigido not in scroll:
-        fallos.append(f'  FALLO AnScrollView no menciona {exigido}: {motivo}')
+    if required not in scroll:
+        failures.append(f'  FAIL AnScrollView does not mention {required}: {reason}')
 
-# Y solo en el reloj: en el teléfono, una lista que pide el foco se lo quita al
-# campo de texto que hubiera debajo.
+# And only on the watch: on a phone, a list that asks for the focus takes it away
+# from whatever text field is underneath.
 if not re.search(r'if \(watch\) \{\s*\n\s*scroll\.enableRotary\(\);', host):
-    fallos.append('  FALLO AnHost enciende la corona fuera de un reloj (o no la enciende)')
+    failures.append('  FAIL AnHost turns the crown on outside a watch (or does not turn it on)')
 
-# Y la corona en crudo, que es la otra mitad: desplazar no es lo único que se
-# hace con ella. La salida vive en `packages/primitives` y la ponen los dos
-# relojes; si el host de Android deja de entregarla, la plantilla se suscribe a
-# algo que no dispara y nadie se entera, que es el fallo que este documento
-# lleva entero intentando evitar.
-cuerpo_corona = re.search(r'private void setCrown\((.*?)\n    \}', host, re.S)
-if not cuerpo_corona:
-    fallos.append('  FALLO AnHost no entrega (crown): la salida existe y aquí no llega')
+# And the raw crown, which is the other half: scrolling is not the only thing
+# done with it. The output lives in `packages/primitives` and both watches
+# provide it; if the Android host stops delivering it, the template subscribes to
+# something that never fires and nobody finds out, which is the failure this
+# whole document is trying to avoid.
+crown_body = re.search(r'private void setCrown\((.*?)\n    \}', host, re.S)
+if not crown_body:
+    failures.append('  FAIL AnHost does not deliver (crown): the output exists and never arrives here')
 else:
-    corona = cuerpo_corona.group(1)
-    if 'if (!watch)' not in corona:
-        fallos.append('  FALLO AnHost entrega (crown) fuera de un reloj, donde no hay corona')
-    if 'Log.e' not in corona:
-        fallos.append(
-            '  FALLO fuera del reloj, (crown) se descarta en silencio en vez de decirlo'
+    crown = crown_body.group(1)
+    if 'if (!watch)' not in crown:
+        failures.append('  FAIL AnHost delivers (crown) outside a watch, where there is no crown')
+    if 'Log.e' not in crown:
+        failures.append(
+            '  FAIL off the watch, (crown) is discarded in silence instead of saying so'
         )
 if 'crownIdle' not in host:
-    fallos.append(
-        '  FALLO falta (crownIdle): el sistema manda muescas y calla, así que el final '
-        'lo tiene que contar el host'
+    failures.append(
+        '  FAIL (crownIdle) is missing: the system sends detents and goes quiet, so the end '
+        'has to be counted by the host'
     )
 if not re.search(r'setOnGenericMotionListener\(this\)', host):
-    fallos.append('  FALLO la corona en crudo no escucha por el camino de los eventos genéricos')
+    failures.append('  FAIL the raw crown does not listen along the generic event path')
 
-# 5. El margen de la pantalla redonda. Es geometría, no gusto: el lado del
-#    cuadrado inscrito es d/√2. Una constante a ojo pasaría desapercibida.
+# 5. The inset of the round screen. It is geometry, not taste: the side of the
+#    inscribed square is d/√2. A constant picked by eye would go unnoticed.
 if '(1 - 1 / Math.sqrt(2)) / 2' not in host:
-    fallos.append('  FALLO ROUND_INSET ya no es el cuadrado inscrito en la circunferencia')
+    failures.append('  FAIL ROUND_INSET is no longer the square inscribed in the circle')
 if 'isScreenRound' not in host:
-    fallos.append('  FALLO el host adivina la forma de la pantalla en vez de preguntarla')
+    failures.append('  FAIL the host guesses the screen shape instead of asking for it')
 
-# 6. El CLI arma dos formas y no una. `Form::Watch` sin su manifiesto sería un
-#    APK de teléfono con nombre de reloj.
+# 6. The CLI builds two form factors and not one. `Form::Watch` without its
+#    manifest would be a phone APK with a watch's name.
 if 'AndroidManifest.wear.xml' not in cli:
-    fallos.append('  FALLO el CLI no conoce el manifiesto del reloj')
+    failures.append('  FAIL the CLI does not know about the watch manifest')
 if 'ro.build.characteristics' not in cli:
-    fallos.append('  FALLO el CLI no distingue un reloj de un teléfono al instalar')
+    failures.append('  FAIL the CLI does not tell a watch from a phone when installing')
 
-# 7. Y que ese aparato llegue a `adb`.
+# 7. And that this device reaches `adb`.
 #
-#    Preguntar por el texto no basta, y esto lo aprendió el propio comprobador:
-#    `ro.build.characteristics` estaba en el fichero, en una función que no
-#    llamaba nadie. `install_and_launch` recibía la forma y el `--device` y no
-#    usaba ninguno de los dos. Con dos aparatos arrancados, `adb` se planta; con
-#    un teléfono solo, el APK del reloj se instala en el teléfono, arranca y
-#    pinta, y nadie dice nada.
-cuerpo_instalar = re.search(r'pub fn install_and_launch\((.*?)\n\}\n', cli, re.S)
-if not cuerpo_instalar:
-    fallos.append('  FALLO no encuentro install_and_launch en el CLI')
+#    Asking for the text is not enough, and the checker itself learned this:
+#    `ro.build.characteristics` was in the file, in a function nobody called.
+#    `install_and_launch` received the form factor and the `--device` and used
+#    neither. With two devices running, `adb` refuses; with a phone alone, the
+#    watch APK installs on the phone, starts, paints, and nobody says a word.
+install_body = re.search(r'pub fn install_and_launch\((.*?)\n\}\n', cli, re.S)
+if not install_body:
+    failures.append('  FAIL install_and_launch not found in the CLI')
 else:
-    instalar = cuerpo_instalar.group(1)
-    if 'pick_device' not in instalar:
-        fallos.append(
-            '  FALLO install_and_launch no elige aparato: manda el APK al que adb quiera'
+    install = install_body.group(1)
+    if 'pick_device' not in install:
+        failures.append(
+            '  FAIL install_and_launch picks no device: it sends the APK to whichever adb likes'
         )
-    for orden, motivo in [
-        ('install', 'instalar'),
-        ('start', 'lanzar'),
-        ('force-stop', 'parar la app anterior'),
+    for command, purpose in [
+        ('install', 'installing'),
+        ('start', 'launching'),
+        ('force-stop', 'stopping the previous app'),
     ]:
-        for argumentos in re.findall(r'\[([^\[\]]*"' + orden + r'"[^\[\]]*)\]', instalar):
-            if '"-s"' not in argumentos:
-                fallos.append(
-                    f'  FALLO {motivo} sin `-s`: va al aparato que elija adb, no al elegido'
+        for arguments in re.findall(r'\[([^\[\]]*"' + command + r'"[^\[\]]*)\]', install):
+            if '"-s"' not in arguments:
+                failures.append(
+                    f'  FAIL {purpose} without `-s`: it goes to whichever device adb picks, '
+                    'not to the chosen one'
                 )
 
-for linea in fallos:
-    print(linea)
-if fallos:
+for line in failures:
+    print(line)
+if failures:
     sys.exit(1)
 
-print(f'  ok   el manifiesto del reloj declara su característica y su tema')
-print(f'  ok   los {len(declarados)} temas de res/values/styles.xml cubren los dos manifiestos')
+print('  ok   the watch manifest declares its feature and its theme')
+print(f'  ok   the {len(declared)} themes in res/values/styles.xml cover both manifests')
 print(
-    f'  ok   las {len(etiquetas_declaradas)} primitivas que no van en el reloj '
-    'coinciden en Java y en docs/wearos.md'
+    f'  ok   the {len(declared_tags)} primitives that do not go on the watch '
+    'agree in Java and in docs/wearos.md'
 )
-print('  ok   la corona llega por onGenericMotionEvent y solo en el reloj')
-print('  ok   (crown) y (crownIdle) los entrega el host, y fuera del reloj lo dicen')
-print('  ok   el APK va al aparato con forma de reloj, y cada adb lleva su -s')
-print('  ok   el margen de la pantalla redonda es el cuadrado inscrito')
+print('  ok   the crown arrives through onGenericMotionEvent and only on the watch')
+print('  ok   (crown) and (crownIdle) are delivered by the host, and off the watch they say so')
+print('  ok   the APK goes to the watch-shaped device, and every adb carries its -s')
+print('  ok   the inset of the round screen is the inscribed square')
