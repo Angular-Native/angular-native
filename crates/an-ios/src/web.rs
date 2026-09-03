@@ -1,16 +1,16 @@
-//! `WKWebView`, declarada a mano.
+//! `WKWebView`, declared by hand.
 //!
-//! `objc2-web-kit` solo genera esta clase para macOS, donde hereda de
-//! `NSView`; la de iOS hereda de `UIView` y no está en el crate. Declararla
-//! aquí no tiene misterio —es una clase de Objective-C como cualquier otra— y
-//! evita esperar a que el generador la cubra.
+//! `objc2-web-kit` only generates this class for macOS, where it inherits from
+//! `NSView`; iOS's inherits from `UIView` and is not in the crate. Declaring
+//! it here is no mystery —it is an Objective-C class like any other— and it
+//! saves waiting for the generator to cover it.
 
 use objc2::rc::Retained;
 use objc2::{extern_class, extern_methods, ClassType, MainThreadMarker, MainThreadOnly};
 use objc2_foundation::{NSObject, NSString, NSURL, NSURLRequest};
 use objc2_ui_kit::{UIResponder, UIView};
 
-// El framework hay que enlazarlo: nadie más lo hace por nosotros.
+// The framework has to be linked: nobody else does it for us.
 #[link(name = "WebKit", kind = "framework")]
 unsafe extern "C" {}
 
@@ -22,20 +22,20 @@ extern_class!(
 );
 
 impl WKWebView {
-    /// Una web nueva, vacía. `new` no se puede declarar en `extern_methods!`
-    /// —no lleva argumentos y el marcador de hilo no es uno de ellos—, así
-    /// que se llama por el camino normal de objc2.
+    /// A new, empty web view. `new` cannot be declared in `extern_methods!`
+    /// —it takes no arguments and the thread marker is not one of them— so it
+    /// is called down objc2's ordinary path.
     pub fn new(mtm: MainThreadMarker) -> Retained<Self> {
         let _ = mtm;
         unsafe { objc2::msg_send![<Self as ClassType>::class(), new] }
     }
 
     extern_methods!(
-        // Los cuatro devuelven un `WKNavigation *`, que aquí no hace falta
-        // para nada pero hay que declararlo: objc2 comprueba la firma contra
-        // la de verdad en tiempo de ejecución, y decir `void` donde hay un
-        // objeto aborta el proceso. Bien comprobado, por cierto: es un error
-        // que en Objective-C a pelo pasa desapercibido.
+        // All four return a `WKNavigation *`, which is of no use whatsoever
+        // here but has to be declared: objc2 checks the signature against the
+        // real one at run time, and saying `void` where there is an object
+        // aborts the process. A good check to have, incidentally: it is a
+        // mistake that goes unnoticed in bare Objective-C.
         #[unsafe(method(loadRequest:))]
         pub fn loadRequest(&self, request: &NSURLRequest) -> Option<Retained<NSObject>>;
 

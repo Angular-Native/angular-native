@@ -1,12 +1,12 @@
-//! Diálogos del sistema: `NSAlert` de verdad.
+//! System dialogs: a real `NSAlert`.
 //!
-//! Se presenta como hoja de la ventana (`beginSheetModalForWindow:`) y no como
-//! modal de aplicación. La diferencia importa en escritorio: un modal de
-//! aplicación bloquea el bucle de eventos, y el bucle de eventos es el que
-//! llama a `an_runtime_frame`. Con un `runModal` la app se congelaría entera
-//! —temporizadores incluidos— hasta que alguien contestara. Una hoja no
-//! bloquea: el diálogo es modal respecto a su ventana y el resto de la app
-//! sigue viva, que es justo lo que se necesita.
+//! It is presented as a sheet on the window (`beginSheetModalForWindow:`) and
+//! not as an application-modal dialog. The difference matters on the desktop:
+//! an application-modal dialog blocks the event loop, and the event loop is
+//! what calls `an_runtime_frame`. With a `runModal` the whole app would freeze
+//! —timers included— until somebody answered. A sheet does not block: the
+//! dialog is modal with respect to its window and the rest of the app stays
+//! alive, which is exactly what is needed.
 
 use an_core::{NodeId, PropValue};
 use an_host::{push_event, EventQueue, HostEvent};
@@ -15,28 +15,28 @@ use objc2::MainThreadMarker;
 use objc2_app_kit::{NSAlert, NSAlertStyle, NSModalResponse, NSView};
 use objc2_foundation::NSString;
 
-/// La primera respuesta que devuelve una hoja: el primer botón es 1000, el
-/// segundo 1001, y así. Restándola sale el índice que espera la plantilla.
+/// The first response a sheet returns: the first button is 1000, the second
+/// 1001, and so on. Subtracting it gives the index the template expects.
 const FIRST_BUTTON: NSModalResponse = 1000;
 
-/// Estado de un diálogo declarado en la plantilla.
+/// The state of a dialog declared in the template.
 #[derive(Default)]
 pub struct AlertState {
-    /// En iOS `sheet` significa hoja de acciones. macOS no tiene ese control
-    /// —lo más parecido es un menú contextual, que es otra cosa— así que aquí
-    /// solo cambia el estilo del diálogo: informativo en vez de de aviso.
+    /// On iOS `sheet` means an action sheet. macOS has no such control —the
+    /// nearest thing is a context menu, which is something else— so here it
+    /// only changes the dialog's style: informational instead of a warning.
     pub sheet: bool,
     pub title: String,
     pub message: String,
     pub buttons: Vec<String>,
     pub visible: bool,
-    /// El que está en pantalla, para no presentarlo dos veces.
+    /// The one on screen, so it is not presented twice.
     presented: bool,
 }
 
 impl AlertState {
-    /// Presenta o retira el diálogo según su estado. Idempotente: llamarla dos
-    /// veces con el mismo estado no hace nada.
+    /// Presents or withdraws the dialog according to its state. Idempotent:
+    /// calling it twice with the same state does nothing.
     pub fn sync(
         &mut self,
         mtm: MainThreadMarker,

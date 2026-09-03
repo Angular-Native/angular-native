@@ -1,8 +1,8 @@
-//! Módulos nativos de Android.
+//! Android's native modules.
 //!
-//! El de dispositivo delega en `AnHost.deviceInfo()`: leer `android.os.Build`
-//! por JNI campo a campo serían cinco llamadas para lo que Java resuelve en
-//! una línea.
+//! The device one delegates to `AnHost.deviceInfo()`: reading `android.os.Build`
+//! field by field over JNI would be five calls for what Java settles in a
+//! single line.
 
 use an_bridge::modules::{NativeModule, Responder};
 use jni::objects::{Global, JObject, JString, JValue};
@@ -27,10 +27,10 @@ impl NativeModule for DeviceModule {
 
     fn call(&mut self, method: &str, _args: Value, respond: Responder) {
         if method != "info" {
-            respond.reject(format!("el módulo device no tiene ningún método {method:?}"));
+            respond.reject(format!("the device module has no method {method:?}"));
             return;
         }
-        let leido = self
+        let raw = self
             .vm
             .attach_current_thread(|env| -> Result<Option<String>, jni::errors::Error> {
                 let name = jni::strings::JNIString::from("deviceInfo");
@@ -46,9 +46,9 @@ impl NativeModule for DeviceModule {
                     let _ = env.exception_clear();
                     return Ok(None);
                 };
-                // El cast comprobado: en jni 0.22 pasar de `JObject` a
-                // `JString` ya no es un `from`, se le pregunta a la JVM si el
-                // objeto es de esa clase.
+                // The checked cast: in jni 0.22 going from `JObject` to
+                // `JString` is no longer a `from`, the JVM is asked whether the
+                // object is of that class.
                 let Ok(text) = env.cast_local::<JString>(object) else {
                     return Ok(None);
                 };
@@ -56,16 +56,16 @@ impl NativeModule for DeviceModule {
             })
             .ok()
             .flatten();
-        let Some(json) = leido else {
-            respond.reject("AnHost.deviceInfo falló");
+        let Some(json) = raw else {
+            respond.reject("AnHost.deviceInfo failed");
             return;
         };
         match serde_json::from_str(&json) {
             Ok(value) => respond.resolve(value),
-            Err(error) => respond.reject(format!("deviceInfo devolvió JSON inválido: {error}")),
+            Err(error) => respond.reject(format!("deviceInfo returned invalid JSON: {error}")),
         }
     }
 }
 
-// Silencia el aviso por `JValue` sin usar si el módulo crece.
+// Silences the unused-`JValue` warning should the module grow.
 const _: Option<JValue<'static>> = None;

@@ -1,8 +1,8 @@
-//! Diálogos del sistema.
+//! System dialogs.
 //!
-//! Un `UIAlertController` de verdad, presentado sobre el controlador raíz: el
-//! aspecto, la animación y el comportamiento con el teclado y con VoiceOver
-//! son los del sistema, no una imitación.
+//! A real `UIAlertController`, presented over the root controller: the look,
+//! the animation and the behaviour with the keyboard and with VoiceOver are
+//! the system's, not an imitation.
 
 use an_core::{NodeId, PropValue};
 use an_host::{push_event, EventQueue, HostEvent};
@@ -13,22 +13,22 @@ use objc2_foundation::NSString;
 use objc2_ui_kit::{
     UIDevice,UIAlertAction, UIAlertActionStyle, UIAlertController, UIAlertControllerStyle, UIView};
 
-/// Estado de un diálogo declarado en la plantilla.
+/// The state of a dialog declared in the template.
 #[derive(Default)]
 pub struct AlertState {
-    /// `true` para hoja de acciones en vez de diálogo centrado.
+    /// `true` for an action sheet instead of a centred dialog.
     pub sheet: bool,
     pub title: String,
     pub message: String,
     pub buttons: Vec<String>,
     pub visible: bool,
-    /// El que está en pantalla, para poder quitarlo si el estado cambia.
+    /// The one on screen, so it can be taken away if the state changes.
     presented: Option<Retained<UIAlertController>>,
 }
 
 impl AlertState {
-    /// Presenta o retira el diálogo según su estado. Idempotente: llamarla dos
-    /// veces con el mismo estado no hace nada.
+    /// Presents or withdraws the dialog according to its state. Idempotent:
+    /// calling it twice with the same state does nothing.
     pub fn sync(&mut self, mtm: MainThreadMarker, container: &UIView, node: NodeId, queue: &EventQueue) {
         if !self.visible {
             if let Some(controller) = self.presented.take() {
@@ -84,15 +84,16 @@ impl AlertState {
         }
 
         unsafe {
-            // Una hoja de acciones en iPad sale de un sitio concreto, y si no
-            // se dice de cuál, UIKit no avisa: revienta la app.
+            // On an iPad an action sheet comes out of a particular place,
+            // and if it is not told which, UIKit does not warn: it crashes the
+            // app.
             //
-            // Solo en iPad. En iPhone la hoja sube desde abajo y ocupa el
-            // ancho; anclarla ahí la convierte en un globo con pico, que no es
-            // lo que hace ninguna app de iPhone.
-            let es_ipad = UIDevice::currentDevice(mtm).userInterfaceIdiom()
+            // On iPad only. On an iPhone the sheet rises from the bottom and
+            // takes the width; anchoring it there turns it into a popover with
+            // an arrow, which is not what any iPhone app does.
+            let is_ipad = UIDevice::currentDevice(mtm).userInterfaceIdiom()
                 == objc2_ui_kit::UIUserInterfaceIdiom::Pad;
-            if let Some(popover) = controller.popoverPresentationController().filter(|_| es_ipad) {
+            if let Some(popover) = controller.popoverPresentationController().filter(|_| is_ipad) {
                 popover.setSourceView(Some(container));
                 let bounds = container.bounds();
                 popover.setSourceRect(objc2_core_foundation::CGRect {

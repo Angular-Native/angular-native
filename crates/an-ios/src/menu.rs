@@ -1,8 +1,8 @@
-//! El menú de un `<Select>`.
+//! A `<Select>`'s menu.
 //!
-//! En iOS no hay un control de desplegable: lo que hay es un botón que abre un
-//! `UIMenu`. `UIPickerView` es la rueda a pantalla completa, que es otra cosa
-//! y ya no es lo que usa el sistema para elegir de una lista corta.
+//! On iOS there is no drop-down control: what there is is a button that opens
+//! a `UIMenu`. `UIPickerView` is the full-screen wheel, which is a different
+//! thing and no longer what the system uses to pick from a short list.
 
 use an_core::{NodeId, PropValue};
 use an_host::{push_event, EventQueue, HostEvent};
@@ -12,11 +12,11 @@ use objc2::MainThreadMarker;
 use objc2_foundation::{NSArray, NSString};
 use objc2_ui_kit::{UIAction, UIMenu, UIMenuElement};
 
-/// Construye el menú con una acción por opción.
+/// Builds the menu with one action per option.
 ///
-/// Cada acción lleva dentro el índice que le toca, así que al elegir se avisa
-/// con el número y no con el texto: el texto puede repetirse y puede estar
-/// traducido, el índice no.
+/// Each action carries its own index inside it, so choosing reports the number
+/// and not the text: the text can repeat and can be translated, the index
+/// cannot.
 pub fn build(
     mtm: MainThreadMarker,
     node: NodeId,
@@ -43,8 +43,9 @@ pub fn build(
                     &NSString::from_str(title),
                     None,
                     None,
-                    // El enlace pide un puntero mutable al bloque; el
-                    // bloque vive lo que viva la acción, que lo retiene.
+                    // The binding asks for a mutable pointer to the block;
+                    // the block lives as long as the action does, and the
+                    // action retains it.
                     RcBlock::as_ptr(&handler) as *mut _,
                     mtm,
                 )

@@ -1,9 +1,9 @@
-//! Carga de imágenes.
+//! Image loading.
 //!
-//! Una ruta sin esquema es un recurso del bundle; con `http` o `https` se baja
-//! por red. En los dos casos el tamaño real de la imagen se devuelve como
-//! evento `load`, porque el layout no puede colocar algo cuyo tamaño no conoce
-//! y solo la imagen sabe cuánto mide.
+//! A path with no scheme is a bundle resource; one with `http` or `https` is
+//! fetched over the network. Either way the image's real size comes back as a
+//! `load` event, because the layout cannot place something whose size it does
+//! not know and only the image knows how big it is.
 
 use an_core::{NodeId, PropValue};
 use an_host::{push_event, EventQueue, HostEvent};
@@ -14,8 +14,8 @@ use objc2_foundation::{
 };
 use objc2_ui_kit::{UIImage, UIImageView};
 
-/// Empieza a cargar `source` en la vista. Vuelve en el acto: si hay red de por
-/// medio, la imagen aparece cuando llegue.
+/// Starts loading `source` into the view. It returns immediately: if there is
+/// a network in the way, the image shows up when it arrives.
 pub fn load(
     _mtm: MainThreadMarker,
     view: &UIImageView,
@@ -28,7 +28,7 @@ pub fn load(
         return;
     }
     if !source.starts_with("http://") && !source.starts_with("https://") {
-        // Recurso del bundle: es síncrono y UIKit ya lo cachea.
+        // A bundle resource: it is synchronous and UIKit already caches it.
         let name = NSString::from_str(source);
         if let Some(image) = UIImage::imageNamed(&name) {
             apply(view, &image, node, &queue);
@@ -41,9 +41,9 @@ pub fn load(
     let view = view.retain();
     let queue = queue.clone();
 
-    // El bloque corre en un hilo de red. Construir la UIImage ahí está bien
-    // —`imageWithData:` es thread-safe—, pero colgarla de la vista no: eso se
-    // salta a la cola principal.
+    // The block runs on a networking thread. Building the UIImage there is
+    // fine —`imageWithData:` is thread-safe— but hanging it on the view is
+    // not: that hops to the main queue.
     let completion = RcBlock::new(
         move |data: *mut NSData, _response: *mut NSURLResponse, _error: *mut NSError| {
             let Some(data) = (unsafe { data.as_ref() }) else { return };
@@ -51,7 +51,7 @@ pub fn load(
             let view = view.clone();
             let queue = queue.clone();
             let on_main = RcBlock::new(move || {
-                // SAFETY: la cola principal ejecuta en el hilo principal.
+                // SAFETY: the main queue runs on the main thread.
                 let mtm = unsafe { MainThreadMarker::new_unchecked() };
                 let _ = mtm;
                 apply(&view, &image, node, &queue);
@@ -65,7 +65,7 @@ pub fn load(
     unsafe { task.resume() };
 }
 
-/// Cuelga la imagen y avisa de su tamaño real.
+/// Hangs the image up and announces its real size.
 fn apply(view: &UIImageView, image: &UIImage, node: NodeId, queue: &EventQueue) {
     view.setImage(Some(image));
     let size = unsafe { image.size() };
@@ -82,7 +82,7 @@ fn apply(view: &UIImageView, image: &UIImage, node: NodeId, queue: &EventQueue) 
     );
 }
 
-/// Traduce `resizeMode` al modo de contenido de UIKit.
+/// Translates `resizeMode` into UIKit's content mode.
 pub fn content_mode(mode: &str) -> objc2_ui_kit::UIViewContentMode {
     use objc2_ui_kit::UIViewContentMode;
     match mode {

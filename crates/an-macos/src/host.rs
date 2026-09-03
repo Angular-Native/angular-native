@@ -1,20 +1,21 @@
-//! `HostRenderer` sobre AppKit. Una vista nativa por nodo montable, colocada
-//! con `frame` directo: el layout ya lo resolvió taffy, y meter Auto Layout
-//! aquí solo pondría un segundo motor de layout a competir con el primero.
+//! `HostRenderer` over AppKit. One native view per mountable node, placed with
+//! a direct `frame`: taffy has already worked the layout out, and bringing Auto
+//! Layout in here would only set a second layout engine competing with the
+//! first.
 //!
-//! Es el mismo planteamiento que el host de iOS. Lo que cambia está donde se
-//! nota, y está comentado ahí: el origen de coordenadas (`flipped.rs`), los
-//! gestos de ratón (`events.rs`), y que aquí no hay un `_ => {}` al final del
-//! `match` de props.
+//! It is the same approach as the iOS host's. What differs is where it shows,
+//! and it is commented there: the coordinate origin (`flipped.rs`), the mouse
+//! gestures (`events.rs`), and the fact that there is no `_ => {}` at the end
+//! of the props `match` here.
 //!
-//! **Por qué no hay `_ => {}`.** Una prop que un host no mira no da error, no
-//! deja traza y no cambia nada: es exactamente el fallo que este proyecto
-//! persigue. El host de iOS y el de Android se cubren con
-//! `scripts/check-wrapper.sh`, que comprueba que el nombre aparezca en el
-//! fichero. Aquí, además, lo que no se aplica se dice por la salida de error la
-//! primera vez que llega, con el motivo: `IGNORED` es la lista de props que
-//! macOS no puede honrar, y cualquier cosa que no esté ni implementada ni en
-//! esa lista sale por pantalla como «prop desconocida».
+//! **Why there is no `_ => {}`.** A prop a host does not look at raises no
+//! error, leaves no trace and changes nothing: it is exactly the failure this
+//! project is after. The iOS and Android hosts are covered by
+//! `scripts/check-wrapper.sh`, which checks that the name appears in the file.
+//! Here, on top of that, what is not applied is said through the error output
+//! the first time it arrives, with the reason: `IGNORED` is the list of props
+//! macOS cannot honour, and anything that is neither implemented nor in that
+//! list comes out on screen as an "unknown prop".
 
 use std::collections::{HashMap, HashSet};
 
@@ -40,9 +41,9 @@ use objc2_foundation::{
 use crate::flipped::FlippedView;
 use crate::support::{is_known_event, unsupported_event};
 
-/// Lista de cadenas en JSON, sin traerse un analizador entero para esto.
-/// Idéntica a la del host de iOS, y por lo mismo: solo tiene que entender lo
-/// que genera el lado JS.
+/// A JSON list of strings, without pulling in a whole parser for it. Identical
+/// to the iOS host's, and for the same reason: it only has to understand what
+/// the JS side generates.
 fn parse_string_list(raw: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut chars = raw.chars().peekable();
@@ -67,61 +68,62 @@ fn parse_string_list(raw: &str) -> Vec<String> {
     out
 }
 
-/// Props que llegan a este host y que macOS no puede honrar, con el motivo.
+/// Props that reach this host and that macOS cannot honour, with the reason.
 ///
-/// Estar en esta lista es una decisión, no un olvido: la prop se descarta a
-/// sabiendas y sin ruido. Lo que no esté ni aquí ni implementado sale por la
-/// salida de error, que es lo que hace que la lista no se pueda quedar atrás.
+/// Being in this list is a decision, not an oversight: the prop is knowingly
+/// dropped and without noise. Whatever is neither in here nor implemented goes
+/// out through the error output, which is what keeps the list from falling
+/// behind.
 const IGNORED: &[(&str, &str)] = &[
-    // La escribe Angular en el elemento raíz de la app; no sale de ninguna
-    // plantilla ni de ninguna primitiva.
-    ("ng-version", "la escribe Angular en su raíz, no es una prop de ninguna primitiva"),
-    // El núcleo las consume para reservar el hueco de una imagen; no llegan a
-    // ser props de vista en ningún host.
-    ("intrinsicWidth", "la consume el layout, no el host"),
-    ("intrinsicHeight", "la consume el layout, no el host"),
-    // No hay teclado en pantalla en un Mac, así que no hay nada que
-    // configurar: el teclado es de hardware y no lo elige la vista.
-    ("keyboardType", "un Mac no tiene teclado en pantalla"),
-    ("returnKeyType", "un Mac no tiene teclado en pantalla"),
-    ("autoCapitalize", "un Mac no tiene teclado en pantalla"),
-    ("autoCorrect", "la corrección en macOS es un ajuste del sistema, no de la vista"),
-    // `NSSecureTextField` es otra clase, y una vista no puede cambiar de clase
-    // una vez creada. La prop llega después de crear el campo.
+    // Angular writes it on the app's root element; it comes out of no template
+    // and no primitive.
+    ("ng-version", "Angular writes it on its root, it is no primitive's prop"),
+    // The core consumes them to reserve the room for an image; they never
+    // become view props on any host.
+    ("intrinsicWidth", "the layout consumes it, not the host"),
+    ("intrinsicHeight", "the layout consumes it, not the host"),
+    // There is no on-screen keyboard on a Mac, so there is nothing to
+    // configure: the keyboard is hardware and the view does not pick it.
+    ("keyboardType", "a Mac has no on-screen keyboard"),
+    ("returnKeyType", "a Mac has no on-screen keyboard"),
+    ("autoCapitalize", "a Mac has no on-screen keyboard"),
+    ("autoCorrect", "correction on macOS is a system setting, not a view's"),
+    // `NSSecureTextField` is a different class, and a view cannot change class
+    // once it is created. The prop arrives after the field has been made.
     (
         "secureTextEntry",
-        "en AppKit el campo de contraseña es otra clase (NSSecureTextField) y no se puede \
-         cambiar en marcha",
+        "in AppKit the password field is a different class (NSSecureTextField) and cannot be \
+         changed on the fly",
     ),
-    // `NSSlider` tiñe el tramo recorrido y nada más.
-    ("thumbColor", "NSSlider no expone el color del pulgar"),
-    ("maximumTrackColor", "NSSlider solo tiñe el tramo recorrido"),
-    // Tirar para recargar es un gesto de dedo. En escritorio se recarga con un
-    // botón o con ⌘R, que son cosa de la app.
-    ("refreshing", "no hay «tirar para recargar» en escritorio"),
-    ("bounces", "NSScrollView no rebota al final como el de iOS"),
-    // La pila de pantallas se monta y se desmonta, pero no se anima: las
-    // transiciones de `an-native-stack` están sin portar a este host.
-    ("transition", "las transiciones de pila todavía no están portadas a este host"),
-    // La cabecera de un Mac es la barra de título de la ventana, y ahí es
-    // donde acaba el `[title]` (ver `apply_window_title`). Lo que la barra de
-    // título no tiene es botón de atrás: un Mac vuelve con el menú o con un
-    // botón de la app, no con una flecha en la cabecera.
-    ("backTitle", "una barra de título de macOS no lleva botón de atrás"),
-    ("showsBack", "una barra de título de macOS no lleva botón de atrás"),
-    // El modal de este host es una capa por encima del contenido, no una hoja
-    // ni un panel: no hay dos presentaciones entre las que elegir.
-    ("presentation", "el modal de este host es una capa, no hay hoja que elegir"),
-    // `NSSegmentedControl` tiñe todo el control por igual.
-    ("unselectedColor", "NSSegmentedControl no tiñe los segmentos apagados por separado"),
+    // `NSSlider` tints the travelled stretch and nothing else.
+    ("thumbColor", "NSSlider does not expose the thumb's colour"),
+    ("maximumTrackColor", "NSSlider only tints the travelled stretch"),
+    // Pull to refresh is a finger gesture. On the desktop you reload with a
+    // button or with ⌘R, which are the app's business.
+    ("refreshing", "there is no pull-to-refresh on the desktop"),
+    ("bounces", "NSScrollView does not bounce at the end the way iOS's does"),
+    // The screen stack is mounted and unmounted, but not animated: the
+    // transitions of `an-native-stack` are not ported to this host.
+    ("transition", "the stack transitions are not ported to this host yet"),
+    // A Mac's header is the window's title bar, and that is where the `[title]`
+    // ends up (see `apply_window_title`). What a title bar does not have is a
+    // back button: a Mac goes back through the menu or through a button of the
+    // app's, not through an arrow in the header.
+    ("backTitle", "a macOS title bar carries no back button"),
+    ("showsBack", "a macOS title bar carries no back button"),
+    // This host's modal is a layer above the content, not a sheet and not a
+    // panel: there are no two presentations to choose between.
+    ("presentation", "this host's modal is a layer, there is no sheet to choose"),
+    // `NSSegmentedControl` tints the whole control alike.
+    ("unselectedColor", "NSSegmentedControl does not tint the unselected segments separately"),
 ];
 
 fn ignored_reason(key: &str) -> Option<&'static str> {
     IGNORED.iter().find(|(k, _)| *k == key).map(|(_, reason)| *reason)
 }
 
-/// Vista nativa de un nodo, con su tipo concreto: las props de un rótulo no se
-/// aplican igual que las de una caja.
+/// A node's native view, with its concrete type: a label's props are not
+/// applied the way a box's are.
 enum HostView {
     View(Retained<FlippedView>),
     Stack(Retained<FlippedView>),
@@ -137,7 +139,7 @@ enum HostView {
     Spinner(Retained<NSProgressIndicator>),
     Progress(Retained<NSProgressIndicator>),
     Segments(Retained<NSSegmentedControl>),
-    /// La barra de pestañas de macOS es un segmentado (ver `support.rs`).
+    /// macOS's tab bar is a segmented control (see `support.rs`).
     Tabs(Retained<NSSegmentedControl>),
     Step(Retained<NSStepper>),
     Search(Retained<NSSearchField>),
@@ -145,18 +147,18 @@ enum HostView {
     Date(Retained<NSDatePicker>),
     Web(Retained<crate::web::WKWebView>),
     Map(Retained<crate::map::MKMapView>),
-    /// En AppKit el vídeo sí es una vista: `AVPlayerView` hereda de `NSView` y
-    /// trae los controles del sistema. En UIKit no hay ninguna, y por eso allí
-    /// hay que contener un controlador entero.
+    /// In AppKit video really is a view: `AVPlayerView` inherits from
+    /// `NSView` and brings the system's controls. In UIKit there is none,
+    /// which is why over there a whole controller has to be contained.
     Video(Retained<crate::video::AVPlayerView>),
-    /// La cabecera de navegación no se dibuja: el `[title]` va a la barra de
-    /// título de la ventana. La vista existe para que el árbol tenga dónde
-    /// colgar el nodo, y mide cero, así que no deja hueco. Ver `support.rs`.
+    /// The navigation header is not drawn: the `[title]` goes to the window's
+    /// title bar. The view exists so the tree has something to hang the node
+    /// off, and it measures zero, so it leaves no gap. See `support.rs`.
     Nav(Retained<FlippedView>),
-    /// Capa por encima de la raíz.
+    /// A layer above the root.
     Overlay(Retained<FlippedView>),
-    /// Un diálogo no tiene vista: lo presenta el sistema. Se monta una vacía
-    /// para que el árbol tenga algo donde colgar el nodo.
+    /// A dialog has no view: the system presents it. An empty one is mounted so
+    /// the tree has something to hang the node off.
     Dialog(Retained<FlippedView>),
 }
 
@@ -217,9 +219,9 @@ impl HostView {
         }
     }
 
-    /// Dónde van los hijos de esta vista. Para casi todas es ella misma; un
-    /// `NSScrollView` es la excepción: sus hijos cuelgan del documento, no del
-    /// marco que lo enseña.
+    /// Where this view's children go. For nearly all of them it is the view
+    /// itself; an `NSScrollView` is the exception: its children hang off the
+    /// document view, not off the frame that shows it.
     fn content_view(&self) -> Retained<NSView> {
         match self {
             HostView::Scroll(scroll) => unsafe { scroll.documentView() }
@@ -229,9 +231,9 @@ impl HostView {
     }
 }
 
-/// Las partes de una transformación, sin componer. La escala arranca en 1 y no
-/// en 0: una vista sin `scale` tiene que verse igual que antes de que la prop
-/// existiera, no desaparecer.
+/// A transform's parts, uncomposed. The scale starts at 1 and not at 0: a view
+/// with no `scale` has to look the way it did before the prop existed, not
+/// disappear.
 #[derive(Clone, Copy)]
 struct Transform {
     translate_x: f64,
@@ -252,9 +254,10 @@ impl Transform {
         self.scale_x == 1.0 && self.scale_y == 1.0 && self.rotate == 0.0
     }
 
-    /// Escalar y girar, en ese orden. El desplazamiento no entra aquí: se
-    /// aplica sumándolo al marco en `set_layout`, que en AppKit es exacto y
-    /// evita tener que compensar el punto de anclaje de la capa dos veces.
+    /// Scale and rotate, in that order. The translation does not go in here:
+    /// it is applied by adding it to the frame in `set_layout`, which in
+    /// AppKit is exact and saves having to compensate for the layer's anchor
+    /// point twice.
     fn matrix(&self) -> CGAffineTransform {
         let (sin, cos) = self.rotate.sin_cos();
         CGAffineTransform {
@@ -268,63 +271,66 @@ impl Transform {
     }
 }
 
-/// Cómo anima una vista sus cambios.
+/// How a view animates its changes.
 #[derive(Clone, Copy, Default)]
 struct Animation {
-    /// Segundos. Cero apaga la animación sin borrar el resto de ajustes.
+    /// Seconds. Zero switches the animation off without wiping the rest of the
+    /// settings.
     duration: f64,
     delay: f64,
 }
 
 pub struct AppKitHost {
     mtm: MainThreadMarker,
-    /// Vista que da el shell. La raíz del árbol cuelga de aquí.
+    /// The view the shell hands over. The root of the tree hangs off it.
     container: Retained<NSView>,
     views: HashMap<NodeId, HostView>,
     fonts: HashMap<NodeId, an_layout::FontSpec>,
-    /// Radios por esquina: arriba-izq, arriba-der, abajo-der, abajo-izq.
+    /// Radii per corner: top-left, top-right, bottom-right, bottom-left.
     corners: HashMap<NodeId, [f64; 4]>,
-    /// El marco que mandó el core, sin el desplazamiento. Hace falta guardarlo
-    /// porque `translateX` puede llegar después del marco y hay que recolocar.
+    /// The frame the core sent, without the translation. It has to be kept
+    /// because `translateX` may arrive after the frame and the view then has
+    /// to be placed again.
     frames: HashMap<NodeId, Rect>,
     transforms: HashMap<NodeId, Transform>,
     animations: HashMap<NodeId, Animation>,
-    /// Nombre, tamaño y peso del icono de cada nodo, que llegan sueltos.
+    /// Each node's icon name, size and weight, which arrive separately.
     icons: HashMap<NodeId, (String, f32, u16)>,
-    /// Títulos e iconos de cada barra de pestañas y de cada segmentado.
+    /// Each tab bar's and each segmented control's titles and icons.
     segments: HashMap<NodeId, (Vec<String>, Vec<String>)>,
-    /// Subrayado o tachado de cada rótulo.
+    /// Each label's underline or strikethrough.
     decorations: HashMap<NodeId, String>,
     placeholders: HashMap<NodeId, String>,
     placeholder_colors: HashMap<NodeId, String>,
-    /// Título, color, variante e icono de cada botón: al cambiar cualquiera
-    /// hay que rehacer los cuatro, igual que en iOS.
+    /// Each button's title, colour, variant and icon: changing any one of them
+    /// means redoing all four, just as on iOS.
     button_titles: HashMap<NodeId, String>,
     button_colors: HashMap<NodeId, String>,
     button_variants: HashMap<NodeId, String>,
     button_icons: HashMap<NodeId, (String, String)>,
-    /// Valor pedido al deslizador y al `Stepper`. Se guardan porque el valor y
-    /// el rango llegan en props sueltas y en cualquier orden: fijar el valor
-    /// antes que el máximo lo recorta contra el rango viejo.
+    /// The value asked of the slider and of the `Stepper`. They are kept
+    /// because the value and the range arrive as separate props and in any
+    /// order: setting the value before the maximum clamps it against the old
+    /// range.
     slider_values: HashMap<NodeId, f64>,
     stepper_values: HashMap<NodeId, f64>,
     alerts: HashMap<NodeId, crate::alert::AlertState>,
     dirty_alerts: Vec<NodeId>,
-    /// Centro y zoom de cada mapa. Van juntos porque MapKit no tiene tres
-    /// propiedades sino una región, y las tres props llegan sueltas.
+    /// Each map's centre and zoom. They go together because MapKit has not
+    /// three properties but one region, and the three props arrive separately.
     maps: HashMap<NodeId, (f64, f64, f64)>,
-    /// El reproductor de cada `<an-video-view>`. Nace con la dirección, que
-    /// llega después de la vista.
+    /// Each `<an-video-view>`'s player. It comes into being with the URL,
+    /// which arrives after the view.
     videos: HashMap<NodeId, Retained<crate::video::AVPlayer>>,
-    /// Los que deberían estar sonando. Ver `flush`.
+    /// The ones that ought to be playing. See `flush`.
     video_playing: HashSet<NodeId>,
-    /// El título que pidió el último `<an-navigation-bar>` montado, y el que
-    /// tenía la ventana antes de que ninguno lo pidiera.
+    /// The title the last mounted `<an-navigation-bar>` asked for, and the one
+    /// the window had before any of them asked.
     window_title: Option<String>,
     original_title: Option<String>,
     dirty_title: bool,
-    /// Área de cursor de cada vista que pidió una. Se guarda el dueño porque
-    /// `NSTrackingArea` lo referencia débilmente.
+    /// The cursor area of each view that asked for one. The owner is kept
+    /// because `NSTrackingArea` references it weakly.
     cursors: HashMap<
         NodeId,
         (
@@ -336,15 +342,16 @@ pub struct AppKitHost {
     /// The role AppKit gave each view and the state the template asked for.
     /// See `accessibility.rs`.
     accessibility: crate::accessibility::Accessibility,
-    /// Lo que ya se avisó, para no repetirlo sesenta veces por segundo.
+    /// What has already been warned about, so as not to repeat it sixty times
+    /// a second.
     warned: HashSet<String>,
     events: EventQueue,
 }
 
 impl AppKitHost {
     /// # Safety
-    /// `container` tiene que ser una `NSView` viva y hay que llamar desde el
-    /// hilo principal.
+    /// `container` has to be a live `NSView` and this has to be called from
+    /// the main thread.
     pub fn new(mtm: MainThreadMarker, container: Retained<NSView>, events: EventQueue) -> Self {
         AppKitHost {
             mtm,
@@ -386,15 +393,15 @@ impl AppKitHost {
         self.views.len()
     }
 
-    /// Avisa una vez y calla las siguientes. El core manda la misma prop en
-    /// cada cambio, así que sin esto un aviso serían miles de líneas.
+    /// Warns once and keeps quiet thereafter. The core sends the same prop on
+    /// every change, so without this one warning would be thousands of lines.
     fn warn_once(&mut self, key: String, message: impl FnOnce()) {
         if self.warned.insert(key) {
             message();
         }
     }
 
-    /// La `NSFont` que pide un `FontSpec`.
+    /// The `NSFont` a `FontSpec` asks for.
     fn build_font(&self, spec: &an_layout::FontSpec) -> Retained<NSFont> {
         crate::measure::AppKitMeasurer::nsfont(spec)
     }
@@ -410,7 +417,7 @@ impl AppKitHost {
         match view {
             HostView::Label(label) | HostView::Field(label) => unsafe {
                 label.setFont(Some(&font));
-                // Cero significa «las que hagan falta», igual que en UIKit.
+                // Zero means "as many as it takes", just as in UIKit.
                 label.setMaximumNumberOfLines(spec.max_lines.unwrap_or(0) as isize);
             },
             HostView::Area(area) => unsafe { area.setFont(Some(&font)) },
@@ -424,9 +431,9 @@ impl AppKitHost {
         self.apply_text_attributes(id);
     }
 
-    /// Interlineado, espaciado entre letras y subrayado, que `NSTextField` no
-    /// tiene como propiedades. El núcleo ya mide con los dos primeros, así que
-    /// sin esto el layout reservaría un hueco que el texto no llena.
+    /// Line height, letter spacing and underline, which `NSTextField` does not
+    /// have as properties. The core already measures with the first two, so
+    /// without this the layout would reserve room the text does not fill.
     fn apply_text_attributes(&self, id: NodeId) {
         let Some(HostView::Label(label)) = self.views.get(&id) else { return };
         let spec = self.fonts.get(&id);
@@ -457,9 +464,9 @@ impl AppKitHost {
                 let style = NSMutableParagraphStyle::new();
                 style.setMinimumLineHeight(height as f64);
                 style.setMaximumLineHeight(height as f64);
-                // Sin esto el texto largo deja de partir en líneas al ponerle
-                // un estilo de párrafo: el modo por defecto de un estilo nuevo
-                // es recortar, no ajustar.
+                // Without this, long text stops wrapping the moment a
+                // paragraph style is put on it: a fresh style's default mode
+                // is to clip, not to wrap.
                 style.setLineBreakMode(objc2_app_kit::NSLineBreakMode::ByWordWrapping);
                 style.setAlignment(label.alignment());
                 attributed.addAttribute_value_range(
@@ -476,15 +483,16 @@ impl AppKitHost {
             if let Some(key) = underline {
                 attributed.addAttribute_value_range(key, &NSNumber::new_i64(1), range);
             }
-            // La fuente y el color no se tocan: sin ellos en los atributos,
-            // `NSTextField` sigue usando los suyos y `[color]`/`[fontSize]`
-            // funcionan como antes.
+            // The font and the colour are left alone: with neither of them in
+            // the attributes, `NSTextField` goes on using its own and
+            // `[color]`/`[fontSize]` work as before.
             label.setAttributedStringValue(&attributed);
         }
     }
 
-    /// Vuelve a poner el texto de ayuda con su color. Sin color se pone llano:
-    /// el atribuido sin atributos se dibuja distinto del que pone AppKit.
+    /// Puts the placeholder text back with its colour. With no colour it goes
+    /// in plain: an attributed string with no attributes draws differently
+    /// from the one AppKit puts there.
     fn apply_placeholder(&self, id: NodeId) {
         let field = match self.views.get(&id) {
             Some(HostView::Field(field)) => &**field,
@@ -503,22 +511,23 @@ impl AppKitHost {
             &[unsafe { NSForegroundColorAttributeName }],
             &[&*color as &objc2::runtime::AnyObject],
         );
-        // SAFETY: el diccionario lleva un `NSColor` bajo la clave de color, que
-        // es el tipo que ese atributo espera.
+        // SAFETY: the dictionary carries an `NSColor` under the colour key,
+        // which is the type that attribute expects.
         let attributed = unsafe { NSAttributedString::new_with_attributes(&string, &attrs) };
         unsafe { field.setPlaceholderAttributedString(Some(&attributed)) };
     }
 
-    /// La vista de este host que puede recoger el deslizamiento de un nodo.
+    /// The view of this host's that can catch a node's swipe.
     ///
-    /// Casi siempre es la suya. La excepción es el `<an-scroll-view>`: su vista
-    /// es un `NSScrollView` del sistema, y la nuestra es el documento que lleva
-    /// dentro, que además es el que ocupa todo el contenido desplazable.
+    /// Nearly always it is the node's own. The exception is the
+    /// `<an-scroll-view>`: its view is a system `NSScrollView`, and ours is
+    /// the document view inside it, which is also the one covering all of the
+    /// scrollable content.
     ///
-    /// Los tipos de aquí son los mismos que dice `support::catches_swipe`, y
-    /// tienen que serlo: esa función es la que decide si se avisa o no, así que
-    /// una primitiva que ella diera por buena y esta no encontrara se quedaría
-    /// sin suscripción y sin aviso. Quien llama lo comprueba.
+    /// The kinds here are the same ones `support::catches_swipe` names, and
+    /// they have to be: that function is what decides whether a warning is
+    /// issued, so a primitive it passed and this one failed to find would end
+    /// up with neither a subscription nor a warning. The caller checks it.
     fn swipe_view(&self, id: NodeId) -> Option<Retained<FlippedView>> {
         match self.views.get(&id)? {
             HostView::View(view) | HostView::Stack(view) | HostView::Overlay(view) => {
@@ -530,22 +539,21 @@ impl AppKitHost {
         }
     }
 
-    /// Escribe en la barra de título de la ventana lo que pidió un
-    /// `<an-navigation-bar>`.
+    /// Writes what an `<an-navigation-bar>` asked for into the window's title
+    /// bar.
     ///
-    /// Esto es lo que macOS pone en lugar de una cabecera dentro del
-    /// contenido, y no es un apaño: en un Mac el título de la pantalla en la
-    /// que estás vive ahí arriba, en la barra de la ventana, y dibujar otra
-    /// debajo serían dos. Ver `support.rs`.
+    /// This is what macOS puts in place of a header inside the content, and it
+    /// is no workaround: on a Mac the title of the screen you are on lives up
+    /// there, in the window's bar, and drawing another one below it would make
+    /// two. See `support.rs`.
     ///
-    /// Se llama desde `flush` y no desde `set_prop` porque cuando la prop
-    /// llega la vista puede no estar todavía dentro de una ventana; mientras
-    /// no lo esté, la petición se queda pendiente y se reintenta al frame
-    /// siguiente.
+    /// It is called from `flush` and not from `set_prop` because when the prop
+    /// arrives the view may not be inside a window yet; while it is not, the
+    /// request stays pending and is retried on the next frame.
     fn apply_window_title(&mut self) {
         let Some(window) = self.container.window() else { return };
-        // Lo que la ventana traía puesto, para poder devolvérselo cuando la
-        // pantalla que pidió el título se desmonte.
+        // What the window came with, so it can be given back when the screen
+        // that asked for the title is unmounted.
         if self.original_title.is_none() {
             self.original_title = Some(window.title().to_string());
         }
@@ -558,24 +566,23 @@ impl AppKitHost {
         self.dirty_title = false;
     }
 
-    /// Corre un cambio dentro de una animación si el nodo la pidió.
+    /// Runs a change inside an animation if the node asked for one.
     ///
-    /// `allowsImplicitAnimation` es lo que hace que los setters normales
-    /// animen: en AppKit lo habitual es escribir sobre `view.animator()`, pero
-    /// eso obliga a tener el proxy del tipo concreto en cada sitio. Con el
-    /// grupo abierto y las animaciones implícitas encendidas, un `setFrame`
-    /// corriente ya va animado, y el mismo cierre vale para todos los
-    /// controles.
+    /// `allowsImplicitAnimation` is what makes the ordinary setters animate:
+    /// in AppKit the usual way is to write through `view.animator()`, but that
+    /// requires having the concrete type's proxy in every place. With the
+    /// group open and implicit animations switched on, a plain `setFrame` is
+    /// already animated, and the same closure works for every control.
     fn animated(&self, id: NodeId, change: impl Fn()) {
         let animation = self.animations.get(&id).copied().unwrap_or_default();
         if animation.duration <= 0.0 {
             change();
             return;
         }
-        // El retraso no lo tiene `NSAnimationContext`: se consigue metiendo el
-        // grupo en la cola principal más tarde. Como el cierre no puede cruzar
-        // ahí sin ser `'static`, un retraso pedido se aplica como duración
-        // total y se dice.
+        // `NSAnimationContext` has no delay: it is obtained by putting the
+        // group on the main queue later. Since the closure cannot cross over
+        // there without being `'static`, a requested delay is applied as total
+        // duration and that gets said.
         let duration = animation.duration + animation.delay;
         let block = RcBlock::new(move |context: core::ptr::NonNull<NSAnimationContext>| {
             let context = unsafe { context.as_ref() };
@@ -588,8 +595,8 @@ impl AppKitHost {
         unsafe { NSAnimationContext::runAnimationGroup(&block) };
     }
 
-    /// Rehace el botón entero: título, color, variante e icono llegan sueltos y
-    /// cambiar la variante se lleva por delante lo demás.
+    /// Rebuilds the whole button: title, colour, variant and icon arrive
+    /// separately, and changing the variant takes the rest down with it.
     fn refresh_button(&self, id: NodeId) {
         let Some(HostView::Button(button)) = self.views.get(&id) else { return };
         let title = self.button_titles.get(&id).cloned().unwrap_or_default();
@@ -603,15 +610,15 @@ impl AppKitHost {
                 button.setFont(Some(&self.build_font(spec)));
             }
             match variant {
-                // Sin marco: es el botón de solo texto de macOS, el que se usa
-                // en las barras y en los enlaces de una hoja.
+                // No border: it is macOS's text-only button, the one used in
+                // bars and in a sheet's links.
                 "text" => {
                     button.setBordered(false);
                     button.setBezelColor(None);
                     button.setContentTintColor(color.as_deref());
                 }
-                // Relleno: el color va al bisel y el rótulo se pinta del color
-                // que contraste, que lo calcula el núcleo.
+                // Filled: the colour goes on the bezel and the label is
+                // painted in whatever contrasts, which the core works out.
                 "filled" => {
                     button.setBordered(true);
                     button.setBezelColor(color.as_deref());
@@ -621,8 +628,9 @@ impl AppKitHost {
                         .and_then(|raw| crate::color::contrasting(raw));
                     button.setContentTintColor(contrast.as_deref());
                 }
-                // Tonal: el mismo color, apagado. `NSColor` sabe mezclarse con
-                // el fondo, así que no hay que inventar un segundo tono.
+                // Tonal: the same colour, dimmed. `NSColor` knows how to
+                // blend with the background, so there is no second shade to
+                // invent.
                 "tonal" => {
                     button.setBordered(true);
                     let tinted = color.as_ref().map(|c| {
@@ -631,9 +639,10 @@ impl AppKitHost {
                     button.setBezelColor(tinted.as_deref());
                     button.setContentTintColor(color.as_deref());
                 }
-                // Contorno: marco del sistema y rótulo del color pedido.
-                // AppKit no deja pintar el borde del bisel por separado, así
-                // que el contorno es el estándar y el color va en el texto.
+                // Outlined: the system's border and a label in the colour
+                // asked for. AppKit does not let the bezel's edge be painted
+                // separately, so the outline is the standard one and the
+                // colour goes on the text.
                 _ => {
                     button.setBordered(true);
                     button.setBezelColor(None);
@@ -662,13 +671,13 @@ impl AppKitHost {
         self.apply_corners(id);
     }
 
-    /// Redondea las esquinas con la capa.
+    /// Rounds the corners through the layer.
     ///
-    /// Una capa tiene **un** radio y una máscara de qué esquinas lo llevan, así
-    /// que cuatro radios distintos no se pueden pedir. Cuando difieren se
-    /// redondean con el mayor las que tengan algo y se dice: dibujar la forma a
-    /// mano como hace el host de iOS costaría una `CAShapeLayer` por vista y
-    /// aquí todavía no hace falta.
+    /// A layer has **one** radius and a mask of which corners carry it, so
+    /// four different radii cannot be asked for. When they differ, whichever
+    /// have anything are rounded with the largest and that gets said: drawing
+    /// the shape by hand the way the iOS host does would cost a `CAShapeLayer`
+    /// per view, and here it is not needed yet.
     fn apply_corners(&mut self, id: NodeId) {
         let Some(radii) = self.corners.get(&id).copied() else { return };
         let Some(view) = self.views.get(&id) else { return };
@@ -677,14 +686,14 @@ impl AppKitHost {
         let Some(layer) = (unsafe { native.layer() }) else { return };
 
         let max = radii.iter().cloned().fold(0.0_f64, f64::max);
-        let desiguales = radii.iter().any(|r| (*r - radii[0]).abs() > f64::EPSILON);
+        let uneven = radii.iter().any(|r| (*r - radii[0]).abs() > f64::EPSILON);
         layer.setCornerRadius(max);
-        if desiguales {
+        if uneven {
             use objc2_quartz_core::CACornerMask;
             let mut mask = CACornerMask::empty();
-            // El orden del núcleo es arriba-izq, arriba-der, abajo-der,
-            // abajo-izq, y el de la capa está en coordenadas *sin* voltear: lo
-            // que la capa llama «MinY» es el arriba de una vista volteada.
+            // The core's order is top-left, top-right, bottom-right,
+            // bottom-left, and the layer's is in *unflipped* coordinates: what
+            // the layer calls "MinY" is the top of a flipped view.
             if radii[0] > 0.0 {
                 mask |= CACornerMask::LayerMinXMinYCorner;
             }
@@ -700,17 +709,17 @@ impl AppKitHost {
             layer.setMaskedCorners(mask);
             self.warn_once(format!("corners:{id}"), || {
                 eprintln!(
-                    "angular-native: una capa de AppKit solo tiene un radio; las esquinas del \
-                     nodo {id} se redondean todas con el mayor ({max})"
+                    "angular-native: an AppKit layer has only one radius; node {id}'s corners \
+                     are all rounded with the largest one ({max})"
                 );
             });
         }
         layer.setMasksToBounds(max > 0.0);
     }
 
-    /// El marco del core más el desplazamiento pedido, que aquí se suma en vez
-    /// de pasar por la matriz: en AppKit es exacto y evita tener que compensar
-    /// el punto de anclaje de la capa.
+    /// The core's frame plus the translation asked for, which here is added
+    /// rather than routed through the matrix: in AppKit that is exact and
+    /// saves having to compensate for the layer's anchor point.
     fn place(&self, id: NodeId) {
         let (Some(view), Some(frame)) = (self.views.get(&id), self.frames.get(&id)) else {
             return;
@@ -729,10 +738,10 @@ impl AppKitHost {
         if transform.is_identity() {
             return;
         }
-        // Escala y giro sí van por la capa. El anclaje se pone en el centro
-        // para que gire sobre sí misma y no sobre su esquina; `setFrame` de la
-        // capa deriva la posición del anclaje, así que ponerlo aquí no
-        // descoloca nada.
+        // Scale and rotation do go through the layer. The anchor is put at
+        // the centre so it turns about itself and not about its corner; the
+        // layer's `setFrame` derives the position from the anchor, so setting
+        // it here throws nothing out of place.
         native.setWantsLayer(true);
         if let Some(layer) = unsafe { native.layer() } {
             layer.setAnchorPoint(CGPoint { x: 0.5, y: 0.5 });
@@ -744,24 +753,24 @@ impl AppKitHost {
 impl HostRenderer for AppKitHost {
     fn create(&mut self, id: NodeId, kind: NodeKind) {
         let mtm = self.mtm;
-        // El `match` no lleva comodín a propósito: si el núcleo añade un
-        // `NodeKind`, este fichero deja de compilar y alguien tiene que decidir
-        // qué hace macOS con él. Ver la cabecera de `support.rs`.
+        // The `match` carries no wildcard on purpose: if the core adds a
+        // `NodeKind`, this file stops compiling and somebody has to decide
+        // what macOS does with it. See `support.rs`'s header.
         let view = match kind {
             NodeKind::View => HostView::View(FlippedView::new(mtm)),
             NodeKind::StackView => {
                 let stack = FlippedView::new(mtm);
-                // Las pantallas que entran y salen se salen del marco.
+                // Screens on their way in and out spill past the frame.
                 stack.clip_to_bounds();
                 HostView::Stack(stack)
             }
             NodeKind::Text => {
                 let label = NSTextField::new(mtm);
                 unsafe {
-                    // AppKit no tiene `NSLabel`: un rótulo es un campo de texto
-                    // sin marco, sin fondo y sin editar. Es lo que hace
-                    // `NSTextField.labelWithString:`, escrito a mano porque el
-                    // texto llega después.
+                    // AppKit has no `NSLabel`: a label is a text field with
+                    // no border, no background and no editing. It is what
+                    // `NSTextField.labelWithString:` does, written out by hand
+                    // because the text arrives later.
                     label.setEditable(false);
                     label.setSelectable(false);
                     label.setBordered(false);
@@ -770,9 +779,9 @@ impl HostRenderer for AppKitHost {
                     label.setUsesSingleLineMode(false);
                     label.setMaximumNumberOfLines(0);
                     label.cell().inspect(|cell| cell.setWraps(true));
-                    // La fuente por defecto tiene que ser la misma con la que
-                    // el layout midió, o la caja sale estrecha y el texto se
-                    // corta sin que nada dé error.
+                    // The default font has to be the one the layout measured
+                    // with, or the box comes out narrow and the text is cut
+                    // off with nothing raising an error.
                     let default_size = an_layout::FontSpec::default().size as f64;
                     label.setFont(Some(&NSFont::systemFontOfSize(default_size)));
                 }
@@ -795,17 +804,18 @@ impl HostRenderer for AppKitHost {
             NodeKind::Icon => HostView::Icon(NSImageView::new(mtm)),
             NodeKind::ScrollView => {
                 let scroll = NSScrollView::new(mtm);
-                // El documento es el que lleva a los hijos, y va volteado por
-                // lo mismo que todo lo demás: el core coloca de arriba abajo.
+                // The document view is what carries the children, and it is
+                // flipped for the same reason as everything else: the core
+                // places things from the top down.
                 let document = FlippedView::new(mtm);
                 unsafe {
                     scroll.setDocumentView(Some(&document));
                     scroll.setDrawsBackground(false);
                     scroll.setHasVerticalScroller(true);
-                    // Los indicadores que se esconden solos son el
-                    // comportamiento normal de macOS desde Lion; el estilo
-                    // heredado ocupa sitio y descuadraría el layout que taffy
-                    // ya calculó.
+                    // Scrollers that hide themselves are macOS's normal
+                    // behaviour since Lion; the legacy style takes up room and
+                    // would throw off the layout taffy has already worked
+                    // out.
                     scroll.setScrollerStyle(NSScrollerStyle::Overlay);
                 }
                 HostView::Scroll(scroll)
@@ -852,9 +862,9 @@ impl HostRenderer for AppKitHost {
             NodeKind::Stepper => HostView::Step(NSStepper::new(mtm)),
             NodeKind::SearchBar => HostView::Search(NSSearchField::new(mtm)),
             NodeKind::Picker => {
-                // El desplegable de macOS sí existe como control: es un
-                // `NSPopUpButton`, y no hace falta armarlo con un botón y un
-                // menú como en iOS.
+                // macOS's drop-down does exist as a control: it is an
+                // `NSPopUpButton`, and there is no assembling it out of a
+                // button and a menu the way iOS needs.
                 let menu = NSPopUpButton::new(mtm);
                 unsafe { menu.setPullsDown(false) };
                 HostView::Menu(menu)
@@ -875,15 +885,15 @@ impl HostRenderer for AppKitHost {
             NodeKind::MapView => HostView::Map(crate::map::MKMapView::new(mtm)),
             NodeKind::VideoView => {
                 let player = crate::video::AVPlayerView::new(mtm);
-                // Los controles del sistema, dentro de la vista. Es lo que
-                // trae `AVPlayerView` de fábrica y lo que hace que el vídeo de
-                // macOS se pueda parar sin que la app ponga un botón.
+                // The system's controls, inside the view. It is what
+                // `AVPlayerView` ships with and what lets macOS's video be
+                // paused without the app putting a button there.
                 player.setControlsStyle(crate::video::CONTROLS_INLINE);
                 HostView::Video(player)
             }
-            // La cabecera no se dibuja aquí: el `[title]` acaba en la barra de
-            // título de la ventana, que es la cabecera de un Mac. Ver
-            // `support.rs` y `apply_window_title`.
+            // The header is not drawn here: the `[title]` ends up in the
+            // window's title bar, which is a Mac's header. See `support.rs`
+            // and `apply_window_title`.
             NodeKind::NavigationBar => HostView::Nav(FlippedView::new(mtm)),
             NodeKind::Alert => {
                 let placeholder = FlippedView::new(mtm);
@@ -896,7 +906,7 @@ impl HostRenderer for AppKitHost {
                 overlay.setHidden(true);
                 HostView::Overlay(overlay)
             }
-            // Nunca llega: el core no manda `Create` de un nodo de texto crudo.
+            // Never arrives: the core sends no `Create` for a raw text node.
             NodeKind::RawText => return,
         };
         self.views.insert(id, view);
@@ -904,9 +914,9 @@ impl HostRenderer for AppKitHost {
 
     fn destroy(&mut self, id: NodeId) {
         if let Some(view) = self.views.remove(&id) {
-            // La pantalla que puso el título se va: la ventana recupera el
-            // suyo. Sin esto, cerrar una pantalla dejaría su nombre arriba
-            // para siempre.
+            // The screen that set the title is going away: the window gets
+            // its own back. Without this, closing a screen would leave its
+            // name up there for good.
             if view.kind() == NodeKind::NavigationBar {
                 self.window_title = None;
                 self.dirty_title = true;
@@ -949,9 +959,9 @@ impl HostRenderer for AppKitHost {
         let host = parent_view.content_view();
         let child_native = child_view.as_view();
 
-        // AppKit no tiene `insertSubview:atIndex:`: se coloca por encima o por
-        // debajo de un hermano. Es lo mismo dicho de otra forma, porque el
-        // orden de `subviews` es el orden de dibujado.
+        // AppKit has no `insertSubview:atIndex:`: a view is placed above or
+        // below a sibling. It is the same thing said differently, because the
+        // order of `subviews` is the drawing order.
         let siblings = host.subviews().to_vec();
         let index = index as usize;
         unsafe {
@@ -990,15 +1000,17 @@ impl HostRenderer for AppKitHost {
         let number = value.as_f32();
 
         match key {
-            // Props de otra plataforma. Viajan con su prefijo, así que este
-            // host las descarta de un vistazo sin tener que saber qué son.
+            // Another platform's props. They travel with their prefix, so
+            // this host drops them at a glance without having to know what
+            // they are.
             _ if key.starts_with("ios:") || key.starts_with("android:") => {}
 
             "backgroundColor" | "background-color" => {
                 let color = text.as_deref().and_then(crate::color::to_nscolor);
                 match self.views.get(&id) {
-                    // Un campo y un rótulo pintan su fondo con su propia
-                    // propiedad; la capa se los dibujaría por debajo.
+                    // A field and a label paint their background through a
+                    // property of their own; the layer would draw it
+                    // underneath them.
                     Some(HostView::Field(field)) | Some(HostView::Label(field)) => unsafe {
                         field.setDrawsBackground(color.is_some());
                         field.setBackgroundColor(color.as_deref());
@@ -1035,16 +1047,18 @@ impl HostRenderer for AppKitHost {
                     | NodeKind::SearchBar => unsafe {
                         (*control.cast::<NSControl>()).setEnabled(on)
                     },
-                    // Lo que no es un control no sabe ponerse gris, y AppKit
-                    // no tiene el `userInteractionEnabled` de UIKit: una vista
-                    // que no es control no se puede apagar sin imitarlo. Se
-                    // dice en vez de fingir que se apagó.
+                    // What is not a control does not know how to grey
+                    // itself out, and AppKit has no `userInteractionEnabled`
+                    // the way UIKit does: a view that is not a control cannot
+                    // be switched off without imitating it. That gets said
+                    // rather than pretending it was switched off.
                     _ => {
                         let _ = on;
                         self.warn_once(format!("enabled:{kind:?}"), || {
                             eprintln!(
-                                "angular-native: `enabled` en <{kind:?}> no se aplica en macOS: \
-                                 AppKit solo sabe apagar controles, no vistas cualesquiera"
+                                "angular-native: `enabled` on <{kind:?}> does not apply on \
+                                 macOS: AppKit only knows how to switch controls off, not \
+                                 arbitrary views"
                             );
                         });
                     }
@@ -1063,7 +1077,7 @@ impl HostRenderer for AppKitHost {
                 self.accessibility.apply(id, &native, kind, key, value);
             }
 
-            // --- geometría propia de la vista
+            // --- the view's own geometry
             "borderRadius" | "border-radius" => {
                 if let Some(v) = number {
                     self.corners.insert(id, [v as f64; 4]);
@@ -1091,7 +1105,7 @@ impl HostRenderer for AppKitHost {
                 }
             }
 
-            // --- animación y transformaciones
+            // --- animation and transforms
             "animate" => {
                 self.animations.entry(id).or_default().duration =
                     number.unwrap_or(0.0) as f64 / 1000.0;
@@ -1102,22 +1116,22 @@ impl HostRenderer for AppKitHost {
                 if delay > 0.0 {
                     self.warn_once("animateDelay".to_owned(), || {
                         eprintln!(
-                            "angular-native: NSAnimationContext no tiene retraso; en macOS \
-                             `animateDelay` se suma a la duración"
+                            "angular-native: NSAnimationContext has no delay; on macOS \
+                             `animateDelay` is added to the duration"
                         );
                     });
                 }
             }
             "animateEasing" => {
-                // `NSAnimationContext` toma una curva de temporización de Core
-                // Animation, que no son las cuatro de UIKit. Mientras solo se
-                // pidan esas cuatro, la del sistema es la que corresponde a
-                // `ease-in-out` y las otras tres se dirían mal.
+                // `NSAnimationContext` takes a Core Animation timing curve,
+                // which is not UIKit's four. As long as only those four are
+                // asked for, the system's is the one that corresponds to
+                // `ease-in-out` and the other three would be got wrong.
                 if text.as_deref().is_some_and(|t| t != "ease-in-out") {
                     self.warn_once("animateEasing".to_owned(), || {
                         eprintln!(
-                            "angular-native: en macOS la curva de animación la pone el sistema; \
-                             `animateEasing` no se aplica"
+                            "angular-native: on macOS the animation curve is the system's; \
+                             `animateEasing` does not apply"
                         );
                     });
                 }
@@ -1139,7 +1153,7 @@ impl HostRenderer for AppKitHost {
                 self.place(id);
             }
 
-            // --- texto
+            // --- text
             "color" => {
                 let Some(color) = text.as_deref().and_then(crate::color::to_nscolor) else {
                     return;
@@ -1152,23 +1166,23 @@ impl HostRenderer for AppKitHost {
                         search.setTextColor(Some(&color))
                     },
                     Some(HostView::Area(area)) => unsafe { area.setTextColor(Some(&color)) },
-                    // Un símbolo se tiñe, no se recolorea.
+                    // A symbol is tinted, not recoloured.
                     Some(HostView::Icon(icon)) => unsafe {
                         icon.setContentTintColor(Some(&color))
                     },
-                    // `NSSwitch` y `NSProgressIndicator` no se tiñen: van del
-                    // color de acento que el usuario haya elegido en Ajustes,
-                    // y AppKit no expone ninguna propiedad para cambiarlo por
-                    // vista. Teñirlos a mano —una capa encima, un filtro—
-                    // sería dibujar un control en vez de usar el del sistema.
+                    // `NSSwitch` and `NSProgressIndicator` are not tinted:
+                    // they take the accent colour the user picked in Settings,
+                    // and AppKit exposes no property to change it per view.
+                    // Tinting them by hand —a layer on top, a filter— would be
+                    // drawing a control instead of using the system's.
                     Some(HostView::Toggle(_))
                     | Some(HostView::Spinner(_))
                     | Some(HostView::Progress(_)) => {
                         self.warn_once(format!("tint:{kind:?}"), || {
                             eprintln!(
-                                "angular-native: `color` en <{kind:?}> no se aplica en macOS: \
-                                 estos controles van del color de acento del sistema y AppKit no \
-                                 deja cambiarlo por vista"
+                                "angular-native: `color` on <{kind:?}> does not apply on macOS: \
+                                 these controls take the system's accent colour and AppKit does \
+                                 not let it be changed per view"
                             );
                         });
                     }
@@ -1263,13 +1277,13 @@ impl HostRenderer for AppKitHost {
                 }
             }
 
-            // --- valores de los controles
+            // --- the controls' values
             "value" => match self.views.get(&id) {
                 Some(HostView::Slide(slider)) => {
                     let Some(v) = number else { return };
                     self.slider_values.insert(id, v as f64);
-                    // Solo si difiere: escribirlo mientras se arrastra pelearía
-                    // con el ratón del usuario.
+                    // Only if it differs: writing it while the thumb is being
+                    // dragged would fight with the user's mouse.
                     if (unsafe { slider.doubleValue() } - v as f64).abs() > f64::EPSILON {
                         unsafe { slider.setDoubleValue(v as f64) };
                     }
@@ -1280,15 +1294,15 @@ impl HostRenderer for AppKitHost {
                     unsafe { stepper.setDoubleValue(v) };
                 }
                 Some(HostView::Date(picker)) => {
-                    // Llega en milisegundos desde 1970, que es lo que da `Date`
-                    // en JS. `NSDate` trabaja en segundos.
+                    // It arrives in milliseconds since 1970, which is what
+                    // `Date` gives in JS. `NSDate` works in seconds.
                     let seconds = number.unwrap_or(0.0) as f64 / 1000.0;
                     let date =
                         unsafe { objc2_foundation::NSDate::dateWithTimeIntervalSince1970(seconds) };
                     unsafe { picker.setDateValue(&date) };
                 }
-                // Escribirlo mientras el usuario escribe le movería el cursor
-                // al final en cada tecla: solo si difiere de verdad.
+                // Writing it while the user types would move their caret to
+                // the end on every keystroke: only if it really differs.
                 Some(HostView::Field(field)) => {
                     let next = text.clone().unwrap_or_default();
                     if unsafe { field.stringValue() }.to_string() != next {
@@ -1329,14 +1343,16 @@ impl HostRenderer for AppKitHost {
                             match key {
                                 "minimumValue" => slider.setMinValue(v),
                                 "maximumValue" => slider.setMaxValue(v),
-                                // Un deslizador de macOS no tiene paso libre:
-                                // se pide por número de marcas, y con marcas
-                                // salen las rayitas. Se deja continuo.
+                                // A macOS slider has no free-form step: it is
+                                // asked for as a number of tick marks, and
+                                // ticks make the notches show. It is left
+                                // continuous.
                                 _ => return,
                             }
                         }
-                        // El rango cambió: hay que volver a aplicar el valor,
-                        // que pudo llegar antes y quedarse recortado.
+                        // The range changed: the value has to be applied
+                        // again, since it may have arrived earlier and been
+                        // clamped.
                         if let Some(wanted) = self.slider_values.get(&id).copied() {
                             unsafe { slider.setDoubleValue(wanted) };
                         }
@@ -1378,7 +1394,7 @@ impl HostRenderer for AppKitHost {
                 }
             }
 
-            // --- botón
+            // --- button
             "title" if kind == NodeKind::Button => {
                 self.button_titles.insert(id, text.clone().unwrap_or_default());
                 self.refresh_button(id);
@@ -1397,7 +1413,7 @@ impl HostRenderer for AppKitHost {
                 self.refresh_button(id);
             }
 
-            // --- iconos
+            // --- icons
             "name" | "iconSize" | "iconWeight" if kind == NodeKind::Icon => {
                 let entry = self.icons.entry(id).or_default();
                 match key {
@@ -1407,8 +1423,9 @@ impl HostRenderer for AppKitHost {
                 }
                 let (name, size, weight) = entry.clone();
                 if let Some(HostView::Icon(icon)) = self.views.get(&id) {
-                    // Plantilla: así `[color]` tiñe el símbolo en vez de que
-                    // salga con el color que traiga de fábrica.
+                    // As a template: that way `[color]` tints the symbol
+                    // instead of it coming out in whatever colour it ships
+                    // with.
                     let symbol = crate::icons::symbol(&name, size, weight);
                     if let Some(image) = &symbol {
                         unsafe { image.setTemplate(true) };
@@ -1417,7 +1434,7 @@ impl HostRenderer for AppKitHost {
                 }
             }
 
-            // --- imagen
+            // --- image
             "source" => {
                 if let Some(HostView::Image(image)) = self.views.get(&id) {
                     crate::images::load(
@@ -1439,7 +1456,7 @@ impl HostRenderer for AppKitHost {
                 }
             }
 
-            // --- listas: pestañas, segmentos y desplegable
+            // --- lists: tabs, segments and the drop-down
             "items" | "icons" => {
                 let entry = self.segments.entry(id).or_default();
                 let list = parse_string_list(text.as_deref().unwrap_or("[]"));
@@ -1494,8 +1511,8 @@ impl HostRenderer for AppKitHost {
                             Some("dateAndTime") => Flags::YearMonthDay | Flags::HourMinute,
                             _ => Flags::YearMonthDay,
                         });
-                        // El modo de rango no se usa aquí, pero hay que fijarlo
-                        // o el selector recuerda el de antes.
+                        // The range mode is not used here, but it has to be
+                        // set or the picker remembers the previous one.
                         picker.setDatePickerMode(NSDatePickerMode::Single);
                     }
                 }
@@ -1513,9 +1530,9 @@ impl HostRenderer for AppKitHost {
             }
             "scrollEnabled" => {
                 if let Some(HostView::Scroll(scroll)) = self.views.get(&id) {
-                    // AppKit no tiene un interruptor de scroll: quitarle los
-                    // desplazadores y dejar el documento del tamaño del marco
-                    // es lo mismo visto desde fuera.
+                    // AppKit has no scroll switch: taking the scrollers away
+                    // and leaving the document view the size of the frame is
+                    // the same thing seen from outside.
                     let on = !matches!(value, PropValue::Bool(false));
                     unsafe { scroll.setScrollerStyle(if on {
                         NSScrollerStyle::Overlay
@@ -1526,7 +1543,7 @@ impl HostRenderer for AppKitHost {
                 }
             }
 
-            // --- navegador embebido
+            // --- embedded browser
             "url" if kind == NodeKind::WebView => {
                 let Some(HostView::Web(web)) = self.views.get(&id) else { return };
                 let Some(raw) = text.as_deref() else { return };
@@ -1547,20 +1564,21 @@ impl HostRenderer for AppKitHost {
                 }
             }
 
-            // --- mapa
+            // --- map
             "latitude" | "longitude" | "zoom" | "showsUser" if kind == NodeKind::MapView => {
                 if key == "showsUser" {
-                    // Enseñar dónde estás pide permiso de ubicación, y el
-                    // permiso lo pide el sistema con el texto que declara el
-                    // `Info.plist` del `.app`. Aquí solo se pide el punto.
+                    // Showing where you are asks for location permission,
+                    // and the system asks for the permission with the text the
+                    // `.app`'s `Info.plist` declares. All that is asked for
+                    // here is the dot.
                     if let Some(HostView::Map(map)) = self.views.get(&id) {
                         map.setShowsUserLocation(matches!(value, PropValue::Bool(true)));
                     }
                     return;
                 }
-                // Las tres llegan sueltas y en cualquier orden, y MapKit no
-                // tiene tres propiedades sino una región: hay que guardarlas y
-                // recomponerla entera cada vez.
+                // All three arrive separately and in any order, and MapKit
+                // has not three properties but one region: they have to be
+                // kept and the whole thing rebuilt every time.
                 let entry = self.maps.entry(id).or_insert((0.0, 0.0, 12.0));
                 match key {
                     "latitude" => entry.0 = number.unwrap_or(0.0) as f64,
@@ -1585,19 +1603,19 @@ impl HostRenderer for AppKitHost {
                 );
             }
 
-            // --- vídeo
+            // --- video
             "url" | "playing" | "muted" if kind == NodeKind::VideoView => {
                 if key == "url" {
                     let Some(raw) = text.clone() else { return };
                     let Some(url) = (unsafe {
                         objc2_foundation::NSURL::URLWithString(&NSString::from_str(&raw))
                     }) else {
-                        // Una dirección que no es una dirección no puede
-                        // acabar en un reproductor mudo y una caja negra.
+                        // A URL that is not a URL must not end up as a
+                        // silent player and a black box.
                         self.warn_once(format!("videourl:{raw}"), || {
                             eprintln!(
-                                "angular-native: `[url]` de <an-video-view> no es una dirección \
-                                 válida: {raw}"
+                                "angular-native: <an-video-view>'s `[url]` is not a valid URL: \
+                                 {raw}"
                             );
                         });
                         return;
@@ -1624,26 +1642,26 @@ impl HostRenderer for AppKitHost {
                 }
             }
 
-            // --- cabecera de navegación
+            // --- navigation header
             //
-            // No se dibuja ninguna: la cabecera de un Mac es la barra de
-            // título de la ventana. Lo que sí se hace es llevar el `[title]`
-            // hasta ahí, que es donde un usuario de Mac lo busca. Ver
-            // `support.rs`.
+            // None is drawn: a Mac's header is the window's title bar. What is
+            // done is to carry the `[title]` up there, which is where a Mac
+            // user looks for it. See `support.rs`.
             "title" if kind == NodeKind::NavigationBar => {
                 self.window_title = Some(text.clone().unwrap_or_default());
-                // Se escribe en `flush`: cuando la prop llega, la vista puede
-                // no estar todavía dentro de una ventana.
+                // It is written in `flush`: when the prop arrives, the view
+                // may not be inside a window yet.
                 self.dirty_title = true;
             }
 
-            // --- el puntero
+            // --- the pointer
             //
-            // La forma del cursor no es una propiedad de `NSView`: es un
-            // rectángulo que la vista declara, y declararlo exige sobrescribir
-            // `resetCursorRects`, cosa que no se puede hacer con un control del
-            // sistema. Con un `NSTrackingArea` el dueño es un objeto aparte y
-            // funciona igual encima de un `NSButton`. Ver `events.rs`.
+            // The cursor's shape is not a property of `NSView`: it is a
+            // rectangle the view declares, and declaring it requires
+            // overriding `resetCursorRects`, which cannot be done with a
+            // system control. With an `NSTrackingArea` the owner is a separate
+            // object and it works just the same over an `NSButton`. See
+            // `events.rs`.
             "cursor" => {
                 if let Some((area, _)) = self.cursors.remove(&id) {
                     native.removeTrackingArea(&area);
@@ -1652,8 +1670,8 @@ impl HostRenderer for AppKitHost {
                 let Some(cursor) = crate::events::system_cursor(&name) else {
                     self.warn_once(format!("cursor:{name}"), || {
                         eprintln!(
-                            "angular-native: `[cursor]=\"{name}\"` no es ninguno de los punteros \
-                             del sistema; el puntero se queda como estaba"
+                            "angular-native: `[cursor]=\"{name}\"` is none of the system's \
+                             pointers; the pointer is left as it was"
                         );
                     });
                     return;
@@ -1661,7 +1679,7 @@ impl HostRenderer for AppKitHost {
                 self.cursors.insert(id, crate::events::attach_cursor(self.mtm, &native, cursor));
             }
 
-            // --- diálogos del sistema
+            // --- the system's dialogs
             "title" | "message" | "buttons" | "sheet" if self.alerts.contains_key(&id) => {
                 let Some(state) = self.alerts.get_mut(&id) else { return };
                 match key {
@@ -1688,24 +1706,24 @@ impl HostRenderer for AppKitHost {
                 native.setHidden(matches!(value, PropValue::Bool(false)));
             }
 
-            // Lo que macOS no puede honrar, dicho a propósito.
+            // What macOS cannot honour, said on purpose.
             _ if ignored_reason(key).is_some() => {
                 let reason = ignored_reason(key).unwrap_or_default();
                 self.warn_once(format!("ignored:{kind:?}:{key}"), || {
                     eprintln!(
-                        "angular-native: `{key}` en <{kind:?}> no se aplica en macOS: {reason}"
+                        "angular-native: `{key}` on <{kind:?}> does not apply on macOS: {reason}"
                     );
                 });
             }
-            // Y lo que no está ni implementado ni declarado. Aquí no hay un
-            // `_ => {}`: una prop que nadie mira sale por pantalla la primera
-            // vez, que es la diferencia entre un hueco conocido y uno que
-            // nadie ve.
+            // And what is neither implemented nor declared. There is no
+            // `_ => {}` here: a prop nobody looks at comes out on screen the
+            // first time, which is the difference between a gap that is known
+            // and one nobody sees.
             other => {
                 self.warn_once(format!("unknown:{kind:?}:{other}"), || {
                     eprintln!(
-                        "angular-native: prop desconocida `{other}` en <{kind:?}>; el host de \
-                         macOS no la mira y no está declarada en IGNORED"
+                        "angular-native: unknown prop `{other}` on <{kind:?}>; the macOS host \
+                         does not look at it and it is not declared in IGNORED"
                     );
                 });
             }
@@ -1715,9 +1733,9 @@ impl HostRenderer for AppKitHost {
     fn set_text(&mut self, id: NodeId, text: &str) {
         let Some(HostView::Label(label)) = self.views.get(&id) else { return };
         unsafe { label.setStringValue(&NSString::from_str(text)) };
-        // `setStringValue` tira el texto atribuido, así que el espaciado, el
-        // interlineado y el subrayado hay que volver a ponerlos con cada
-        // palabra nueva.
+        // `setStringValue` throws the attributed text away, so the letter
+        // spacing, the line height and the underline have to be put back with
+        // every new word.
         self.apply_text_attributes(id);
     }
 
@@ -1726,10 +1744,10 @@ impl HostRenderer for AppKitHost {
         let Some(view) = self.views.get(&id) else { return };
         let native = view.as_view().retain();
 
-        // El área segura es el recorte de la pantalla: la muesca, la barra de
-        // inicio. Una ventana de escritorio no tiene nada de eso, así que la
-        // respuesta correcta es cero por los cuatro lados, y se contesta una
-        // vez al suscribirse en vez de dejar a la plantilla esperando.
+        // The safe area is the screen's cut-outs: the notch, the home
+        // indicator. A desktop window has none of that, so the correct answer
+        // is zero on all four sides, and it is answered once at subscription
+        // time instead of leaving the template waiting.
         if event == "safeArea" {
             if enabled {
                 an_host::push_event(
@@ -1759,41 +1777,43 @@ impl HostRenderer for AppKitHost {
 
         let kind = view.kind();
 
-        // El diálogo del sistema no entrega su elección por la vista: no tiene
-        // vista. La entrega `NSAlert` desde su bloque de cierre, así que
-        // engancharla aquí sería engancharla dos veces.
+        // The system dialog does not deliver its choice through the view: it
+        // has no view. `NSAlert` delivers it from its completion block, so
+        // attaching it here would be attaching it twice.
         if kind == NodeKind::Alert && event == "select" {
             return;
         }
 
-        // Lo que esta plataforma no sabe dar se dice al suscribirse, no cuando
-        // el evento no llega.
+        // What this platform cannot give is said at subscription time, not
+        // when the event fails to arrive.
         if let Some(reason) = unsupported_event(kind, event) {
             self.warn_once(format!("event:{kind:?}:{event}"), || {
                 eprintln!(
-                    "angular-native: `({event})` en <{kind:?}> no se puede entregar en macOS: \
+                    "angular-native: `({event})` on <{kind:?}> cannot be delivered on macOS: \
                      {reason}"
                 );
             });
             return;
         }
 
-        // El deslizamiento no se engancha: ya está en la clase de la vista
-        // (ver `flipped.rs`). Lo que hay que hacer es decirle a quién avisar y
-        // de qué dirección. El `<an-scroll-view>` lo recoge por su documento,
-        // que es el que es nuestro; el `NSScrollView` de fuera es del sistema.
+        // The swipe is not attached: it is already on the view's class (see
+        // `flipped.rs`). What has to be done is tell it who to notify and of
+        // which direction. The `<an-scroll-view>` catches it through its
+        // document view, which is the one that is ours; the `NSScrollView`
+        // around it is the system's.
         if let Some(bit) = crate::support::swipe_bit(event) {
             let Some(flipped) = self.swipe_view(id) else {
-                // Aquí no se llega: `unsupported_event` ya devolvió un motivo
-                // para todo lo que no sea una vista nuestra, y esta suscripción
-                // no habría pasado de ahí. Si algún día se llega, es que las
-                // dos listas se han separado, y eso no puede acabar en una
-                // salida que no dispara nunca y nadie ha avisado.
+                // This is not reached: `unsupported_event` already returned
+                // a reason for anything that is not a view of ours, and this
+                // subscription would not have got past it. If it is ever
+                // reached, the two lists have drifted apart, and that must not
+                // end in an output that never fires with nobody having said
+                // so.
                 self.warn_once(format!("swipe:{kind:?}"), || {
                     eprintln!(
-                        "angular-native: `({event})` en <{kind:?}> no se pudo enganchar: el \
-                         inventario dice que esta primitiva recoge el deslizamiento y el host no \
-                         encuentra dónde. Mira `support::catches_swipe` y `swipe_view`."
+                        "angular-native: `({event})` on <{kind:?}> could not be attached: the \
+                         inventory says this primitive catches the swipe and the host cannot \
+                         find where. Look at `support::catches_swipe` and `swipe_view`."
                     );
                 });
                 return;
@@ -1811,12 +1831,13 @@ impl HostRenderer for AppKitHost {
         {
             self.listeners.insert(key, listener);
         } else if is_known_event(event) {
-            // Un nombre que el framework sí manda y que este host no cubre. Los
-            // que no manda —los nombres de salida que Angular registra de
-            // paso— se descartan sin ruido: ver `support::KNOWN_EVENTS`.
+            // A name the framework does send and that this host does not
+            // cover. The ones it does not send —the output names Angular
+            // registers along the way— are dropped without noise: see
+            // `support::KNOWN_EVENTS`.
             self.warn_once(format!("event:{kind:?}:{event}"), || {
                 eprintln!(
-                    "angular-native: el host de macOS no sabe entregar `({event})` en <{kind:?}>"
+                    "angular-native: the macOS host cannot deliver `({event})` on <{kind:?}>"
                 );
             });
         }
@@ -1825,7 +1846,7 @@ impl HostRenderer for AppKitHost {
     fn set_layout(&mut self, id: NodeId, frame: Rect) {
         self.frames.insert(id, frame);
         self.place(id);
-        // Una máscara de esquinas no se estira con la vista.
+        // A corner mask does not stretch with the view.
         if self.corners.contains_key(&id) {
             self.apply_corners(id);
         }
@@ -1834,8 +1855,8 @@ impl HostRenderer for AppKitHost {
     fn set_content_size(&mut self, id: NodeId, width: f32, height: f32) {
         let Some(HostView::Scroll(scroll)) = self.views.get(&id) else { return };
         let Some(document) = (unsafe { scroll.documentView() }) else { return };
-        // En AppKit el tamaño del contenido *es* el marco del documento: no hay
-        // un `contentSize` aparte como en `UIScrollView`.
+        // In AppKit the content's size *is* the document view's frame: there
+        // is no separate `contentSize` the way `UIScrollView` has.
         document.setFrame(CGRect {
             origin: CGPoint { x: 0.0, y: 0.0 },
             size: CGSize { width: width as f64, height: height as f64 },
@@ -1855,43 +1876,43 @@ impl HostRenderer for AppKitHost {
             self.apply_window_title();
         }
 
-        // Volver a pedir que suene lo que debería estar sonando, y decirlo si
-        // no va a sonar nunca.
+        // Ask again for whatever ought to be playing to play, and say so if
+        // it is never going to.
         //
-        // `play()` sobre un reproductor que todavía no ha cargado nada no
-        // prende: el `rate` se queda en cero y ahí se queda para siempre, sin
-        // error y con la vista en negro. Como `playing` llega una sola vez,
-        // hay que reintentarlo hasta que agarre. `1` es
-        // `AVPlayerStatusReadyToPlay` y `2` es `AVPlayerStatusFailed`.
+        // `play()` on a player that has not loaded anything yet does not
+        // catch: the `rate` stays at zero and there it stays for good, with no
+        // error and the view black. Since `playing` arrives only once, it has
+        // to be retried until it takes hold. `1` is
+        // `AVPlayerStatusReadyToPlay` and `2` is `AVPlayerStatusFailed`.
         //
-        // Y un vídeo que falló se queda igual de negro que uno que todavía no
-        // ha cargado. Mirando la ventana no se distinguen, así que hay que
-        // decirlo: es la diferencia entre «espera un poco» y «esa dirección no
-        // se puede reproducir».
-        let mut fallidos: Vec<(NodeId, String)> = Vec::new();
+        // And a video that failed stays exactly as black as one that has not
+        // loaded yet. Looking at the window they cannot be told apart, so it
+        // has to be said: it is the difference between "wait a moment" and
+        // "that URL cannot be played".
+        let mut failed: Vec<(NodeId, String)> = Vec::new();
         for (id, player) in &self.videos {
             if player.status() == 2 {
-                let motivo = player
+                let reason = player
                     .error()
                     .map(|error| unsafe { error.localizedDescription() }.to_string())
-                    .unwrap_or_else(|| "sin detalle".to_owned());
-                fallidos.push((*id, motivo));
+                    .unwrap_or_else(|| "no detail".to_owned());
+                failed.push((*id, reason));
                 continue;
             }
             if self.video_playing.contains(id) && player.rate() == 0.0 && player.status() == 1 {
                 player.play();
             }
         }
-        for (id, motivo) in fallidos {
+        for (id, reason) in failed {
             self.warn_once(format!("video:{id}"), || {
                 eprintln!(
-                    "angular-native: el vídeo de <an-video-view> no se puede reproducir: {motivo}"
+                    "angular-native: <an-video-view>'s video cannot be played: {reason}"
                 );
             });
         }
 
-        // Presentar va después del layout: un diálogo se presenta cuando todas
-        // sus props ya llegaron, o saldría con el título a medias.
+        // Presenting comes after the layout: a dialog is presented once all of
+        // its props have arrived, or it would come out with half a title.
         for id in std::mem::take(&mut self.dirty_alerts) {
             let Some(mut state) = self.alerts.remove(&id) else { continue };
             state.sync(self.mtm, &self.container, id, &self.events);
@@ -1915,9 +1936,9 @@ impl HostRenderer for AppKitHost {
         self.maps.clear();
         self.videos.clear();
         self.video_playing.clear();
-        // Un `clear()` es una recarga en frío: el árbol se levanta entero de
-        // nuevo, así que la ventana vuelve a llamarse como se llamaba hasta
-        // que la pantalla nueva pida su título.
+        // A `clear()` is a cold reload: the tree is stood up again from
+        // scratch, so the window goes back to being called what it was called
+        // until the new screen asks for its title.
         self.window_title = None;
         self.dirty_title = true;
     }

@@ -6,8 +6,8 @@ license.workspace = true
 repository.workspace = true
 
 [lib]
-# staticlib para que `swiftc` enlace el shell contra él; rlib para poder
-# probar el inventario de primitivas desde Rust sin abrir ninguna ventana.
+# staticlib so that `swiftc` links the shell against it; rlib so the inventory
+# of primitives can be tested from Rust without opening any window.
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
@@ -16,13 +16,13 @@ an-host.workspace = true
 an-layout.workspace = true
 an-bridge = { path = "../an-bridge" }
 
-# AppKit solo existe en macOS. Fuera de él queda el inventario de primitivas,
-# que no toca plataforma, para que `cargo test` del workspace siga corriendo en
-# cualquier máquina.
+# AppKit only exists on macOS. What is left off it is the inventory of
+# primitives, which touches no platform, so that the workspace's `cargo test`
+# keeps running on any machine.
 #
-# A diferencia de `objc2-ui-kit`, aquí no hay que declarar ninguna clase a
-# mano: `objc2-app-kit` genera macOS de verdad, que es la plataforma que estos
-# crates cubren primero.
+# Unlike `objc2-ui-kit`, no class has to be declared by hand here:
+# `objc2-app-kit` generates real macOS, which is the platform these crates
+# cover first.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = { version = "0.6", default-features = false, features = ["std"] }
 block2 = "0.6"

@@ -1,9 +1,9 @@
-//! Puntos de entrada que llama Kotlin.
+//! The entry points Kotlin calls.
 //!
-//! El equivalente exacto de `an-ios/src/ffi.rs`, con el mismo reparto: el hilo
-//! de UI se queda con las vistas y el motor JS vive en un hilo con pila grande.
-//! La diferencia es que aquí el puntero al runtime viaja como `long`, porque es
-//! lo que la JVM sabe guardar.
+//! The exact counterpart of `an-ios/src/ffi.rs`, with the same split: the UI
+//! thread keeps the views and the JS engine lives on a thread with a large
+//! stack. The difference is that here the pointer to the runtime travels as a
+//! `long`, because that is what the JVM knows how to store.
 
 use std::time::Duration;
 
@@ -18,11 +18,11 @@ use jni::EnvUnowned;
 use crate::host::JniHost;
 use crate::measure::JniMeasurer;
 
-/// Mismo tamaño que en iOS y por el mismo motivo: el router de Angular
-/// necesita algo más de 3 MB de pila para completar una navegación.
+/// The same size as on iOS and for the same reason: Angular's router needs a
+/// little over 3 MB of stack to complete a navigation.
 const RUNTIME_STACK: usize = 8 * 1024 * 1024;
 
-/// Lo que el hilo de UI espera al motor dentro del frame, igual que en iOS.
+/// How long the UI thread waits for the engine inside the frame, as on iOS.
 const FRAME_BUDGET: Duration = Duration::from_millis(12);
 
 pub struct AndroidRuntime {
@@ -32,7 +32,7 @@ pub struct AndroidRuntime {
 }
 
 impl AndroidRuntime {
-    /// Monta lo que haya llegado del worker. No bloquea.
+    /// Mounts whatever has arrived from the worker. Does not block.
     fn pump(&mut self) -> jint {
         let mut applied = 0;
         while let Some(reply) = self.worker.try_reply() {
@@ -41,7 +41,7 @@ impl AndroidRuntime {
         applied
     }
 
-    /// Aplica una respuesta y acumula el recuento.
+    /// Applies one reply and accumulates the count.
     fn mount_reply(&mut self, reply: an_bridge::Reply, applied: jint) -> jint {
         let failed = reply.error.is_some();
         if let Some(error) = reply.error {
@@ -55,7 +55,7 @@ impl AndroidRuntime {
         }
     }
 
-    /// Vacía lo que quede en vuelo antes de una operación de control.
+    /// Drains whatever is still in flight before a control operation.
     fn settle(&mut self) {
         while let Some(reply) = self.worker.wait_reply() {
             if let Some(error) = reply.error {
@@ -67,7 +67,7 @@ impl AndroidRuntime {
 }
 
 /// # Safety
-/// El puntero tiene que venir de `nativeNew` y no haberse liberado.
+/// The pointer has to come from `nativeNew` and must not have been freed.
 unsafe fn runtime<'a>(handle: jlong) -> Option<&'a mut AndroidRuntime> {
     if handle == 0 {
         return None;
@@ -84,10 +84,11 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeNew(
     height: jfloat,
 ) -> jlong {
     env.with_env(|env| -> Result<jlong, jni::errors::Error> {
-        // Cinco referencias globales al mismo objeto Java: el host se queda en
-        // el hilo de UI y las otras cuatro viajan al del motor. Una referencia
-        // local moriría al volver de esta función, y desde jni 0.22 una global
-        // no se puede duplicar sin el entorno, así que salen todas de aquí.
+        // Five global references to the same Java object: the host stays on the
+        // UI thread and the other four travel to the engine's. A local reference
+        // would die on returning from this function, and since jni 0.22 a global
+        // one cannot be duplicated without the environment, so they all come out
+        // of here.
         let (Ok(vm_host), Ok(vm_measure), Ok(vm_device), Ok(vm_module), Ok(vm_log)) = (
             env.get_java_vm(),
             env.get_java_vm(),
@@ -107,13 +108,13 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeNew(
             return Ok(0);
         };
 
-        // El redirigido de stderr es del proceso entero: se monta aquí una vez.
+        // The stderr redirection belongs to the whole process: set up once here.
         crate::logging::redirect_stderr(crate::logging::AndroidLog::new(vm_log, log_ref));
 
         let events = new_event_queue();
         let mount = MountSide::new(JniHost::new(vm_host, host_ref));
-        // Los plugins que el shell registró antes de llegar aquí. Uno por
-        // nombre; lo que hacen vive en Java, así que estos solo llevan y traen.
+        // The plugins the shell registered before getting here. One per name;
+        // what they do lives in Java, so these only carry and fetch.
         let plugins = crate::plugins::host_plugins();
 
         let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
@@ -131,7 +132,7 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeNew(
         let worker = match worker {
             Ok(worker) => worker,
             Err(error) => {
-                eprintln!("angular-native: no arrancó el motor JS: {error}");
+                eprintln!("angular-native: the JS engine did not start: {error}");
                 return Ok(0);
             }
         };
@@ -158,8 +159,8 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeEval(
     .resolve::<LogErrorAndDefault>()
 }
 
-/// Igual que en iOS: en caliente solo cambian las definiciones; si no encaja,
-/// vistas fuera, motor nuevo y árbol vacío.
+/// The same as on iOS: on a hot reload only the definitions change; if it does
+/// not fit, the views go, the engine is new and the tree is empty.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeReload(
     mut env: EnvUnowned,
@@ -174,8 +175,8 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeReload(
         runtime.settle();
         drain_events(&runtime.events);
         let reply = runtime.worker.request(Request::Reload { name, code });
-        // Solo se desmonta si hubo reinicio: en caliente el árbol sigue en pie
-        // y tirar las vistas dejaría la pantalla vacía.
+        // It only unmounts if there was a restart: on a hot reload the tree is
+        // still standing and throwing the views away would leave a blank screen.
         if !reply.hot {
             runtime.mount.clear();
         }
@@ -202,7 +203,7 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeSetViewport(
     .resolve::<LogErrorAndDefault>()
 }
 
-/// Un frame: eventos hacia JS, turno de JS, layout, y montaje aquí.
+/// One frame: events on to JS, JS's turn, layout, and mounting over here.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeFrame(
     mut env: EnvUnowned,
@@ -213,15 +214,15 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeFrame(
     env.with_env(|env| -> Result<jint, jni::errors::Error> {
         let Some(runtime) = (unsafe { runtime(handle) }) else { return Ok(-1) };
 
-        // Las llamadas a plugins que dejó el motor se atienden aquí, que es el
-        // hilo de UI. Va antes del turno de JS para que una respuesta que
-        // llegue en el acto entre en este mismo frame.
+        // The plugin calls the engine left behind are served here, which is the
+        // UI thread. It goes before JS's turn so that an answer arriving on the
+        // spot makes it into this very frame.
         crate::plugins::pump(env);
 
-        // Se monta lo que el worker haya terminado desde el frame anterior, se le
-        // manda el turno siguiente si no sigue ocupado, y se le espera lo que
-        // queda de frame: si contesta a tiempo, lo que el usuario acaba de tocar
-        // se ve en este mismo frame.
+        // Whatever the worker finished since the previous frame is mounted, the
+        // next turn is sent to it if it is not still busy, and it is waited on
+        // for what is left of the frame: if it answers in time, what the user
+        // just touched shows up in this very frame.
         let mut applied = runtime.pump();
         if !runtime.worker.busy() {
             let events = drain_events(&runtime.events);
@@ -235,8 +236,8 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeFrame(
     .resolve::<LogErrorAndDefault>()
 }
 
-/// Kotlin encola aquí lo que produce un `OnClickListener` o un scroll. El
-/// evento no se despacha ahora: espera al frame siguiente, igual que en iOS.
+/// Kotlin queues here whatever an `OnClickListener` or a scroll produces. The
+/// event is not dispatched now: it waits for the next frame, as it does on iOS.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchEvent(
     mut env: EnvUnowned,
@@ -251,8 +252,8 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchEvent(
         let Some(runtime) = (unsafe { runtime(handle) }) else { return Ok(()) };
         let Ok(name) = env.get_string(&name) else { return Ok(()) };
         let name: String = name.into();
-        // `load` lleva un tamaño, no una posición: mismas dos cifras, otros
-        // nombres, y tienen que ser los mismos que manda iOS.
+        // `load` carries a size, not a position: the same two figures under
+        // different names, and they have to be the ones iOS sends.
         let (first, second) = if name == "load" { ("width", "height") } else { ("x", "y") };
         an_host::push_event(
             &runtime.events,
@@ -270,12 +271,12 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchEvent(
     .resolve::<LogErrorAndDefault>()
 }
 
-/// Gestos: arrastrar, pellizcar, girar, mantener pulsado, deslizar.
+/// Gestures: pan, pinch, rotate, long press, swipe.
 ///
-/// Los nombres de los campos vienen del lado de Java en vez de estar fijados
-/// aquí por posición. Cuesta separar una cadena por comas, pero si un día uno
-/// de los dos lados añade un campo, el otro no empieza a leer números
-/// corridos de sitio.
+/// The field names come from the Java side instead of being pinned down here by
+/// position. Splitting a string on commas costs something, but if one day
+/// either side adds a field, the other does not start reading numbers that have
+/// shifted along by one.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchGesture(
     mut env: EnvUnowned,
@@ -321,7 +322,7 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchGesture(
     .resolve::<LogErrorAndDefault>()
 }
 
-/// Eventos que llevan un índice: la pestaña elegida, por ejemplo.
+/// Events that carry an index: the selected tab, for instance.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchIndexEvent(
     mut env: EnvUnowned,
@@ -348,8 +349,8 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchIndexEvent
     .resolve::<LogErrorAndDefault>()
 }
 
-/// Eventos que llevan texto en vez de coordenadas: escribir en un campo,
-/// entrar y salir de él.
+/// Events that carry text instead of coordinates: typing in a field, entering
+/// it and leaving it.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchValueEvent(
     mut env: EnvUnowned,
@@ -362,8 +363,8 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeDispatchValueEvent
     env.with_env(|env| -> Result<(), jni::errors::Error> {
         let Some(runtime) = (unsafe { runtime(handle) }) else { return Ok(()) };
         let Some((name, value)) = read_pair(env, name, value) else { return Ok(()) };
-        // El área segura son cuatro cifras y viaja como JSON: se desempaqueta aquí
-        // para que el evento llegue igual que el de iOS.
+        // The safe area is four figures and travels as JSON: it is unpacked here
+        // so the event arrives looking just like the iOS one.
         let payload = if name == "safeArea" {
             parse_insets(&value)
         } else {
@@ -393,8 +394,8 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeFree(
     .resolve::<LogErrorAndDefault>()
 }
 
-/// `{"top":1,"right":2,...}` a pares. Sin analizador de JSON: son cuatro
-/// números con nombres conocidos.
+/// `{"top":1,"right":2,...}` into pairs. No JSON parser: it is four numbers
+/// under known names.
 fn parse_insets(raw: &str) -> Vec<(String, PropValue)> {
     ["top", "right", "bottom", "left"]
         .into_iter()

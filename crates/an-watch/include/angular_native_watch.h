@@ -1,7 +1,7 @@
-// Superficie C del host de watchOS.
+// The C surface of the watchOS host.
 //
-// Se parece a la de iOS, pero no monta vistas: el shell de SwiftUI pregunta
-// por el árbol y lo pinta él. Ver `crates/an-watch/src/ffi.rs`.
+// It looks like the iOS one, but it mounts no views: the SwiftUI shell asks
+// for the tree and paints it itself. See `crates/an-watch/src/ffi.rs`.
 #ifndef ANGULAR_NATIVE_WATCH_H
 #define ANGULAR_NATIVE_WATCH_H
 
@@ -9,40 +9,40 @@
 
 typedef struct AnWatchRuntime AnWatchRuntime;
 
-/// Arranca el motor. `control_json` son los tamaños naturales de los controles
-/// medidos por SwiftUI, como {"Button":[80,44]}; puede ser NULL.
+/// Starts the engine. `control_json` holds the controls' natural sizes as
+/// measured by SwiftUI, like {"Button":[80,44]}; it may be NULL.
 AnWatchRuntime *an_watch_runtime_new(float width, float height,
                                      const char *control_json);
 
-/// Evalúa un script. 0 si fue bien, -1 si JS lanzó.
+/// Evaluates a script. 0 if it went well, -1 if JS threw.
 int32_t an_watch_runtime_eval(AnWatchRuntime *rt, const char *name,
                               const char *code);
 
-/// Mete código nuevo en la app que ya corre: lo que usa `an dev` al guardar.
-/// Si el bundle nuevo encaja con lo montado, el estado se conserva; si no, se
-/// levanta todo otra vez. 0 si fue bien, -1 si falló.
+/// Puts new code into the app already running: what `an dev` uses on save.
+/// If the new bundle fits what is mounted, the state is kept; if it does not,
+/// everything is stood up again. 0 if it went well, -1 if it failed.
 int32_t an_watch_runtime_reload(AnWatchRuntime *rt, const char *name,
                                 const char *code);
 
 void an_watch_runtime_set_viewport(AnWatchRuntime *rt, float width,
                                    float height);
 
-/// Un frame: eventos, turno de JS, layout y mutación del modelo. Devuelve las
-/// operaciones aplicadas, o -1 si algo falló.
+/// One frame: events, JS's turn, layout and mutation of the model. Returns the
+/// operations applied, or -1 if something failed.
 int32_t an_watch_runtime_frame(AnWatchRuntime *rt, double now_ms);
 
-/// Sube solo cuando un frame trajo cambios. El shell la compara con la que ya
-/// tiene y solo pide la foto si difiere.
+/// Rises only when a frame brought changes. The shell compares it with the one
+/// it already has and only asks for the snapshot when they differ.
 uint64_t an_watch_runtime_revision(AnWatchRuntime *rt);
 
-/// El árbol en JSON. Válido hasta la siguiente llamada a esta misma función.
+/// The tree as JSON. Valid until the next call to this same function.
 const char *an_watch_runtime_snapshot(AnWatchRuntime *rt);
 
-/// Un evento nativo desde SwiftUI, por ejemplo "press" o "crown".
+/// A native event from SwiftUI, "press" or "crown" for instance.
 ///
-/// `payload_json` es un objeto plano —{"value":0.4}— o NULL si el evento no
-/// lleva nada. Solo se aceptan números, cadenas y booleanos: lo que venga
-/// anidado se rechaza avisando, porque el puente no lo sabe llevar.
+/// `payload_json` is a flat object —{"value":0.4}— or NULL if the event
+/// carries nothing. Only numbers, strings and booleans are accepted: anything
+/// nested is rejected with a warning, because the bridge cannot carry it.
 void an_watch_runtime_event(AnWatchRuntime *rt, uint32_t target,
                             const char *name, const char *payload_json);
 

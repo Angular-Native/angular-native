@@ -6,8 +6,8 @@ license.workspace = true
 repository.workspace = true
 
 [lib]
-# staticlib para enlazar desde el shell de SwiftUI; rlib para poder testear el
-# modelo y la serialización desde Rust, en el Mac y sin simulador.
+# staticlib to link from the SwiftUI shell; rlib so the model and the
+# serialisation can be tested from Rust, on the Mac and with no simulator.
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
@@ -18,11 +18,11 @@ an-bridge = { path = "../an-bridge" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0.151"
 
-# watchOS trae un UIKit recortado: no hay `UIView` ni jerarquía de vistas, pero
-# sí `UIFont` y el dibujado de cadenas de Foundation. Es todo lo que hace falta
-# aquí, porque este host no monta vistas: solo mide texto para que taffy pueda
-# colocar. Fuera de watchOS el crate compila con el medidor aproximado, para
-# que `cargo test` del workspace siga funcionando en el Mac.
+# watchOS ships a cut-down UIKit: there is no `UIView` and no view hierarchy,
+# but there is `UIFont` and Foundation's string drawing. That is all that is
+# needed here, because this host mounts no views: it only measures text so that
+# taffy can place things. Off watchOS the crate compiles with the approximate
+# measurer, so that the workspace's `cargo test` keeps working on the Mac.
 [target.'cfg(target_os = "watchos")'.dependencies]
 objc2 = { version = "0.6", default-features = false, features = ["std"] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }

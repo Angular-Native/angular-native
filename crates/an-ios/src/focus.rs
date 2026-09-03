@@ -1,35 +1,35 @@
-//! El motor de foco de tvOS.
+//! tvOS's focus engine.
 //!
-//! En una tele no hay toques. El mando mueve un cursor invisible entre las
-//! vistas que se declaran enfocables y el botón central pulsa la que esté
-//! enfocada en ese momento; ese recorrido lo decide UIKit por geometría, con
-//! los marcos de las vistas. Nuestros marcos son absolutos y los calcula taffy,
-//! así que el motor de foco recibe exactamente la retícula que describe la
-//! plantilla y no hay nada que traducir.
+//! On a television there are no touches. The remote moves an invisible cursor
+//! between the views that declare themselves focusable and the centre button
+//! presses whichever is focused at that moment; UIKit decides that route
+//! geometrically, from the views' frames. Our frames are absolute and taffy
+//! works them out, so the focus engine receives exactly the grid the template
+//! describes and there is nothing to translate.
 //!
-//! Lo que sí hay que hacer es declararse. `-[UIView canBecomeFocused]` devuelve
-//! `NO` de fábrica, y una vista que devuelve `NO` **no se puede pulsar en una
-//! tele**: el reconocedor de toque se engancha, no falla nada, y el botón
-//! sencillamente no responde nunca. `UIButton`, `UITextField`, `UISegmentedControl`
-//! y `UISearchBar` traen su `YES` de serie porque son controles; una `UIView`
-//! con `(press)` no, y esa es la diferencia entre iOS y tvOS que más código
-//! rompe.
+//! What does have to be done is to declare oneself.
+//! `-[UIView canBecomeFocused]` returns `NO` out of the box, and a view that
+//! returns `NO` **cannot be pressed on a television**: the tap recogniser
+//! attaches, nothing fails, and the button simply never responds. `UIButton`,
+//! `UITextField`, `UISegmentedControl` and `UISearchBar` bring their `YES` as
+//! standard because they are controls; a `UIView` with a `(press)` does not,
+//! and that is the difference between iOS and tvOS that breaks the most code.
 //!
-//! `canBecomeFocused` solo se puede cambiar heredando, así que aquí hay una
-//! subclase de `UIView`. El host la usa para `an-view`, que es la primitiva a
-//! la que la gente le cuelga `(press)`; `an-text` y `an-image` son `UILabel` y
-//! `UIImageView` y siguen sin poder enfocarse, así que en una tele hay que
-//! envolverlos. Se dice en `docs/tvos.md` y `events::attach` lo avisa en el
-//! log en cuanto alguien lo intenta.
+//! `canBecomeFocused` can only be changed by inheriting, so there is a
+//! subclass of `UIView` here. The host uses it for `an-view`, which is the
+//! primitive people hang `(press)` on; `an-text` and `an-image` are `UILabel`
+//! and `UIImageView` and still cannot take focus, so on a television they have
+//! to be wrapped. It is said in `docs/tvos.md` and `events::attach` warns
+//! about it in the log the moment anybody tries.
 //!
-//! No se dibuja ningún realce. tvOS no tiene `UIFocusEffect` —está marcado
-//! `API_UNAVAILABLE(tvos)`, es de iOS—, y el sistema no pinta nada por su
-//! cuenta sobre una vista normal: en tvOS el resalte es cosa de cada control,
-//! que se levanta y proyecta sombra porque lo dibuja UIKit. Inventar aquí un
-//! borde o una escala sería justo la imitación a mano que este proyecto no
-//! hace. En su lugar la vista emite `focus` y `blur` hacia JavaScript, y la
-//! plantilla decide con las props que ya tiene: `[backgroundColor]`, `[scale]`
-//! y `[animate]`.
+//! No highlight is drawn. tvOS has no `UIFocusEffect` —it is marked
+//! `API_UNAVAILABLE(tvos)`, it belongs to iOS— and the system paints nothing of
+//! its own accord over an ordinary view: on tvOS the highlight is each
+//! control's own business, lifting and casting a shadow because UIKit draws
+//! it. Inventing a border or a scale here would be exactly the hand-made
+//! imitation this project does not do. Instead the view emits `focus` and
+//! `blur` towards JavaScript, and the template decides with the props it
+//! already has: `[backgroundColor]`, `[scale]` and `[animate]`.
 
 use std::cell::Cell;
 
@@ -46,51 +46,53 @@ use objc2_ui_kit::{
 pub struct FocusIvars {
     node: NodeId,
     queue: EventQueue,
-    /// Lo enciende `events::attach` cuando la plantilla pide `(focus)` o
-    /// `(blur)` sin pedir ninguna pulsación. Es `Cell` porque llega después de
-    /// construir la vista: al crear el nodo todavía no se sabe qué eventos
-    /// trae.
-    quiere_foco: Cell<bool>,
+    /// `events::attach` switches it on when the template asks for `(focus)`
+    /// or `(blur)` without asking for any press. It is a `Cell` because it
+    /// arrives after the view has been built: when the node is created it is
+    /// not yet known which events it carries.
+    wants_focus: Cell<bool>,
 }
 
 define_class!(
     // SAFETY:
-    // - UIView admite subclases y esta no toca su inicialización.
-    // - AnFocusableView no implementa Drop.
+    // - UIView takes subclasses and this one does not touch its
+    //   initialisation.
+    // - AnFocusableView does not implement Drop.
     #[unsafe(super(UIView))]
     #[name = "AnFocusableView"]
     #[ivars = FocusIvars]
     pub struct FocusableView;
 
     impl FocusableView {
-        /// Lo que el motor de foco pregunta antes de considerar esta vista.
+        /// What the focus engine asks before considering this view.
         ///
-        /// La respuesta se calcula en el momento en vez de guardarse en un
-        /// contador: la vista es enfocable si tiene algún reconocedor de
-        /// gestos encima, y de esa lista ya lleva la cuenta UIKit. Así, cuando
-        /// el core quita el último oyente y `detach` retira el reconocedor, la
-        /// vista deja de ser enfocable sola. Un contador propio habría que
-        /// cuadrarlo con cada alta y cada baja, y el día que se descuadre lo
-        /// que queda es una caja que roba el foco y no hace nada.
+        /// The answer is worked out on the spot rather than kept in a counter:
+        /// the view is focusable if it has any gesture recogniser on it, and
+        /// UIKit already keeps that list. So when the core removes the last
+        /// listener and `detach` takes the recogniser away, the view stops
+        /// being focusable on its own. A counter of our own would have to be
+        /// squared with every attach and every detach, and the day it went out
+        /// of step what would be left is a box that steals the focus and does
+        /// nothing.
         #[unsafe(method(canBecomeFocused))]
         fn can_become_focused(&self) -> Bool {
-            if self.ivars().quiere_foco.get() {
+            if self.ivars().wants_focus.get() {
                 return Bool::YES;
             }
-            Bool::new(self.gestureRecognizers().is_some_and(|gestos| !gestos.is_empty()))
+            Bool::new(self.gestureRecognizers().is_some_and(|gestures| !gestures.is_empty()))
         }
 
-        /// El foco entró o salió. UIKit manda esto a las dos vistas
-        /// implicadas, así que hay que mirar cuál es cuál en el contexto.
+        /// The focus came in or went out. UIKit sends this to both views
+        /// involved, so which is which has to be read off the context.
         #[unsafe(method(didUpdateFocusInContext:withAnimationCoordinator:))]
         fn did_update_focus(
             &self,
             context: &UIFocusUpdateContext,
             coordinator: &UIFocusAnimationCoordinator,
         ) {
-            // Al super lo primero: UIKit se apoya en su propia implementación
-            // para mantener el estado del entorno de foco, y saltársela deja
-            // el sistema creyendo cosas que no son.
+            // Super first: UIKit leans on its own implementation to keep the
+            // focus environment's state, and skipping it leaves the system
+            // believing things that are not so.
             unsafe {
                 let _: () = msg_send![
                     super(self),
@@ -100,19 +102,19 @@ define_class!(
             }
 
             let ivars = self.ivars();
-            let yo: *const UIView = self.as_ref();
+            let me: *const UIView = self.as_ref();
 
-            let entra = unsafe { context.nextFocusedView() }
-                .is_some_and(|view| Retained::as_ptr(&view) == yo);
-            let sale = unsafe { context.previouslyFocusedView() }
-                .is_some_and(|view| Retained::as_ptr(&view) == yo);
+            let entering = unsafe { context.nextFocusedView() }
+                .is_some_and(|view| Retained::as_ptr(&view) == me);
+            let leaving = unsafe { context.previouslyFocusedView() }
+                .is_some_and(|view| Retained::as_ptr(&view) == me);
 
-            // Nada que decir si esta vista no es ninguna de las dos: el aviso
-            // llega también a los contenedores del camino.
-            if entra {
+            // Nothing to say if this view is neither of the two: the
+            // notification reaches the containers along the way as well.
+            if entering {
                 emit(&ivars.queue, ivars.node, "focus");
             }
-            if sale {
+            if leaving {
                 emit(&ivars.queue, ivars.node, "blur");
             }
         }
@@ -127,60 +129,62 @@ impl FocusableView {
     pub fn new(mtm: objc2::MainThreadMarker, node: NodeId, queue: EventQueue) -> Retained<Self> {
         let this = mtm
             .alloc::<Self>()
-            .set_ivars(FocusIvars { node, queue, quiere_foco: Cell::new(false) });
+            .set_ivars(FocusIvars { node, queue, wants_focus: Cell::new(false) });
         unsafe { msg_send![super(this), init] }
     }
 
-    /// Para `(focus)` y `(blur)` sin pulsación: una vista que solo quiere
-    /// saber cuándo la miran no lleva reconocedor ninguno, así que el cálculo
-    /// de `canBecomeFocused` no la vería.
+    /// For `(focus)` and `(blur)` with no press: a view that only wants to
+    /// know when it is being looked at carries no recogniser at all, so
+    /// `canBecomeFocused`'s calculation would not see it.
     ///
-    /// `setNeedsFocusUpdate` no se llama aquí: el motor vuelve a mirar el
-    /// entorno cuando cambia la jerarquía, y forzarlo desde el montaje de un
-    /// nodo movería el foco del usuario a mitad de pantalla.
-    pub fn set_wants_focus(&self, quiere: bool) {
-        self.ivars().quiere_foco.set(quiere);
-        if quiere {
+    /// `setNeedsFocusUpdate` is not called here: the engine looks at the
+    /// environment again when the hierarchy changes, and forcing it from the
+    /// mounting of a node would move the user's focus mid-screen.
+    pub fn set_wants_focus(&self, wants: bool) {
+        self.ivars().wants_focus.set(wants);
+        if wants {
             self.setUserInteractionEnabled(true);
         }
     }
 
-    /// Una vista enfocable tiene que recibir eventos. Una `UIView` con la
-    /// interacción apagada no entra en el recorrido del mando.
+    /// A focusable view has to receive events. A `UIView` with interaction
+    /// switched off does not enter the remote's route.
     pub fn allow_interaction(&self) {
         self.setUserInteractionEnabled(true);
     }
 }
 
-/// La misma vista, si es una de las nuestras.
+/// The same view, if it is one of ours.
 ///
-/// Se comprueba la clase antes de convertir, que es lo que separa esto de un
-/// `as any`: si el nodo no se creó como enfocable, aquí sale `None` y quien
-/// llama lo dice en voz alta en vez de escribir sobre una vista que no es.
+/// The class is checked before converting, which is what separates this from
+/// an `as any`: if the node was not created focusable, `None` comes out here
+/// and the caller says so out loud instead of writing over a view that is not
+/// the one it thinks.
 pub fn focusable(view: &UIView) -> Option<&FocusableView> {
     let class: &AnyClass = FocusableView::class();
     if !view.isKindOfClass(class) {
         return None;
     }
-    // SAFETY: la clase se acaba de comprobar.
+    // SAFETY: the class was just checked.
     Some(unsafe { &*(view as *const UIView).cast::<FocusableView>() })
 }
 
-/// El mando no manda toques: manda pulsaciones de botón.
+/// The remote does not send touches: it sends button presses.
 ///
-/// `allowedPressTypes` decide a cuál responde un reconocedor, y su valor por
-/// defecto lo documenta el SDK como «platform dependent». Se fija a mano para
-/// no depender de eso. Los de dirección no se piden nunca: son del motor de
-/// foco, y quitárselos deja el mando sin poder moverse por la pantalla.
+/// `allowedPressTypes` decides which one a recogniser responds to, and the SDK
+/// documents its default as "platform dependent". It is set by hand so as not
+/// to depend on that. The directional ones are never asked for: they belong to
+/// the focus engine, and taking them away leaves the remote unable to move
+/// around the screen.
 pub fn allow_press(recognizer: &UIGestureRecognizer, press: UIPressType) {
-    let tipos = NSArray::from_retained_slice(&[NSNumber::new_isize(press.0)]);
-    recognizer.setAllowedPressTypes(&tipos);
+    let types = NSArray::from_retained_slice(&[NSNumber::new_isize(press.0)]);
+    recognizer.setAllowedPressTypes(&types);
 }
 
-/// El botón central: el que pulsa lo que esté enfocado.
+/// The centre button: the one that presses whatever is focused.
 pub const SELECT: UIPressType = UIPressType::Select;
 
-/// El botón de menú: el «atrás» del mando. Es lo que en el teléfono es el
-/// arrastre desde el borde izquierdo, que en tvOS no existe porque no hay
-/// borde que arrastrar.
+/// The menu button: the remote's "back". It is what on a phone is the drag in
+/// from the left edge, which on tvOS does not exist because there is no edge
+/// to drag from.
 pub const MENU: UIPressType = UIPressType::Menu;

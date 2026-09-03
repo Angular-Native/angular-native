@@ -1,5 +1,5 @@
-// Superficie C de angular-native. Generada a mano; cuando exista `an-cli`
-// pasará a generarse en el build.
+// angular-native's C surface. Written by hand; once `an-cli` exists it will be
+// generated in the build.
 #ifndef ANGULAR_NATIVE_H
 #define ANGULAR_NATIVE_H
 
@@ -7,44 +7,46 @@
 
 typedef struct AnRuntime AnRuntime;
 
-/// `container` es el UIView del que cuelga la raíz del árbol.
+/// `container` is the UIView the root of the tree hangs off.
 AnRuntime *an_runtime_new(void *container, float width, float height);
 
-/// Evalúa un script. 0 si fue bien, -1 si JS lanzó.
+/// Evaluates a script. 0 if it went well, -1 if JS threw.
 int32_t an_runtime_eval(AnRuntime *rt, const char *name, const char *code);
 
-/// Recarga en caliente: descarta vistas, motor y árbol, y evalúa código nuevo.
+/// Hot reload: throws views, engine and tree away, and evaluates new code.
 int32_t an_runtime_reload(AnRuntime *rt, const char *name, const char *code);
 
 void an_runtime_set_viewport(AnRuntime *rt, float width, float height);
 
-/// Un frame: eventos, turno de JS, mutaciones, layout y montaje.
-/// `now_ms` es la marca de tiempo del CADisplayLink.
-/// Devuelve las operaciones nativas aplicadas, o -1 si algo falló.
+/// One frame: events, JS's turn, mutations, layout and mounting.
+/// `now_ms` is the CADisplayLink's timestamp.
+/// Returns the native operations applied, or -1 if something failed.
 int32_t an_runtime_frame(AnRuntime *rt, double now_ms);
 
 void an_runtime_free(AnRuntime *rt);
 
 // ── Plugins ─────────────────────────────────────────────────────────────────
 //
-// Un plugin es Swift que trae un paquete npm. El core no sabe qué hace: le
-// lleva la llamada al hilo principal y se trae la respuesta. Todo esto es
-// global al proceso, no al runtime: se registra antes de `an_runtime_new`.
+// A plugin is Swift that an npm package brings. The core does not know what
+// it does: it carries the call to the main thread and brings the answer back.
+// All of this is global to the process, not to the runtime: it is registered
+// before `an_runtime_new`.
 
-/// Da de alta un plugin por el nombre con el que JS lo invoca.
+/// Registers a plugin under the name JS invokes it by.
 void an_plugin_register(const char *name);
 
-/// Instala el despachador al que Rust le pasa cada llamada. Las cadenas solo
-/// valen durante la llamada: hay que copiarlas. `NULL` lo desinstala.
+/// Installs the dispatcher Rust hands every call to. The strings only hold
+/// for the duration of the call: they have to be copied. `NULL` uninstalls
+/// it.
 typedef void (*AnPluginDispatch)(uint64_t id, const char *module,
                                  const char *method, const char *args);
 void an_plugin_set_dispatch(AnPluginDispatch dispatch);
 
-/// Contesta a una llamada. `json` es el valor de vuelta ya serializado
-/// ("null" para un método que no devuelve nada). 0 si la llamada existía.
+/// Answers a call. `json` is the return value, already serialised ("null" for
+/// a method that returns nothing). 0 if the call existed.
 int32_t an_plugin_resolve(uint64_t id, const char *json);
 
-/// Rechaza una llamada. 0 si la llamada existía.
+/// Rejects a call. 0 if the call existed.
 int32_t an_plugin_reject(uint64_t id, const char *message);
 
 #endif

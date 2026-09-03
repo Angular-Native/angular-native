@@ -1,34 +1,34 @@
-//! Presentación de `<Modal>` como un controlador de verdad.
+//! Presenting a `<Modal>` as a real controller.
 //!
-//! Antes era una vista escondida que se enseñaba encima de todo. Se veía
-//! igual, pero no lo era: no aparecía en la pila de presentación de UIKit, así
-//! que el sistema no sabía que había algo modal delante. VoiceOver seguía
-//! leyendo lo de detrás, el teclado no ajustaba, y otro controlador presentado
-//! —un `UIAlertController`, por ejemplo— salía por encima o por debajo según
-//! el orden en que se hubieran creado las vistas.
+//! It used to be a hidden view shown over everything else. It looked the same,
+//! but it was not: it did not appear in UIKit's presentation stack, so the
+//! system did not know there was anything modal in front. VoiceOver went on
+//! reading what was behind, the keyboard did not adjust, and another presented
+//! controller —a `UIAlertController`, say— came out above or below depending
+//! on the order the views happened to have been created in.
 //!
-//! Con un `UIViewController` de por medio todo eso lo resuelve UIKit.
+//! With a `UIViewController` in the way, UIKit settles all of that.
 
 use an_core::NodeId;
 use an_host::{push_event, EventQueue, HostEvent};
 use objc2::rc::Retained;
 use objc2::MainThreadMarker;
 use objc2_ui_kit::{UIModalPresentationStyle, UIModalTransitionStyle, UIView, UIViewController};
-// La hoja con topes es de iOS: `UISheetPresentationController` está marcado
-// `API_UNAVAILABLE(tvos)`. Una tele no tiene medio pantalla que arrastrar.
+// The sheet with detents is iOS's: `UISheetPresentationController` is marked
+// `API_UNAVAILABLE(tvos)`. A television has no half a screen to drag.
 #[cfg(not(target_os = "tvos"))]
 use objc2_ui_kit::UISheetPresentationControllerDetent;
 
 #[derive(Default)]
 pub struct ModalState {
     pub visible: bool,
-    /// Cómo entra: cubriendo todo o como hoja desde abajo.
+    /// How it comes in: covering everything, or as a sheet from the bottom.
     pub sheet: bool,
     presented: Option<Retained<UIViewController>>,
 }
 
 impl ModalState {
-    /// Presenta o retira el modal según su estado. Idempotente.
+    /// Presents or withdraws the modal according to its state. Idempotent.
     pub fn sync(
         &mut self,
         mtm: MainThreadMarker,
@@ -41,9 +41,10 @@ impl ModalState {
             if let Some(controller) = self.presented.take() {
                 let queue = queue.clone();
                 unsafe { controller.dismissViewControllerAnimated_completion(true, None) };
-                // Al retirarlo, la vista vuelve con los suyos: el core sigue
-                // mandándole marcos y props, y si se quedara colgando del
-                // controlador que se va, dejaría de verse al reabrirlo.
+                // On withdrawal the view goes back to its own: the core
+                // keeps sending it frames and props, and were it left hanging
+                // off the controller on its way out, it would stop being seen
+                // when the modal was reopened.
                 push_event(
                     &queue,
                     HostEvent { target: node, name: "dismiss".to_owned(), payload: Vec::new() },
@@ -60,15 +61,16 @@ impl ModalState {
 
         let controller = UIViewController::new(mtm);
         controller.setView(Some(content));
-        // En tvOS no hay hoja: la presentación modal cubre la pantalla y ya.
-        // Se dice una vez, porque un `[sheet]` que se ignora en silencio es
-        // una plantilla que se ve distinta sin que nadie sepa por qué.
+        // On tvOS there is no sheet: the modal presentation covers the
+        // screen and that is that. It is said once, because a `[sheet]`
+        // ignored in silence is a template that looks different with nobody
+        // knowing why.
         #[cfg(target_os = "tvos")]
         let sheet = if self.sheet {
             crate::family::report(
                 "<an-modal [sheet]>",
-                "UISheetPresentationController no está en el SDK: el modal cubre la pantalla \
-                 entera, que es como se presenta en una tele",
+                "UISheetPresentationController is not in the SDK: the modal covers the whole \
+                 screen, which is how it is presented on a television",
             );
             false
         } else {
@@ -80,8 +82,8 @@ impl ModalState {
         unsafe {
             if sheet {
                 controller.setModalPresentationStyle(UIModalPresentationStyle::PageSheet);
-                // Los topes son los del sistema: media pantalla y entera, con
-                // su tirador y su gesto de bajar para cerrar.
+                // The detents are the system's: half screen and full, with
+                // its grabber and its pull-down-to-close gesture.
                 #[cfg(not(target_os = "tvos"))]
                 if let Some(sheet) = controller.sheetPresentationController() {
                     let detents = objc2_foundation::NSArray::from_retained_slice(&[
@@ -92,9 +94,9 @@ impl ModalState {
                     sheet.setPrefersGrabberVisible(true);
                 }
             } else {
-                // El core ya calculó el contenido a pantalla completa: con
-                // `OverFullScreen` el controlador mide exactamente eso y no
-                // hay que recolocar nada.
+                // The core has already laid the content out full screen:
+                // with `OverFullScreen` the controller measures exactly that
+                // and there is nothing to reposition.
                 controller.setModalPresentationStyle(UIModalPresentationStyle::OverFullScreen);
                 controller.setModalTransitionStyle(UIModalTransitionStyle::CoverVertical);
             }
@@ -103,8 +105,12 @@ impl ModalState {
         self.presented = Some(controller);
     }
 
-    /// La vista del modal cuando no está presentado: sigue siendo hija del
-    /// árbol, solo que escondida.
+    /// Whether the modal is on screen right now.
+    ///
+    /// It is not the same question as `visible`: that is what the template
+    /// asked for, this is what UIKit is actually showing, and between the two
+    /// there is a presentation animation and a user who can pull the sheet
+    /// down.
     pub fn presented(&self) -> bool {
         self.presented.is_some()
     }

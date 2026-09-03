@@ -5,9 +5,9 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 
-# El binario se llama `an`, no `an-cli`: `cargo install --path crates/an-cli` lo
-# deja en el PATH con el nombre que sale en la documentación, y desde ahí sirve
-# en cualquier proyecto Angular sin pasar por `cargo`.
+# The binary is called `an` and not `an-cli`: `cargo install --path crates/an-cli`
+# leaves it on the PATH under the name the documentation uses, and from there it
+# serves any Angular project without going through `cargo`.
 [[bin]]
 name = "an"
 path = "src/main.rs"

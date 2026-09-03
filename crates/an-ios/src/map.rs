@@ -1,7 +1,7 @@
-//! `MKMapView`, declarada a mano.
+//! `MKMapView`, declared by hand.
 //!
-//! `objc2-map-kit` genera esta clase solo para macOS, igual que pasa con
-//! `WKWebView`: la de iOS hereda de `UIView` y no está en el crate.
+//! `objc2-map-kit` generates this class only for macOS, the same way it goes
+//! with `WKWebView`: iOS's inherits from `UIView` and is not in the crate.
 
 use objc2::encode::{Encode, Encoding, RefEncode};
 use objc2::rc::Retained;
@@ -13,7 +13,7 @@ use objc2_ui_kit::{UIResponder, UIView};
 #[link(name = "MapKit", kind = "framework")]
 unsafe extern "C" {}
 
-/// Un punto del globo. Grados, no radianes.
+/// A point on the globe. Degrees, not radians.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CLLocationCoordinate2D {
@@ -30,8 +30,8 @@ unsafe impl RefEncode for CLLocationCoordinate2D {
     const ENCODING_REF: Encoding = Encoding::Pointer(&Self::ENCODING);
 }
 
-/// Cuánto globo se ve, en grados. Es el zoom, dicho de otra manera: MapKit no
-/// trabaja con niveles de zoom sino con cuánto abarca la ventana.
+/// How much of the globe is in view, in degrees. It is the zoom said another
+/// way: MapKit does not work in zoom levels but in how much the window spans.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MKCoordinateSpan {
@@ -40,10 +40,10 @@ pub struct MKCoordinateSpan {
 }
 
 unsafe impl Encode for MKCoordinateSpan {
-    // Sin nombre a propósito. El runtime describe estas dos como structs
-    // anónimas —`{?=dd}`— y objc2 compara la firma entera contra la de verdad
-    // antes de enviar el mensaje: ponerles el nombre que tienen en la cabecera
-    // no cuadra y aborta.
+    // Nameless on purpose. The runtime describes these two as anonymous
+    // structs —`{?=dd}`— and objc2 compares the whole signature against the
+    // real one before sending the message: giving them the name they carry in
+    // the header does not match and aborts.
     const ENCODING: Encoding = Encoding::Struct("?", &[CGFloat::ENCODING, CGFloat::ENCODING]);
 }
 

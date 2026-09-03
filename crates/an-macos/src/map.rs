@@ -1,19 +1,21 @@
-//! `MKMapView`, el mapa del sistema.
+//! `MKMapView`, the system's map.
 //!
-//! En macOS MapKit hereda de `NSView`, así que el mapa entra en el árbol como
-//! una vista más: no hay controlador que contener ni capa que recolocar, que es
-//! lo que sí hace falta para el vídeo de iOS.
+//! On macOS MapKit inherits from `NSView`, so the map goes into the tree as
+//! one more view: there is no controller to contain and no layer to
+//! reposition, which is what the iOS video does need.
 //!
-//! La clase se declara aquí en vez de traerse `objc2-map-kit`, por lo mismo que
-//! `web.rs` no se trae `objc2-web-kit`: por tres métodos entrarían a compilar
-//! todas las clases del framework en cada build del host. `objc2` sigue
-//! comprobando cada firma contra la de verdad al mandar el mensaje, así que lo
-//! que se gana en tiempo de compilación no se paga en seguridad.
+//! The class is declared here rather than pulling in `objc2-map-kit`, for the
+//! same reason `web.rs` does not pull in `objc2-web-kit`: for three methods
+//! every class in the framework would go in to be compiled on every build of
+//! the host. `objc2` still checks each signature against the real one when the
+//! message is sent, so what is gained in compile time is not paid for in
+//! safety.
 //!
-//! **No hace falta ninguna clave.** El MapKit nativo —el de `MKMapView`, no el
-//! de JavaScript— no la pide: la pide MapKit JS, que es otro producto. Lo que
-//! sí pide permiso es enseñar dónde estás, y eso es `showsUser`; ver
-//! `NSLocationUsageDescription` en `shells/macos/Resources/Info.plist`.
+//! **No key is needed.** Native MapKit —`MKMapView`'s, not JavaScript's— does
+//! not ask for one: MapKit JS asks for it, and that is a different product.
+//! What does ask for permission is showing where you are, and that is
+//! `showsUser`; see `NSLocationUsageDescription` in
+//! `shells/macos/Resources/Info.plist`.
 
 use objc2::encode::{Encode, Encoding, RefEncode};
 use objc2::rc::Retained;
@@ -22,11 +24,11 @@ use objc2_app_kit::{NSResponder, NSView};
 use objc2_core_foundation::CGFloat;
 use objc2_foundation::NSObject;
 
-// El framework hay que enlazarlo: nadie más lo hace por nosotros.
+// The framework has to be linked: nobody else does it for us.
 #[link(name = "MapKit", kind = "framework")]
 unsafe extern "C" {}
 
-/// Un punto del globo. Grados, no radianes.
+/// A point on the globe. Degrees, not radians.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CLLocationCoordinate2D {
@@ -43,8 +45,8 @@ unsafe impl RefEncode for CLLocationCoordinate2D {
     const ENCODING_REF: Encoding = Encoding::Pointer(&Self::ENCODING);
 }
 
-/// Cuánto globo se ve, en grados. Es el zoom dicho de otra manera: MapKit no
-/// trabaja con niveles de zoom sino con cuánto abarca la ventana.
+/// How much of the globe is in view, in degrees. It is the zoom said another
+/// way: MapKit does not work in zoom levels but in how much the window spans.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MKCoordinateSpan {
@@ -53,10 +55,11 @@ pub struct MKCoordinateSpan {
 }
 
 unsafe impl Encode for MKCoordinateSpan {
-    // Sin nombre a propósito, igual que en el host de iOS: el runtime describe
-    // estas dos como structs anónimas —`{?=dd}`— y objc2 compara la firma
-    // entera contra la de verdad antes de mandar el mensaje, así que ponerles
-    // el nombre que llevan en la cabecera no cuadra y aborta el proceso.
+    // Nameless on purpose, just as in the iOS host: the runtime describes
+    // these two as anonymous structs —`{?=dd}`— and objc2 compares the whole
+    // signature against the real one before sending the message, so giving
+    // them the name they carry in the header does not match and aborts the
+    // process.
     const ENCODING: Encoding = Encoding::Struct("?", &[CGFloat::ENCODING, CGFloat::ENCODING]);
 }
 
@@ -101,12 +104,12 @@ impl MKMapView {
     );
 }
 
-/// Cuántos grados de longitud abarca la ventana en ese nivel de zoom.
+/// How many degrees of longitude the window spans at that zoom level.
 ///
-/// La primitiva habla de niveles al estilo de las teselas —0 es el mundo entero
-/// y cada nivel es el doble de cerca— y MapKit habla de grados. La conversión
-/// vive aquí y no en la plantilla para que la misma cifra signifique lo mismo
-/// en las tres plataformas.
+/// The primitive speaks in tile-style levels —0 is the whole world and each
+/// level is twice as close— and MapKit speaks in degrees. The conversion lives
+/// here and not in the template so that the same figure means the same thing
+/// on all three platforms.
 pub fn span_for_zoom(zoom: f64) -> f64 {
     360.0 / 2f64.powf(zoom.max(0.0))
 }

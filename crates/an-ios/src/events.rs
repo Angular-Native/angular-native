@@ -1,12 +1,13 @@
-//! Gestos nativos de vuelta hacia JavaScript.
+//! Native gestures on their way back to JavaScript.
 //!
-//! UIKit entrega los gestos por target-action, que exige un objeto
-//! Objective-C de verdad como destino. Aquí se define uno: guarda el id del
-//! nodo y la cola de eventos, y al dispararse encola un `HostEvent`.
+//! UIKit delivers gestures through target-action, which demands a real
+//! Objective-C object as the target. One is defined here: it keeps the node's
+//! id and the event queue, and on firing it queues a `HostEvent`.
 //!
-//! El evento no se despacha en el momento: espera al principio del frame
-//! siguiente. Así todo lo que pasó entre dos vsync se procesa junto, y la
-//! respuesta a un toque se ve en el mismo frame en que se procesa.
+//! The event is not dispatched on the spot: it waits for the start of the next
+//! frame. That way everything that happened between two vsyncs is processed
+//! together, and the response to a touch is seen in the same frame it is
+//! processed in.
 
 use an_core::{NodeId, PropValue};
 use an_host::{push_event, EventQueue, HostEvent};
@@ -23,9 +24,9 @@ use objc2_ui_kit::{
     UISwipeGestureRecognizerDirection, UISwitch, UITabBar, UITapGestureRecognizer, UITextField,
     UIView,
 };
-// El arrastre desde el borde y el control de recarga son de iOS: el SDK los
-// marca `API_UNAVAILABLE(tvos, visionos)` y `API_UNAVAILABLE(tvos)`. Ver
-// `family.rs` y la parte de `attach` que los sustituye.
+// The drag in from the edge and the refresh control are iOS's: the SDK marks
+// them `API_UNAVAILABLE(tvos, visionos)` and `API_UNAVAILABLE(tvos)`. See
+// `family.rs` and the part of `attach` that stands in for them.
 #[cfg(not(any(target_os = "tvos", target_os = "visionos")))]
 use objc2_ui_kit::{UIRectEdge, UIScreenEdgePanGestureRecognizer};
 #[cfg(not(target_os = "tvos"))]
@@ -43,8 +44,8 @@ pub struct TargetIvars {
 
 define_class!(
     // SAFETY:
-    // - NSObject no impone requisitos a sus subclases.
-    // - AnGestureTarget no implementa Drop.
+    // - NSObject places no requirements on its subclasses.
+    // - AnGestureTarget does not implement Drop.
     #[unsafe(super(objc2_foundation::NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "AnGestureTarget"]
@@ -52,8 +53,8 @@ define_class!(
     pub struct GestureTarget;
 
     impl GestureTarget {
-        /// Gesto de volver atrás desde el borde. Solo cuenta al soltar: un
-        /// arrastre que se cancela no debe navegar.
+        /// The drag-in-from-the-edge back gesture. It only counts on
+        /// release: a drag that gets cancelled must not navigate.
         #[unsafe(method(handleEdgePan:))]
         fn handle_edge_pan(&self, recognizer: &UIGestureRecognizer) {
             if recognizer.state() != UIGestureRecognizerState::Ended {
@@ -63,9 +64,10 @@ define_class!(
             emit(&ivars.queue, ivars.node, ivars.name, Vec::new());
         }
 
-        /// Arrastrar. Lleva el desplazamiento acumulado y la velocidad, que
-        /// es lo que hace falta para mover algo con el dedo y para decidir si
-        /// al soltar sigue por inercia.
+        /// Dragging. It carries the accumulated translation and the
+        /// velocity, which is what it takes to move something with a finger
+        /// and to decide whether it keeps going under its own momentum when
+        /// released.
         #[unsafe(method(handlePan:))]
         fn handle_pan(&self, recognizer: &UIPanGestureRecognizer) {
             let ivars = self.ivars();
@@ -89,9 +91,9 @@ define_class!(
             );
         }
 
-        /// Mantener pulsado. Solo se avisa al empezar: el sistema ya decidió
-        /// que el gesto cuenta, y avisar también al soltar solo daría un
-        /// segundo evento que nadie espera.
+        /// Press and hold. It is only reported at the start: the system has
+        /// already decided the gesture counts, and reporting on release as
+        /// well would only give a second event nobody expects.
         #[unsafe(method(handleLongPress:))]
         fn handle_long_press(&self, recognizer: &UIGestureRecognizer) {
             if recognizer.state() != UIGestureRecognizerState::Began {
@@ -187,7 +189,7 @@ impl GestureTarget {
     }
 }
 
-/// Nombre del estado, tal cual lo verá la plantilla.
+/// The state's name, exactly as the template will see it.
 fn state_name(state: UIGestureRecognizerState) -> String {
     match state {
         UIGestureRecognizerState::Began => "begin",
@@ -199,15 +201,15 @@ fn state_name(state: UIGestureRecognizerState) -> String {
     .to_owned()
 }
 
-/// Destino de las acciones de un `UIControl`: escribir, entrar y salir de un
-/// campo de texto.
+/// The target of a `UIControl`'s actions: typing, and entering and leaving a
+/// text field.
 pub struct ControlIvars {
     node: NodeId,
     queue: EventQueue,
 }
 
 define_class!(
-    // SAFETY: igual que GestureTarget.
+    // SAFETY: the same as GestureTarget.
     #[unsafe(super(objc2_foundation::NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "AnControlTarget"]
@@ -285,8 +287,8 @@ define_class!(
         #[unsafe(method(handleDate:))]
         fn handle_date(&self, sender: &objc2_ui_kit::UIDatePicker) {
             let ivars = self.ivars();
-            // Milisegundos desde 1970, que es lo que entiende `Date` en JS sin
-            // que nadie tenga que convertir nada.
+            // Milliseconds since 1970, which is what `Date` understands in
+            // JS with nobody having to convert anything.
             let seconds = unsafe { sender.date().timeIntervalSince1970() };
             emit(
                 &ivars.queue,
@@ -296,11 +298,11 @@ define_class!(
             );
         }
 
-        /// El botón de atrás de una cabecera.
+        /// A header's back button.
         ///
-        /// Fuera de un `UINavigationController` no hay atrás automático: el
-        /// botón se pone a mano y quien navega es el router, así que aquí solo
-        /// se avisa.
+        /// Outside a `UINavigationController` there is no automatic back: the
+        /// button is put there by hand and what navigates is the router, so
+        /// all that happens here is a notification.
         #[unsafe(method(handleNavBack:))]
         fn handle_nav_back(&self, _sender: &objc2::runtime::AnyObject) {
             let ivars = self.ivars();
@@ -321,14 +323,14 @@ define_class!(
     }
 );
 
-/// Delegado de la barra de pestañas. UIKit lo guarda con referencia débil.
+/// The tab bar's delegate. UIKit holds it by weak reference.
 pub struct TabIvars {
     node: NodeId,
     queue: EventQueue,
 }
 
 define_class!(
-    // SAFETY: igual que GestureTarget.
+    // SAFETY: the same as GestureTarget.
     #[unsafe(super(objc2_foundation::NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "AnTabBarDelegate"]
@@ -350,7 +352,8 @@ define_class!(
                 &ivars.queue,
                 ivars.node,
                 "select",
-                // El `tag` es el índice: se le puso al construir la pestaña.
+                // The `tag` is the index: it was set when the tab was
+                // built.
                 vec![("index".to_owned(), PropValue::Number(index as f64))],
             );
         }
@@ -365,8 +368,8 @@ impl TabDelegate {
 }
 
 impl ControlTarget {
-    /// Un destino suelto, para engancharlo a algo que no es un `UIControl`
-    /// —un `UIBarButtonItem`, por ejemplo—.
+    /// A loose target, to attach to something that is not a `UIControl` —a
+    /// `UIBarButtonItem`, for instance.
     pub fn standalone(
         mtm: objc2::MainThreadMarker,
         node: NodeId,
@@ -391,15 +394,15 @@ impl ControlTarget {
     }
 }
 
-/// Delegado de scroll. UIKit lo guarda con referencia débil, así que hay que
-/// conservarlo vivo aquí mientras la vista exista.
+/// The scroll delegate. UIKit holds it by weak reference, so it has to be kept
+/// alive here for as long as the view exists.
 pub struct ScrollIvars {
     node: NodeId,
     queue: EventQueue,
 }
 
 define_class!(
-    // SAFETY: igual que GestureTarget.
+    // SAFETY: the same as GestureTarget.
     #[unsafe(super(objc2_foundation::NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "AnScrollDelegate"]
@@ -434,7 +437,7 @@ impl ScrollDelegate {
 }
 
 impl AttachedListener {
-    /// El control de recarga del sistema, si esta suscripción lo trajo.
+    /// The system's refresh control, if this subscription brought one.
     #[cfg(not(target_os = "tvos"))]
     pub fn refresh_control(&self) -> Option<&UIRefreshControl> {
         match self {
@@ -444,8 +447,8 @@ impl AttachedListener {
     }
 }
 
-/// Una suscripción viva. Guarda lo que UIKit referencia débilmente, que es
-/// justo lo que se libera solo si no lo retiene nadie.
+/// A live subscription. It holds what UIKit references weakly, which is
+/// exactly what gets freed on its own if nobody retains it.
 pub enum AttachedListener {
     Gesture {
         recognizer: Retained<UIGestureRecognizer>,
@@ -462,16 +465,18 @@ pub enum AttachedListener {
     Tabs {
         _delegate: Retained<TabDelegate>,
     },
-    /// Tirar para recargar. No existe en tvOS: `UIRefreshControl` no está en
-    /// su SDK, y sin toques tampoco habría de dónde tirar.
+    /// Pull to refresh. It does not exist on tvOS: `UIRefreshControl` is not
+    /// in its SDK, and with no touches there would be nothing to pull
+    /// anyway.
     #[cfg(not(target_os = "tvos"))]
     Refresh {
         _target: Retained<ControlTarget>,
         control: Retained<UIRefreshControl>,
     },
-    /// Una vista que solo quiere saber cuándo la mira el mando. No lleva
-    /// reconocedor: el aviso lo da la propia vista al recibir el foco, y esto
-    /// solo existe para poder apagarlo al darse de baja.
+    /// A view that only wants to know when the remote is looking at it. It
+    /// carries no recogniser: the view itself gives the notification when it
+    /// takes focus, and this exists only so it can be switched off on
+    /// unsubscribing.
     #[cfg(target_os = "tvos")]
     Focus,
 }
@@ -518,27 +523,27 @@ impl AttachedListener {
     }
 }
 
-/// Construye el reconocedor de un gesto continuo o de dirección, si el nombre
-/// es de uno.
+/// Builds the recogniser for a continuous or directional gesture, if the name
+/// is one of theirs.
 fn continuous_gesture(
     mtm: objc2::MainThreadMarker,
     event: &str,
     node: NodeId,
     queue: &EventQueue,
 ) -> Option<(Retained<UIGestureRecognizer>, Retained<GestureTarget>)> {
-    // Pellizcar y girar piden dos dedos a la vez. La superficie del mando de
-    // tvOS es de un solo toque y el SDK lo dice sin rodeos: las dos clases
-    // están marcadas `API_UNAVAILABLE(tvos)`. Pedirle la clase a objc2 aquí
-    // cerraría la app, así que se dice y no se engancha nada.
+    // Pinching and rotating ask for two fingers at once. The tvOS remote's
+    // surface is single-touch and the SDK says so without hedging: both
+    // classes are marked `API_UNAVAILABLE(tvos)`. Asking objc2 for the class
+    // here would close the app, so it is said and nothing is attached.
     //
-    // `pan` y los cuatro `swipe` sí siguen: la superficie del mando manda
-    // toques indirectos y UIKit los reconoce igual que los del dedo.
+    // `pan` and the four `swipe`s do go through: the remote's surface sends
+    // indirect touches and UIKit recognises them just like a finger's.
     #[cfg(target_os = "tvos")]
     if matches!(event, "pinch" | "rotate") {
         crate::family::report(
             &format!("({event})"),
-            "el mando tiene una superficie de un solo toque, y UIPinchGestureRecognizer y \
-             UIRotationGestureRecognizer no están en el SDK",
+            "the remote has a single-touch surface, and UIPinchGestureRecognizer and \
+             UIRotationGestureRecognizer are not in the SDK",
         );
         return None;
     }
@@ -563,16 +568,16 @@ fn continuous_gesture(
             )
         }),
         "longPress" => Retained::into_super(unsafe {
-            let largo = UILongPressGestureRecognizer::initWithTarget_action(
+            let long_press = UILongPressGestureRecognizer::initWithTarget_action(
                 UILongPressGestureRecognizer::alloc(mtm),
                 Some(&target),
                 Some(action),
             );
-            // En una tele mantener pulsado es mantener el botón central, no
-            // dejar el dedo quieto sobre la pantalla.
+            // On a television, holding is holding the centre button down, not
+            // keeping a finger still on the screen.
             #[cfg(target_os = "tvos")]
-            crate::focus::allow_press(&largo, crate::focus::SELECT);
-            largo
+            crate::focus::allow_press(&long_press, crate::focus::SELECT);
+            long_press
         }),
         #[cfg(not(target_os = "tvos"))]
         "pinch" => Retained::into_super(unsafe {
@@ -610,8 +615,8 @@ fn continuous_gesture(
     Some((recognizer, target))
 }
 
-/// El nombre del evento tiene que vivir tanto como el destino del gesto, y los
-/// nombres son un conjunto cerrado y conocido.
+/// The event's name has to live as long as the gesture's target does, and the
+/// names are a closed, known set.
 fn leak_event_name(event: &str) -> &'static str {
     match event {
         "pan" => "pan",
@@ -626,12 +631,12 @@ fn leak_event_name(event: &str) -> &'static str {
     }
 }
 
-/// Nombres de evento que esta plataforma sabe reconocer. El resto se ignoran
-/// en silencio: una plantilla puede traer `(click)` heredado de web y no es
-/// motivo para reventar la app.
+/// The event names this platform knows how to recognise. The rest are ignored
+/// in silence: a template may carry a `(click)` inherited from the web, and
+/// that is no reason to crash the app.
 ///
-/// `kind` decide qué mecanismo de UIKit se usa: gestos para vistas normales,
-/// target-action para campos de texto, delegado para scroll.
+/// `kind` decides which UIKit mechanism is used: gestures for ordinary views,
+/// target-action for text fields, a delegate for scrolling.
 pub fn attach(
     mtm: objc2::MainThreadMarker,
     view: &UIView,
@@ -642,18 +647,20 @@ pub fn attach(
 ) -> Option<AttachedListener> {
     use an_core::NodeKind;
 
-    // Controles que avisan por target-action: el valor cambió, o se pulsó.
+    // Controls that report through target-action: the value changed, or it
+    // was pressed.
     let control_action = match (kind, event) {
         (NodeKind::Switch, "change") => Some((UIControlEvents::ValueChanged, sel!(handleSwitch:))),
         (NodeKind::Slider, "change") => Some((UIControlEvents::ValueChanged, sel!(handleSlider:))),
-        // El botón, y aquí las dos familias no se pueden tratar igual.
+        // The button, and here the two families cannot be treated alike.
         //
-        // En el teléfono se toca, y UIKit manda `TouchUpInside`. En una tele no
-        // hay toques: el mando pulsa el botón central sobre lo que esté
-        // enfocado y UIKit manda `PrimaryActionTriggered`; `TouchUpInside` no
-        // llega nunca. El reconocedor se engancha igual, no falla nada, y el
-        // botón sencillamente no responde. Es el fallo silencioso de manual, y
-        // costó verlo con el botón enfocado y blanco en pantalla.
+        // On a phone it is touched, and UIKit sends `TouchUpInside`. On a
+        // television there are no touches: the remote presses the centre
+        // button over whatever is focused and UIKit sends
+        // `PrimaryActionTriggered`; `TouchUpInside` never arrives. The
+        // recogniser attaches all the same, nothing fails, and the button
+        // simply does not respond. It is the textbook silent failure, and it
+        // took a while to spot with the button focused and white on screen.
         #[cfg(not(target_os = "tvos"))]
         (NodeKind::Button, "press") => Some((UIControlEvents::TouchUpInside, sel!(handleButton:))),
         #[cfg(target_os = "tvos")]
@@ -675,9 +682,9 @@ pub fn attach(
         return Some(AttachedListener::Control { events, action, target });
     }
 
-    // La barra de búsqueda no es un control: lo es su campo de texto, que sí
-    // es un `UITextField`. Engancharse a él evita tener que implementar el
-    // delegado entero para saber que alguien escribió.
+    // The search bar is not a control: its text field is, and that one really
+    // is a `UITextField`. Attaching to it saves implementing the whole
+    // delegate just to learn that somebody typed.
     if kind == NodeKind::SearchBar {
         let events = match event {
             "input" => UIControlEvents::EditingChanged,
@@ -699,17 +706,18 @@ pub fn attach(
         return Some(AttachedListener::Control { events, action, target });
     }
 
-    // Tirar para recargar. En iOS lo dibuja el sistema: se le engancha un
-    // `UIRefreshControl` al scroll y él pone la ruedecilla y la animación.
+    // Pull to refresh. On iOS the system draws it: a `UIRefreshControl` is
+    // attached to the scroll view and it supplies the spinner and the
+    // animation.
     //
-    // En tvOS no: la clase no está en el SDK, y aunque estuviera no hay dedo
-    // que tire. Se dice y no se engancha nada, en vez de dejar un `(refresh)`
-    // que no se dispara jamás.
+    // On tvOS it does not: the class is not in the SDK, and even if it were
+    // there is no finger to pull with. It is said and nothing is attached,
+    // rather than leaving a `(refresh)` that never fires.
     #[cfg(target_os = "tvos")]
     if kind == NodeKind::ScrollView && event == "refresh" {
         crate::family::report(
             "(refresh)",
-            "UIRefreshControl no está en el SDK, y en una tele no hay de dónde tirar",
+            "UIRefreshControl is not in the SDK, and on a television there is nothing to pull",
         );
         return None;
     }
@@ -729,8 +737,9 @@ pub fn attach(
         return Some(AttachedListener::Refresh { _target: target, control });
     }
 
-    // La selección de pestaña la avisa el controlador, no la vista: el host
-    // engancha el delegado al crearla, porque aquí solo llega la vista.
+    // The controller reports the tab selection, not the view: the host
+    // attaches the delegate when it creates it, because only the view gets
+    // here.
     if kind == NodeKind::TabBar {
         return None;
     }
@@ -760,14 +769,15 @@ pub fn attach(
         return Some(AttachedListener::Scroll { _delegate: delegate });
     }
 
-    // Volver atrás. Es el mismo evento en las tres familias y el mismo gesto
-    // en ninguna: `UIScreenEdgePanGestureRecognizer` está marcado
-    // `API_UNAVAILABLE(tvos, visionos)`, y con razón —una tele no tiene borde
-    // que arrastrar y una ventana volumétrica tampoco—.
+    // Going back. It is the same event in all three families and the same
+    // gesture in none of them: `UIScreenEdgePanGestureRecognizer` is marked
+    // `API_UNAVAILABLE(tvos, visionos)`, and rightly so —a television has no
+    // edge to drag from and neither does a volumetric window.
     #[cfg(not(any(target_os = "tvos", target_os = "visionos")))]
     if kind == NodeKind::StackView && event == "back" {
-        // El gesto de sistema: arrastrar desde el borde izquierdo. Aquí solo
-        // se avisa; deshacer la navegación es cosa del router.
+        // The system's gesture: dragging in from the left edge. All that
+        // happens here is a notification; undoing the navigation is the
+        // router's business.
         let target = GestureTarget::new(mtm, node, "back", queue);
         let recognizer = unsafe {
             UIScreenEdgePanGestureRecognizer::initWithTarget_action(
@@ -784,9 +794,10 @@ pub fn attach(
         });
     }
 
-    // En tvOS el «atrás» del sistema es el botón de menú del mando. No es una
-    // traducción nuestra del gesto: es el botón que la plataforma reserva para
-    // eso, y una app de tvOS que no responda a él se siente rota.
+    // On tvOS the system's "back" is the remote's menu button. It is not a
+    // translation of the gesture on our part: it is the button the platform
+    // reserves for that, and a tvOS app that does not answer it feels
+    // broken.
     #[cfg(target_os = "tvos")]
     if kind == NodeKind::StackView && event == "back" {
         let target = GestureTarget::new(mtm, node, "back", queue);
@@ -805,23 +816,23 @@ pub fn attach(
         });
     }
 
-    // visionOS no tiene ningún gesto del sistema para volver: la ventana se
-    // cierra por su barra, y dentro de la app el camino de vuelta es un botón
-    // que ponga la plantilla. Se dice, porque un `(back)` que nunca llega es
-    // exactamente lo que este proyecto no debe dejar pasar.
+    // visionOS has no system gesture for going back: the window is closed
+    // through its bar, and inside the app the way back is a button the
+    // template puts there. It is said, because a `(back)` that never arrives
+    // is exactly what this project must not let through.
     #[cfg(target_os = "visionos")]
     if kind == NodeKind::StackView && event == "back" {
         crate::family::report(
             "(back)",
-            "no hay gesto de volver: UIScreenEdgePanGestureRecognizer no está en el SDK y la \
-             ventana no tiene bordes que arrastrar. El camino de vuelta tiene que ser un botón \
-             de la plantilla",
+            "there is no back gesture: UIScreenEdgePanGestureRecognizer is not in the SDK and \
+             the window has no edges to drag from. The way back has to be a button in the \
+             template",
         );
         return None;
     }
 
-    // Gestos continuos y de dirección. Cada uno lleva su reconocedor: UIKit
-    // ya resuelve entre ellos quién gana cuando compiten.
+    // Continuous and directional gestures. Each carries its own recogniser:
+    // UIKit already settles between them who wins when they compete.
     if let Some(recognizer) = continuous_gesture(mtm, event, node, &queue) {
         let (recognizer, target) = recognizer;
         view.setUserInteractionEnabled(true);
@@ -829,10 +840,10 @@ pub fn attach(
         return Some(AttachedListener::Gesture { recognizer, _target: target });
     }
 
-    // En tvOS, `(focus)` y `(blur)` sobre una vista sin pulsación: la vista
-    // avisa sola cuando el mando llega a ella, pero solo si se declara
-    // enfocable, y una que no escucha nada más no tiene reconocedor que lo
-    // delate. Ver `focus.rs`.
+    // On tvOS, `(focus)` and `(blur)` on a view with no press: the view
+    // reports on its own when the remote reaches it, but only if it declares
+    // itself focusable, and one that is listening for nothing else has no
+    // recogniser to give it away. See `focus.rs`.
     #[cfg(target_os = "tvos")]
     if matches!(event, "focus" | "blur") {
         return match crate::focus::focusable(view) {
@@ -842,10 +853,10 @@ pub fn attach(
             }
             None => {
                 crate::family::report(
-                    &format!("({event}) sobre <{kind:?}>"),
-                    "solo <an-view> puede recibir el foco del mando: el resto de primitivas son \
-                     UILabel, UIImageView y controles, y canBecomeFocused solo se cambia \
-                     heredando. Envuélvelo en un <an-view>",
+                    &format!("({event}) on <{kind:?}>"),
+                    "only <an-view> can take the remote's focus: the rest of the primitives are \
+                     UILabel, UIImageView and controls, and canBecomeFocused can only be changed \
+                     by inheriting. Wrap it in an <an-view>",
                 );
                 None
             }
@@ -868,38 +879,39 @@ pub fn attach(
     };
     recognizer.setNumberOfTapsRequired(taps);
 
-    // UILabel y UIImageView vienen con la interacción apagada de fábrica:
-    // sin esto el gesto se registra y no se dispara nunca.
+    // UILabel and UIImageView come with interaction switched off out of the
+    // box: without this the gesture registers and never fires.
     view.setUserInteractionEnabled(true);
 
-    // tvOS: sin foco no hay pulsación.
+    // tvOS: with no focus there is no press.
     //
-    // El reconocedor se engancha igual que en iOS y no falla nada, pero el
-    // botón central solo llega a la vista que el motor de foco tenga
-    // seleccionada. Una `UIView` responde `NO` a `canBecomeFocused`, así que
-    // el mando no puede pararse en ella nunca y `(press)` no se dispara jamás.
-    // No hay error, no hay aviso del sistema: no pasa nada. Por eso `an-view`
-    // se crea en tvOS como `AnFocusableView`, que responde que sí en cuanto
-    // tiene un gesto encima —justo el que se está enganchando aquí—.
+    // The recogniser attaches just as on iOS and nothing fails, but the centre
+    // button only reaches the view the focus engine has selected. A `UIView`
+    // answers `NO` to `canBecomeFocused`, so the remote can never come to rest
+    // on it and `(press)` never fires. There is no error and no warning from
+    // the system: nothing happens at all. Hence `an-view` being created on
+    // tvOS as an `AnFocusableView`, which answers yes as soon as it has a
+    // gesture on it —precisely the one being attached here.
     #[cfg(target_os = "tvos")]
     {
         crate::focus::allow_press(&recognizer, crate::focus::SELECT);
         match crate::focus::focusable(view) {
             Some(focusable) => focusable.allow_interaction(),
             None => crate::family::report(
-                &format!("({event}) sobre <{kind:?}>"),
-                "en una tele solo se puede pulsar lo que el mando puede enfocar, y de las \
-                 primitivas solo <an-view> y los controles del sistema lo son. Envuélvelo en \
-                 un <an-view> y ponle ahí el (press)",
+                &format!("({event}) on <{kind:?}>"),
+                "on a television only what the remote can focus can be pressed, and of the \
+                 primitives only <an-view> and the system's controls are. Wrap it in an \
+                 <an-view> and put the (press) there",
             ),
         }
     }
 
-    // visionOS: el usuario apunta con la mirada, y sin realce no ve a qué.
+    // visionOS: the user aims with their gaze, and without a highlight they
+    // cannot see at what.
     //
-    // Lo dibuja el sistema fuera del proceso, pero solo si la vista lo pide:
-    // `hoverStyle` vale `nil` de fábrica. Los controles lo traen puesto; una
-    // `UIView` con `(press)`, no.
+    // The system draws it outside the process, but only if the view asks for
+    // it: `hoverStyle` is `nil` out of the box. The controls come with it set;
+    // a `UIView` with a `(press)` does not.
     #[cfg(target_os = "visionos")]
     crate::hover::mark_pressable(mtm, view);
 

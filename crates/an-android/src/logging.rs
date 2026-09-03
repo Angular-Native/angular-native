@@ -1,8 +1,8 @@
-//! Salida de diagnóstico hacia logcat.
+//! Diagnostic output on its way to logcat.
 //!
-//! Android tira a la basura la salida estándar de un proceso, así que sin esto
-//! ni `console.log` ni un `eprintln!` del core se ven en ninguna parte: un
-//! fallo se manifiesta como una pantalla vacía y nada más.
+//! Android throws away a process's standard output, so without this neither a
+//! `console.log` nor an `eprintln!` from the core shows up anywhere: a failure
+//! manifests as a blank screen and nothing else.
 
 use std::io::{BufRead, BufReader};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
@@ -12,11 +12,12 @@ use an_bridge::runtime::LogSink;
 use jni::objects::{Global, JObject, JValue};
 use jni::JavaVM;
 
-/// `console.*` desde JavaScript.
+/// `console.*` coming from JavaScript.
 pub struct AndroidLog {
     vm: JavaVM,
-    /// Compartida y no copiada: desde jni 0.22 una referencia global no se
-    /// puede duplicar sin el entorno, y usarla desde otro hilo sí es legal.
+    /// Shared rather than copied: since jni 0.22 a global reference cannot be
+    /// duplicated without the environment, while using it from another thread
+    /// is perfectly legal.
     host: std::sync::Arc<Global<JObject<'static>>>,
 }
 
@@ -25,8 +26,8 @@ impl AndroidLog {
         Rc::new(AndroidLog { vm, host: std::sync::Arc::new(host) })
     }
 
-    /// Otra referencia a la misma JavaVM. Desde jni 0.22 `JavaVM` es `Clone`,
-    /// que es lo que antes había que hacer a mano envolviendo el puntero.
+    /// Another reference to the same JavaVM. Since jni 0.22 `JavaVM` is
+    /// `Clone`, which is what used to be done by hand by wrapping the pointer.
     pub fn java_vm(&self) -> JavaVM {
         self.vm.clone()
     }
@@ -49,28 +50,28 @@ impl LogSink for AndroidLog {
     }
 }
 
-/// Redirige la salida estándar del proceso a logcat.
+/// Redirects the process's standard error to logcat.
 ///
-/// Es lo que hace que un `eprintln!` del core, o el mensaje de un `panic!`,
-/// aparezcan en algún sitio. Se monta una tubería, se apunta ahí el descriptor
-/// 2, y un hilo lee líneas y las reenvía.
+/// This is what makes an `eprintln!` from the core, or the message of a
+/// `panic!`, appear anywhere at all. A pipe is set up, descriptor 2 is pointed
+/// at it, and a thread reads lines and forwards them.
 pub fn redirect_stderr(sink: Rc<AndroidLog>) {
     let mut fds = [0; 2];
-    // SAFETY: `pipe` escribe dos descriptores en el array que se le pasa.
+    // SAFETY: `pipe` writes two descriptors into the array it is handed.
     if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
         return;
     }
     let (read_fd, write_fd) = (fds[0], fds[1]);
-    // SAFETY: write_fd acaba de crearse y es válido.
+    // SAFETY: write_fd was just created and is valid.
     if unsafe { libc::dup2(write_fd, libc::STDERR_FILENO) } < 0 {
         return;
     }
-    // SAFETY: read_fd es válido y a partir de aquí lo posee `OwnedFd`.
+    // SAFETY: read_fd is valid and from here on `OwnedFd` owns it.
     let read = unsafe { OwnedFd::from_raw_fd(read_fd) };
 
-    // El sumidero usa JNI, que exige engancharse al hilo: por eso el hilo
-    // lector construye el suyo propio en vez de compartir el `Rc`, que no
-    // cruza hilos. La referencia al host sí, dentro de un `Arc`.
+    // The sink uses JNI, which demands attaching to the thread: that is why
+    // the reader thread builds its own instead of sharing the `Rc`, which does
+    // not cross threads. The reference to the host does, inside an `Arc`.
     let vm = sink.java_vm();
     let host = sink.host.clone();
     std::thread::spawn(move || {
@@ -84,8 +85,8 @@ pub fn redirect_stderr(sink: Rc<AndroidLog>) {
     let _ = write_fd;
 }
 
-/// El descriptor de escritura se queda abierto a propósito: cerrarlo cerraría
-/// la tubería y con ella el redireccionamiento.
+/// The write descriptor is left open on purpose: closing it would close the
+/// pipe, and with it the redirection.
 const _: fn() = || {
     let _ = std::io::stderr().as_raw_fd();
 };

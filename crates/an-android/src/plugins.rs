@@ -1,14 +1,15 @@
-//! El lado Android de los plugins.
+//! The Android side of plugins.
 //!
-//! El gemelo de `an-ios/src/modules/plugin.rs`, con el mismo reparto: Rust
-//! lleva la llamada al hilo de UI y se trae la respuesta, y lo que el plugin
-//! hace vive en Java. Lo que cambia es el camino de vuelta —aquí todo cruza
-//! JNI— y que el despachador no es un puntero a función sino un objeto Java al
-//! que se guarda una referencia global.
+//! The twin of `an-ios/src/modules/plugin.rs`, with the same split: Rust takes
+//! the call to the UI thread and brings the answer back, and whatever the
+//! plugin does lives in Java. What differs is the return path —here everything
+//! crosses JNI— and that the dispatcher is not a function pointer but a Java
+//! object a global reference is kept to.
 //!
-//! Como en iOS, esto es global al proceso y no al runtime: el registro ocurre
-//! antes de `nativeNew` porque el core construye un módulo por plugin al
-//! arrancar el motor, y lo que llegue después ya no entraría.
+//! As on iOS, this is global to the process and not to the runtime:
+//! registration happens before `nativeNew` because the core builds one module
+//! per plugin when it starts the engine, and anything arriving after that would
+//! no longer get in.
 
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -28,8 +29,8 @@ fn names() -> &'static Mutex<Vec<String>> {
     NAMES.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-/// El `AnPluginRegistry` de Java, con su VM para poder engancharse desde
-/// cualquier hilo.
+/// Java's `AnPluginRegistry`, together with its VM so it can be attached to
+/// from any thread.
 type Registry = Mutex<Option<(JavaVM, Global<JObject<'static>>)>>;
 
 fn registry() -> &'static Registry {
@@ -37,31 +38,32 @@ fn registry() -> &'static Registry {
     REGISTRY.get_or_init(|| Mutex::new(None))
 }
 
-/// Un módulo por plugin registrado, listo para viajar al hilo del motor.
+/// One module per registered plugin, ready to travel to the engine's thread.
 pub fn host_plugins() -> Vec<HostPlugin> {
     names()
         .lock()
-        .expect("registro de plugins envenenado")
+        .expect("poisoned plugin registry")
         .iter()
         .map(|name| HostPlugin::new(name, bridge().clone()))
         .collect()
 }
 
-/// Lleva a Java las llamadas acumuladas. Se llama desde `nativeFrame`, que
-/// corre en el hilo de UI: es donde un plugin puede tocar la vista o pedir un
-/// permiso.
+/// Carries the queued calls over to Java. It is called from `nativeFrame`,
+/// which runs on the UI thread: that is where a plugin may touch the view or
+/// ask for a permission.
 pub fn pump(env: &mut jni::Env) {
     let calls = bridge().take_calls();
     if calls.is_empty() {
         return;
     }
-    let guard = registry().lock().expect("registro de plugins envenenado");
+    let guard = registry().lock().expect("poisoned plugin registry");
     let Some((_, registry_ref)) = guard.as_ref() else {
-        // Hay plugins registrados y nadie que los atienda: es un fallo de
-        // montaje del shell. Callarlo dejaría la promesa colgada sin pista.
+        // There are plugins registered and nobody to serve them: that is a
+        // wiring failure in the shell. Keeping quiet about it would leave the
+        // promise hanging with no clue why.
         for call in calls {
             let _ = bridge()
-                .reject(call.id, "el shell de Android no instaló el registro de plugins");
+                .reject(call.id, "the Android shell did not install the plugin registry");
         }
         return;
     };
@@ -71,7 +73,7 @@ pub fn pump(env: &mut jni::Env) {
             env.new_string(&call.method),
             env.new_string(&call.args),
         ) else {
-            let _ = bridge().reject(call.id, "no se pudieron convertir los argumentos a Java");
+            let _ = bridge().reject(call.id, "the arguments could not be converted to Java");
             continue;
         };
         crate::host::call_java(
@@ -89,7 +91,7 @@ pub fn pump(env: &mut jni::Env) {
     }
 }
 
-/// Guarda el registro de Java al que Rust le pasará cada llamada.
+/// Stores the Java registry Rust will hand every call to.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeSetPluginRegistry(
     mut env: EnvUnowned,
@@ -98,16 +100,16 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeSetPluginRegistry(
 ) {
     env.with_env(|env| -> Result<(), jni::errors::Error> {
         let (Ok(vm), Ok(global)) = (env.get_java_vm(), env.new_global_ref(&java_registry)) else {
-            eprintln!("angular-native: no se pudo guardar el registro de plugins");
+            eprintln!("angular-native: the plugin registry could not be stored");
             return Ok(());
         };
-        *registry().lock().expect("registro de plugins envenenado") = Some((vm, global));
+        *registry().lock().expect("poisoned plugin registry") = Some((vm, global));
         Ok(())
     })
     .resolve::<LogErrorAndDefault>()
 }
 
-/// Da de alta un plugin por el nombre con el que JS lo invoca.
+/// Registers a plugin under the name JS invokes it by.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeRegisterPlugin(
     mut env: EnvUnowned,
@@ -117,10 +119,10 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeRegisterPlugin(
     env.with_env(|env| -> Result<(), jni::errors::Error> {
         let Ok(name) = env.get_string(&name) else { return Ok(()) };
         let name: String = name.into();
-        let mut names = names().lock().expect("registro de plugins envenenado");
-        // Dos módulos con el mismo nombre darían un segundo que no vería nadie.
+        let mut names = names().lock().expect("poisoned plugin registry");
+        // Two modules under the same name would give a second one nobody sees.
         if names.iter().any(|existing| *existing == name) {
-            eprintln!("angular-native: el plugin {name:?} ya estaba registrado");
+            eprintln!("angular-native: plugin {name:?} was already registered");
             return Ok(());
         }
         names.push(name);
@@ -129,8 +131,8 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativeRegisterPlugin(
     .resolve::<LogErrorAndDefault>()
 }
 
-/// Contesta a una llamada. `json` es el valor de vuelta ya serializado.
-/// Devuelve 0 si la llamada existía y -1 si no.
+/// Answers a call. `json` is the return value, already serialised.
+/// Returns 0 if the call existed and -1 if it did not.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_angularnative_AnRuntime_nativePluginResolve(
     mut env: EnvUnowned,
@@ -149,7 +151,7 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativePluginResolve(
     .resolve::<LogErrorAndDefault>()
 }
 
-/// Rechaza una llamada. Devuelve 0 si la llamada existía y -1 si no.
+/// Rejects a call. Returns 0 if the call existed and -1 if it did not.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_angularnative_AnRuntime_nativePluginReject(
     mut env: EnvUnowned,
@@ -160,7 +162,7 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativePluginReject(
     env.with_env(|env| -> Result<jint, jni::errors::Error> {
         let message: String = match env.get_string(&message) {
             Ok(text) => text.into(),
-            Err(_) => "el plugin falló".to_owned(),
+            Err(_) => "the plugin failed".to_owned(),
         };
         Ok(report(bridge().reject(id as u64, &message)))
     })

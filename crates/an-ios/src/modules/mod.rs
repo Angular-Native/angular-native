@@ -1,7 +1,7 @@
-//! Módulos nativos de iOS.
+//! iOS's native modules.
 //!
-//! `device` se compila dentro del core; los plugins vienen de fuera y solo
-//! tienen aquí al cartero que les lleva la llamada.
+//! `device` is compiled into the core; the plugins come from outside and all
+//! they have here is the postman that carries the call to them.
 
 mod device;
 mod plugin;

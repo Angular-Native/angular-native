@@ -1,6 +1,6 @@
-//! `HostRenderer` sobre UIKit. Una vista nativa por nodo montable, colocada
-//! con `frame` directo: el layout ya lo resolvió taffy, Auto Layout aquí solo
-//! añadiría un segundo motor de layout compitiendo con el primero.
+//! `HostRenderer` over UIKit. One native view per mountable node, placed with
+//! a direct `frame`: taffy has already worked the layout out, and Auto Layout
+//! here would only add a second layout engine competing with the first.
 
 use std::collections::HashMap;
 
@@ -20,10 +20,10 @@ use objc2_ui_kit::{
     UIScrollView, UISlider, UISwitch, UITextField, UITextInputTraits, UIView,
 };
 
-/// Lista de cadenas en JSON, sin traerse un analizador entero para esto.
+/// A JSON list of strings, without pulling in a whole parser for it.
 ///
-/// Solo tiene que entender lo que genera el lado JS: `["uno","dos"]`, con
-/// comillas escapadas si hiciera falta.
+/// It only has to understand what the JS side generates: `["one","two"]`, with
+/// escaped quotes if it comes to that.
 fn parse_string_list(raw: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut chars = raw.chars().peekable();
@@ -48,23 +48,23 @@ fn parse_string_list(raw: &str) -> Vec<String> {
     out
 }
 
-/// Las manías del teclado de un campo o de un editor.
+/// A field's or an editor's keyboard quirks.
 ///
-/// El mensaje se manda resolviendo antes su implementación por el runtime, y no
-/// con el setter que genera objc2. No es una manía:
+/// The message is sent by first resolving its implementation through the
+/// runtime, and not with the setter objc2 generates. This is not fussiness:
 ///
-/// objc2 comprueba que el método exista antes de mandarlo —comprobación que en
-/// este proyecto ha cazado firmas mal declaradas más de una vez— mirando la
-/// tabla de métodos de la clase. En iOS 26, `-[UITextField setKeyboardType:]`
-/// **no está en esa tabla**: UIKit lo resuelve la primera vez que alguien lo
-/// pide. `respondsToSelector:` dice que sí y `class_getInstanceMethod` dice que
-/// no, y objc2 hace caso al segundo y aborta el proceso. Resultado: cualquier
-/// app con un campo de texto se cerraba nada más arrancar.
+/// objc2 checks that the method exists before sending it —a check that has
+/// caught badly declared signatures in this project more than once— by looking
+/// at the class's method table. On iOS 26, `-[UITextField setKeyboardType:]`
+/// **is not in that table**: UIKit resolves it the first time somebody asks
+/// for it. `respondsToSelector:` says yes and `class_getInstanceMethod` says
+/// no, and objc2 believes the second and aborts the process. The upshot: any
+/// app with a text field quit the moment it started.
 ///
-/// `class_getMethodImplementation` es la función del runtime que **provoca**
-/// esa resolución, así que devuelve la implementación de verdad. Antes se
-/// pregunta si el objeto responde: si algún día dejara de responder, esto lo
-/// dice en vez de mandar un mensaje a ciegas.
+/// `class_getMethodImplementation` is the runtime function that **provokes**
+/// that resolution, so it returns the real implementation. The object is asked
+/// whether it responds first: if it ever stopped responding, this says so
+/// instead of sending a message blind.
 fn apply_text_traits(traits: &objc2_foundation::NSObject, key: &str, text: Option<&str>, value: &PropValue) {
     use objc2::runtime::{NSObjectProtocol, Sel};
 
@@ -116,15 +116,15 @@ fn apply_text_traits(traits: &objc2_foundation::NSObject, key: &str, text: Optio
 
     if !traits.respondsToSelector(selector) {
         eprintln!(
-            "angular-native: {} no atiende {selector:?}; la prop `{key}` no se aplicó",
+            "angular-native: {} does not handle {selector:?}; the `{key}` prop was not applied",
             traits.class().name().to_string_lossy()
         );
         return;
     }
 
-    // `objc2` declara este símbolo sin tipos, para que cada quien le ponga los
-    // suyos: es la función del runtime que resuelve el método —provocando la
-    // resolución perezosa— y devuelve su implementación.
+    // `objc2` declares this symbol untyped, so each caller gives it its own:
+    // it is the runtime function that resolves the method —provoking the lazy
+    // resolution— and returns its implementation.
     unsafe extern "C" {
         fn class_getMethodImplementation(
             class: *const objc2::runtime::AnyClass,
@@ -132,8 +132,8 @@ fn apply_text_traits(traits: &objc2_foundation::NSObject, key: &str, text: Optio
         ) -> Option<unsafe extern "C" fn()>;
     }
 
-    // Las cuatro propiedades toman un solo `NSInteger`, así que la firma es la
-    // misma para todas.
+    // All four properties take a single `NSInteger`, so the signature is the
+    // same for every one of them.
     type Setter = unsafe extern "C" fn(&objc2_foundation::NSObject, Sel, isize);
     let Some(implementation) = (unsafe { class_getMethodImplementation(traits.class(), selector) })
     else {
@@ -143,7 +143,7 @@ fn apply_text_traits(traits: &objc2_foundation::NSObject, key: &str, text: Optio
     unsafe { setter(traits, selector, setting) };
 }
 
-/// La vista que hay justo debajo de otra dentro de un contenedor.
+/// The view immediately below another inside a container.
 fn previous_sibling(parent: &UIView, view: &UIView) -> Option<Retained<UIView>> {
     let subviews = parent.subviews().to_vec();
     let index = subviews.iter().position(|sibling| &**sibling == view)?;
@@ -153,10 +153,10 @@ fn previous_sibling(parent: &UIView, view: &UIView) -> Option<Retained<UIView>> 
     subviews.get(index - 1).cloned()
 }
 
-/// Contorno de un rectángulo con un radio distinto por esquina.
+/// The outline of a rectangle with a different radius per corner.
 ///
-/// Las esquinas van en el orden arriba-izq, arriba-der, abajo-der, abajo-izq,
-/// el mismo que usa CSS y el mismo que espera Android.
+/// The corners go in the order top-left, top-right, bottom-right, bottom-left,
+/// the same one CSS uses and the same one Android expects.
 fn rounded_path(width: f64, height: f64, radii: [f64; 4]) -> Retained<UIBezierPath> {
     use std::f64::consts::{FRAC_PI_2, PI};
 
@@ -202,8 +202,8 @@ fn rounded_path(width: f64, height: f64, radii: [f64; 4]) -> Retained<UIBezierPa
     path
 }
 
-/// Vista nativa de un nodo. Se guarda con su tipo concreto porque las props
-/// de un `<Text>` no se aplican igual que las de un `<View>`.
+/// A node's native view. It is kept with its concrete type because a
+/// `<Text>`'s props are not applied the way a `<View>`'s are.
 enum HostView {
     View(Retained<UIView>),
     Stack(Retained<UIView>),
@@ -211,30 +211,31 @@ enum HostView {
     Image(Retained<UIImageView>),
     Scroll(Retained<UIScrollView>),
     Field(Retained<UITextField>),
-    /// La vista de un `UITabBarController`, que es quien dibuja la barra.
+    /// A `UITabBarController`'s view, that controller being what draws the
+    /// bar.
     TabsHost(Retained<UIView>),
     Toggle(Retained<UISwitch>),
     Slide(Retained<UISlider>),
     Spinner(Retained<UIActivityIndicatorView>),
     Progress(Retained<UIProgressView>),
     Button(Retained<UIButton>),
-    /// Una capa por encima de todo. En iOS lo suyo sería presentar un
-    /// controlador, pero aquí no hay uno por pantalla: es una vista que se
-    /// monta sobre la raíz y se anima al aparecer.
+    /// A layer above everything. On iOS the proper thing would be to present
+    /// a controller, but there is no one-per-screen here: it is a view mounted
+    /// over the root that animates in.
     Overlay(Retained<UIView>),
-    /// Un diálogo no tiene vista propia: lo presenta el sistema. Se monta una
-    /// vista vacía para que el árbol tenga algo donde colgar el nodo.
+    /// A dialog has no view of its own: the system presents it. An empty view
+    /// is mounted so the tree has something to hang the node off.
     Dialog(Retained<UIView>),
     Segments(Retained<objc2_ui_kit::UISegmentedControl>),
     Step(Retained<objc2_ui_kit::UIStepper>),
     Search(Retained<objc2_ui_kit::UISearchBar>),
-    /// Un desplegable: un botón que abre un menú del sistema.
+    /// A drop-down: a button that opens a system menu.
     Menu(Retained<UIButton>),
     Date(Retained<objc2_ui_kit::UIDatePicker>),
     Area(Retained<objc2_ui_kit::UITextView>),
     Nav(Retained<objc2_ui_kit::UINavigationBar>),
-    /// tvOS no la tiene: WebKit no forma parte de su SDK, así que ni el
-    /// enlazado la encontraría. Ver `family.rs`.
+    /// tvOS does not have it: WebKit is not part of its SDK, so not even the
+    /// linker would find it. See `family.rs`.
     #[cfg(not(target_os = "tvos"))]
     Web(Retained<crate::web::WKWebView>),
     Map(Retained<crate::map::MKMapView>),
@@ -310,10 +311,10 @@ impl HostView {
     }
 }
 
-/// Las partes de una transformación, sin componer.
+/// A transform's parts, uncomposed.
 ///
-/// La escala arranca en 1 y no en 0: una vista sin `scale` tiene que verse
-/// igual que antes de que existiera la prop, no desaparecer.
+/// The scale starts at 1 and not at 0: a view with no `scale` has to look the
+/// way it did before the prop existed, not disappear.
 #[derive(Clone, Copy)]
 struct Transform {
     translate_x: f64,
@@ -330,11 +331,12 @@ impl Default for Transform {
 }
 
 impl Transform {
-    /// El orden es escalar, girar y luego desplazar.
+    /// The order is scale, rotate, then translate.
     ///
-    /// Al revés no sale lo mismo: si el desplazamiento entra antes que el
-    /// giro, girar también gira el desplazamiento, y arrastrar algo inclinado
-    /// se va en diagonal en vez de seguir al dedo.
+    /// The other way round does not come out the same: if the translation goes
+    /// in before the rotation, rotating rotates the translation too, and
+    /// dragging something tilted goes off diagonally instead of following the
+    /// finger.
     fn matrix(&self) -> CGAffineTransform {
         let scale = CGAffineTransform {
             a: self.scale_x,
@@ -358,9 +360,9 @@ impl Transform {
     }
 }
 
-/// Primero `a`, luego `b`. `CGAffineTransformConcat` no está en los enlaces, y
-/// multiplicar dos matrices afines de 3x2 son seis productos: sale más barato
-/// hacerlo aquí que enlazar con Core Graphics por esto.
+/// `a` first, then `b`. `CGAffineTransformConcat` is not in the bindings, and
+/// multiplying two 3x2 affine matrices is six products: doing it here works out
+/// cheaper than linking against Core Graphics for this.
 fn concat(a: CGAffineTransform, b: CGAffineTransform) -> CGAffineTransform {
     CGAffineTransform {
         a: a.a * b.a + a.b * b.c,
@@ -372,10 +374,11 @@ fn concat(a: CGAffineTransform, b: CGAffineTransform) -> CGAffineTransform {
     }
 }
 
-/// Cómo anima una vista sus cambios.
+/// How a view animates its changes.
 #[derive(Clone, Copy)]
 struct Animation {
-    /// Segundos. Cero apaga la animación sin borrar el resto de ajustes.
+    /// Seconds. Zero switches the animation off without wiping the rest of the
+    /// settings.
     duration: f64,
     delay: f64,
     curve: UIViewAnimationOptions,
@@ -383,112 +386,119 @@ struct Animation {
 
 impl Default for Animation {
     fn default() -> Self {
-        // Sale rápido y frena al llegar. Es como se mueven las cosas, y es la
-        // curva por defecto de casi todo en iOS.
+        // Off fast and easing to a stop. It is how things move, and it is
+        // the default curve for nearly everything on iOS.
         Animation { duration: 0.0, delay: 0.0, curve: UIViewAnimationOptions::CurveEaseOut }
     }
 }
 
 pub struct UikitHost {
     mtm: MainThreadMarker,
-    /// Vista que da el shell de Xcode. La raíz del árbol cuelga de aquí.
+    /// The view the Xcode shell hands over. The root of the tree hangs off
+    /// it.
     container: Retained<UIView>,
     views: HashMap<NodeId, HostView>,
-    /// Fuente pendiente por nodo: `fontSize` y `fontWeight` llegan en props
-    /// separadas y hay que reconstruir la `UIFont` con las dos.
+    /// The font pending per node: `fontSize` and `fontWeight` arrive as
+    /// separate props and the `UIFont` has to be rebuilt from both.
     fonts: HashMap<NodeId, an_layout::FontSpec>,
-    /// Radios por esquina: arriba-izq, arriba-der, abajo-der, abajo-izq.
-    /// UIKit solo sabe de un radio único, así que cuando difieren hay que
-    /// dibujar la forma a mano y usarla como máscara.
+    /// Radii per corner: top-left, top-right, bottom-right, bottom-left.
+    /// UIKit only knows about a single radius, so when they differ the shape
+    /// has to be drawn by hand and used as a mask.
     corners: HashMap<NodeId, [f64; 4]>,
-    /// Valor pedido a cada deslizador. Se guarda porque `value`, `minimumValue`
-    /// y `maximumValue` llegan en props sueltas y en cualquier orden: fijar el
-    /// valor antes que el máximo lo recorta contra el rango viejo.
+    /// The value asked of each slider. It is kept because `value`,
+    /// `minimumValue` and `maximumValue` arrive as separate props and in any
+    /// order: setting the value before the maximum clamps it against the old
+    /// range.
     slider_values: HashMap<NodeId, f32>,
-    /// Transformación de cada vista. Igual que con el deslizador, las partes
-    /// llegan en props sueltas: hay que guardarlas para poder recomponer la
-    /// matriz entera cada vez que cambia una.
+    /// Each view's transform. As with the slider, the parts arrive as
+    /// separate props: they have to be kept so the whole matrix can be rebuilt
+    /// every time one of them changes.
     transforms: HashMap<NodeId, Transform>,
-    /// Nodos que animan sus cambios, y cómo. Mientras hay una entrada aquí,
-    /// mover, escalar, cambiar la opacidad o recolocar esa vista no salta al
-    /// valor nuevo: va hasta él.
+    /// The nodes that animate their changes, and how. While there is an entry
+    /// here, moving, scaling, changing the opacity of or repositioning that
+    /// view does not jump to the new value: it travels to it.
     animations: HashMap<NodeId, Animation>,
-    /// Nombre, tamaño y peso del icono de cada nodo. Igual que con la fuente,
-    /// las tres partes llegan sueltas y hay que rehacer el símbolo entero cada
-    /// vez que cambia una.
+    /// Each node's icon name, size and weight. As with the font, the three
+    /// parts arrive separately and the whole symbol has to be rebuilt every
+    /// time one of them changes.
     icons: HashMap<NodeId, (String, f32, u16)>,
-    /// Títulos e iconos de cada barra de pestañas, que llegan por separado.
+    /// Each tab bar's titles and icons, which arrive separately.
     tabs: HashMap<NodeId, (Vec<String>, Vec<String>)>,
-    /// El controlador de pestañas de cada barra.
+    /// Each bar's tab controller.
     tab_controllers: HashMap<NodeId, Retained<objc2_ui_kit::UITabBarController>>,
-    /// El delegado de cada barra. Un delegado no se retiene, así que si no se
-    /// guarda aquí muere y las pestañas dejan de avisar.
+    /// Each bar's delegate. A delegate is not retained, so if it is not kept
+    /// here it dies and the tabs stop reporting.
     tab_delegates: HashMap<NodeId, Retained<crate::events::TabDelegate>>,
-    /// Subrayado o tachado de cada rótulo. Va aparte del `FontSpec` porque el
-    /// núcleo no lo necesita: no cambia lo que mide el texto.
+    /// Each label's underline or strikethrough. It goes separately from the
+    /// `FontSpec` because the core does not need it: it does not change what
+    /// the text measures.
     decorations: HashMap<NodeId, String>,
-    /// Texto y color del hueco de ayuda de cada campo. Van juntos porque
-    /// `UITextField` no tiene un color de placeholder: hay que dárselo
-    /// atribuido, y para eso hace falta también el texto.
+    /// Each field's placeholder text and colour. They go together because
+    /// `UITextField` has no placeholder colour: it has to be given one as an
+    /// attributed string, and that needs the text as well.
     placeholders: HashMap<NodeId, String>,
     placeholder_colors: HashMap<NodeId, String>,
-    /// Opciones de cada desplegable, para poder poner el título del elegido.
+    /// Each drop-down's options, so the chosen one's title can be set.
     menus: HashMap<NodeId, Vec<String>>,
-    /// Título y color de cada botón. Cambiar la variante rehace la
-    /// configuración de UIKit, que se lleva por delante los dos.
+    /// Each button's title and colour. Changing the variant rebuilds UIKit's
+    /// configuration, which takes both of them down with it.
     button_titles: HashMap<NodeId, String>,
     button_colors: HashMap<NodeId, String>,
     button_variants: HashMap<NodeId, String>,
-    /// Segunda línea del botón, que solo existe en iOS.
+    /// The button's second line, which only exists on iOS.
     button_subtitles: HashMap<NodeId, String>,
-    /// Icono de cada botón y de qué lado va, que también llegan sueltos.
+    /// Each button's icon and which side it goes on, which also arrive
+    /// separately.
     button_icons: HashMap<NodeId, (String, String)>,
-    /// Título, rótulo del atrás y si se enseña, de cada cabecera.
+    /// Each header's title, back label and whether it is shown.
     navs: HashMap<NodeId, (String, String, bool)>,
-    /// El botón de atrás vivo de cada cabecera, para poder engancharle el
-    /// evento: se rehace cada vez que cambia el título.
+    /// Each header's live back button, so the event can be attached to it: it
+    /// is rebuilt every time the title changes.
     nav_backs: HashMap<NodeId, Retained<objc2_ui_kit::UIBarButtonItem>>,
     nav_targets: HashMap<NodeId, Retained<crate::events::ControlTarget>>,
-    /// Centro y zoom de cada mapa, que llegan en props sueltas.
+    /// Each map's centre and zoom, which arrive as separate props.
     maps: HashMap<NodeId, (f64, f64, f64)>,
-    /// Reproductor y capa de cada vídeo. La capa hay que redimensionarla a
-    /// mano: una capa no se estira con su vista.
+    /// Each video's player and layer. The layer has to be resized by hand: a
+    /// layer does not stretch with its view.
     videos: HashMap<
         NodeId,
         (Retained<crate::video::AVPlayer>, Retained<crate::video::AVPlayerViewController>),
     >,
-    /// Los vídeos que deberían estar sonando.
+    /// The videos that ought to be playing.
     video_playing: std::collections::HashSet<NodeId>,
-    /// Valor pedido a cada `Stepper`, por lo mismo que en el deslizador: el
-    /// rango y el valor llegan sueltos y en cualquier orden.
+    /// The value asked of each `Stepper`, for the same reason as the slider's:
+    /// the range and the value arrive separately and in any order.
     stepper_values: HashMap<NodeId, f64>,
-    /// Sentido de la próxima transición de cada pila: `push`, `pop` o nada.
-    /// Lo decide Angular, que es quien sabe si se avanza o se retrocede.
+    /// Which way each stack's next transition goes: `push`, `pop` or nothing.
+    /// Angular decides it, being the one that knows whether this is a step
+    /// forward or a step back.
     transitions: HashMap<NodeId, String>,
-    /// Pantallas que acaban de entrar en una pila y todavía no se han animado.
-    /// La animación no puede lanzarse al insertar porque el marco aún no está
-    /// calculado: se hace en `flush`, cuando el layout ya pasó.
+    /// Screens that have just entered a stack and have not been animated yet.
+    /// The animation cannot be launched on insertion because the frame is not
+    /// worked out yet: it happens in `flush`, once the layout has been
+    /// through.
     entering: Vec<(NodeId, NodeId)>,
-    /// Pantallas que salen. Se quedan en la jerarquía hasta que la animación
-    /// termina, así que hay que retenerlas aunque el árbol ya las olvidara.
+    /// Screens on their way out. They stay in the hierarchy until the
+    /// animation finishes, so they have to be retained even once the tree has
+    /// forgotten them.
     leaving: Vec<(NodeId, Retained<UIView>)>,
-    /// Nodos cuya vista está animándose fuera: `destroy` no debe tocarlos.
+    /// Nodes whose view is animating out: `destroy` must not touch them.
     animating_out: std::collections::HashSet<NodeId>,
-    /// Nodos suscritos al área segura, con los últimos márgenes que se les
-    /// contó. Solo se avisa cuando cambian de verdad.
+    /// The nodes subscribed to the safe area, with the last insets they were
+    /// told about. They are only notified when those really change.
     safe_area: HashMap<NodeId, [f32; 4]>,
-    /// Diálogos declarados. Se presentan al cerrar el frame, cuando todas sus
-    /// props ya llegaron: presentar en cuanto cambia `visible` mostraría un
-    /// diálogo sin título.
+    /// The dialogs that have been declared. They are presented as the frame
+    /// closes, once all of their props have arrived: presenting the moment
+    /// `visible` changes would show a dialog with no title.
     alerts: HashMap<NodeId, crate::alert::AlertState>,
-    /// Diálogos cuyo estado cambió en este frame.
+    /// The dialogs whose state changed in this frame.
     dirty_alerts: Vec<NodeId>,
-    /// Estado de presentación de cada `<Modal>`.
+    /// Each `<Modal>`'s presentation state.
     modals: HashMap<NodeId, crate::modal::ModalState>,
     dirty_modals: Vec<NodeId>,
-    /// Suscripciones vivas, indexadas por nodo y evento. Se guardan porque hay
-    /// que poder quitarlas: un `@if` que desmonta su rama destruye la vista,
-    /// pero un `(press)` que deja de estar bindeado no.
+    /// Live subscriptions, indexed by node and event. They are kept because it
+    /// has to be possible to take them away: an `@if` that unmounts its branch
+    /// destroys the view, but a `(press)` that stops being bound does not.
     listeners: HashMap<(NodeId, String), crate::events::AttachedListener>,
     /// Accessibility role and state per node, plus the traits the view
     /// carried from the system. They go together because
@@ -500,8 +510,8 @@ pub struct UikitHost {
 
 impl UikitHost {
     /// # Safety
-    /// `container` tiene que ser un `UIView` vivo y hay que llamar desde el
-    /// hilo principal.
+    /// `container` has to be a live `UIView` and this has to be called from
+    /// the main thread.
     pub fn new(mtm: MainThreadMarker, container: Retained<UIView>, events: EventQueue) -> Self {
         UikitHost {
             mtm,
@@ -555,8 +565,9 @@ impl UikitHost {
         self.views.len()
     }
 
-    /// La `UIFont` que pide un `FontSpec`. Sin tocar ninguna vista: el mismo
-    /// cálculo lo necesitan el rótulo, el campo, el editor y el botón.
+    /// The `UIFont` a `FontSpec` asks for. Without touching any view: the
+    /// label, the field, the editor and the button all need the same
+    /// calculation.
     fn build_font(&self, spec: &an_layout::FontSpec) -> Retained<UIFont> {
         let size = spec.size as f64;
         if let Some(family) = &spec.family {
@@ -579,10 +590,11 @@ impl UikitHost {
         UIFont::systemFontOfSize_weight(size, weight)
     }
 
-    /// Vuelve a poner el texto de ayuda con su color.
+    /// Puts the placeholder text back with its colour.
     ///
-    /// Sin color se pone llano y no atribuido: el atribuido sin atributos se
-    /// dibuja distinto del que pone UIKit por su cuenta.
+    /// With no colour it goes in plain and unattributed: an attributed string
+    /// with no attributes draws differently from the one UIKit puts there on
+    /// its own.
     fn apply_placeholder(&self, id: NodeId) {
         let Some(HostView::Field(field)) = self.views.get(&id) else { return };
         let Some(placeholder) = self.placeholders.get(&id) else { return };
@@ -613,16 +625,17 @@ impl UikitHost {
         let Some(spec) = self.fonts.get(&id).cloned() else { return };
         let font = self.build_font(&spec);
         let Some(view) = self.views.get(&id) else { return };
-        // Estos setters de UIKit están marcados unsafe por no ser thread-safe;
-        // el `MainThreadMarker` del host garantiza que vamos por el hilo bueno.
+        // These UIKit setters are marked unsafe for not being thread-safe;
+        // the host's `MainThreadMarker` guarantees we are on the right
+        // thread.
         match view {
             HostView::Label(label) => unsafe {
                 label.setFont(Some(&font));
                 label.setNumberOfLines(spec.max_lines.unwrap_or(0) as isize);
             },
-            // El campo, el editor y el botón también tienen letra, y hasta
-            // ahora se quedaban con la de UIKit: `[fontSize]` en un
-            // `<TextInput>` era una prop declarada que no hacía nada.
+            // The field, the editor and the button have type too, and until
+            // now they were left with UIKit's: `[fontSize]` on a `<TextInput>`
+            // was a declared prop that did nothing.
             HostView::Field(field) => unsafe { field.setFont(Some(&font)) },
             HostView::Area(area) => unsafe { area.setFont(Some(&font)) },
             HostView::Button(_) => self.refresh_button(id),
@@ -631,18 +644,18 @@ impl UikitHost {
         self.apply_text_attributes(id);
     }
 
-    /// Interlineado y espaciado entre letras, que `UILabel` no tiene como
-    /// propiedades.
+    /// Line height and letter spacing, which `UILabel` does not have as
+    /// properties.
     ///
-    /// El núcleo ya medía con los dos —están en el `FontSpec` con el que
-    /// calcula el alto de cada línea— y el host dibujaba sin ellos, así que el
-    /// layout reservaba un hueco que el texto no llenaba. La única forma de
-    /// aplicarlos en UIKit es con texto atribuido: `kern` para el espaciado y
-    /// un `NSParagraphStyle` para el alto de línea.
+    /// The core was already measuring with both —they are in the `FontSpec` it
+    /// works each line's height out with— and the host was drawing without
+    /// them, so the layout reserved room the text did not fill. The only way
+    /// to apply them in UIKit is with attributed text: `kern` for the spacing
+    /// and an `NSParagraphStyle` for the line height.
     ///
-    /// Se ponen solo esos dos atributos. La fuente y el color se dejan fuera a
-    /// propósito: sin ellos en los atributos, `UILabel` usa los suyos, y así
-    /// `[color]` y `[fontSize]` siguen funcionando como antes.
+    /// Only those two attributes are set. The font and the colour are left out
+    /// on purpose: with neither of them in the attributes, `UILabel` uses its
+    /// own, and so `[color]` and `[fontSize]` go on working as before.
     fn apply_text_attributes(&self, id: NodeId) {
         let Some(label) = self.views.get(&id).and_then(HostView::as_label) else { return };
         let spec = self.fonts.get(&id);
@@ -655,8 +668,8 @@ impl UikitHost {
         }
         let string = NSString::from_str(&text);
         if kern == 0.0 && line_height.is_none() && decoration == "none" {
-            // Sin nada que añadir se vuelve a texto llano: si no, quitar el
-            // espaciado dejaría puesto el de antes.
+            // With nothing to add it goes back to plain text: otherwise,
+            // taking the spacing away would leave the previous one in place.
             unsafe { label.setAttributedText(None) };
             label.setText(Some(&string));
             return;
@@ -667,10 +680,11 @@ impl UikitHost {
                 &string,
             )
         };
-        // En UTF-16, que es como cuenta `NSString`. Con la longitud en bytes,
-        // cualquier texto con una tilde se sale del rango y `NSAttributedString`
-        // levanta una excepción: la app se cierra al montar la primera letra
-        // acentuada, y el volcado headless no lo ve porque ahí no hay UIKit.
+        // In UTF-16, which is how `NSString` counts. With the length in
+        // bytes, any text carrying an accent runs off the end of the range and
+        // `NSAttributedString` raises an exception: the app quits on mounting
+        // the first accented letter, and the headless dump does not see it
+        // because there is no UIKit there.
         let range = objc2_foundation::NSRange { location: 0, length: string.len_utf16() };
         if kern != 0.0 {
             let number = objc2_foundation::NSNumber::new_f64(kern as f64);
@@ -684,13 +698,13 @@ impl UikitHost {
         }
         if let Some(height) = line_height {
             let style = objc2_ui_kit::NSMutableParagraphStyle::new();
-            // Mínimo y máximo iguales: el alto de línea es el que pide la
-            // plantilla, ni el que traiga la fuente ni uno mayor.
+            // Minimum and maximum the same: the line height is the one the
+            // template asks for, neither the font's own nor a larger one.
             style.setMinimumLineHeight(height as f64);
             style.setMaximumLineHeight(height as f64);
-            // El estilo de párrafo se lleva también el corte de línea, así que
-            // hay que devolverle el que tenía el rótulo o `numberOfLines`
-            // dejaría de poner puntos suspensivos.
+            // The paragraph style takes the line-break mode with it too, so
+            // the label's has to be given back or `numberOfLines` would stop
+            // putting an ellipsis in.
             style.setLineBreakMode(label.lineBreakMode());
             unsafe {
                 attributed.addAttribute_value_range(
@@ -701,8 +715,8 @@ impl UikitHost {
             };
         }
         if decoration != "none" {
-            // El 1 es `NSUnderlineStyle.single`: una raya sencilla, que es la
-            // única que se pide desde una plantilla.
+            // The 1 is `NSUnderlineStyle.single`: a plain single rule, which
+            // is the only one a template ever asks for.
             let style = objc2_foundation::NSNumber::new_isize(1);
             unsafe {
                 attributed.addAttribute_value_range(
@@ -719,12 +733,12 @@ impl UikitHost {
         unsafe { label.setAttributedText(Some(&attributed)) };
     }
 
-    /// Aplica un cambio visual, animado si el nodo lo pidió.
+    /// Applies a visual change, animated if the node asked for it.
     ///
-    /// No se puede animar "lo que pase dentro del bloque" y ya está: UIKit
-    /// necesita que el estado de partida esté puesto antes de entrar, y ese
-    /// es justo el que la vista tiene ahora. Por eso basta con meter el
-    /// cambio dentro; lo de fuera es lo que había.
+    /// You cannot simply animate "whatever happens inside the block": UIKit
+    /// needs the starting state to be in place before it is entered, and that
+    /// is exactly the one the view has right now. Hence it being enough to put
+    /// the change inside; what is outside is what was there.
     fn animated(&self, id: NodeId, change: impl Fn() + 'static) {
         let Some(anim) = self.animations.get(&id).copied().filter(|a| a.duration > 0.0) else {
             change();
@@ -743,17 +757,13 @@ impl UikitHost {
         }
     }
 
-    /// Rehace el aspecto de un botón con su variante y su color.
+    /// Rebuilds the whole button from whatever it is carrying.
     ///
-    /// Las dos props llegan sueltas y en cualquier orden, y cambiar la
-    /// variante rehace la configuración de UIKit, que se lleva por delante el
-    /// título y el color: hay que ponerlo todo de nuevo cada vez.
-    /// Rehace el botón entero con lo que lleve puesto.
-    ///
-    /// Variante, rótulo, subtítulo, icono, color y tipografía llegan en props
-    /// sueltas y en cualquier orden, y todas acaban en la misma
-    /// `UIButtonConfiguration`: cambiar una rehace la configuración y se lleva
-    /// por delante las otras cinco. Así que se guardan y se monta de una pieza.
+    /// Variant, label, subtitle, icon, colour and type all arrive as separate
+    /// props and in any order, and all of them end up in the same
+    /// `UIButtonConfiguration`: changing one rebuilds the configuration and
+    /// takes the other five down with it. So they are kept and it is assembled
+    /// in one piece.
     fn refresh_button(&self, id: NodeId) {
         let Some(HostView::Button(button)) = self.views.get(&id) else { return };
         let variant = self.button_variants.get(&id).map(String::as_str).unwrap_or("text");
@@ -766,11 +776,11 @@ impl UikitHost {
         let color = raw_color.map(|(r, g, b, a)| {
             objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(r, g, b, a)
         });
-        // Con relleno, el rótulo va del color que se lea encima del fondo; sin
-        // relleno, del color pedido. Se calcula aquí y no se deja a UIKit
-        // porque el texto atribuido —el que lleva la tipografía— no hereda el
-        // color de la configuración: se quedaba del tinte, o sea verde sobre
-        // verde, o sea invisible.
+        // Filled, the label takes whatever colour reads over the background;
+        // unfilled, the colour asked for. It is worked out here and not left
+        // to UIKit because attributed text —the kind that carries the type—
+        // does not inherit the configuration's colour: it stayed the tint
+        // colour, that is, green on green, that is, invisible.
         let foreground = raw_color.map(|value| {
             let (r, g, b, a) = if variant == "filled" {
                 crate::color::contrast_on(value)
@@ -779,11 +789,11 @@ impl UikitHost {
             };
             objc2_ui_kit::UIColor::colorWithRed_green_blue_alpha(r, g, b, a)
         });
-        // `UIButtonConfiguration` es lo que da los botones actuales de iOS:
-        // relleno, tintado, con contorno o pelado, con sus fondos y sus
-        // esquinas. Un subtítulo, un icono o una tipografía propia solo se
-        // pueden pedir por ahí, así que en cuanto hay alguno de los tres hace
-        // falta configuración aunque la variante sea la de solo rótulo.
+        // `UIButtonConfiguration` is what gives iOS's current buttons:
+        // filled, tinted, outlined or bare, with their backgrounds and their
+        // corners. A subtitle, an icon or a font of one's own can only be
+        // asked for through it, so the moment any of the three is there a
+        // configuration is needed even if the variant is the label-only one.
         let needs_config =
             !subtitle.is_empty() || icon.is_some() || font.is_some() || variant != "text";
         let config = unsafe {
@@ -794,9 +804,8 @@ impl UikitHost {
                 "tonal" => {
                     Some(objc2_ui_kit::UIButtonConfiguration::tintedButtonConfiguration(self.mtm))
                 }
-                // El contorno de UIKit: fondo transparente y una línea
-                // alrededor, que es lo que hace el botón `outlined` de
-                // Material.
+                // UIKit's outline: a transparent background and a line all
+                // round, which is what Material's `outlined` button does.
                 "outlined" => {
                     Some(objc2_ui_kit::UIButtonConfiguration::borderedButtonConfiguration(self.mtm))
                 }
@@ -808,37 +817,38 @@ impl UikitHost {
         };
         if let Some(config) = &config {
             unsafe {
-                // Antes de nada, borrar lo que dejó escrito la vía de siempre.
+                // First of all, wipe what the old path wrote.
                 //
-                // Las props llegan sueltas y `variant` llega después que
-                // `title` y `color`, así que la primera pasada de cada botón
-                // corre siempre como si fuera `text`: sin configuración, y por
-                // tanto por `setTitle:forState:` y `setTitleColor:forState:`.
-                // Ese color se queda pegado al botón, y cuando después se le
-                // monta una configuración UIKit lo sigue aplicando **al
-                // título** por encima del `baseForegroundColor` —al subtítulo
-                // no, que sí lo respeta—. En las tres variantes en las que el
-                // rótulo va del color pedido eso no se nota, porque el residuo
-                // vale lo mismo; en `filled`, donde el rótulo va del color que
-                // contrasta con el fondo, el residuo pintaba el texto del
-                // mismo color que el relleno. De ahí el botón entero y sin
-                // rótulo.
+                // The props arrive separately and `variant` arrives after
+                // `title` and `color`, so every button's first pass always
+                // runs as though it were `text`: with no configuration, and
+                // therefore through `setTitle:forState:` and
+                // `setTitleColor:forState:`. That colour sticks to the button,
+                // and when a configuration is later mounted on it UIKit goes
+                // on applying it **to the title** over the top of
+                // `baseForegroundColor` —not to the subtitle, which does
+                // respect it. In the three variants where the label takes the
+                // colour asked for this does not show, because the leftover is
+                // worth the same; in `filled`, where the label takes the
+                // colour that contrasts with the background, the leftover
+                // painted the text the same colour as the fill. Hence the
+                // whole button with no label on it.
                 button.setTitleColor_forState(None, UIControlState::Normal);
                 button.setTitle_forState(None, UIControlState::Normal);
-                // Con configuración, todo va por ella y nada por las llamadas
-                // de siempre.
+                // With a configuration, everything goes through it and
+                // nothing through the old calls.
                 config.setTitle(Some(&NSString::from_str(&title)));
                 if !subtitle.is_empty() {
                     config.setSubtitle(Some(&NSString::from_str(&subtitle)));
                 }
                 if let Some((name, position)) = &icon {
-                    // El icono del botón se pide por nombre, igual que en
-                    // `<Icon>`: es el símbolo del sistema, no un dibujo.
+                    // The button's icon is asked for by name, just as in
+                    // `<Icon>`: it is the system's symbol, not a drawing.
                     //
-                    // Y se pide al tamaño del rótulo. Sin decírselo viene al
-                    // suyo, que es el de una imagen suelta, y un botón con una
-                    // estrella el doble de alta que su texto no se parece a
-                    // ningún botón de iOS.
+                    // And it is asked for at the label's size. Left unsaid it
+                    // comes at its own, which is a loose image's, and a button
+                    // with a star twice as tall as its text looks like no iOS
+                    // button there is.
                     let points = spec.as_ref().map(|spec| spec.size).unwrap_or(17.0);
                     let weight = spec.as_ref().map(|spec| spec.weight).unwrap_or(400);
                     config.setImage(crate::icons::symbol(name, points, weight).as_deref());
@@ -850,9 +860,9 @@ impl UikitHost {
                     config.setImagePadding(6.0);
                 }
                 if let Some(color) = &color {
-                    // Con relleno el color pedido es el del fondo y el rótulo
-                    // va del que se lea encima; sin relleno es el del rótulo,
-                    // y con él el del icono.
+                    // Filled, the colour asked for is the background's and
+                    // the label takes whatever reads over it; unfilled, it is
+                    // the label's, and with it the icon's.
                     if variant == "filled" {
                         config.setBaseBackgroundColor(Some(color));
                     }
@@ -861,13 +871,14 @@ impl UikitHost {
                     config.setBaseForegroundColor(Some(foreground));
                 }
                 if let Some(font) = &font {
-                    // La tipografía de un botón con configuración la resuelve
-                    // UIKit: pedírsela al `titleLabel` es una sugerencia que
-                    // pisa en cuanto vuelve a montar el título. El sitio donde
-                    // manda de verdad es este transformador, que recibe los
-                    // atributos que UIKit iba a usar y devuelve los que se
-                    // usan. Se cambia solo la fuente: el color y lo demás
-                    // salen de la configuración y hay que dejarlos pasar.
+                    // The type of a button with a configuration is UIKit's
+                    // to resolve: asking the `titleLabel` for it is a
+                    // suggestion it treads on the moment it mounts the title
+                    // again. The place that really rules is this transformer,
+                    // which receives the attributes UIKit was going to use and
+                    // returns the ones that get used. Only the font is
+                    // changed: the colour and the rest come out of the
+                    // configuration and have to be let through.
                     let font = font.clone();
                     let block = RcBlock::new(
                         move |attributes: NonNull<
@@ -880,9 +891,10 @@ impl UikitHost {
                             let out = objc2_foundation::NSMutableDictionary::
                                 dictionaryWithDictionary(incoming);
                             out.insert(objc2_ui_kit::NSFontAttributeName, font.as_ref());
-                            // El bloque devuelve el diccionario en +0, así que
-                            // se suelta en el pool: quedárselo lo filtra y
-                            // soltarlo aquí lo mata antes de que UIKit lo lea.
+                            // The block returns the dictionary at +0, so it
+                            // is released into the pool: keeping it leaks it
+                            // and releasing it here kills it before UIKit
+                            // reads it.
                             let out: Retained<objc2_foundation::NSDictionary<_, _>> =
                                 out.into_super();
                             NonNull::new(Retained::autorelease_return(out)).unwrap()
@@ -894,16 +906,16 @@ impl UikitHost {
         }
         unsafe {
             button.setConfiguration(config.as_deref());
-            // La letra se le pide al rótulo en los dos casos. Con
-            // configuración quien manda es el transformador de arriba y esto
-            // sobra; sin ella no hay transformador que valga y esta es la
-            // única vía, así que se deja para las dos.
+            // The font is asked of the label in both cases. With a
+            // configuration what rules is the transformer above and this is
+            // redundant; without one no transformer applies and this is the
+            // only path, so it is left in for both.
             if let (Some(font), Some(label)) = (&font, button.titleLabel()) {
                 label.setFont(Some(font));
             }
             if config.is_none() {
-                // Sin configuración manda el botón: rótulo y color por las
-                // llamadas de siempre.
+                // With no configuration the button rules: label and colour
+                // through the old calls.
                 button.setTitle_forState(Some(&NSString::from_str(&title)), UIControlState::Normal);
                 if let Some(color) = &color {
                     button.setTitleColor_forState(Some(color), UIControlState::Normal);
@@ -917,10 +929,11 @@ impl UikitHost {
         self.fonts.entry(id).or_default()
     }
 
-    /// Anima las pantallas que entraron o salieron en este frame.
+    /// Animates the screens that came in or went out in this frame.
     ///
-    /// Se hace aquí y no al insertar porque hasta que el layout no pasa no hay
-    /// marco que animar: una pantalla recién creada mide cero.
+    /// It happens here and not on insertion because until the layout has been
+    /// through there is no frame to animate: a freshly created screen measures
+    /// zero.
     fn run_stack_animations(&mut self) {
         let entering = std::mem::take(&mut self.entering);
         let leaving = std::mem::take(&mut self.leaving);
@@ -940,8 +953,8 @@ impl UikitHost {
                 continue;
             }
 
-            // Entra desde la derecha; la de debajo se desplaza un tercio, que
-            // es el paralaje que hace UINavigationController.
+            // It comes in from the right; the one underneath shifts by a
+            // third, which is the parallax UINavigationController does.
             let target = view.frame();
             let mut start = target;
             start.origin.x = width;
@@ -990,8 +1003,8 @@ impl UikitHost {
                     below.setFrame(*frame);
                 }
             });
-            // La vista se quita al acabar: hasta entonces tiene que seguir
-            // montada, y por eso el bloque la retiene.
+            // The view is taken away when it is done: until then it has to
+            // stay mounted, which is why the block retains it.
             let completion = RcBlock::new(move |_finished: objc2::runtime::Bool| {
                 view.removeFromSuperview();
             });
@@ -1005,7 +1018,7 @@ impl UikitHost {
         self.animating_out.clear();
     }
 
-    /// Cuenta los márgenes del sistema si cambiaron desde la última vez.
+    /// Reports the system's insets if they changed since last time.
     fn report_safe_area(&mut self, id: NodeId) {
         let Some(previous) = self.safe_area.get(&id).copied() else { return };
         let insets = self.container.safeAreaInsets();
@@ -1044,12 +1057,12 @@ impl UikitHost {
         self.apply_corners(id);
     }
 
-    /// Aplica los radios al nodo.
+    /// Applies the radii to the node.
     ///
-    /// Si los cuatro son iguales basta `cornerRadius`, que es barato y deja
-    /// que UIKit recorte por su cuenta. Si difieren no hay API: hay que
-    /// dibujar el contorno y ponerlo de máscara, y rehacerlo cada vez que la
-    /// vista cambia de tamaño, porque una máscara no se estira sola.
+    /// If all four are the same, `cornerRadius` is enough: it is cheap and
+    /// lets UIKit clip on its own. If they differ there is no API: the outline
+    /// has to be drawn and used as a mask, and rebuilt every time the view
+    /// changes size, because a mask does not stretch by itself.
     fn apply_corners(&mut self, id: NodeId) {
         let Some(radii) = self.corners.get(&id).copied() else { return };
         let Some(view) = self.views.get(&id) else { return };
@@ -1058,8 +1071,8 @@ impl UikitHost {
 
         let uniform = radii.iter().all(|r| (*r - radii[0]).abs() < f64::EPSILON);
         if uniform {
-            // Como el resto de setters de UIKit: marcado unsafe por no ser
-            // thread-safe, y aquí siempre vamos por el hilo de UI.
+            // As with the rest of UIKit's setters: marked unsafe for not
+            // being thread-safe, and here we are always on the UI thread.
             unsafe { layer.setMask(None) };
             layer.setCornerRadius(radii[0]);
             native.setClipsToBounds(radii[0] > 0.0);
@@ -1070,7 +1083,8 @@ impl UikitHost {
         native.setClipsToBounds(true);
         let bounds = native.bounds();
         if bounds.size.width <= 0.0 || bounds.size.height <= 0.0 {
-            // Todavía no tiene tamaño; el marco llegará y volveremos aquí.
+            // It has no size yet; the frame will arrive and we will be back
+            // here.
             return;
         }
         let path = rounded_path(bounds.size.width, bounds.size.height, radii);
@@ -1084,37 +1098,39 @@ impl HostRenderer for UikitHost {
     fn create(&mut self, id: NodeId, kind: NodeKind) {
         let mtm = self.mtm;
 
-        // Lo que esta familia de UIKit no trae, antes del `match`.
+        // What this UIKit family does not ship, before the `match`.
         //
-        // El problema de un `<an-switch>` en tvOS no es cómo configurarlo: es
-        // que `UISwitch` no está en el sistema, y pedirle la clase a objc2
-        // aborta el proceso ahí mismo. Se dice en el log —una vez— y se deja
-        // una vista vacía marcada, para que el árbol tenga dónde colgar a los
-        // hijos del nodo y el resto de la pantalla no se descoloque. El
-        // medidor no conoce ese control, así que la caja mide cero: el hueco
-        // se ve, que es lo que tiene que pasar.
-        if let Some(porque) = crate::family::missing_kind(kind) {
-            crate::family::report(&format!("{kind:?}"), porque);
-            let hueco = UIView::new(mtm);
-            let marca = NSString::from_str(&format!("an-unsupported:{kind:?}"));
-            hueco.setAccessibilityIdentifier(Some(&marca));
-            hueco.setTranslatesAutoresizingMaskIntoConstraints(true);
-            self.views.insert(id, HostView::View(hueco));
+        // The trouble with an `<an-switch>` on tvOS is not how to configure
+        // it: it is that `UISwitch` is not in the system, and asking objc2 for
+        // the class aborts the process right there. It is said in the log
+        // —once— and a marked empty view is left behind, so that the tree has
+        // somewhere to hang the node's children and the rest of the screen
+        // does not go out of place. The measurer does not know that control,
+        // so the box measures zero: the gap shows, which is what ought to
+        // happen.
+        if let Some(reason) = crate::family::missing_kind(kind) {
+            crate::family::report(&format!("{kind:?}"), reason);
+            let gap = UIView::new(mtm);
+            let mark = NSString::from_str(&format!("an-unsupported:{kind:?}"));
+            gap.setAccessibilityIdentifier(Some(&mark));
+            gap.setTranslatesAutoresizingMaskIntoConstraints(true);
+            self.views.insert(id, HostView::View(gap));
             return;
         }
 
         let view = match kind {
             NodeKind::Text => {
                 let label = UILabel::new(mtm);
-                // El alto lo decide el layout, no el auto-ajuste de UIKit.
+                // The height is the layout's to decide, not UIKit's
+                // auto-sizing.
                 label.setNumberOfLines(0);
                 label.setLineBreakMode(NSLineBreakMode::ByWordWrapping);
-                // La fuente por defecto tiene que ser la misma con la que el
-                // layout midió. Un `UILabel` recién hecho usa 17 puntos y el
-                // núcleo mide con 14: la caja salía un 20% estrecha, el texto
-                // saltaba de línea y el recorte del padre se comía la
-                // segunda. Se veía como texto que desaparece, sin ningún
-                // error por ningún lado.
+                // The default font has to be the one the layout measured
+                // with. A freshly made `UILabel` uses 17 points and the core
+                // measures with 14: the box came out 20% narrow, the text
+                // wrapped, and the parent's clipping ate the second line. It
+                // showed up as text that disappears, with no error
+                // anywhere.
                 let default_size = an_layout::FontSpec::default().size as f64;
                 unsafe { label.setFont(Some(&UIFont::systemFontOfSize(default_size))) };
                 HostView::Label(label)
@@ -1122,30 +1138,31 @@ impl HostRenderer for UikitHost {
             NodeKind::Image => HostView::Image(UIImageView::new(mtm)),
             NodeKind::Icon => {
                 let view = UIImageView::new(mtm);
-                // `AlwaysTemplate` es lo que deja teñir el símbolo con
-                // `tintColor`; sin eso saldría siempre con su color propio y
-                // `[color]` no haría nada.
+                // `AlwaysTemplate` is what allows the symbol to be tinted
+                // with `tintColor`; without it it would always come out in its
+                // own colour and `[color]` would do nothing.
                 unsafe { view.setContentMode(objc2_ui_kit::UIViewContentMode::ScaleAspectFit) };
                 HostView::Image(view)
             }
             NodeKind::ScrollView => HostView::Scroll(UIScrollView::new(mtm)),
             NodeKind::TabBar => {
-                // Un `UITabBarController` de verdad, no una `UITabBar` suelta.
+                // A real `UITabBarController`, not a loose `UITabBar`.
                 //
-                // Desde iOS 26 una barra suelta no se porta: su proveedor
-                // visual la dibuja por su cuenta y en iPad la sube arriba
-                // *además* de en el marco que le da el layout, así que salen
-                // dos. Es lo que pasa cuando se usa un control que espera un
-                // controlador y no se le da.
+                // Since iOS 26 a loose bar does not behave: its visual
+                // provider draws it on its own and on iPad it puts it up top
+                // *as well as* in the frame the layout gives it, so two of
+                // them come out. It is what happens when a control that
+                // expects a controller is used without one.
                 //
-                // Con el controlador, UIKit tiene lo que necesita y coloca la
-                // barra donde toca en cada dispositivo: abajo en iPhone,
-                // arriba en iPad. Una sola, la del sistema, en las dos.
+                // With the controller, UIKit has what it needs and puts the
+                // bar where it belongs on each device: at the bottom on
+                // iPhone, at the top on iPad. One of them, the system's, on
+                // both.
                 let controller = objc2_ui_kit::UITabBarController::new(mtm);
                 unsafe {
-                    // `TabBar` y no `Automatic`: en iPad el automático puede
-                    // convertirla en barra lateral, y eso cambia la pantalla
-                    // entera por debajo del layout.
+                    // `TabBar` and not `Automatic`: on iPad the automatic
+                    // one may turn it into a sidebar, and that changes the
+                    // whole screen out from under the layout.
                     controller.setMode(objc2_ui_kit::UITabBarControllerMode::TabBar);
                 }
                 let delegate = crate::events::TabDelegate::new(mtm, id, self.events.clone());
@@ -1155,10 +1172,10 @@ impl HostRenderer for UikitHost {
                     )))
                 };
                 self.tab_delegates.insert(id, delegate);
-                let view = controller.view().expect("el controlador trae vista");
-                // La vista del controlador es solo el hueco donde va la barra:
-                // el contenido lo pone el árbol. Sin esto se ve su fondo
-                // blanco por debajo.
+                let view = controller.view().expect("the controller comes with a view");
+                // The controller's view is only the slot the bar goes in: the
+                // tree supplies the content. Without this its white background
+                // shows through underneath.
                 view.setBackgroundColor(None);
                 self.tab_controllers.insert(id, controller);
                 HostView::TabsHost(view)
@@ -1186,8 +1203,9 @@ impl HostRenderer for UikitHost {
             }
             NodeKind::StackView => {
                 let stack = UIView::new(mtm);
-                // Las pantallas que entran y salen se salen del marco: sin
-                // recortar, se verían deslizándose por encima de lo demás.
+                // Screens on their way in and out spill past the frame:
+                // unclipped, they would be seen sliding over everything
+                // else.
                 stack.setClipsToBounds(true);
                 HostView::Stack(stack)
             }
@@ -1195,8 +1213,8 @@ impl HostRenderer for UikitHost {
             NodeKind::TextEditor => {
                 let text_view = objc2_ui_kit::UITextView::new(mtm);
                 unsafe {
-                    // Sin fondo ni márgenes propios: los pone la plantilla,
-                    // igual que en un campo de una línea.
+                    // No background and no insets of its own: the template
+                    // supplies those, just as with a single-line field.
                     text_view.setBackgroundColor(None);
                     text_view.setTextContainerInset(objc2_ui_kit::UIEdgeInsets {
                         top: 0.0,
@@ -1228,9 +1246,9 @@ impl HostRenderer for UikitHost {
             NodeKind::Stepper => HostView::Step(objc2_ui_kit::UIStepper::new(mtm)),
             NodeKind::SearchBar => HostView::Search(objc2_ui_kit::UISearchBar::new(mtm)),
             NodeKind::Picker => {
-                // Un desplegable en iOS es un botón que abre un menú: no hay
-                // un control aparte, y `UIPickerView` es la rueda de pantalla
-                // completa, que es otra cosa.
+                // A drop-down on iOS is a button that opens a menu: there is
+                // no separate control, and `UIPickerView` is the full-screen
+                // wheel, which is a different thing.
                 let button = objc2_ui_kit::UIButton::new(mtm);
                 unsafe { button.setShowsMenuAsPrimaryAction(true) };
                 HostView::Menu(button)
@@ -1239,16 +1257,18 @@ impl HostRenderer for UikitHost {
                 let picker = objc2_ui_kit::UIDatePicker::new(mtm);
                 unsafe {
                     picker.setPreferredDatePickerStyle(objc2_ui_kit::UIDatePickerStyle::Compact);
-                    // Por defecto UIKit pide fecha *y* hora. El de aquí pide
-                    // fecha salvo que se diga otra cosa, igual que en Android.
+                    // By default UIKit asks for a date *and* a time. This
+                    // one asks for a date unless told otherwise, as on
+                    // Android.
                     picker.setDatePickerMode(objc2_ui_kit::UIDatePickerMode::Date);
                 };
                 HostView::Date(picker)
             }
-            // Aquí cae `View`, que es la primitiva que la gente hace
-            // pulsable con `(press)`. En tvOS no puede ser una `UIView`
-            // cualquiera: `canBecomeFocused` solo se cambia heredando, y sin
-            // eso el mando no llega nunca a esa vista. Ver `focus.rs`.
+            // `View` lands here, which is the primitive people make
+            // pressable with a `(press)`. On tvOS it cannot be just any
+            // `UIView`: `canBecomeFocused` can only be changed by inheriting,
+            // and without that the remote never reaches that view. See
+            // `focus.rs`.
             #[cfg(target_os = "tvos")]
             _ => HostView::View(Retained::into_super(crate::focus::FocusableView::new(
                 mtm,
@@ -1258,27 +1278,27 @@ impl HostRenderer for UikitHost {
             #[cfg(not(target_os = "tvos"))]
             _ => HostView::View(UIView::new(mtm)),
         };
-        // Quién manda sobre el marco.
+        // Who rules the frame.
         //
-        // `false` significa "mi marco lo deciden mis restricciones", y es lo
-        // que había aquí. Mientras no hubo ningún control con restricciones
-        // propias daba igual: el motor de Auto Layout no llegaba a activarse y
-        // los marcos se quedaban como los escribía el core. En cuanto entró
-        // uno compuesto —una `UISearchBar`, un `UIDatePicker`— el motor se
-        // activó para toda la ventana y puso a cero el marco de cada vista que
-        // decía esperar restricciones que no existían. Se veía como la
-        // pantalla entera amontonada en la esquina.
+        // `false` means "my frame is decided by my constraints", and that is
+        // what was here. While there was no control with constraints of its
+        // own it made no difference: the Auto Layout engine never came to life
+        // and the frames stayed as the core wrote them. The moment a compound
+        // one came in —a `UISearchBar`, a `UIDatePicker`— the engine switched
+        // on for the whole window and zeroed the frame of every view that
+        // claimed to be waiting on constraints that did not exist. It showed
+        // up as the entire screen piled into the corner.
         //
-        // `true` es lo que hay que decir cuando el marco lo escribe uno: UIKit
-        // lo traduce a restricciones y respeta lo que se le da.
+        // `true` is what to say when you write the frame yourself: UIKit
+        // translates it into constraints and respects what it is given.
         view.as_view().setTranslatesAutoresizingMaskIntoConstraints(true);
         self.views.insert(id, view);
     }
 
     fn destroy(&mut self, id: NodeId) {
         if let Some(view) = self.views.remove(&id) {
-            // Una pantalla que se está yendo sigue en pantalla hasta que la
-            // animación acabe: quitarla ahora daría un salto.
+            // A screen on its way out stays on screen until the animation
+            // finishes: taking it away now would give a jump.
             if !self.animating_out.contains(&id) {
                 view.as_view().removeFromSuperview();
             }
@@ -1321,8 +1341,8 @@ impl HostRenderer for UikitHost {
             return;
         };
         let is_stack = matches!(parent_view, HostView::Stack(_));
-        // Una pantalla que entra tiene que quedar por encima de la que sale,
-        // aunque el árbol la coloque antes.
+        // A screen coming in has to end up above the one going out, even
+        // when the tree places it before.
         let index = if is_stack {
             parent_view.as_view().subviews().len() as isize
         } else {
@@ -1340,7 +1360,7 @@ impl HostRenderer for UikitHost {
         let popping = matches!(self.views.get(&parent), Some(HostView::Stack(_)))
             && self.transitions.get(&parent).map(String::as_str) == Some("pop");
         if popping {
-            // Se queda montada hasta que termine de salir.
+            // It stays mounted until it has finished leaving.
             self.animating_out.insert(child);
             self.leaving.push((parent, native));
             return;
@@ -1365,9 +1385,9 @@ impl HostRenderer for UikitHost {
                     self.animated(id, move || view.setAlpha(v as f64));
                 }
             }
-            // Props de una sola plataforma. Viajan con su prefijo, así que
-            // este host descarta de un vistazo las que son de la otra: no
-            // tiene que saber qué significan, solo de quién son.
+            // Single-platform props. They travel with their prefix, so this
+            // host drops the other's at a glance: it does not have to know
+            // what they mean, only whose they are.
             _ if key.starts_with("android:") => {}
             "variant" | "icon" | "iconPosition" | "ios:subtitle"
                 if matches!(view, HostView::Button(_)) =>
@@ -1389,16 +1409,16 @@ impl HostRenderer for UikitHost {
                         entry.1 = text.clone().unwrap_or_else(|| "leading".to_owned());
                     }
                 }
-                // Un botón sin nombre de icono no lleva icono, aunque le
-                // quede el lado puesto de antes.
+                // A button with no icon name carries no icon, even when the
+                // side is still set from before.
                 if self.button_icons.get(&id).is_some_and(|(name, _)| name.is_empty()) {
                     self.button_icons.remove(&id);
                 }
                 self.refresh_button(id);
             }
-            // Apagar un control es cosa de `UIControl`, que sabe ponerse gris
-            // y dejar de responder. Los que no lo son se quedan sin toque, que
-            // es lo más parecido que hay.
+            // Switching a control off is `UIControl`'s business: it knows how
+            // to go grey and stop responding. Whatever is not one is left
+            // untouchable instead, which is the nearest thing there is.
             "enabled" => {
                 let on = !matches!(value, PropValue::Bool(false));
                 match view {
@@ -1411,7 +1431,7 @@ impl HostRenderer for UikitHost {
                     _ => native.setUserInteractionEnabled(on),
                 }
             }
-            // --- mapa
+            // --- map
             "latitude" | "longitude" | "zoom" | "showsUser"
                 if matches!(view, HostView::Map(_)) =>
             {
@@ -1427,9 +1447,9 @@ impl HostRenderer for UikitHost {
                     _ => entry.2 = number.unwrap_or(12.0) as f64,
                 }
                 let (lat, lon, zoom) = *entry;
-                // MapKit no tiene niveles de zoom: tiene cuánto globo se ve.
-                // Cada nivel es la mitad del anterior, y el 0 abarca los 360
-                // grados de longitud, así que el ancho es 360 / 2^zoom.
+                // MapKit has no zoom levels: it has how much of the globe is
+                // in view. Each level is half the previous one, and 0 spans
+                // all 360 degrees of longitude, so the width is 360 / 2^zoom.
                 let span = 360.0 / 2f64.powf(zoom.max(0.0));
                 map.setRegion_animated(
                     crate::map::MKCoordinateRegion {
@@ -1445,7 +1465,7 @@ impl HostRenderer for UikitHost {
                     false,
                 );
             }
-            // --- vídeo
+            // --- video
             "url" | "playing" | "muted" if matches!(view, HostView::Video(_)) => {
                 let HostView::Video(container) = view else { return };
                 if key == "url" {
@@ -1459,19 +1479,21 @@ impl HostRenderer for UikitHost {
                     let controller = crate::video::AVPlayerViewController::new(self.mtm);
                     controller.setPlayer(Some(&player));
                     controller.setShowsPlaybackControls(true);
-                    // Contención de verdad: el controlador entra como hijo del
-                    // que manda. Colgar solo su vista funciona hasta que algo
-                    // —una rotación, el modo pantalla completa— pregunta por
-                    // el controlador que la gobierna y no hay ninguno.
+                    // Real containment: the controller goes in as a child of
+                    // the presiding one. Hanging up its view alone works until
+                    // something —a rotation, full-screen mode— asks for the
+                    // controller governing it and there is none.
                     if let Some(root) =
                         self.container.window().and_then(|w| w.rootViewController())
                     {
                         unsafe { root.addChildViewController(&controller) };
-                        let view = controller.view().expect("el controlador trae vista");
-                // La vista del controlador es solo el hueco donde va la barra:
-                // el contenido lo pone el árbol. Sin esto se ve su fondo
-                // blanco por debajo.
-                view.setBackgroundColor(None);
+                        let view =
+                            controller.view().expect("the controller comes with a view");
+                        // The player's view brings an opaque background of its
+                        // own, which would show around the picture wherever the
+                        // video does not fill the frame. What is behind belongs
+                        // to the template.
+                        view.setBackgroundColor(None);
                         view.setFrame(container.bounds());
                         container.addSubview(&view);
                         unsafe { controller.didMoveToParentViewController(Some(&root)) };
@@ -1493,7 +1515,7 @@ impl HostRenderer for UikitHost {
                     _ => player.setMuted(matches!(value, PropValue::Bool(true))),
                 }
             }
-            // --- cabecera de navegación
+            // --- navigation header
             "title" | "backTitle" | "showsBack" if matches!(view, HostView::Nav(_)) => {
                 let HostView::Nav(bar) = view else { return };
                 let entry = self.navs.entry(id).or_default();
@@ -1506,11 +1528,13 @@ impl HostRenderer for UikitHost {
                 let item = objc2_ui_kit::UINavigationItem::new(self.mtm);
                 unsafe { item.setTitle(Some(&NSString::from_str(&title))) };
                 if shows_back {
-                    // Fuera de un `UINavigationController` no hay botón de
-                    // atrás automático: se pone uno con el mismo símbolo y el
-                    // mismo sitio, y quien navega es el router.
-                    // El destino vive tanto como la cabecera: el botón se
-                    // rehace en cada cambio de título y el destino no.
+                    // Outside a `UINavigationController` there is no
+                    // automatic back button: one is put there with the same
+                    // symbol in the same place, and what navigates is the
+                    // router.
+                    //
+                    // The target lives as long as the header does: the button
+                    // is rebuilt on every title change and the target is not.
                     let target = self
                         .nav_targets
                         .entry(id)
@@ -1549,12 +1573,13 @@ impl HostRenderer for UikitHost {
                 }
                 bar.setItems(Some(&objc2_foundation::NSArray::from_retained_slice(&[item])));
             }
-            // --- texto de varias líneas
+            // --- multi-line text
             "value" if matches!(view, HostView::Area(_)) => {
                 let HostView::Area(area) = view else { return };
                 let next = text.clone().unwrap_or_default();
-                // Igual que en el campo de una línea: no se reescribe si ya
-                // dice eso, o el cursor salta al final mientras se escribe.
+                // As with the single-line field: it is not rewritten if it
+                // already says that, or the caret jumps to the end while the
+                // user types.
                 let current = unsafe { area.text() }.to_string();
                 if current != next {
                     unsafe { area.setText(Some(&NSString::from_str(&next))) };
@@ -1564,8 +1589,9 @@ impl HostRenderer for UikitHost {
                 let HostView::Area(area) = view else { return };
                 unsafe { area.setEditable(!matches!(value, PropValue::Bool(false))) };
             }
-            // --- navegador embebido. No existe en tvOS: sin WebKit no hay
-            // vista que cargar, y el nodo ni siquiera se creó.
+            // --- embedded browser. It does not exist on tvOS: with no
+            // WebKit there is no view to load, and the node was never even
+            // created.
             #[cfg(not(target_os = "tvos"))]
             "url" if matches!(view, HostView::Web(_)) => {
                 let HostView::Web(web) = view else { return };
@@ -1586,7 +1612,7 @@ impl HostRenderer for UikitHost {
                     None,
                 );
             }
-            // --- control segmentado, desplegable y selector de fecha
+            // --- segmented control, drop-down and date picker
             "items" if matches!(view, HostView::Segments(_) | HostView::Menu(_)) => {
                 let titles = parse_string_list(text.as_deref().unwrap_or("[]"));
                 match view {
@@ -1606,8 +1632,8 @@ impl HostRenderer for UikitHost {
                         self.menus.insert(id, titles.clone());
                         let menu = crate::menu::build(self.mtm, id, &titles, &self.events);
                         unsafe { button.setMenu(Some(&menu)) };
-                        // Sin título el botón no se ve: se pone el primero
-                        // hasta que alguien elija.
+                        // With no title the button cannot be seen: the first
+                        // one goes in until somebody chooses.
                         let current = titles.first().cloned().unwrap_or_default();
                         unsafe {
                             button.setTitle_forState(
@@ -1649,8 +1675,8 @@ impl HostRenderer for UikitHost {
                 let v = number.unwrap_or(0.0) as f64;
                 unsafe {
                     match key {
-                        // Igual que el deslizador: el rango antes que el
-                        // valor, o el valor se recorta contra el rango viejo.
+                        // As with the slider: the range before the value, or
+                        // the value gets clamped against the old range.
                         "minimumValue" => stepper.setMinimumValue(v),
                         "maximumValue" => stepper.setMaximumValue(v),
                         "stepValue" => stepper.setStepValue(if v > 0.0 { v } else { 1.0 }),
@@ -1668,8 +1694,8 @@ impl HostRenderer for UikitHost {
             }
             "value" if matches!(view, HostView::Date(_)) => {
                 let HostView::Date(picker) = view else { return };
-                // Llega en milisegundos desde 1970, que es lo que da `Date` en
-                // JS. `NSDate` trabaja en segundos.
+                // It arrives in milliseconds since 1970, which is what
+                // `Date` gives in JS. `NSDate` works in seconds.
                 let seconds = number.unwrap_or(0.0) as f64 / 1000.0;
                 let date = unsafe {
                     objc2_foundation::NSDate::dateWithTimeIntervalSince1970(seconds)
@@ -1697,9 +1723,9 @@ impl HostRenderer for UikitHost {
                     }
                 }
             }
-            // Iconos. El nombre y el tamaño van juntos: el tamaño de un
-            // símbolo no escala el dibujo, elige el trazo, así que hay que
-            // rehacerlo cuando cambia cualquiera de los dos.
+            // Icons. The name and the size go together: a symbol's size does
+            // not scale the drawing, it picks the stroke, so it has to be
+            // rebuilt when either of them changes.
             "name" | "iconSize" | "iconWeight" if matches!(view, HostView::Image(_)) => {
                 let entry = self.icons.entry(id).or_default();
                 match key {
@@ -1720,12 +1746,12 @@ impl HostRenderer for UikitHost {
                     }
                 }
             }
-            // Animación. No es un valor que se vea: dice cómo se llega a los
-            // que sí.
+            // Animation. It is not a value you can see: it says how the ones
+            // you can are arrived at.
             "animate" => {
                 let entry = self.animations.entry(id).or_default();
-                // Los milisegundos son lo que se escribe en una plantilla;
-                // UIKit trabaja en segundos.
+                // Milliseconds are what gets written in a template; UIKit
+                // works in seconds.
                 entry.duration = number.unwrap_or(0.0) as f64 / 1000.0;
             }
             "animateDelay" => {
@@ -1738,14 +1764,15 @@ impl HostRenderer for UikitHost {
                     Some("linear") => UIViewAnimationOptions::CurveLinear,
                     Some("ease-in") => UIViewAnimationOptions::CurveEaseIn,
                     Some("ease-in-out") => UIViewAnimationOptions::CurveEaseInOut,
-                    // `ease-out` es lo que se quiere casi siempre: sale rápido
-                    // y frena al llegar, que es como se mueven las cosas.
+                    // `ease-out` is what is wanted nearly always: off fast
+                    // and easing to a stop, which is how things move.
                     _ => UIViewAnimationOptions::CurveEaseOut,
                 };
             }
-            // Transformaciones. No pasan por el layout a propósito: mover o
-            // escalar una vista no cambia el sitio que ocupa, así que no hay
-            // que recalcular nada. Es lo que permite seguir al dedo a 120 Hz.
+            // Transforms. They do not go through the layout, on purpose:
+            // moving or scaling a view does not change the room it takes, so
+            // there is nothing to recompute. It is what makes following a
+            // finger at 120 Hz possible.
             "translateX" | "translateY" | "scale" | "scaleX" | "scaleY" | "rotate" => {
                 let entry = self.transforms.entry(id).or_default();
                 let v = number.unwrap_or(0.0) as f64;
@@ -1776,8 +1803,8 @@ impl HostRenderer for UikitHost {
             "borderBottomLeftRadius" => self.set_corner(id, 3, number),
             "borderColor" | "border-color" => {
                 if let Some(color) = text.as_deref().and_then(crate::color::to_uicolor) {
-                    // `CGColor` no está garantizado thread-safe; aquí siempre
-                    // estamos en el hilo principal.
+                    // `CGColor` is not guaranteed thread-safe; here we are
+                    // always on the main thread.
                     let cg = unsafe { color.CGColor() };
                     native.layer().setBorderColor(Some(&cg));
                 }
@@ -1787,7 +1814,7 @@ impl HostRenderer for UikitHost {
                     native.layer().setBorderWidth(v as f64);
                 }
             }
-            // --- diálogos del sistema
+            // --- the system's dialogs
             "title" | "message" | "buttons" | "visible" | "sheet"
                 if self.alerts.contains_key(&id) =>
             {
@@ -1853,8 +1880,8 @@ impl HostRenderer for UikitHost {
                     HostView::Toggle(toggle) => toggle.setOnTintColor(Some(&color)),
                     HostView::Slide(slider) => slider.setMinimumTrackTintColor(Some(&color)),
                     HostView::Spinner(spinner) => unsafe { spinner.setColor(Some(&color)) },
-                    // Un símbolo se tiñe, no se recolorea: se dibuja en
-                    // plantilla y el tinte manda.
+                    // A symbol is tinted, not recoloured: it is drawn as a
+                    // template and the tint rules.
                     HostView::Image(image) => unsafe { image.setTintColor(Some(&color)) },
                     HostView::Progress(bar) => bar.setProgressTintColor(Some(&color)),
                     HostView::Button(_) => {
@@ -1881,8 +1908,8 @@ impl HostRenderer for UikitHost {
                 };
                 match view {
                     HostView::Label(label) => label.setTextAlignment(alignment),
-                    // El campo y el editor también alinean, y hasta ahora se
-                    // quedaban con lo suyo.
+                    // The field and the editor align too, and until now they
+                    // were left with their own.
                     HostView::Field(field) => unsafe { field.setTextAlignment(alignment) },
                     HostView::Area(area) => unsafe { area.setTextAlignment(alignment) },
                     _ => {}
@@ -1924,20 +1951,20 @@ impl HostRenderer for UikitHost {
                 self.font_mut(id).line_height = number;
                 self.apply_text_attributes(id);
             }
-            // --- campos de texto
+            // --- text fields
             "value" => {
                 if let (HostView::Slide(slider), Some(v)) = (view, number) {
                     self.slider_values.insert(id, v);
-                    // Solo si difiere: escribirlo mientras se arrastra pelearía
-                    // con el dedo del usuario.
+                    // Only if it differs: writing it while the thumb is being
+                    // dragged would fight with the user's finger.
                     if (slider.value() - v).abs() > f32::EPSILON {
                         slider.setValue(v);
                     }
                 }
                 if let HostView::Field(field) = view {
-                    // Escribir el texto mientras el usuario escribe le movería
-                    // el cursor al final en cada tecla: solo se aplica si
-                    // difiere de verdad.
+                    // Writing the text while the user types would move their
+                    // caret to the end on every keystroke: it is only applied
+                    // if it really differs.
                     let current = field.text().map(|t| t.to_string()).unwrap_or_default();
                     let next = text.clone().unwrap_or_default();
                     if current != next {
@@ -1951,9 +1978,10 @@ impl HostRenderer for UikitHost {
                     self.apply_placeholder(id);
                 }
             }
-            // El texto de ayuda no tiene por qué ir del color del texto, y
-            // `UITextField` no tiene una prop para él: hay que dárselo
-            // atribuido, así que el color y el texto se guardan juntos.
+            // The placeholder text has no reason to take the text's colour,
+            // and `UITextField` has no prop for it: it has to be given as an
+            // attributed string, so the colour and the text are kept
+            // together.
             "placeholderColor" => {
                 match &text {
                     Some(color) => self.placeholder_colors.insert(id, color.clone()),
@@ -1961,8 +1989,9 @@ impl HostRenderer for UikitHost {
                 };
                 self.apply_placeholder(id);
             }
-            // Cómo se comporta el teclado. Son las `UITextInputTraits`, que
-            // están en el protocolo y valen igual para el campo y el editor.
+            // How the keyboard behaves. These are the `UITextInputTraits`,
+            // which live in the protocol and hold alike for the field and for
+            // the editor.
             "keyboardType" | "returnKeyType" | "autoCapitalize" | "autoCorrect" => match view {
                 HostView::Field(field) => apply_text_traits(&**field, key, text.as_deref(), value),
                 HostView::Area(area) => apply_text_traits(&**area, key, text.as_deref(), value),
@@ -2001,7 +2030,7 @@ impl HostRenderer for UikitHost {
                     field.setEnabled(!matches!(value, PropValue::Bool(false)));
                 }
             }
-            // --- controles del sistema
+            // --- the system's controls
             "on" => {
                 if let HostView::Toggle(toggle) = view {
                     toggle.setOn(matches!(value, PropValue::Bool(true)));
@@ -2014,15 +2043,15 @@ impl HostRenderer for UikitHost {
                 } else {
                     slider.setMaximumValue(v);
                 }
-                // El rango cambió: hay que volver a aplicar el valor, que
-                // pudo llegar antes y quedarse recortado.
+                // The range changed: the value has to be applied again,
+                // since it may have arrived earlier and been clamped.
                 if let Some(wanted) = self.slider_values.get(&id).copied() {
                     slider.setValue(wanted);
                 }
             }
-            // Los colores sueltos del interruptor y del deslizador. `[color]`
-            // sigue siendo el principal —lo encendido, el tramo recorrido—;
-            // estos son los otros.
+            // The switch's and the slider's separate colours. `[color]` is
+            // still the main one —what is switched on, the travelled stretch—
+            // and these are the others.
             "thumbColor" => {
                 let Some(color) = text.as_deref().and_then(crate::color::to_uicolor) else {
                     return;
@@ -2047,8 +2076,8 @@ impl HostRenderer for UikitHost {
             }
             "ios:continuous" => {
                 if let HostView::Slide(slider) = view {
-                    // Apagado, el deslizador solo avisa al soltar. Sirve para
-                    // lo que cuesta caro recalcular en cada punto.
+                    // Switched off, the slider only reports on release. Good
+                    // for whatever is expensive to recompute at every point.
                     slider.setContinuous(!matches!(value, PropValue::Bool(false)));
                 }
             }
@@ -2073,10 +2102,10 @@ impl HostRenderer for UikitHost {
                 }
             }
             "items" | "icons" if matches!(view, HostView::TabsHost(_)) => {
-                // Los títulos y los iconos llegan como JSON: el protocolo no
-                // lleva listas, y una barra de pestañas no justifica
-                // añadirlas. Llegan en props sueltas, así que se guardan y se
-                // rehacen las pestañas con las dos cada vez.
+                // The titles and the icons arrive as JSON: the protocol
+                // carries no lists, and a tab bar does not justify adding
+                // them. They arrive as separate props, so they are kept and
+                // the tabs are rebuilt from both every time.
                 let entry = self.tabs.entry(id).or_default();
                 let list = parse_string_list(text.as_deref().unwrap_or("[]"));
                 if key == "items" {
@@ -2086,10 +2115,10 @@ impl HostRenderer for UikitHost {
                 }
                 let (titles, icons) = entry.clone();
                 let Some(controller) = self.tab_controllers.get(&id) else { return };
-                // Una pestaña de `UITabBarController` es un controlador con su
-                // `tabBarItem`. Los de aquí van vacíos: el contenido lo pone
-                // el árbol, no ellos; lo que se quiere del controlador es que
-                // dibuje y coloque la barra como manda el sistema.
+                // A `UITabBarController`'s tab is a controller with its own
+                // `tabBarItem`. The ones here go in empty: the tree supplies
+                // the content, not them; what is wanted from the controller is
+                // that it draws and places the bar the way the system says.
                 let controllers: Vec<Retained<objc2_ui_kit::UIViewController>> = titles
                     .iter()
                     .enumerate()
@@ -2134,10 +2163,10 @@ impl HostRenderer for UikitHost {
                 if let Some(state) = self.modals.get_mut(&id) {
                     state.visible = matches!(value, PropValue::Bool(true));
                 }
-                // Escondida mientras no esté presentada. Al presentarla, es
-                // el controlador quien la enseña; si se dejara visible sin
-                // presentar, el contenido del modal se dibujaría en línea
-                // sobre la página.
+                // Hidden while it is not presented. On presentation it is
+                // the controller that shows it; were it left visible without
+                // being presented, the modal's content would be drawn inline
+                // over the page.
                 let visible = self.modals.get(&id).is_some_and(|m| m.visible);
                 native.setHidden(!visible);
                 if !self.dirty_modals.contains(&id) {
@@ -2149,17 +2178,17 @@ impl HostRenderer for UikitHost {
                     overlay.setHidden(matches!(value, PropValue::Bool(false)));
                 }
             }
-            // --- scroll
+            // --- scrolling
             //
-            // Tirar para recargar es de iOS: `UIRefreshControl` no está en el
-            // SDK de tvOS. En una tele no hay de dónde tirar, así que la prop
-            // no tiene a quién hablarle. Se avisa al suscribirse, en
-            // `events::attach`, y no aquí: repetirlo en cada cambio de valor
-            // llenaría el log del mismo aviso.
+            // Pull to refresh is iOS's: `UIRefreshControl` is not in the tvOS
+            // SDK. On a television there is nothing to pull, so the prop has
+            // nobody to talk to. The warning is given at subscription time, in
+            // `events::attach`, and not here: repeating it on every change of
+            // value would fill the log with the same warning.
             #[cfg(not(target_os = "tvos"))]
             "refreshing" => {
-                // El control lo trajo la suscripción a `refresh`: si nadie
-                // escucha, no hay nada que parar.
+                // The subscription to `refresh` brought the control: if
+                // nobody is listening, there is nothing to stop.
                 if let Some(control) = self
                     .listeners
                     .get(&(id, "refresh".to_owned()))
@@ -2207,7 +2236,7 @@ impl HostRenderer for UikitHost {
                     });
                 }
             }
-            // --- barra de pestañas
+            // --- tab bar
             "unselectedColor" => {
                 let (HostView::TabsHost(_), Some(controller)) =
                     (view, self.tab_controllers.get(&id))
@@ -2219,8 +2248,8 @@ impl HostRenderer for UikitHost {
             }
             "ios:translucent" => {
                 if let Some(controller) = self.tab_controllers.get(&id) {
-                    // Con la barra opaca, lo que hay debajo deja de verse a
-                    // través: sirve cuando el contenido se lee mal detrás.
+                    // With the bar opaque, what is underneath stops showing
+                    // through: useful when the content behind it reads badly.
                     unsafe {
                         controller.tabBar().setTranslucent(!matches!(value, PropValue::Bool(false)))
                     };
@@ -2237,8 +2266,9 @@ impl HostRenderer for UikitHost {
     fn set_text(&mut self, id: NodeId, text: &str) {
         if let Some(label) = self.views.get(&id).and_then(HostView::as_label) {
             label.setText(Some(&NSString::from_str(text)));
-            // `setText` tira el texto atribuido, así que el espaciado y el
-            // interlineado hay que volver a ponerlos con cada palabra nueva.
+            // `setText` throws the attributed text away, so the letter
+            // spacing and the line height have to be put back with every new
+            // word.
             self.apply_text_attributes(id);
         }
     }
@@ -2248,9 +2278,10 @@ impl HostRenderer for UikitHost {
         let Some(view) = self.views.get(&id) else { return };
         let native = view.as_view();
 
-        // El área segura no la produce ningún gesto: la sabe el sistema, y
-        // cambia al rotar o al aparecer el teclado. Se cuenta al suscribirse y
-        // después en cada layout, que es cuando puede haber cambiado.
+        // No gesture produces the safe area: the system knows it, and it
+        // changes on rotation or when the keyboard comes up. It is reported at
+        // subscription time and afterwards on every layout, which is when it
+        // may have changed.
         if event == "safeArea" {
             if enabled {
                 self.safe_area.insert(id, [f32::NAN; 4]);
@@ -2289,8 +2320,8 @@ impl HostRenderer for UikitHost {
         if self.safe_area.contains_key(&id) {
             self.report_safe_area(id);
         }
-        // Una máscara de esquinas desiguales no se estira con la vista: hay
-        // que redibujarla con el tamaño nuevo.
+        // A mask of uneven corners does not stretch with the view: it has to
+        // be redrawn at the new size.
         if self
             .corners
             .get(&id)
@@ -2317,23 +2348,23 @@ impl HostRenderer for UikitHost {
     }
 
     fn flush(&mut self) {
-        // Volver a pedir que suene lo que debería estar sonando.
+        // Ask again for whatever ought to be playing to play.
         //
-        // `play()` sobre un reproductor que todavía no ha cargado nada no
-        // prende: el `rate` se queda en cero y ahí se queda para siempre, sin
-        // error y con la capa en negro. Como la prop `playing` llega una sola
-        // vez, hay que reintentarlo hasta que agarre.
+        // `play()` on a player that has not loaded anything yet does not
+        // catch: the `rate` stays at zero and there it stays for good, with no
+        // error and the layer black. Since the `playing` prop arrives only
+        // once, it has to be retried until it takes hold.
         for (id, (player, _)) in &self.videos {
             if self.video_playing.contains(id) && player.rate() == 0.0 && player.status() == 1 {
                 player.play();
             }
         }
 
-        // La vista del reproductor al tamaño de la suya.
+        // The player's view brought up to the size of its own.
         //
-        // No basta con hacerlo en `set_layout`: el reproductor se crea cuando
-        // llega la dirección del vídeo, que es *después* de que el marco esté
-        // puesto, así que nace con cero de ancho y nadie vuelve a tocarlo.
+        // Doing it in `set_layout` is not enough: the player is created when
+        // the video's URL arrives, which is *after* the frame has been set, so
+        // it comes into being zero wide and nobody touches it again.
         for (id, (_, controller)) in &self.videos {
             let Some(view) = self.views.get(id) else { continue };
             let Some(inner) = controller.view() else { continue };
@@ -2348,9 +2379,9 @@ impl HostRenderer for UikitHost {
             state.sync(self.mtm, &self.container, id, &self.events);
             self.alerts.insert(id, state);
         }
-        // Presentar tiene que ir después del layout: el controlador se lleva
-        // la vista tal como esté, y si el marco todavía no está calculado se
-        // presenta una caja vacía.
+        // Presenting has to come after the layout: the controller takes the
+        // view exactly as it is, and if the frame is not worked out yet what
+        // gets presented is an empty box.
         for id in std::mem::take(&mut self.dirty_modals) {
             let Some(mut state) = self.modals.remove(&id) else { continue };
             if let Some(content) = self.views.get(&id).map(|v| v.as_view().retain()) {

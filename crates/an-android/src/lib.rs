@@ -1,14 +1,14 @@
-//! Host de Android.
+//! The Android host.
 //!
-//! El núcleo es el mismo que en iOS: shadow tree, layout y diff no saben en
-//! qué plataforma están. Lo único que cambia es quién monta las vistas y quién
-//! mide el texto.
+//! The core is the same one as on iOS: the shadow tree, the layout and the diff
+//! have no idea which platform they are on. The only thing that changes is who
+//! builds the views and who measures the text.
 //!
-//! El reparto entre Rust y Kotlin no es el mismo que en iOS. Allí Rust habla
-//! con UIKit directamente por `objc2`, porque el puente Objective-C es barato
-//! y está tipado. Aquí cada llamada cruza JNI, así que la superficie se
-//! mantiene mínima: Kotlin expone un puñado de métodos sobre `AnHost` y Rust
-//! llama a esos. La lógica de vistas vive donde es natural escribirla.
+//! The split between Rust and Kotlin is not the same one as on iOS. There Rust
+//! talks to UIKit directly through `objc2`, because the Objective-C bridge is
+//! cheap and typed. Here every call crosses JNI, so the surface is kept to a
+//! minimum: Kotlin exposes a handful of methods on `AnHost` and Rust calls
+//! those. View logic lives where it is natural to write it.
 
 #[cfg(target_os = "android")]
 mod host;
