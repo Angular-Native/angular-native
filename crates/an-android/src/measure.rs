@@ -1,8 +1,8 @@
-//! Medición de texto con `android.text.StaticLayout`, vía Kotlin.
+//! Text measurement with `android.text.StaticLayout`, by way of Kotlin.
 //!
-//! Misma caché que en iOS y por el mismo motivo: el layout pide el tamaño de
-//! cada nodo varias veces por frame, y aquí cada consulta cruza JNI, que es
-//! bastante más caro que un `objc_msgSend`.
+//! Same cache as on iOS and for the same reason: the layout asks for each
+//! node's size several times per frame, and here every query crosses JNI, which
+//! is a good deal more expensive than an `objc_msgSend`.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -77,13 +77,13 @@ impl TextMeasurer for JniMeasurer {
         }
 
         let fallback = (0.0, font.line_height.unwrap_or(font.size * 1.25));
-        let medido = self
+        let raw = self
             .vm
             .attach_current_thread(|env| -> Result<Option<i64>, jni::errors::Error> {
                 let Ok(text_ref) = env.new_string(text) else { return Ok(None) };
                 let family = font.family.clone().unwrap_or_default();
                 let Ok(family_ref) = env.new_string(&family) else { return Ok(None) };
-                // Ancho infinito viaja como -1: JNI no tiene Option.
+                // Infinite width travels as -1: JNI has no Option.
                 let limit = max_width.filter(|w| w.is_finite()).unwrap_or(-1.0);
                 Ok(crate::host::call_java_long(
                     env,
@@ -103,9 +103,10 @@ impl TextMeasurer for JniMeasurer {
             })
             .ok()
             .flatten();
-        let Some(packed) = medido else { return fallback };
-        // Ancho y alto llegan empaquetados en un long, en centésimas de punto:
-        // dos llamadas JNI por medición costarían el doble por nada.
+        let Some(packed) = raw else { return fallback };
+        // Width and height arrive packed into a single long, in hundredths of a
+        // point: two JNI calls per measurement would cost twice as much for
+        // nothing.
         let width = ((packed >> 32) as i32) as f32 / 100.0;
         let height = ((packed & 0xffff_ffff) as i32) as f32 / 100.0;
 

@@ -1,30 +1,30 @@
-//! `HostRenderer` sobre `android.view.View`, a través de una clase Kotlin.
+//! `HostRenderer` over `android.view.View`, by way of a Kotlin class.
 
 use an_core::{NodeId, NodeKind, PropValue, Rect};
 use an_host::HostRenderer;
 use jni::objects::{Global, JObject, JValue};
 use jni::JavaVM;
 
-/// Envuelve el `AnHost` de Kotlin.
+/// Wraps Kotlin's `AnHost`.
 ///
-/// Se guarda la `JavaVM` y no el `JNIEnv`: un `JNIEnv` está atado al hilo que
-/// lo obtuvo y no se puede guardar. Todo esto corre en el hilo de UI, así que
-/// `attach_current_thread` es barato y no cambia de hilo.
+/// It keeps the `JavaVM` and not the `JNIEnv`: a `JNIEnv` is tied to the thread
+/// that obtained it and cannot be stored. All of this runs on the UI thread, so
+/// `attach_current_thread` is cheap and does not switch threads.
 pub struct JniHost {
     vm: JavaVM,
     host: Global<JObject<'static>>,
 }
 
-/// Llama a un método de Java y se traga el fallo.
+/// Calls a Java method and swallows the failure.
 ///
-/// Desde jni 0.22 el nombre del método y su firma ya no son `&str`: el nombre
-/// tiene que ir terminado en cero como lo pide JNI, y la firma va parseada en
-/// tipos. Es más seguro —una firma mal escrita se caza al construirla y no al
-/// llamar— pero llena de ruido cada sitio de llamada, así que se envuelve
-/// aquí una vez.
+/// Since jni 0.22 the method name and its signature are no longer `&str`: the
+/// name has to be nul-terminated the way JNI wants it, and the signature comes
+/// parsed into types. It is safer —a mistyped signature is caught when it is
+/// built rather than when it is called— but it fills every call site with
+/// noise, so it is wrapped here once.
 ///
-/// Un fallo se reporta y se sigue: un método suelto que no cuadra no debería
-/// dejar al usuario sin app.
+/// A failure is reported and execution continues: one stray method that does
+/// not line up should not leave the user without an app.
 pub(crate) fn call_java(
     env: &mut jni::Env,
     obj: &JObject,
@@ -33,23 +33,23 @@ pub(crate) fn call_java(
     args: &[JValue],
 ) {
     let Ok(sig) = jni::signature::RuntimeMethodSignature::from_str(signature) else {
-        eprintln!("angular-native: firma ilegible para {method}: {signature}");
+        eprintln!("angular-native: unreadable signature for {method}: {signature}");
         return;
     };
     let name = jni::strings::JNIString::from(method);
     if let Err(error) = env.call_method(obj, &name, sig.method_signature(), args) {
-        // La traza de la excepción antes de limpiarla: sin esto lo único que
-        // se ve es "Java exception was thrown", que no dice nada.
+        // The exception's trace before clearing it: without this the only
+        // thing on show is "Java exception was thrown", which says nothing.
         let _ = env.exception_describe();
         let _ = env.exception_clear();
-        eprintln!("angular-native: fallo llamando a {method}: {error}");
+        eprintln!("angular-native: call to {method} failed: {error}");
     }
 }
 
-/// Igual que [`call_java`] pero para métodos que devuelven un `long`.
+/// The same as [`call_java`] but for methods that return a `long`.
 ///
-/// Devuelve `None` si algo falló, que es lo que quiere quien mide: usar su
-/// valor de reserva en vez de reventar.
+/// It returns `None` if something failed, which is what the measuring side
+/// wants: use its fallback value instead of blowing up.
 pub(crate) fn call_java_long(
     env: &mut jni::Env,
     obj: &JObject,
@@ -73,13 +73,14 @@ impl JniHost {
         JniHost { vm, host }
     }
 
-    /// Llama a un método del host Kotlin. Un fallo aquí es un desajuste entre
-    /// la firma de Kotlin y la de Rust: se reporta y se sigue, porque tirar la
-    /// app por un método suelto deja al usuario sin nada.
+    /// Calls a method on the Kotlin host. A failure here is a mismatch between
+    /// Kotlin's signature and Rust's: it is reported and execution continues,
+    /// because tearing the app down over one stray method leaves the user with
+    /// nothing.
     fn call(&self, method: &str, signature: &str, args: &[JValue]) {
-        // Desde jni 0.22 el hilo se engancha alrededor de un cierre en vez de
-        // devolver un guardián: la desconexión ya no depende de que nadie se
-        // olvide de soltarlo.
+        // Since jni 0.22 the thread is attached around a closure instead of
+        // handing back a guard: detaching no longer depends on nobody
+        // forgetting to drop it.
         let _ = self.vm.attach_current_thread(|env| -> Result<(), jni::errors::Error> {
             call_java(env, self.host.as_obj(), method, signature, args);
             Ok(())
@@ -152,9 +153,9 @@ impl HostRenderer for JniHost {
     }
 
     fn set_prop(&mut self, id: NodeId, key: &str, value: &PropValue) {
-        // Las props viajan como texto: el número de tipos distintos no
-        // justifica una firma JNI por cada uno, y Kotlin ya sabe qué espera
-        // cada propiedad.
+        // Props travel as text: the number of distinct types does not justify
+        // one JNI signature apiece, and Kotlin already knows what each property
+        // expects.
         let text = match value {
             PropValue::Null => String::new(),
             PropValue::Bool(v) => v.to_string(),
@@ -214,8 +215,8 @@ impl HostRenderer for JniHost {
     }
 
     fn flush(&mut self) {
-        // Android no recoloca nada por su cuenta: hay que pedirle una pasada
-        // de layout cuando ya se aplicaron todos los marcos del frame.
+        // Android relays out nothing on its own: it has to be asked for a
+        // layout pass once every frame's rectangles have been applied.
         self.call("flush", "()V", &[]);
     }
 

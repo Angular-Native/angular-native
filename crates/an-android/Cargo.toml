@@ -6,7 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 [lib]
-# La JVM carga una biblioteca dinámica; rlib para poder testear desde Rust.
+# The JVM loads a dynamic library; rlib so it can be tested from Rust.
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
@@ -16,7 +16,7 @@ an-host.workspace = true
 an-layout.workspace = true
 serde_json = "1"
 
-# Fuera de Android el crate compila vacío, igual que an-ios fuera de iOS.
+# Off Android the crate compiles empty, the same way an-ios does off iOS.
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.22"
 libc = "0.2"
