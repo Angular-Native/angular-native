@@ -1082,7 +1082,10 @@ pub fn archive(package: &Package, apple: &Apple) -> Result<(PathBuf, PathBuf)> {
     run_in(
         &package.out,
         "ditto",
-        &["-c", "-k", "--sequesterRsrc", "--keepParent", "Payload", &ipa.to_string_lossy()],
+        // `--keepParent`, so the zip carries `Payload/<Name>.app` and not the
+        // app at its root; and no `--sequesterRsrc`, which would add a
+        // `__MACOSX` directory that App Store Connect rejects.
+        &["-c", "-k", "--keepParent", "Payload", &ipa.to_string_lossy()],
         "the .ipa could not be packed",
     )?;
     let _ = std::fs::remove_dir_all(&payload);

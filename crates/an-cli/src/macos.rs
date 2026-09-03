@@ -294,7 +294,8 @@ pub fn notarize(package: &Package, macos: &Macos) -> Result<()> {
     let archive = package.dir.with_extension("zip");
     let _ = std::fs::remove_file(&archive);
     let zipped = Command::new("ditto")
-        .args(["-c", "-k", "--sequesterRsrc", "--keepParent"])
+        // Exactly the invocation Apple's notarisation documentation gives.
+        .args(["-c", "-k", "--keepParent"])
         .arg(&package.dir)
         .arg(&archive)
         .status()
