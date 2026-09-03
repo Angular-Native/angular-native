@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Los controles de elegir: segmentos, desplegable, pasos, búsqueda y fecha.
+# The controls for choosing: segments, dropdown, stepper, search and date.
 #
-# Lo que se comprueba aquí es que cada uno se monta como su propia clase de
-# nodo y mide lo suyo, no que se vea bien: eso solo se ve en el dispositivo.
+# What is checked here is that each one mounts as its own node kind and
+# measures what it should, not that it looks right: that is only visible on the
+# device.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,20 +16,20 @@ check() {
   if grep -qE -- "$1" <<<"$OUTPUT"; then
     echo "  ok   $2"
   else
-    echo "  FALLO $2"
+    echo "  FAIL $2"
     fail=1
   fi
 }
 
-check 'SearchBar#[0-9]+ \[' 'la barra de búsqueda se monta'
-check 'SegmentedControl#[0-9]+ \[' 'el control segmentado se monta'
-check 'Picker#[0-9]+ \[[0-9]+,[0-9]+ 150x40\]' 'el desplegable se monta con su tamaño'
-check 'Stepper#[0-9]+ \[[0-9]+,[0-9]+ 140x40\]' 'el de pasos se monta con su tamaño'
-check 'DatePicker#[0-9]+ \[[0-9]+,[0-9]+ 180x40\]' 'el de fecha se monta con su tamaño'
-# El área segura ya no mete una vista de por medio, así que lo que se le pone
-# para ordenar a los hijos les llega: 20 de arriba, 33 de alto, 18 de hueco.
-check 'SearchBar#[0-9]+ \[20,71' 'el hueco del área segura separa a sus hijos'
-check 'último botón: texto' 'el toque llega al botón de variante texto'
+check 'SearchBar#[0-9]+ \[' 'the search bar mounts'
+check 'SegmentedControl#[0-9]+ \[' 'the segmented control mounts'
+check 'Picker#[0-9]+ \[[0-9]+,[0-9]+ 150x40\]' 'the dropdown mounts with its own size'
+check 'Stepper#[0-9]+ \[[0-9]+,[0-9]+ 140x40\]' 'the stepper mounts with its own size'
+check 'DatePicker#[0-9]+ \[[0-9]+,[0-9]+ 180x40\]' 'the date picker mounts with its own size'
+# The safe area no longer inserts a view in between, so whatever is given to it
+# to arrange its children reaches them: 20 from the top, 33 tall, 18 of gap.
+check 'SearchBar#[0-9]+ \[20,71' "the safe area's gap separates its children"
+check 'last button: text' 'the tap reaches the text-variant button'
 
 if [ "$fail" -ne 0 ]; then
   echo

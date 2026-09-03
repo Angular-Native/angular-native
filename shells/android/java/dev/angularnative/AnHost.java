@@ -22,13 +22,12 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 /**
- * Host de Android: monta vistas y mide texto.
+ * The Android host: it mounts views and measures text.
  *
- * Es la contrapartida de `UikitHost`, pero el reparto entre lenguajes es
- * distinto. En iOS, Rust habla con UIKit directamente porque el puente
- * Objective-C es barato y está tipado. Aquí cada llamada cruza JNI, así que
- * Rust manda órdenes gruesas y la lógica de vistas vive en Java, que es donde
- * es natural escribirla.
+ * It is the counterpart of `UikitHost`, but the split between languages is
+ * different. On iOS, Rust talks to UIKit directly because the Objective-C bridge
+ * is cheap and typed. Here every call crosses JNI, so Rust sends coarse orders
+ * and the view logic lives in Java, which is where it is natural to write it.
  */
 public final class AnHost {
 
@@ -57,37 +56,39 @@ public final class AnHost {
     private static final int KIND_WEB = 23;
     private static final int KIND_MAP = 24;
     private static final int KIND_VIDEO = 25;
-    /** Lo que dura una transición de pila. Igual que en iOS. */
+    /** How long a stack transition lasts. The same as on iOS. */
     private static final long TRANSITION_MS = 300;
-    /** Resolución del deslizador y de la barra de progreso, que van en enteros. */
+    /** Resolution of the slider and the progress bar, which work in integers. */
     private static final int SLIDER_STEPS = 1000;
 
     private final Context context;
     private final AnViewGroup container;
     private final float density;
     private final SparseArray<View> views = new SparseArray<>();
-    /** El contenido de un ScrollView: Android exige un único hijo. */
+    /** The content of a ScrollView: Android demands a single child. */
     private final SparseArray<AnViewGroup> scrollContent = new SparseArray<>();
     private final TextPaint measurePaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     private final SparseArray<TextWatcher> watchers = new SparseArray<>();
-    /** Radios por esquina en puntos: arriba-izq, arriba-der, abajo-der, abajo-izq. */
+    /** Per-corner radii in points: top-left, top-right, bottom-right, bottom-left. */
     private final SparseArray<float[]> corners = new SparseArray<>();
     /**
-     * La tipografía llega en props sueltas —familia, cursiva, peso— y
-     * `Typeface.create` las quiere juntas: se guardan hasta poder aplicarlas.
+     * The typography arrives in separate props —family, italic, weight— and
+     * `Typeface.create` wants them together: they are kept until they can be
+     * applied.
      */
     private final SparseArray<FontState> fontState = new SparseArray<>();
 
     /**
-     * Lo que se sabe del teclado de cada campo.
+     * What is known about each field's keyboard.
      *
-     * En Android el teclado, las mayúsculas, el corrector y la contraseña son
-     * banderas del mismo `inputType`, así que aplicar una sola borra las
-     * demás: hay que guardarlas y componerlo entero cada vez.
+     * On Android the keyboard, the capitalisation, the autocorrect and the
+     * password flag are all flags of the same `inputType`, so applying one alone
+     * wipes out the rest: they have to be kept and the whole thing composed
+     * every time.
      */
     private final SparseArray<InputState> inputState = new SparseArray<>();
 
-    /** Las banderas del teclado de un campo, según van llegando. */
+    /** A field's keyboard flags, as they arrive. */
     private static final class InputState {
         String keyboard = "default";
         String capitalize = "sentences";
@@ -95,26 +96,26 @@ public final class AnHost {
         boolean secure;
     }
 
-    /** Lo que se sabe de la letra de un nodo, según va llegando. */
+    /** What is known about a node's font, as it arrives. */
     private static final class FontState {
         String family;
         boolean italic;
         boolean bold;
-        /** Espaciado entre letras en puntos; Android lo quiere en emes. */
+        /** Letter spacing in points; Android wants it in ems. */
         Float letterSpacing;
-        /** Alto de línea en puntos. */
+        /** Line height in points. */
         Float lineHeight;
     }
-    /** Sentido de la próxima transición de cada pila: `push`, `pop` o nada. */
+    /** Direction of each stack's next transition: `push`, `pop` or nothing. */
     private final SparseArray<String> transitions = new SparseArray<>();
-    /** Pantallas que entraron en este frame y aún no se han animado. */
+    /** Screens that came in on this frame and have not been animated yet. */
     private final java.util.List<int[]> entering = new java.util.ArrayList<>();
-    /** Pantallas que salen: siguen montadas hasta que la animación acaba. */
+    /** Screens on their way out: they stay mounted until the animation ends. */
     private final java.util.List<Object[]> leaving = new java.util.ArrayList<>();
     private final java.util.Set<Integer> animatingOut = new java.util.HashSet<>();
-    /** Nodos de pila suscritos a `back`, para el botón físico. */
+    /** Stack nodes subscribed to `back`, for the hardware button. */
     private final java.util.List<Integer> backListeners = new java.util.ArrayList<>();
-    /** Nodos suscritos al área segura, con los márgenes que ya se les contó. */
+    /** Nodes subscribed to the safe area, with the insets they were already told. */
     private final SparseArray<float[]> safeArea = new SparseArray<>();
     /**
      * What the template has said about each node's accessibility.
@@ -126,11 +127,11 @@ public final class AnHost {
      * time a screen reader asks about the node.
      */
     private final SparseArray<AnAccessibility.State> accessibility = new SparseArray<>();
-    /** Diálogos declarados, con lo que llevan puesto. */
+    /** Declared dialogs, with whatever has been set on them. */
     private final SparseArray<AlertState> alerts = new SparseArray<>();
     private final java.util.List<Integer> dirtyAlerts = new java.util.ArrayList<>();
 
-    /** Lo que un `Alert` lleva puesto mientras no se presenta. */
+    /** What an `Alert` carries while it is not presented. */
     private static final class AlertState {
         boolean sheet;
         String title = "";
@@ -141,94 +142,95 @@ public final class AnHost {
     }
 
     private AnRuntime runtime;
-    /** Última posición tocada, en puntos y relativa a la vista tocada. */
     /**
-     * Tamaño de letra por defecto, en dp. Tiene que ser el mismo que el de
-     * `FontSpec::default()` en el núcleo: es con el que se mide.
+     * Default font size, in dp. It has to be the same as `FontSpec::default()`'s
+     * in the core: it is the one text is measured with.
      */
     private static final float DEFAULT_FONT_SIZE = 14f;
 
     /**
-     * Tema del diálogo: sin marco ni fondo, porque el contenido lo dibuja el
-     * árbol de vistas y el marco del sistema se vería por encima.
+     * The dialog theme: no frame and no background, because the content is drawn
+     * by the view tree and the system frame would show over it.
      */
     private static final int ANDROID_DIALOG_THEME = android.R.style.Theme_Translucent_NoTitleBar;
 
-    /** Variante y color de cada botón, que llegan en props sueltas. */
+    /** Each button's variant and colour, which arrive in separate props. */
     private final SparseArray<String> buttonVariants = new SparseArray<>();
 
     private final SparseArray<Integer> buttonColors = new SparseArray<>();
 
     /**
-     * Colores de la vía del interruptor: el de encendido llega por `[color]` y
-     * el de apagado por `[android]`, y `ColorStateList` los quiere juntos.
+     * The switch track's colours: the on one arrives through `[color]` and the
+     * off one through `[android]`, and `ColorStateList` wants them together.
      */
     private final SparseArray<int[]> switchTracks = new SparseArray<>();
 
-    /** Salto entre valores de cada deslizador, si se pidió alguno. */
+    /** The step between each slider's values, if one was asked for. */
     private final SparseArray<Float> sliderSteps = new SparseArray<>();
 
-    /** Centro de cada mapa: la latitud y la longitud llegan por separado. */
+    /** Each map's centre: the latitude and the longitude arrive separately. */
     private final java.util.HashMap<Integer, float[]> mapCenters = new java.util.HashMap<>();
 
-    /** Estado de presentación de cada `<Modal>`. */
+    /** Each `<Modal>`'s presentation state. */
     private final SparseArray<ModalState> modals = new SparseArray<>();
 
     private final java.util.ArrayList<Integer> dirtyModals = new java.util.ArrayList<>();
 
-    /** Los ajustes de animación de cada vista que los haya pedido. */
+    /** The animation settings of each view that asked for them. */
     private final android.util.SparseArray<Animation> animations = new android.util.SparseArray<>();
 
-    /** Las animaciones de marco en marcha, para poder cancelarlas. */
+    /** The frame animations under way, so they can be cancelled. */
     private final java.util.HashMap<View, android.animation.ValueAnimator> frameAnimations =
             new java.util.HashMap<>();
 
-    /** Los gestos activos de cada vista, uno por vista que tenga alguno. */
+    /** The active gestures of each view, one per view that has any. */
     private final java.util.HashMap<Integer, Gestures> gestures = new java.util.HashMap<>();
 
-    /** Las vistas que escuchan la corona, una por vista que la pida. */
+    /** The views that listen to the crown, one per view that asks for it. */
     private final SparseArray<Crown> crowns = new SparseArray<>();
 
     /**
-     * Cuánto silencio cuenta como «ha dejado de girar».
+     * How much silence counts as "it has stopped turning".
      *
-     * La corona no manda un evento de fin: manda muescas y calla. Doscientos
-     * cincuenta milisegundos son largos para un giro seguido —el emulador
-     * manda las muescas de una vuelta en menos de cien— y cortos para que
-     * `(crownIdle)` no parezca que llega tarde.
+     * The crown sends no end event: it sends detents and goes quiet. Two hundred
+     * and fifty milliseconds is long for a continuous turn —the emulator sends a
+     * full revolution's detents in under a hundred— and short enough that
+     * `(crownIdle)` does not seem to arrive late.
      */
     private static final long CROWN_IDLE_MS = 250;
 
     /**
-     * Si esto es un reloj con Wear OS.
+     * Whether this is a Wear OS watch.
      *
-     * Se le pregunta al sistema y no al manifiesto: el APK del reloj declara
-     * `android.hardware.type.watch`, pero el del teléfono se puede instalar en
-     * un reloj —es lo primero que se prueba— y entonces el manifiesto miente y
-     * el sistema no.
+     * The system is asked and not the manifest: the watch APK declares
+     * `android.hardware.type.watch`, but the phone one can be installed on a
+     * watch —it is the first thing anybody tries— and then the manifest lies and
+     * the system does not.
      */
     private final boolean watch;
 
     /**
-     * Si la pantalla es redonda.
+     * Whether the screen is round.
      *
-     * No es lo mismo que ser un reloj: los hay cuadrados, y una tele o un
-     * coche podrían no serlo. Lo que importa para el layout es la forma.
+     * It is not the same as being a watch: there are square ones, and a
+     * television or a car might not be. What matters for the layout is the
+     * shape.
      */
     private final boolean round;
 
     /**
-     * Cuánto hay que apartarse del borde de una pantalla redonda para caber
-     * en el cuadrado más grande que cabe dentro de la circunferencia.
+     * How far one has to stay from the edge of a round screen to fit inside the
+     * largest square that fits within the circle.
      *
-     * Sale de la geometría y no de una preferencia: el lado del cuadrado
-     * inscrito es `d/√2`, así que sobra `d·(1 - 1/√2)` repartido entre los dos
-     * lados. Es la misma cifra que usa `BoxInsetLayout` de androidx.wear, que
-     * es el contenedor que Google da para esto; aquí no se puede usar tal cual
-     * porque colocaría a los hijos por su cuenta y el layout lo lleva taffy.
+     * It comes from geometry and not from a preference: the side of the
+     * inscribed square is `d/√2`, so `d·(1 - 1/√2)` is left over, shared between
+     * the two sides. It is the same figure androidx.wear's `BoxInsetLayout` uses,
+     * which is the container Google provides for this; it cannot be used as it
+     * comes here because it would lay the children out on its own and the layout
+     * belongs to taffy.
      *
-     * Que la esquina de una pantalla redonda no exista no lo dice ninguna API:
-     * el sistema dice que es redonda —`isScreenRound`— y el margen se deduce.
+     * No API says that the corner of a round screen does not exist: the system
+     * says the screen is round —`isScreenRound`— and the inset is deduced.
      */
     private static final float ROUND_INSET = (float) ((1 - 1 / Math.sqrt(2)) / 2);
 
@@ -242,7 +244,7 @@ public final class AnHost {
         this.round = context.getResources().getConfiguration().isScreenRound();
     }
 
-    /** Lo consulta la Activity para decidir cosas que son suyas. */
+    /** The Activity consults it to decide things of its own. */
     public boolean isWatch() {
         return watch;
     }
@@ -255,55 +257,53 @@ public final class AnHost {
         return Math.round(dp * density);
     }
 
-    // ------------------------------------------------------------ estructura
+    // ------------------------------------------------------------- structure
 
     /**
-     * Las primitivas que en un reloj no se montan, y por qué.
+     * The primitives that are not mounted on a watch, and why.
      *
-     * No es una lista de «esto todavía no está»: es de cosas que en Wear OS no
-     * existen o que, existiendo, no caben. Un `an-tab-bar` sí se puede
-     * construir con Material en una pantalla de 227 puntos redondos —saldría—,
-     * pero sale mal: las pestañas se comen la mitad del alto y los rótulos se
-     * cortan. Dejarlo salir mal es exactamente lo que no se quiere.
+     * It is not a list of "this is not there yet": it is a list of things that
+     * on Wear OS either do not exist or, existing, do not fit. An `an-tab-bar`
+     * can be built with Material on a round 227 point screen —it would come
+     * out—, but it comes out badly: the tabs eat half the height and the labels
+     * are cut off. Letting it come out badly is exactly what is not wanted.
      *
-     * Devuelve el motivo, o `null` si la primitiva sí va.
+     * Returns the reason, or `null` if the primitive does belong.
      */
-    private static String noVaEnElReloj(int kind) {
+    private static String notOnTheWatch(int kind) {
         switch (kind) {
             case KIND_TABBAR:
-                return "Wear OS no tiene barra de pestañas: se navega deslizando"
-                        + " y con la corona, no con pestañas abajo";
+                return "Wear OS has no tab bar: you navigate by swiping and with"
+                        + " the crown, not with tabs at the bottom";
             case KIND_SEGMENTED:
-                return "un control segmentado no cabe a lo ancho de una esfera";
+                return "a segmented control does not fit across a watch face";
             case KIND_NAV:
-                return "un reloj no tiene barra de navegación: arriba va la hora"
-                        + " del sistema, y el «atrás» es el deslizamiento desde"
-                        + " el borde";
+                return "a watch has no navigation bar: the top belongs to the"
+                        + " system clock, and \"back\" is the swipe from the edge";
             case KIND_SEARCH:
-                return "en el reloj buscar no es un campo dentro de la pantalla,"
-                        + " sino la pantalla de entrada del sistema —dictado,"
-                        + " garabateo o teclado—";
+                return "on the watch, searching is not a field inside the screen"
+                        + " but the system's own input screen —dictation,"
+                        + " scribble or keyboard—";
             case KIND_WEB:
-                return "Wear OS no lleva WebView: no hay ningún paquete que"
-                        + " implemente android.webkit en el sistema";
+                return "Wear OS ships no WebView: there is no package in the"
+                        + " system that implements android.webkit";
             case KIND_DATE:
-                return "el selector de fecha de la plataforma es un calendario"
-                        + " de teléfono; en el reloj la fecha se elige a pantalla"
-                        + " completa";
+                return "the platform date picker is a phone calendar; on the"
+                        + " watch the date is chosen full screen";
             case KIND_SELECT:
-                return "un desplegable abre un menú anclado, y en una esfera no"
-                        + " hay sitio donde anclarlo";
+                return "a dropdown opens an anchored menu, and on a watch face"
+                        + " there is nowhere to anchor it";
             default:
                 return null;
         }
     }
 
     /**
-     * La etiqueta con la que se escribe cada una de las que no van.
+     * The tag each of the ones that do not belong is written with.
      *
-     * Se devuelve la etiqueta —`an-tab-bar`— y no el nombre del núcleo
-     * —`TabBar`— porque el que lee el error escribió la etiqueta, y es lo que
-     * va a buscar en su plantilla.
+     * The tag is returned —`an-tab-bar`— and not the core name —`TabBar`—
+     * because whoever reads the error wrote the tag, and that is what they will
+     * look for in their template.
      */
     private static String kindName(int kind) {
         switch (kind) {
@@ -327,25 +327,26 @@ public final class AnHost {
     }
 
     /**
-     * Lo que se monta en lugar de una primitiva que no va.
+     * The nodes that came out as a "this does not belong here" marker.
      *
-     * Un hueco vacío haría que el fallo se pareciera a un error de layout, que
-     * es lo último que uno mira. Se pinta el nombre para que se vea dónde está
-     * y se escribe el motivo en el log para que se lea entero. Es el mismo
-     * trato que le da el host de watchOS.
-     */
-    /**
-     * Los nodos que salieron como marca de «esto aquí no va».
-     *
-     * Sin esta lista, la marca no se lee: es un `TextView`, así que el
-     * `[color]` y el `[title]` de la primitiva que sustituye se le aplican
-     * igual y acaba pintando el rótulo del control que no existe, con su
-     * color, como si funcionara. Justo lo contrario de lo que hace falta.
+     * Without this list the marker cannot be read: it is a `TextView`, so the
+     * `[color]` and the `[title]` of the primitive it stands in for are applied
+     * to it just the same and it ends up painting the label of the control that
+     * does not exist, in its colour, as if it worked. Exactly the opposite of
+     * what is needed.
      */
     private final java.util.Set<Integer> unsupported = new java.util.HashSet<>();
 
-    private View unsupportedMarker(String tag, String motivo) {
-        android.util.Log.e("angular-native", tag + " no se monta en el reloj: " + motivo);
+    /**
+     * What is mounted in place of a primitive that does not belong.
+     *
+     * An empty gap would make the failure look like a layout error, which is the
+     * last thing anybody looks at. The name is painted so it can be seen where
+     * it is and the reason is written to the log so it can be read in full. It is
+     * the same treatment the watchOS host gives it.
+     */
+    private View unsupportedMarker(String tag, String reason) {
+        android.util.Log.e("angular-native", tag + " is not mounted on the watch: " + reason);
         TextView marker = new TextView(context);
         marker.setText(tag);
         marker.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 11);
@@ -359,9 +360,9 @@ public final class AnHost {
     public void createView(int id, int kind) {
         View view;
         if (watch) {
-            String motivo = noVaEnElReloj(kind);
-            if (motivo != null) {
-                view = unsupportedMarker(kindName(kind), motivo);
+            String reason = notOnTheWatch(kind);
+            if (reason != null) {
+                view = unsupportedMarker(kindName(kind), reason);
                 view.setLayoutParams(new AnViewGroup.Frame());
                 views.put(id, view);
                 unsupported.add(id);
@@ -373,10 +374,10 @@ public final class AnHost {
                 TextView text = new TextView(context);
                 text.setIncludeFontPadding(false);
                 text.setPadding(0, 0, 0, 0);
-                // La misma medida con la que el núcleo midió. El tamaño por
-                // defecto de un TextView depende del tema, y si no coincide
-                // con el del layout el texto se sale de su caja y lo recorta
-                // el padre, sin error ninguno.
+                // The same measurement the core measured with. A TextView's
+                // default size depends on the theme, and if it does not match the
+                // layout's the text spills out of its box and is clipped by the
+                // parent, with no error at all.
                 text.setTextSize(
                         android.util.TypedValue.COMPLEX_UNIT_DIP, DEFAULT_FONT_SIZE);
                 view = text;
@@ -402,9 +403,9 @@ public final class AnHost {
                 break;
             }
             case KIND_SEARCH: {
-                // `SearchView` es el campo de búsqueda de la plataforma: trae
-                // su lupa, su botón de borrar y el teclado con la tecla de
-                // buscar. Un `EditText` con un icono al lado no es lo mismo.
+                // `SearchView` is the platform's search field: it brings its
+                // magnifier, its clear button and the keyboard with the search
+                // key. An `EditText` with an icon beside it is not the same.
                 android.widget.SearchView search = new android.widget.SearchView(context);
                 search.setIconifiedByDefault(false);
                 search.setOnQueryTextListener(
@@ -456,8 +457,8 @@ public final class AnHost {
             }
             case KIND_TEXT_AREA: {
                 EditText area = new EditText(context);
-                // Varias líneas y sin fondo propio: el marco lo pone la
-                // plantilla, igual que en el campo de una línea.
+                // Several lines and no background of its own: the frame is set
+                // by the template, just as in the single-line field.
                 area.setInputType(
                         android.text.InputType.TYPE_CLASS_TEXT
                                 | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
@@ -471,8 +472,8 @@ public final class AnHost {
                 view = new AnMapView(context);
                 break;
             case KIND_VIDEO: {
-                // `VideoView` sí está en la plataforma, con sus controles y su
-                // gestión de foco de audio.
+                // `VideoView` is in the platform, with its controls and its
+                // audio focus handling.
                 android.widget.VideoView video = new android.widget.VideoView(context);
                 video.setOnPreparedListener(player -> player.setLooping(true));
                 view = video;
@@ -481,8 +482,8 @@ public final class AnHost {
             case KIND_WEB: {
                 android.webkit.WebView web = new android.webkit.WebView(context);
                 web.getSettings().setJavaScriptEnabled(true);
-                // Sin esto los enlaces se abren en el navegador del sistema y
-                // la vista se queda en blanco.
+                // Without this the links open in the system browser and the
+                // view is left blank.
                 web.setWebViewClient(new android.webkit.WebViewClient());
                 view = web;
                 break;
@@ -495,15 +496,15 @@ public final class AnHost {
             }
             case KIND_SCROLL: {
                 AnScrollView scroll = new AnScrollView(context);
-                // La corona es la forma normal de recorrer una lista en el
-                // reloj; el dedo tapa la pantalla que se está mirando.
+                // The crown is the normal way of going through a list on the
+                // watch; a finger covers the screen being looked at.
                 if (watch) {
                     scroll.enableRotary();
                 }
                 AnViewGroup content = new AnViewGroup(context);
-                // El contenido lo mide el ScrollView, no nosotros, y un
-                // ScrollView es un FrameLayout por dentro: exige sus propios
-                // LayoutParams en el hijo.
+                // The content is measured by the ScrollView, not by us, and a
+                // ScrollView is a FrameLayout underneath: it demands its own
+                // LayoutParams on the child.
                 scroll.addView(
                         content,
                         new FrameLayout.LayoutParams(
@@ -527,16 +528,15 @@ public final class AnHost {
                 break;
             }
             case KIND_SWITCH:
-                // El de Material 3, con el pulgar que crece y su marca al
-                // encender. `android.widget.Switch` es el del framework y se
-                // quedó en el aspecto de hace años.
+                // The Material 3 one, with the thumb that grows and its mark
+                // when switched on. `android.widget.Switch` is the framework's
+                // and stopped at the look of years ago.
                 view = new com.google.android.material.materialswitch.MaterialSwitch(context);
                 break;
             case KIND_SLIDER: {
-                // El deslizador de Material 3: vía gruesa, tope con forma de
-                // barra y la etiqueta del valor al arrastrar. Trabaja con
-                // flotantes, así que no hace falta la escala de enteros que
-                // pedía `SeekBar`.
+                // The Material 3 slider: a thick track, a bar-shaped thumb and
+                // the value label while dragging. It works in floats, so the
+                // integer scale `SeekBar` demanded is not needed.
                 com.google.android.material.slider.Slider slider =
                         new com.google.android.material.slider.Slider(context);
                 slider.setValueFrom(0f);
@@ -553,8 +553,8 @@ public final class AnHost {
                 break;
             }
             case KIND_PROGRESS: {
-                // La barra de progreso de Material 3: extremos redondeados y
-                // el hueco entre lo hecho y lo que falta.
+                // The Material 3 progress bar: rounded ends and the gap between
+                // what is done and what is left.
                 com.google.android.material.progressindicator.LinearProgressIndicator bar =
                         new com.google.android.material.progressindicator.LinearProgressIndicator(
                                 context);
@@ -564,10 +564,10 @@ public final class AnHost {
                 break;
             }
             case KIND_BUTTON: {
-                // `MaterialButton` en su variante de texto, que es lo que hace
-                // un `UIButton` en iOS: así `<Button>` significa lo mismo en
-                // las dos plataformas. Con `[variant]` se pide el relleno, y
-                // entonces la píldora la pone Material, no nosotros.
+                // `MaterialButton` in its text variant, which is what a
+                // `UIButton` does on iOS: that way `<Button>` means the same
+                // thing on both platforms. `[variant]` asks for the fill, and
+                // then the pill is put there by Material, not by us.
                 com.google.android.material.button.MaterialButton button =
                         new com.google.android.material.button.MaterialButton(
                                 context,
@@ -575,9 +575,9 @@ public final class AnHost {
                                 com.google.android.material.R.attr.materialButtonOutlinedStyle);
                 button.setAllCaps(false);
                 button.setStrokeWidth(0);
-                // Un rótulo de botón no se parte: si no cabe, se recorta. Es lo
-                // que hace UIKit, y un botón con la palabra cortada por la
-                // mitad parece roto.
+                // A button label does not wrap: if it does not fit, it is
+                // truncated. That is what UIKit does, and a button with a word
+                // broken in half looks broken.
                 button.setMaxLines(1);
                 button.setEllipsize(android.text.TextUtils.TruncateAt.END);
                 view = button;
@@ -591,8 +591,8 @@ public final class AnHost {
                 break;
             }
             case KIND_ALERT: {
-                // Un diálogo no tiene vista propia: lo presenta el sistema. Se
-                // monta una vacía para que el árbol tenga dónde colgarlo.
+                // A dialog has no view of its own: the system presents it. An
+                // empty one is mounted so the tree has somewhere to hang it.
                 View placeholder = new View(context);
                 placeholder.setVisibility(View.GONE);
                 alerts.put(id, new AlertState());
@@ -601,7 +601,7 @@ public final class AnHost {
             }
             case KIND_STACK: {
                 AnViewGroup stack = new AnViewGroup(context);
-                // Las pantallas que entran y salen se salen del marco.
+                // The screens coming in and going out go outside the frame.
                 stack.setClipChildren(true);
                 view = stack;
                 break;
@@ -617,8 +617,8 @@ public final class AnHost {
 
     public void destroyView(int id) {
         View view = views.get(id);
-        // Una pantalla que se está yendo sigue en pantalla hasta que la
-        // animación acabe: quitarla ahora daría un salto.
+        // A screen on its way out stays on screen until the animation ends:
+        // removing it now would give a jump.
         if (view != null && !animatingOut.contains(id) && view.getParent() instanceof ViewGroup) {
             ((ViewGroup) view.getParent()).removeView(view);
         }
@@ -633,8 +633,8 @@ public final class AnHost {
         gestures.remove(Integer.valueOf(id));
         Crown crown = crowns.get(id);
         if (crown != null) {
-            // El aviso de «ha parado» está encolado en la vista: sin quitarlo,
-            // se dispara sobre un nodo que ya no existe.
+            // The "it has stopped" callback is queued on the view: without
+            // removing it, it fires on a node that no longer exists.
             crown.detach();
             crowns.remove(id);
         }
@@ -666,8 +666,8 @@ public final class AnHost {
             return;
         }
         if (isStack(parentId)) {
-            // Una pantalla que entra queda por encima de la que sale, aunque
-            // el árbol la coloque antes.
+            // A screen coming in goes above the one going out, even if the
+            // tree puts it before.
             parent.addView(child);
             entering.add(new int[] {parentId, childId});
             return;
@@ -682,7 +682,7 @@ public final class AnHost {
             return;
         }
         if (isStack(parentId) && "pop".equals(transitions.get(parentId))) {
-            // Se queda montada hasta que termine de salir.
+            // It stays mounted until it has finished going out.
             animatingOut.add(childId);
             leaving.add(new Object[] {parentId, child});
             return;
@@ -690,7 +690,7 @@ public final class AnHost {
         parent.removeView(child);
     }
 
-    /** Un ScrollView no admite hijos sueltos: van a su contenedor interno. */
+    /** A ScrollView takes no loose children: they go to its inner container. */
     private ViewGroup parentFor(int id) {
         AnViewGroup content = scrollContent.get(id);
         if (content != null) {
@@ -758,7 +758,7 @@ public final class AnHost {
         content.requestLayout();
     }
 
-    /** Se llama una vez por frame, cuando ya se aplicaron todas las ops. */
+    /** Called once per frame, once every op has been applied. */
     public void flush() {
         container.requestLayout();
         runStackAnimations();
@@ -773,15 +773,16 @@ public final class AnHost {
     }
 
     /**
-     * Presenta o retira los `<Modal>` que cambiaron.
+     * Presents or withdraws the `<Modal>`s that changed.
      *
-     * Un `Dialog` de verdad, no una vista encima de las demás. La diferencia
-     * no es cómo se ve —eso era igual— sino que el sistema sepa que hay algo
-     * modal delante: el botón de atrás lo cierra, TalkBack deja de leer lo de
-     * detrás, y no compite en orden de dibujo con los diálogos del sistema.
+     * A real `Dialog`, not a view on top of the others. The difference is not
+     * how it looks —that was the same— but that the system knows there is
+     * something modal in front: the back button closes it, TalkBack stops
+     * reading what is behind, and it does not compete in draw order with the
+     * system's own dialogs.
      *
-     * Va después del layout: el diálogo se lleva la vista tal como esté, y sin
-     * marco calculado presentaría una caja vacía.
+     * It goes after the layout: the dialog takes the view as it stands, and with
+     * no frame computed it would present an empty box.
      */
     private void syncModals() {
         if (dirtyModals.isEmpty()) {
@@ -814,8 +815,8 @@ public final class AnHost {
                         new android.graphics.drawable.ColorDrawable(
                                 android.graphics.Color.TRANSPARENT));
                 if (state.sheet) {
-                    // Pegado abajo y a lo ancho, que es lo que se espera de
-                    // una hoja. El alto lo pone el contenido.
+                    // Pinned to the bottom and across, which is what is
+                    // expected of a sheet. The height comes from the content.
                     window.setGravity(android.view.Gravity.BOTTOM);
                     window.setLayout(
                             android.view.ViewGroup.LayoutParams.MATCH_PARENT,
@@ -829,9 +830,9 @@ public final class AnHost {
             dialog.setOnDismissListener(
                     d -> {
                         state.presented = null;
-                        // Cerrarlo desde fuera —el botón de atrás— también
-                        // tiene que llegar a la plantilla, o la señal que lo
-                        // abrió se queda diciendo que sigue abierto.
+                        // Closing it from outside —the back button— also has to
+                        // reach the template, or the signal that opened it is
+                        // left saying it is still open.
                         if (runtime != null) {
                             runtime.dispatchEvent(id, "dismiss", 0f, 0f);
                         }
@@ -842,7 +843,7 @@ public final class AnHost {
         dirtyModals.clear();
     }
 
-    /** Cómo está presentado un `<Modal>`. */
+    /** How a `<Modal>` is presented. */
     private static final class ModalState {
         boolean visible;
         boolean sheet;
@@ -856,10 +857,11 @@ public final class AnHost {
     }
 
     /**
-     * Presenta o retira los diálogos que cambiaron.
+     * Presents or withdraws the dialogs that changed.
      *
-     * Se hace al cerrar el frame, cuando todas sus props ya llegaron:
-     * presentarlo en cuanto cambia `visible` mostraría un diálogo sin título.
+     * It is done when closing the frame, once all their props have arrived:
+     * presenting it as soon as `visible` changes would show a dialog with no
+     * title.
      */
     private void syncAlerts() {
         if (dirtyAlerts.isEmpty()) {
@@ -881,16 +883,16 @@ public final class AnHost {
                 continue;
             }
             String[] buttons = state.buttons.length > 0 ? state.buttons : new String[] {"OK"};
-            // El de Material 3, no el del framework: esquinas redondeadas,
-            // botones sin mayúsculas forzadas y la tipografía que toca. El de
-            // `android.app` se quedó en el aspecto de hace diez años.
+            // The Material 3 one, not the framework's: rounded corners, buttons
+            // without forced capitals and the right typography. The one in
+            // `android.app` stopped at the look of ten years ago.
             com.google.android.material.dialog.MaterialAlertDialogBuilder builder =
                     new com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
                             .setTitle(state.title)
                             .setCancelable(false);
             if (state.sheet) {
-                // Una hoja de acciones en Android es una lista de opciones,
-                // no botones al pie: no hay un control aparte para esto.
+                // An action sheet on Android is a list of options, not buttons
+                // at the foot: there is no separate control for this.
                 builder.setItems(buttons, (dialog, which) -> emitAlertSelection(id, which));
                 androidx.appcompat.app.AlertDialog created = builder.create();
                 created.setOnDismissListener(d -> state.presented = null);
@@ -899,8 +901,8 @@ public final class AnHost {
                 continue;
             }
             builder.setMessage(state.message);
-            // Android coloca los botones por papel, no por orden: con más de
-            // tres no cabrían, así que a partir de ahí se usa una lista.
+            // Android places the buttons by role, not by order: more than three
+            // would not fit, so from there on a list is used.
             if (buttons.length <= 3) {
                 for (int index = 0; index < buttons.length; index++) {
                     final int position = index;
@@ -940,10 +942,10 @@ public final class AnHost {
     private final java.util.Set<Integer> stackIds = new java.util.HashSet<>();
 
     /**
-     * Anima las pantallas que entraron o salieron en este frame.
+     * Animates the screens that came in or went out on this frame.
      *
-     * Se hace aquí y no al insertar porque hasta que el layout no pasa no hay
-     * ancho que animar: una pantalla recién creada mide cero.
+     * It is done here and not on insertion because until the layout has run
+     * there is no width to animate: a freshly created screen measures zero.
      */
     private void runStackAnimations() {
         if (entering.isEmpty() && leaving.isEmpty()) {
@@ -959,8 +961,8 @@ public final class AnHost {
             if (width <= 0) {
                 continue;
             }
-            // Entra desde la derecha; la de debajo se desplaza un tercio, que
-            // es el paralaje que hacen las dos plataformas.
+            // It comes in from the right; the one underneath moves a third,
+            // which is the parallax both platforms do.
             screen.setTranslationX(width);
             screen.animate().translationX(0).setDuration(TRANSITION_MS).start();
             View below = previousSibling((ViewGroup) stack, screen);
@@ -986,7 +988,7 @@ public final class AnHost {
             screen.animate()
                     .translationX(parent.getWidth())
                     .setDuration(TRANSITION_MS)
-                    // La vista se quita al acabar; hasta entonces sigue montada.
+                    // The view is removed when it ends; until then it stays mounted.
                     .withEndAction(() -> parent.removeView(screen))
                     .start();
         }
@@ -994,7 +996,7 @@ public final class AnHost {
         animatingOut.clear();
     }
 
-    // --- deslizador: Android trabaja en enteros y el framework en flotantes
+    // --- the slider: Android works in integers and the framework in floats
     private final SparseArray<float[]> sliderRanges = new SparseArray<>();
     private final SparseArray<Float> sliderValues = new SparseArray<>();
 
@@ -1008,11 +1010,11 @@ public final class AnHost {
     }
 
     /**
-     * Pone el rango y el valor en el deslizador de Material.
+     * Sets the range and the value on the Material slider.
      *
-     * Los tres llegan en props sueltas y en cualquier orden, y `Slider` se
-     * queja si el valor cae fuera del rango, así que se ponen juntos y en
-     * orden cada vez.
+     * All three arrive in separate props and in any order, and `Slider`
+     * complains if the value falls outside the range, so they are set together
+     * and in order every time.
      */
     private void applySliderValue(int id, com.google.android.material.slider.Slider slider) {
         float[] range = sliderRange(id);
@@ -1025,14 +1027,14 @@ public final class AnHost {
         float applied = 0f;
         if (step != null && step > 0f) {
             float steps = (max - min) / step;
-            // Material exige que el paso divida el recorrido exacto: si no,
-            // revienta al dibujar. Antes que caerse, se dice y se deja
-            // continuo, que es lo que había.
+            // Material demands that the step divide the range exactly: if not,
+            // it blows up while drawing. Rather than crashing, it is said and
+            // left continuous, which is what was there before.
             if (Math.abs(steps - Math.round(steps)) > 1e-4f) {
                 android.util.Log.w(
                         "angular-native",
-                        "[android].stepSize " + step + " no divide el recorrido "
-                                + (max - min) + ": el deslizador se queda continuo");
+                        "[android].stepSize " + step + " does not divide the range "
+                                + (max - min) + ": the slider stays continuous");
             } else {
                 applied = step;
             }
@@ -1040,8 +1042,8 @@ public final class AnHost {
         slider.setStepSize(applied);
         if (value != null) {
             float clamped = Math.max(min, Math.min(max, value));
-            // Con paso, el valor tiene que caer en uno: Material rechaza
-            // cualquier otro.
+            // With a step, the value has to land on one: Material rejects any
+            // other.
             if (applied > 0f) {
                 clamped = min + Math.round((clamped - min) / applied) * applied;
                 clamped = Math.max(min, Math.min(max, clamped));
@@ -1051,11 +1053,11 @@ public final class AnHost {
     }
 
     /**
-     * La vía del interruptor, con su color encendido y su color apagado.
+     * The switch track, with its on colour and its off colour.
      *
-     * Los dos llegan por props distintas, así que se guardan y se arma la
-     * lista de estados entera: un `ColorStateList` de un solo color pinta
-     * igual las dos posiciones y el interruptor deja de decir si está puesto.
+     * The two arrive through different props, so they are kept and the whole
+     * state list is built: a `ColorStateList` with a single colour paints both
+     * positions the same and the switch stops saying whether it is on.
      */
     private void applySwitchTrack(int id, View view) {
         int[] colors = switchTracks.get(id);
@@ -1074,14 +1076,14 @@ public final class AnHost {
     private int[] switchTrackOf(int id) {
         int[] colors = switchTracks.get(id);
         if (colors == null) {
-            // Sin nada dicho, el apagado es el gris de siempre de Material.
+            // With nothing said, the off one is Material's usual grey.
             colors = new int[] {Color.GRAY, Color.argb(60, 120, 120, 120)};
             switchTracks.put(id, colors);
         }
         return colors;
     }
 
-    /** Lista de cadenas en JSON: es como viajan los títulos de las pestañas. */
+    /** A JSON list of strings: it is how the tab titles travel. */
     private static String[] parseStringList(String raw) {
         if (raw == null || raw.length() < 2) {
             return new String[0];
@@ -1109,7 +1111,7 @@ public final class AnHost {
         return index > 0 ? parent.getChildAt(index - 1) : null;
     }
 
-    /** Cuenta los márgenes del sistema si cambiaron desde la última vez. */
+    /** Reports the system insets if they changed since last time. */
     private void reportSafeArea(int id) {
         float[] previous = safeArea.get(id);
         if (previous == null || runtime == null) {
@@ -1128,16 +1130,17 @@ public final class AnHost {
             left = bars.left / density;
         }
         if (round) {
-            // En una pantalla redonda las esquinas no existen. El sistema no
-            // las cuenta como márgenes —`WindowInsets` da cero— porque no hay
-            // nada del sistema ahí: sencillamente no hay pantalla. Lo que se
-            // coloque en la esquina no sale recortado con un aviso, sale sin
-            // pintarse y sin que nadie diga nada, que es peor.
+            // On a round screen the corners do not exist. The system does not
+            // count them as insets —`WindowInsets` gives zero— because there is
+            // nothing of the system's there: there is simply no screen. Whatever
+            // is put in the corner does not come out clipped with a warning, it
+            // comes out unpainted and with nobody saying anything, which is
+            // worse.
             //
-            // Va por el mismo camino que el notch a propósito: para la app es
-            // la misma pregunta —«¿hasta dónde puedo pintar?»— y `an-safe-area`
-            // ya la contesta en las tres plataformas. Un evento nuevo sería
-            // una segunda forma de saber lo mismo.
+            // It goes down the same path as the notch on purpose: for the app it
+            // is the same question —"how far can I paint?"— and `an-safe-area`
+            // already answers it on all three platforms. A new event would be a
+            // second way of knowing the same thing.
             android.util.DisplayMetrics metrics = context.getResources().getDisplayMetrics();
             float side = Math.min(metrics.widthPixels, metrics.heightPixels) / density;
             float inset = side * ROUND_INSET;
@@ -1150,8 +1153,8 @@ public final class AnHost {
             return;
         }
         safeArea.put(id, new float[] {top, right, bottom, left});
-        // Cuatro cifras no caben en un evento de posición: van como JSON, que
-        // es el mismo camino que usan las pestañas.
+        // Four numbers do not fit in a position event: they travel as JSON,
+        // which is the same path the tabs use.
         runtime.dispatchValueEvent(
                 id,
                 "safeArea",
@@ -1159,7 +1162,7 @@ public final class AnHost {
                         + ",\"bottom\":" + bottom + ",\"left\":" + left + "}");
     }
 
-    /** La llama la Activity cuando el usuario pulsa atrás. */
+    /** Called by the Activity when the user presses back. */
     public boolean dispatchBack() {
         if (backListeners.isEmpty() || runtime == null) {
             return false;
@@ -1179,9 +1182,10 @@ public final class AnHost {
 
     public void setProp(int id, String key, String value) {
         View view = views.get(id);
-        // La marca de «esto aquí no va» conserva lo suyo: si dejara que le
-        // pintaran encima el color y el fondo de la primitiva que sustituye,
-        // se disfrazaría de la primitiva que no está.
+        // The "this does not belong here" marker keeps what is its own: if it
+        // let the colour and the background of the primitive it stands in for be
+        // painted over it, it would disguise itself as the primitive that is not
+        // there.
         if (view == null || unsupported.contains(id)) {
             return;
         }
@@ -1221,7 +1225,7 @@ public final class AnHost {
                     ((AnTabBar) view).setIcons(parseStringList(value));
                 }
                 break;
-            // --- control segmentado, desplegable y fecha
+            // --- segmented control, dropdown and date
             case "items":
                 if (view instanceof AnSegmentedControl) {
                     ((AnSegmentedControl) view).setItems(parseStringList(value));
@@ -1246,9 +1250,9 @@ public final class AnHost {
             case "latitude":
             case "longitude":
                 if (view instanceof AnMapView) {
-                    float[] centro = mapCenters.computeIfAbsent(id, k -> new float[2]);
-                    centro["latitude".equals(key) ? 0 : 1] = number(value, 0f);
-                    ((AnMapView) view).setCenter(centro[0], centro[1]);
+                    float[] centre = mapCenters.computeIfAbsent(id, k -> new float[2]);
+                    centre["latitude".equals(key) ? 0 : 1] = number(value, 0f);
+                    ((AnMapView) view).setCenter(centre[0], centre[1]);
                 }
                 break;
             case "zoom":
@@ -1257,7 +1261,7 @@ public final class AnHost {
                 }
                 break;
             case "showsUser":
-                // El mapa de aquí no sabe dónde estás: no es el del sistema.
+                // The map here does not know where you are: it is not the system's.
                 break;
             case "playing":
                 if (view instanceof android.widget.VideoView) {
@@ -1269,8 +1273,8 @@ public final class AnHost {
                 }
                 break;
             case "muted":
-                // `VideoView` no expone el volumen; haría falta llegar al
-                // `MediaPlayer` de dentro, y no lo entrega.
+                // `VideoView` does not expose the volume; one would have to
+                // reach the `MediaPlayer` inside, and it does not hand it over.
                 break;
             case "url":
                 if (view instanceof android.widget.VideoView && value != null) {
@@ -1289,8 +1293,8 @@ public final class AnHost {
                 }
                 break;
             case "backTitle":
-                // Android no pone rótulo al atrás: solo el icono, que es lo
-                // que hace cualquier app de la plataforma.
+                // Android puts no label on the back button: only the icon, which
+                // is what any app on the platform does.
                 break;
             case "showsBack":
                 if (view instanceof android.widget.Toolbar) {
@@ -1314,8 +1318,8 @@ public final class AnHost {
                     com.google.android.material.button.MaterialButton material =
                             (com.google.android.material.button.MaterialButton) view;
                     material.setIcon(value == null ? null : iconDrawableFor(value));
-                    // El icono se tiñe con el color del rótulo: en un botón,
-                    // icono y texto son la misma cosa a efectos de contraste.
+                    // The icon is tinted with the label's colour: on a button,
+                    // icon and text are the same thing as far as contrast goes.
                     material.setIconTint(
                             android.content.res.ColorStateList.valueOf(
                                     material.getCurrentTextColor()));
@@ -1332,8 +1336,8 @@ public final class AnHost {
                                                     .ICON_GRAVITY_TEXT_START);
                 }
                 break;
-            // Props de una sola plataforma. Las de iOS llegan con su prefijo y
-            // caen en el `default`, que es justo lo que tienen que hacer aquí.
+            // Single-platform props. The iOS ones arrive with their prefix and
+            // fall into the `default`, which is exactly what they should do here.
             case "android:rippleColor":
                 if (view instanceof com.google.android.material.button.MaterialButton) {
                     Integer ripple = parseColor(value);
@@ -1359,16 +1363,16 @@ public final class AnHost {
                 break;
             case "iconSize":
                 if (view instanceof TextView && isIcon(view)) {
-                    // El tamaño del glifo es el de la caja: un icono de 24
-                    // ocupa 24, sin el hueco de línea que deja un texto.
+                    // The glyph's size is the box's: an icon of 24 takes up 24,
+                    // without the line gap a text leaves.
                     ((TextView) view)
                             .setTextSize(TypedValue.COMPLEX_UNIT_DIP, number(value, 24f));
                 }
                 break;
             case "iconWeight":
                 if (view instanceof TextView && isIcon(view)) {
-                    // Material Symbols es una fuente variable: el grosor del
-                    // trazo es un eje, no otro fichero.
+                    // Material Symbols is a variable font: the stroke weight is
+                    // an axis, not another file.
                     ((TextView) view)
                             .getPaint()
                             .setFontVariationSettings(
@@ -1379,8 +1383,8 @@ public final class AnHost {
             case "opacity":
                 visual(view, id).alpha(number(value, 1f));
                 break;
-            // Animación: no es un valor que se vea, dice cómo se llega a los
-            // que sí.
+            // Animation: it is not a value that shows, it says how the ones that
+            // do are reached.
             case "animate":
                 animationFor(id).duration = (long) number(value, 0f);
                 break;
@@ -1390,9 +1394,9 @@ public final class AnHost {
             case "animateEasing":
                 animationFor(id).easing = value == null ? "ease-out" : value;
                 break;
-            // Transformaciones. No pasan por el layout: mover o escalar una
-            // vista no cambia el sitio que ocupa, así que no hay que
-            // recalcular nada y se puede seguir al dedo sin coste.
+            // Transforms. They do not go through the layout: moving or scaling a
+            // view does not change the room it takes up, so nothing has to be
+            // recomputed and the finger can be followed for free.
             case "translateX":
                 visual(view, id).translationX(number(value, 0f) * density);
                 break;
@@ -1409,11 +1413,11 @@ public final class AnHost {
                 visual(view, id).scaleY(number(value, 1f));
                 break;
             case "rotate":
-                // La API va en radianes, como el gesto de girar; Android
-                // quiere grados.
+                // The API works in radians, like the rotation gesture; Android
+                // wants degrees.
                 visual(view, id).rotation((float) Math.toDegrees(number(value, 0f)));
                 break;
-            // --- controles del sistema
+            // --- system controls
             case "on":
                 if (view instanceof androidx.appcompat.widget.SwitchCompat) {
                     ((androidx.appcompat.widget.SwitchCompat) view).setChecked("true".equals(value));
@@ -1535,9 +1539,9 @@ public final class AnHost {
                 }
                 if (modals.get(id) != null) {
                     modals.get(id).visible = "true".equals(value);
-                    // Escondida mientras no esté presentada: quien la enseña
-                    // es el diálogo. Visible sin presentar se dibujaría en
-                    // línea sobre la página.
+                    // Hidden while it is not presented: what shows it is the
+                    // dialog. Visible without being presented, it would be drawn
+                    // inline over the page.
                     view.setVisibility(modals.get(id).visible ? View.VISIBLE : View.GONE);
                     markModalDirty(id);
                     break;
@@ -1550,7 +1554,7 @@ public final class AnHost {
                     markModalDirty(id);
                 }
                 break;
-            // --- diálogos del sistema
+            // --- system dialogs
             case "sheet":
                 if (alerts.get(id) != null) {
                     alerts.get(id).sheet = "true".equals(value);
@@ -1632,9 +1636,9 @@ public final class AnHost {
                 if (view instanceof AnTabBar) {
                     ((AnTabBar) view).setActiveColor(color);
                 } else if (view instanceof androidx.appcompat.widget.SwitchCompat) {
-                    // Solo la vía, y solo la de encendido: el pulgar lo pinta
-                    // Material para que contraste con ella, y tintar los dos
-                    // del mismo color dejaba el pulgar invisible.
+                    // Only the track, and only the on one: the thumb is painted
+                    // by Material to contrast with it, and tinting both the same
+                    // colour left the thumb invisible.
                     switchTrackOf(id)[0] = color;
                     applySwitchTrack(id, view);
                 } else if (view instanceof android.widget.ProgressBar) {
@@ -1650,8 +1654,8 @@ public final class AnHost {
                     ((com.google.android.material.slider.Slider) view)
                             .setThumbTintList(android.content.res.ColorStateList.valueOf(color));
                 } else if (view instanceof android.widget.Button) {
-                    // El color y la variante llegan sueltos y en cualquier
-                    // orden: se guardan los dos y se rehace el botón entero.
+                    // The colour and the variant arrive separately and in any
+                    // order: both are kept and the whole button is rebuilt.
                     buttonColors.put(id, color);
                     refreshButton((android.widget.Button) view, id);
                 } else if (view instanceof TextView) {
@@ -1665,8 +1669,8 @@ public final class AnHost {
                     if (size != null) {
                         ((TextView) view)
                                 .setTextSize(TypedValue.COMPLEX_UNIT_PX, size * density);
-                        // El espaciado entre letras va en emes: al cambiar el
-                        // tamaño cambia lo que vale una eme.
+                        // Letter spacing goes in ems: changing the size changes
+                        // what an em is worth.
                         applyTextMetrics(id, (TextView) view);
                     }
                 }
@@ -1748,7 +1752,7 @@ public final class AnHost {
                 }
                 if (view instanceof EditText) {
                     EditText input = (EditText) view;
-                    // Escribir en cada tecla le movería el cursor al final.
+                    // Writing on every keystroke would move the cursor to the end.
                     if (!input.getText().toString().equals(value)) {
                         input.setText(value);
                     }
@@ -1861,9 +1865,9 @@ public final class AnHost {
                 break;
             case "bounces":
                 if (view instanceof ScrollView) {
-                    // El rebote de iOS aquí es el estirón del final del
-                    // desplazamiento: el mismo sitio del gesto, dibujado como
-                    // lo dibuja cada plataforma.
+                    // The iOS bounce here is the stretch at the end of the
+                    // scroll: the same point in the gesture, drawn the way each
+                    // platform draws it.
                     view.setOverScrollMode(
                             "false".equals(value)
                                     ? View.OVER_SCROLL_NEVER
@@ -1999,8 +2003,8 @@ public final class AnHost {
     }
 
     /**
-     * `setCornerRadii` quiere ocho valores —radio X e Y de cada esquina— en el
-     * orden arriba-izq, arriba-der, abajo-der, abajo-izq.
+     * `setCornerRadii` wants eight values —X and Y radius of each corner— in the
+     * order top-left, top-right, bottom-right, bottom-left.
      */
     private void applyCorners(View view, float[] radii) {
         GradientDrawable drawable = backgroundOf(view);
@@ -2018,7 +2022,7 @@ public final class AnHost {
                 });
     }
 
-    /** El borde son dos props que llegan sueltas y se aplican juntas. */
+    /** The border is two props that arrive separately and are applied together. */
     private final SparseArray<float[]> borderWidths = new SparseArray<>();
     private final SparseArray<Integer> borderColors = new SparseArray<>();
 
@@ -2042,12 +2046,12 @@ public final class AnHost {
     }
 
     /**
-     * Apaga un control y todo lo que lleve dentro.
+     * Disables a control and everything it carries inside.
      *
-     * `setEnabled` en un `ViewGroup` no llega a los hijos, y tres de los
-     * controles de aquí —el de pasos, el segmentado y la barra de pestañas— no
-     * están en la plataforma y son grupos de vistas nuestras. Sin bajar por el
-     * árbol, apagarlos los dejaba respondiendo al toque.
+     * `setEnabled` on a `ViewGroup` does not reach the children, and three of
+     * the controls here —the stepper, the segmented control and the tab bar— are
+     * not in the platform and are groups of our own views. Without going down
+     * the tree, disabling them left them responding to touch.
      */
     private void setEnabledDeep(View view, boolean enabled) {
         view.setEnabled(enabled);
@@ -2069,11 +2073,11 @@ public final class AnHost {
     }
 
     /**
-     * Compone el `inputType` entero con lo que se sabe del campo.
+     * Composes the whole `inputType` from what is known about the field.
      *
-     * El teclado que sale, las mayúsculas automáticas, el corrector y si el
-     * texto se ve o se tapa son banderas del mismo entero: aplicar una sola
-     * borraría las otras tres.
+     * Which keyboard comes up, the automatic capitals, the autocorrect and
+     * whether the text shows or is masked are all flags of the same integer:
+     * applying one alone would wipe out the other three.
      */
     private void applyInputType(int id, EditText input) {
         InputState state = inputStateOf(id);
@@ -2103,16 +2107,16 @@ public final class AnHost {
         }
         boolean numeric = (type & android.text.InputType.TYPE_CLASS_NUMBER) != 0;
         if (state.secure) {
-            // La contraseña manda sobre la variante: un campo tapado con
-            // teclado de correo enseñaría el texto.
+            // The password wins over the variation: a masked field with an
+            // email keyboard would show the text.
             type = numeric
                     ? android.text.InputType.TYPE_CLASS_NUMBER
                             | android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
                     : android.text.InputType.TYPE_CLASS_TEXT
                             | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD;
         } else if (!numeric) {
-            // Las mayúsculas y el corrector solo existen en el teclado de
-            // texto; en el numérico no hay nada que capitalizar.
+            // Capitals and autocorrect only exist on the text keyboard; on the
+            // numeric one there is nothing to capitalise.
             switch (state.capitalize) {
                 case "none":
                     break;
@@ -2131,8 +2135,8 @@ public final class AnHost {
             }
         }
         input.setInputType(type);
-        // Cambiar el tipo devuelve el campo a la monoespaciada de las
-        // contraseñas: hay que volver a ponerle la suya.
+        // Changing the type sends the field back to the monospaced password
+        // face: its own has to be put back.
         applyTypeface(id, input);
     }
 
@@ -2146,11 +2150,11 @@ public final class AnHost {
     }
 
     /**
-     * Familia, cursiva y negrita van juntas o no van.
+     * Family, italic and bold go together or they do not go at all.
      *
-     * `setTypeface(null, style)` conserva la familia y `Typeface.create` pide
-     * el estilo, así que aplicar una sola de las tres props borra las otras
-     * dos. Se guardan las tres y se rehace la tipografía entera.
+     * `setTypeface(null, style)` keeps the family and `Typeface.create` asks for
+     * the style, so applying one of the three props alone wipes out the other
+     * two. All three are kept and the whole typeface is rebuilt.
      */
     private void applyTypeface(int id, TextView text) {
         FontState state = fontStateOf(id);
@@ -2162,11 +2166,11 @@ public final class AnHost {
     }
 
     /**
-     * Interlineado y espaciado entre letras.
+     * Line height and letter spacing.
      *
-     * El núcleo ya medía con los dos y el host dibujaba sin ellos: el layout
-     * reservaba un hueco que el texto no llenaba. El espaciado va en emes, así
-     * que depende del tamaño de letra y hay que rehacerlo cuando cambia.
+     * The core already measured with both and the host drew without them: the
+     * layout reserved a gap the text did not fill. The spacing goes in ems, so
+     * it depends on the font size and has to be redone when that changes.
      */
     private void applyTextMetrics(int id, TextView text) {
         FontState state = fontStateOf(id);
@@ -2182,18 +2186,18 @@ public final class AnHost {
             text.setLineHeight(px);
             return;
         }
-        // Antes de API 28 no hay alto de línea, solo lo que se añade al que ya
-        // trae la fuente: se resta para llegar al mismo sitio.
+        // Before API 28 there is no line height, only what is added to the one
+        // the font already brings: it is subtracted to get to the same place.
         int natural = text.getPaint().getFontMetricsInt(null);
         text.setLineSpacing(Math.max(0, px - natural), 1f);
     }
 
-    // ---------------------------------------------------------------- eventos
+    // ----------------------------------------------------------------- events
 
     public void setListener(int id, String event, boolean enabled) {
         View view = views.get(id);
-        // Un oyente sobre una primitiva que no se montó no puede quedarse
-        // esperando en silencio: nunca llegaría nada. Ya se dijo al crearla.
+        // A listener on a primitive that never mounted cannot be left waiting in
+        // silence: nothing would ever arrive. It was already said on creation.
         if (view == null || unsupported.contains(id)) {
             return;
         }
@@ -2223,8 +2227,9 @@ public final class AnHost {
         if (view instanceof EditText) {
             EditText input = (EditText) view;
             if ("change".equals(event) || "input".equals(event)) {
-                // Se guarda el observador para poder quitarlo: `addTextChangedListener`
-                // no admite reemplazo, solo alta y baja.
+                // The watcher is kept so it can be removed:
+                // `addTextChangedListener` takes no replacement, only add and
+                // remove.
                 TextWatcher previous = watchers.get(id);
                 if (previous != null) {
                     input.removeTextChangedListener(previous);
@@ -2321,8 +2326,8 @@ public final class AnHost {
                                     : null);
             return;
         }
-        // El área segura no la produce ningún gesto: la sabe el sistema, y
-        // cambia al rotar o al aparecer la barra de navegación.
+        // The safe area is produced by no gesture: the system knows it, and it
+        // changes on rotating or when the navigation bar appears.
         if ("safeArea".equals(event)) {
             if (enabled) {
                 safeArea.put(id, new float[] {Float.NaN, Float.NaN, Float.NaN, Float.NaN});
@@ -2333,8 +2338,9 @@ public final class AnHost {
             return;
         }
         if ("back".equals(event)) {
-            // El botón físico de atrás: el equivalente del gesto de borde de
-            // iOS. Aquí solo se avisa; deshacer la navegación es del router.
+            // The hardware back button: the equivalent of the iOS edge gesture.
+            // Here it is only reported; undoing the navigation is the router's
+            // business.
             backListeners.remove(Integer.valueOf(id));
             if (enabled) {
                 backListeners.add(id);
@@ -2352,15 +2358,16 @@ public final class AnHost {
         }
     }
 
-    /** Ya se dijo una vez que en un teléfono no hay corona; no hace falta más. */
+    /** It has been said once that a phone has no crown; no need to say it again. */
     private boolean crownWarned;
 
     /**
-     * La corona sobre una vista cualquiera.
+     * The crown on any old view.
      *
-     * Fuera de un reloj esto no existe, y una salida que no dispara nunca es
-     * exactamente lo que no se quiere: se dice al suscribirse, que es cuando
-     * hay alguien mirando, y no cuando el evento no llega, que es nunca.
+     * Outside a watch this does not exist, and an output that never fires is
+     * exactly what is not wanted: it is said on subscribing, which is when there
+     * is somebody looking, and not when the event fails to arrive, which is
+     * never.
      */
     private void setCrown(int id, View view, String event, boolean enabled) {
         if (!watch) {
@@ -2368,9 +2375,9 @@ public final class AnHost {
                 crownWarned = true;
                 android.util.Log.e(
                         "angular-native",
-                        "`(" + event + ")` no se puede entregar en este Android: la corona es del"
-                                + " reloj y aquí no hay ninguna rueda que girar, así que esta"
-                                + " salida no dispararía nunca");
+                        "`(" + event + ")` cannot be delivered on this Android: the crown belongs"
+                                + " to the watch and there is no wheel to turn here, so this"
+                                + " output would never fire");
             }
             return;
         }
@@ -2395,34 +2402,35 @@ public final class AnHost {
     }
 
     /**
-     * La corona digital de Wear OS sobre una vista que no es un desplazable.
+     * The Wear OS digital crown on a view that is not a scroll view.
      *
-     * `AnScrollView` ya la escucha para desplazarse; esto es la otra mitad: que
-     * una plantilla pueda pedirla para lo suyo —subir un valor, pasar de
-     * pantalla— sobre cualquier `an-view`.
+     * `AnScrollView` already listens to it in order to scroll; this is the other
+     * half: letting a template ask for it for its own purposes —raising a value,
+     * moving between screens— on any `an-view`.
      *
-     * Lo que llega del sistema son muescas de rueda, no puntos: es el mismo
-     * eje que mueve un ratón. Se mandan tal cual, sin convertir a píxeles, que
-     * es lo que hace el desplazable: aquí no se está desplazando nada, y
-     * convertir sería inventarse una escala que la plantilla no pidió.
+     * What arrives from the system is wheel detents, not points: it is the same
+     * axis a mouse moves. They are sent as they come, without converting to
+     * pixels the way the scroll view does: nothing is being scrolled here, and
+     * converting would mean inventing a scale the template did not ask for.
      *
-     * El `offset` cuenta desde que empezó el giro y no desde que la vista tomó
-     * el foco, que es lo que hace el reloj de Apple. La diferencia es que allí
-     * el foco se ve —hay un realce— y aquí no: una vista de Android que toma
-     * el foco no cambia de aspecto, así que «desde que lo tomó» sería un
-     * origen que nadie puede ver. Desde que se empieza a girar sí.
+     * The `offset` counts from when the turn started and not from when the view
+     * took the focus, which is what the Apple watch does. The difference is that
+     * there the focus is visible —there is a highlight— and here it is not: an
+     * Android view that takes the focus does not change its appearance, so
+     * "since it took it" would be an origin nobody can see. Since the turn
+     * started, one can.
      */
     private final class Crown implements View.OnGenericMotionListener {
 
         private final int id;
         private final View view;
-        /** Si la plantilla escucha `(crown)`. */
+        /** Whether the template listens to `(crown)`. */
         private boolean turning;
-        /** Si escucha `(crownIdle)`. */
+        /** Whether it listens to `(crownIdle)`. */
         private boolean idle;
-        /** Muescas acumuladas desde que empezó este giro. */
+        /** Detents accumulated since this turn started. */
         private float offset;
-        /** Cuándo llegó la muesca anterior de este giro, o 0 si es la primera. */
+        /** When the previous detent of this turn arrived, or 0 if it is the first. */
         private long previous;
 
         private final Runnable stopped =
@@ -2431,10 +2439,10 @@ public final class AnHost {
                     public void run() {
                         offset = 0;
                         previous = 0;
-                        // «Ha dejado de girar» es una cosa distinta de «ha
-                        // girado nada», así que va como su propio evento y no
-                        // como un `crown` con delta cero. Igual que en el reloj
-                        // de Apple.
+                        // "It has stopped turning" is a different thing from "it
+                        // has turned nothing", so it goes as its own event and not
+                        // as a `crown` with a zero delta. Just as on the Apple
+                        // watch.
                         if (idle && runtime != null) {
                             runtime.dispatchGesture(id, "crownIdle", "", "", new float[0]);
                         }
@@ -2459,10 +2467,11 @@ public final class AnHost {
         }
 
         void attach() {
-            // La corona va a la vista que tiene el foco, y una vista normal no
-            // lo pide sola: sin esto el sistema manda las muescas a quien lo
-            // tenga —normalmente a nadie— y la salida no dispara nunca, sin
-            // error ninguno. Es lo mismo que hace `AnScrollView.enableRotary`.
+            // The crown goes to the view that has the focus, and an ordinary
+            // view does not ask for it on its own: without this the system sends
+            // the detents to whoever does have it —usually nobody— and the output
+            // never fires, with no error at all. It is the same thing
+            // `AnScrollView.enableRotary` does.
             view.setFocusable(true);
             view.setFocusableInTouchMode(true);
             view.requestFocus();
@@ -2483,9 +2492,9 @@ public final class AnHost {
             float delta = event.getAxisValue(android.view.MotionEvent.AXIS_SCROLL);
             offset += delta;
             long now = event.getEventTime();
-            // Muescas por segundo. La primera de un giro no tiene con qué
-            // compararse: cero es la respuesta honesta, y no una velocidad
-            // enorme salida de dividir por el hueco que había antes de empezar.
+            // Detents per second. The first one of a turn has nothing to compare
+            // itself against: zero is the honest answer, and not some huge speed
+            // that came out of dividing by the gap before the turn began.
             float velocity = previous == 0 || now <= previous ? 0f : delta * 1000f / (now - previous);
             previous = now;
             if (turning && runtime != null) {
@@ -2498,23 +2507,23 @@ public final class AnHost {
             }
             view.removeCallbacks(stopped);
             view.postDelayed(stopped, CROWN_IDLE_MS);
-            // Un desplazable usa la corona para desplazarse, y este oyente se
-            // consulta antes que su `onGenericMotionEvent`: quedarse el evento
-            // pararía la lista por el mero hecho de escucharla. Se avisa a la
-            // plantilla y se deja seguir. En cualquier otra vista no hay nadie
-            // detrás a quien dejarle la muesca.
+            // A scroll view uses the crown to scroll, and this listener is
+            // consulted before its `onGenericMotionEvent`: keeping the event
+            // would stop the list merely by listening to it. The template is told
+            // and the event is let through. On any other view there is nobody
+            // behind to leave the detent to.
             return !(v instanceof AnScrollView);
         }
     }
 
     /**
-     * Lleva una vista de su marco actual al nuevo, interpolando.
+     * Takes a view from its current frame to the new one, interpolating.
      *
-     * Aquí no vale `ViewPropertyAnimator`: ese anima propiedades de dibujo
-     * —desplazamiento, escala, opacidad— y el marco no es una de ellas, es el
-     * resultado del layout. Hay que interpolar los cuatro números y pedir
-     * layout en cada paso. Es más caro, y por eso solo pasa en las vistas que
-     * lo han pedido.
+     * `ViewPropertyAnimator` is no good here: that animates drawing properties
+     * —translation, scale, opacity— and the frame is not one of them, it is the
+     * result of the layout. The four numbers have to be interpolated and a
+     * layout requested at every step. It is more expensive, and that is why it
+     * only happens on the views that asked for it.
      */
     private void animateFrame(
             View view,
@@ -2526,8 +2535,8 @@ public final class AnHost {
             Animation anim) {
         android.animation.ValueAnimator running = frameAnimations.get(view);
         if (running != null) {
-            // Un cambio nuevo manda sobre el que estaba en marcha: seguir los
-            // dos a la vez haría que la vista fuese a dos sitios.
+            // A new change wins over the one under way: following both at once
+            // would send the view to two places.
             running.cancel();
         }
         final int fromLeft = frame.left;
@@ -2572,11 +2581,11 @@ public final class AnHost {
     }
 
     /**
-     * Por dónde aplicar un cambio de dibujo: directo, o animándolo.
+     * How to apply a drawing change: directly, or by animating it.
      *
-     * Las dos formas se manejan igual —`ViewPropertyAnimator` con duración
-     * cero aplica el valor y ya—, así que quien pone la prop no tiene que
-     * saber cuál de las dos le toca.
+     * Both ways are handled the same —a `ViewPropertyAnimator` with zero
+     * duration applies the value and that is that—, so whoever sets the prop
+     * does not have to know which of the two applies.
      */
     private android.view.ViewPropertyAnimator visual(View view, int id) {
         Animation anim = animations.get(id);
@@ -2589,9 +2598,9 @@ public final class AnHost {
                 .setInterpolator(anim.interpolator());
     }
 
-    /** Cómo anima una vista sus cambios. */
+    /** How a view animates its changes. */
     private static final class Animation {
-        /** Milisegundos. Cero apaga la animación sin borrar el resto. */
+        /** Milliseconds. Zero turns the animation off without erasing the rest. */
         long duration;
         long delay;
         String easing = "ease-out";
@@ -2605,24 +2614,24 @@ public final class AnHost {
                 case "ease-in-out":
                     return new android.view.animation.AccelerateDecelerateInterpolator();
                 default:
-                    // Sale rápido y frena al llegar, como en iOS.
+                    // It leaves fast and brakes on arrival, as on iOS.
                     return new android.view.animation.DecelerateInterpolator();
             }
         }
     }
 
     /**
-     * Los iconos de Material, en la app.
+     * The Material icons, inside the app.
      *
-     * El juego que trae Android —`android.R.drawable`— lleva congelado desde
-     * 2011 por compatibilidad: es el de Gingerbread, no el de Material 3, y no
-     * se parece en nada a lo que la gente espera hoy. Los actuales viven en
-     * librerías que no están en la plataforma, así que la app se trae la
-     * fuente variable de Material Symbols y dibuja el glifo.
+     * The set Android ships —`android.R.drawable`— has been frozen since 2011
+     * for compatibility: it is Gingerbread's, not Material 3's, and it looks
+     * nothing like what people expect today. The current ones live in libraries
+     * that are not in the platform, so the app ships the Material Symbols
+     * variable font and draws the glyph.
      *
-     * Se buscan por codepoint y no por ligadura: una ligadura que no existe se
-     * dibuja como las letras del nombre, y un icono que se equivoca es mejor
-     * que no salga a que salga escrito.
+     * They are looked up by codepoint and not by ligature: a ligature that does
+     * not exist is drawn as the letters of the name, and an icon that gets it
+     * wrong is better missing than spelled out.
      */
     private android.graphics.Typeface iconFont;
 
@@ -2643,13 +2652,13 @@ public final class AnHost {
     }
 
     /**
-     * El fondo de un botón según su variante.
+     * A button's background according to its variant.
      *
-     * Android no trae los botones de Material 3 en la plataforma —viven en la
-     * librería de Material, que es una dependencia aparte y este build no usa
-     * Gradle—, así que la píldora se dibuja aquí con un `GradientDrawable`. El
-     * botón sigue siendo un `android.widget.Button` de verdad: lo único
-     * nuestro es el fondo.
+     * Android does not ship the Material 3 buttons in the platform —they live in
+     * the Material library, which is a separate dependency and this build does
+     * not use Gradle—, so the pill is drawn here with a `GradientDrawable`. The
+     * button is still a real `android.widget.Button`: the only thing of ours is
+     * the background.
      */
     private void applyButtonVariant(android.widget.Button button, int id, String variant) {
         buttonVariants.put(id, variant == null ? "text" : variant);
@@ -2657,13 +2666,14 @@ public final class AnHost {
     }
 
     /**
-     * Deja el botón como pide su variante.
+     * Leaves the button as its variant asks.
      *
-     * Todo va por la API de `MaterialButton` —tinte, trazo, color del rótulo—
-     * y nada por `setBackground`: un `MaterialButton` **descarta** los fondos
-     * que no ha hecho él, así que la píldora que se le pasara a mano no se
-     * dibujaría y encima no lo diría. Dibujar lo dibuja su `MaterialShapeDrawable`,
-     * que es el que sabe de esquinas, elevación y ondas al pulsar.
+     * Everything goes through the `MaterialButton` API —tint, stroke, label
+     * colour— and nothing through `setBackground`: a `MaterialButton`
+     * **discards** backgrounds it did not make itself, so a pill handed to it by
+     * hand would not be drawn and on top of that it would not say so. The
+     * drawing is done by its `MaterialShapeDrawable`, which is the one that
+     * knows about corners, elevation and ripples on press.
      */
     private void refreshButton(android.widget.Button button, int id) {
         if (!(button instanceof com.google.android.material.button.MaterialButton)) {
@@ -2674,42 +2684,42 @@ public final class AnHost {
         String variant = buttonVariants.get(id);
         Integer color = buttonColors.get(id);
         int tint = color == null ? Color.WHITE : color;
-        int trazo = 0;
-        int fondo = Color.TRANSPARENT;
-        int rotulo = tint;
+        int stroke = 0;
+        int background = Color.TRANSPARENT;
+        int label = tint;
 
         if ("filled".equals(variant)) {
-            fondo = tint;
-            // Sobre un relleno fuerte el rótulo va del color que contraste, no
-            // del color del botón, o se queda verde sobre verde.
-            rotulo = contrastOn(tint);
+            background = tint;
+            // Over a strong fill the label takes the colour that contrasts, not
+            // the button's colour, or it ends up green on green.
+            label = contrastOn(tint);
         } else if ("tonal".equals(variant)) {
-            // El mismo color muy rebajado. Material 3 usa aquí el contenedor
-            // secundario del tema; con un color puesto a mano, rebajarlo es lo
-            // más parecido que hay sin inventarse una paleta.
-            fondo = Color.argb(48, Color.red(tint), Color.green(tint), Color.blue(tint));
+            // The same colour, heavily dimmed. Material 3 uses the theme's
+            // secondary container here; with a colour set by hand, dimming it is
+            // the closest thing there is without inventing a palette.
+            background = Color.argb(48, Color.red(tint), Color.green(tint), Color.blue(tint));
         } else if ("outlined".equals(variant)) {
-            trazo = Math.round(density);
+            stroke = Math.round(density);
         }
 
-        material.setBackgroundTintList(android.content.res.ColorStateList.valueOf(fondo));
-        material.setStrokeWidth(trazo);
+        material.setBackgroundTintList(android.content.res.ColorStateList.valueOf(background));
+        material.setStrokeWidth(stroke);
         material.setStrokeColor(android.content.res.ColorStateList.valueOf(tint));
-        material.setTextColor(rotulo);
-        material.setIconTint(android.content.res.ColorStateList.valueOf(rotulo));
+        material.setTextColor(label);
+        material.setIconTint(android.content.res.ColorStateList.valueOf(label));
     }
 
-    /** Blanco o negro, el que se lea sobre ese color. */
+    /** Black or white, whichever reads on that colour. */
     private static int contrastOn(int color) {
-        double luz =
+        double light =
                 (0.299 * Color.red(color) + 0.587 * Color.green(color) + 0.114 * Color.blue(color))
                         / 255.0;
-        return luz > 0.6 ? Color.BLACK : Color.WHITE;
+        return light > 0.6 ? Color.BLACK : Color.WHITE;
     }
 
     /**
-     * Un icono de Material como `Drawable`, para donde el sistema pide uno y
-     * no una vista: la flecha de atrás de la barra de herramientas.
+     * A Material icon as a `Drawable`, for where the system asks for one and not
+     * a view: the toolbar's back arrow.
      */
     private android.graphics.drawable.Drawable iconDrawableFor(String name) {
         String glyph = iconGlyph(name);
@@ -2755,7 +2765,7 @@ public final class AnHost {
         }
     }
 
-    /** La vista del icono de una pestaña, o `null` si ese nombre no existe. */
+    /** A tab icon's view, or `null` if that name does not exist. */
     private View tabIcon(String name) {
         String glyph = iconGlyph(name);
         if (glyph.isEmpty()) {
@@ -2778,13 +2788,13 @@ public final class AnHost {
                 iconFont = android.graphics.Typeface.createFromAsset(
                         context.getAssets(), "material-symbols.ttf");
             } catch (RuntimeException error) {
-                android.util.Log.e("angular-native", "no se pudo cargar la fuente de iconos", error);
+                android.util.Log.e("angular-native", "the icon font could not be loaded", error);
             }
         }
         return iconFont;
     }
 
-    /** El carácter que dibuja este icono, o vacío si no existe. */
+    /** The character that draws this icon, or empty if it does not exist. */
     private String iconGlyph(String name) {
         if (name == null || name.isEmpty()) {
             return "";
@@ -2813,18 +2823,18 @@ public final class AnHost {
                 }
             }
         } catch (java.io.IOException error) {
-            android.util.Log.e("angular-native", "no se pudo leer el mapa de iconos", error);
+            android.util.Log.e("angular-native", "the icon map could not be read", error);
         }
         return map;
     }
 
     /**
-     * Nombres comunes, traducidos al de Material Symbols.
+     * Common names, translated into the Material Symbols one.
      *
-     * Los que ya coinciden no hacen falta: la lista es solo para los que se
-     * llaman distinto en cada plataforma, para que la misma plantilla valga
-     * para las dos. Cualquier nombre de Material Symbols pasa tal cual, y son
-     * más de cuatro mil.
+     * The ones that already match are not needed: the list is only for those
+     * called something different on each platform, so that the same template
+     * works on both. Any Material Symbols name passes through as it comes, and
+     * there are more than four thousand of them.
      */
     private static String translateIcon(String name) {
         switch (name) {
@@ -2854,21 +2864,21 @@ public final class AnHost {
         }
     }
 
-    /** Un número de una prop, con su valor por defecto si no llegó ninguno. */
+    /** A number from a prop, with its default if none arrived. */
     private float number(String value, float fallback) {
         Float parsed = parseFloat(value);
         return parsed == null ? fallback : parsed;
     }
 
-    // --------------------------------------------------------------- gestos
+    // ------------------------------------------------------------- gestures
 
     /**
-     * Los gestos de una vista, todos juntos.
+     * A view's gestures, all together.
      *
-     * <p>Una vista de Android solo admite un {@code OnTouchListener}, así que
-     * no vale poner uno por gesto: el último machaca a los anteriores. Aquí
-     * hay un objeto por vista que reparte el mismo flujo de toques entre los
-     * detectores que hagan falta.
+     * <p>An Android view takes only one {@code OnTouchListener}, so putting one
+     * per gesture will not do: the last one wipes out the earlier ones. Here
+     * there is one object per view that shares the same stream of touches out
+     * among whichever detectors are needed.
      */
     private final class Gestures implements android.view.View.OnTouchListener {
         private final int id;
@@ -2944,7 +2954,7 @@ public final class AnHost {
             rebuild();
         }
 
-        /** ¿Queda algún gesto activo? Si no, la vista vuelve a estar limpia. */
+        /** Is any gesture still active? If not, the view goes back to being clean. */
         private boolean any() {
             return press
                     || doublePress
@@ -2959,10 +2969,10 @@ public final class AnHost {
         }
 
         /**
-         * Un gesto continuo se queda el toque: mientras el dedo se mueve nadie
-         * más debe verlo. Con solo toques sueltos se devuelve el evento para
-         * que el {@code OnClickListener} siga funcionando, que es lo que hace
-         * la vista accesible.
+         * A continuous gesture keeps the touch: while the finger is moving nobody
+         * else should see it. With loose taps only, the event is handed back so
+         * that the {@code OnClickListener} keeps working, which is what makes the
+         * view accessible.
          */
         private boolean consuming() {
             return pan || pinch || rotate;
@@ -2982,14 +2992,14 @@ public final class AnHost {
                 return;
             }
             view.setOnTouchListener(this);
-            // Clicable siempre que haya algún gesto, aunque no haya nada que
-            // hacer al tocar: una vista que no lo es solo recibe el primer
-            // toque, y sin el resto del recorrido no hay doble toque ni
-            // deslizamiento que reconocer.
+            // Clickable whenever there is any gesture, even if there is nothing
+            // to do on a tap: a view that is not clickable only receives the
+            // first touch, and without the rest of the sequence there is no
+            // double tap and no swipe to recognise.
             view.setClickable(true);
 
-            // El click nativo solo cuando nadie se queda el toque; si no, el
-            // toque suelto lo reconoce el detector.
+            // The native click only when nobody keeps the touch; otherwise the
+            // loose tap is recognised by the detector.
             if (press && !consuming()) {
                 view.setOnClickListener(v -> dispatch("press", lastX, lastY));
             } else {
@@ -3013,19 +3023,19 @@ public final class AnHost {
             if (pan) {
                 trackPan(ev);
             }
-            // Aquí no vale devolver lo que diga el detector. El detector pide
-            // quedarse el primer toque para poder ver el gesto entero, y eso
-            // se lleva por delante el click de la vista: tocar dejaba de
-            // funcionar en cuanto la vista escuchaba también un deslizamiento.
-            // Solo se consume cuando hay un gesto continuo, que es cuando de
-            // verdad no debe llegar a nadie más.
+            // Returning whatever the detector says will not do here. The
+            // detector asks to keep the first touch so it can see the whole
+            // gesture, and that runs over the view's click: tapping stopped
+            // working as soon as the view also listened for a swipe. The touch is
+            // only consumed when there is a continuous gesture, which is when it
+            // really must not reach anybody else.
             return consuming();
         }
 
         /**
-         * Arrastre. Se manda el desplazamiento desde donde empezó el dedo, no
-         * el de este movimiento: es lo que quiere quien mueve algo con el
-         * dedo, y coincide con lo que manda iOS.
+         * Dragging. The translation reported is the one from where the finger
+         * started, not the one for this movement: it is what whoever is moving
+         * something with a finger wants, and it matches what iOS sends.
          */
         private void trackPan(android.view.MotionEvent ev) {
             switch (ev.getActionMasked()) {
@@ -3069,7 +3079,7 @@ public final class AnHost {
             float vx = 0f;
             float vy = 0f;
             if (velocity != null) {
-                // Píxeles por segundo, como los da iOS.
+                // Pixels per second, as iOS gives them.
                 velocity.computeCurrentVelocity(1000);
                 vx = velocity.getXVelocity() / density;
                 vy = velocity.getYVelocity() / density;
@@ -3082,9 +3092,9 @@ public final class AnHost {
         }
 
         /**
-         * Girar con dos dedos. Android no trae detector para esto —hay
-         * {@code ScaleGestureDetector} para el pellizco, pero nada para el
-         * giro—, así que se saca el ángulo entre los dos dedos a mano.
+         * Rotating with two fingers. Android ships no detector for this —there is
+         * {@code ScaleGestureDetector} for the pinch, but nothing for the
+         * rotation—, so the angle between the two fingers is worked out by hand.
          */
         private void trackRotation(android.view.MotionEvent ev) {
             if (ev.getPointerCount() < 2) {
@@ -3135,7 +3145,7 @@ public final class AnHost {
                 new android.view.GestureDetector.SimpleOnGestureListener() {
                     @Override
                     public boolean onDown(android.view.MotionEvent e) {
-                        // Sin esto el detector descarta el resto del gesto.
+                        // Without this the detector discards the rest of the gesture.
                         return true;
                     }
 
@@ -3170,8 +3180,8 @@ public final class AnHost {
                             android.view.MotionEvent up,
                             float vx,
                             float vy) {
-                        // Gana el eje que más se ha movido; en diagonal, el
-                        // más rápido. Es lo mismo que decide UIKit.
+                        // The axis that moved most wins; on a diagonal, the
+                        // faster one. It is the same thing UIKit decides.
                         String direction;
                         if (Math.abs(vx) > Math.abs(vy)) {
                             direction = vx > 0 ? "swipeRight" : "swipeLeft";
@@ -3223,14 +3233,14 @@ public final class AnHost {
                         };
     }
 
-    /** Los gestos de esta vista, creándolos si es el primero que se activa. */
+    /** This view's gestures, creating them if this is the first one turned on. */
     private Gestures gestureFor(int id, android.view.View view, String event, boolean enabled) {
         Gestures existing = gestures.get(Integer.valueOf(id));
         if (existing != null) {
             return existing;
         }
         if (!enabled) {
-            // Quitar un gesto de una vista que no tiene ninguno: nada que hacer.
+            // Removing a gesture from a view that has none: nothing to do.
             return null;
         }
         Gestures created = new Gestures(id, view);
@@ -3238,9 +3248,9 @@ public final class AnHost {
         return created;
     }
 
-    // --------------------------------------------------------------- consola
+    // --------------------------------------------------------------- console
 
-    /** Salida de `console.*` y del propio core. Va a logcat. */
+    /** Output from `console.*` and from the core itself. It goes to logcat. */
     public void log(int level, String message) {
         switch (level) {
             case 0:
@@ -3258,7 +3268,7 @@ public final class AnHost {
         }
     }
 
-    // ------------------------------------------------------------- imágenes
+    // --------------------------------------------------------------- images
 
     private static ImageView.ScaleType scaleTypeOf(String mode) {
         if ("cover".equals(mode)) return ImageView.ScaleType.CENTER_CROP;
@@ -3268,10 +3278,10 @@ public final class AnHost {
     }
 
     /**
-     * Una ruta sin esquema es un fichero de los assets; con `http` o `https`
-     * se baja por red en un hilo aparte. En los dos casos se avisa del tamaño
-     * real con un evento `load`: el layout no puede colocar algo cuyo tamaño
-     * no conoce.
+     * A path with no scheme is a file in the assets; with `http` or `https` it is
+     * downloaded over the network on a separate thread. In both cases the real
+     * size is reported with a `load` event: the layout cannot place something
+     * whose size it does not know.
      */
     private void loadImage(int id, ImageView view, String source) {
         if (source == null || source.isEmpty()) {
@@ -3283,7 +3293,7 @@ public final class AnHost {
                 android.graphics.Bitmap bitmap = android.graphics.BitmapFactory.decodeStream(input);
                 applyImage(id, view, bitmap);
             } catch (java.io.IOException error) {
-                android.util.Log.w("angular-native", "no se pudo abrir " + source);
+                android.util.Log.w("angular-native", source + " could not be opened");
             }
             return;
         }
@@ -3301,9 +3311,9 @@ public final class AnHost {
                                     connection.disconnect();
                                 }
                             } catch (Exception error) {
-                                android.util.Log.w("angular-native", "no se pudo bajar " + source);
+                                android.util.Log.w("angular-native", source + " could not be downloaded");
                             }
-                            // Colgar el bitmap de la vista sí es del hilo de UI.
+                            // Hanging the bitmap off the view does belong to the UI thread.
                             final android.graphics.Bitmap loaded = bitmap;
                             view.post(() -> applyImage(id, view, loaded));
                         },
@@ -3322,11 +3332,11 @@ public final class AnHost {
         }
     }
 
-    // ------------------------------------------------------------ dispositivo
+    // ---------------------------------------------------------------- device
 
     /**
-     * Lo consume el módulo nativo `device`. Se devuelve como JSON en vez de
-     * como objeto para no tener que construir un mapa Java desde Rust por JNI.
+     * Consumed by the `device` native module. It is returned as JSON rather than
+     * as an object so as not to have to build a Java map from Rust over JNI.
      */
     public String deviceInfo() {
         return "{\"platform\":\"android\""
@@ -3337,11 +3347,11 @@ public final class AnHost {
     }
 
     /**
-     * Tamaño natural de un control del sistema, en puntos.
+     * The natural size of a system control, in points.
      *
-     * Se crea uno de mentira y se le pregunta: es lo mismo que hace iOS con
-     * `sizeThatFits`, y por el mismo motivo —el alto de un interruptor cambia
-     * entre versiones de Android y con los ajustes de accesibilidad.
+     * A throwaway one is created and asked: it is the same thing iOS does with
+     * `sizeThatFits`, and for the same reason —a switch's height changes between
+     * versions of Android and with the accessibility settings.
      */
     public long measureControl(String name, float availableWidthDp) {
         View probe;
@@ -3364,15 +3374,15 @@ public final class AnHost {
                 probe = new com.google.android.material.button.MaterialButton(context);
                 break;
             case "TabBar": {
-                // El alto lo decide Material, no una constante nuestra: se le
-                // pregunta a una barra de verdad, que es lo que hace este
-                // método con todos los demás controles.
+                // The height is decided by Material, not by a constant of ours:
+                // a real bar is asked, which is what this method does with every
+                // other control.
                 //
-                // Con una pestaña dentro: vacía mide cero, y entonces el
-                // layout no le reserva sitio y no se ve.
-                AnTabBar barra = new AnTabBar(context);
-                barra.setTitles(new String[] {" "});
-                probe = barra;
+                // With one tab inside: an empty one measures zero, and then the
+                // layout reserves no room for it and it cannot be seen.
+                AnTabBar bar = new AnTabBar(context);
+                bar.setTitles(new String[] {" "});
+                probe = bar;
                 break;
             }
             default:
@@ -3383,17 +3393,16 @@ public final class AnHost {
         float width = probe.getMeasuredWidth() / density;
         float height = probe.getMeasuredHeight() / density;
 
-        // La barra de pestañas se aparta ella sola de la franja de gestos
-        // metiéndola como relleno propio. La sonda está suelta —sin ventana, sin
-        // márgenes que aplicar— así que ese hueco hay que sumarlo aquí: si no,
-        // los 80 dp de Material se reparten entre contenido y franja y el
-        // rótulo se queda con cero de alto.
+        // The tab bar moves itself clear of the gesture strip by adding it as
+        // padding of its own. The probe is loose —no window, no insets to apply—
+        // so that gap has to be added here: otherwise Material's 80 dp are shared
+        // between content and strip and the label is left with zero height.
         if ("TabBar".equals(name)) {
             height += bottomInsetDp();
         }
 
-        // Deslizadores y barras ocupan todo el ancho que se les dé; su medida
-        // natural solo manda en el alto.
+        // Sliders and bars take up all the width they are given; their natural
+        // measurement only rules the height.
         boolean stretches = "Slider".equals(name) || "ProgressBar".equals(name);
         if (stretches && availableWidthDp > 0) {
             width = availableWidthDp;
@@ -3401,7 +3410,7 @@ public final class AnHost {
         return pack(width, height);
     }
 
-    /** Franja del sistema de abajo, en puntos. Cero si aún no se conoce. */
+    /** The system strip at the bottom, in points. Zero if not yet known. */
     private float bottomInsetDp() {
         android.view.WindowInsets insets = container.getRootWindowInsets();
         if (insets == null) {
@@ -3414,17 +3423,17 @@ public final class AnHost {
                 / density;
     }
 
-    /** Ancho y alto en centésimas de punto, empaquetados en un long. */
+    /** Width and height in hundredths of a point, packed into a long. */
     private static long pack(float width, float height) {
         return (((long) Math.round(width * 100)) << 32)
                 | (Math.round(height * 100) & 0xffffffffL);
     }
 
-    // ---------------------------------------------------------------- medición
+    // ------------------------------------------------------------- measuring
 
     /**
-     * Devuelve ancho y alto empaquetados en un long, en centésimas de punto:
-     * dos llamadas JNI por medición costarían el doble sin ganar nada.
+     * Returns width and height packed into a long, in hundredths of a point: two
+     * JNI calls per measurement would cost twice as much and gain nothing.
      */
     public long measureText(
             String text,
@@ -3495,14 +3504,14 @@ public final class AnHost {
         }
     }
 
-    /** Acepta lo mismo que el lado de iOS: `#rgb`, `#rrggbb`, `#rrggbbaa`. */
+    /** It accepts the same as the iOS side: `#rgb`, `#rrggbb`, `#rrggbbaa`. */
     private static Integer parseColor(String value) {
         if (value == null || value.isEmpty()) {
             return null;
         }
         try {
             if (value.startsWith("#") && value.length() == 9) {
-                // Android espera #aarrggbb; la web escribe #rrggbbaa.
+                // Android expects #aarrggbb; the web writes #rrggbbaa.
                 String rgb = value.substring(1, 7);
                 String alpha = value.substring(7, 9);
                 return Color.parseColor("#" + alpha + rgb);

@@ -1,9 +1,9 @@
 'use strict'
-// La misma pantalla que construía `build_demo` en Rust, ahora desde JS.
+// The same screen `build_demo` used to build in Rust, now from JS.
 //
-// No hay Angular todavía: esto llama a `__an_dom` a pelo, que es exactamente
-// lo que hará el `Renderer2` de la fase siguiente. Si esto se ve en pantalla,
-// la cadena JS -> búfer -> shadow tree -> taffy -> UIKit está entera.
+// There is no Angular yet: this calls `__an_dom` bare, which is exactly what the
+// `Renderer2` of the next phase will do. If this shows up on screen, the chain
+// JS -> buffer -> shadow tree -> taffy -> UIKit is complete.
 
 const dom = globalThis.__an_dom
 
@@ -44,14 +44,13 @@ append(row, cards)
 const paragraph = el('Text', {}, { fontSize: 16, color: '#9fb0d4' })
 append(paragraph, [
   text(
-    'Este párrafo lo mide UIKit y lo coloca taffy. Ninguna vista de esta ' +
-      'pantalla es un WebView: son UIView, UILabel y nada más.'
+    'This paragraph is measured by UIKit and placed by taffy. Not one view on ' +
+      'this screen is a WebView: they are UIView, UILabel and nothing else.'
   )
 ])
 
-// Un contador con setInterval: prueba que los temporizadores corren, que un
-// cambio de texto reflota el layout, y que el frame siguiente solo reemite
-// los nodos afectados.
+// A counter with setInterval: it proves the timers run, that a text change
+// reflows the layout, and that the next frame only re-emits the affected nodes.
 const counterLabel = el('Text', {}, { fontSize: 16, color: '#6ee7b7' })
 const counterText = text('frames: 0')
 append(counterLabel, [counterText])
@@ -61,7 +60,7 @@ append(root, [title, row, paragraph, counterLabel])
 let seconds = 0
 setInterval(() => {
   seconds++
-  dom.setText(counterText, `segundos en marcha: ${seconds}`)
+  dom.setText(counterText, `seconds running: ${seconds}`)
 }, 1000)
 
-console.log('main.js montado')
+console.log('main.js mounted')

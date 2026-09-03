@@ -15,11 +15,11 @@ bootstrapNativeApplication(AppComponent, {
     provideRouter(
       [
         { path: '', component: HomePage },
-        { path: 'barco/:id', component: DetailPage }
+        { path: 'ship/:id', component: DetailPage }
       ],
       withComponentInputBinding()
     )
   ]
 }).catch((error) => {
-  console.error('el arranque falló:', error)
+  console.error('bootstrap failed:', error)
 })

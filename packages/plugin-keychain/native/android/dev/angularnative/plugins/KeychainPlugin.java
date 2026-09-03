@@ -46,7 +46,7 @@ import javax.crypto.spec.GCMParameterSpec;
  * plataforma: en este repo no hay Gradle, las dependencias de Android se traen una a una, y esto
  * son ochenta líneas.
  *
- * <p><b>Lo que protege y lo que no</b> está en {@code docs/plugins.md}, y es la parte importante.
+ * <p><b>Lo que protege y lo que no</b> está en {@code https://angular-native.dev/extending/plugins/}, y es la parte importante.
  * El resumen: al desinstalar la app desaparecen las dos piezas; la copia de seguridad puede
  * llevarse el fichero cifrado pero nunca la clave, así que restaurado en otro aparato no se abre;
  * y en un teléfono sin hardware seguro la clave la guarda el sistema en software, que es menos.

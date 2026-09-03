@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# La app de lista: campo de texto, ScrollView y lista con ventana.
+# The list app: text field, ScrollView and a windowed list.
 #
-# Lo que verifica de verdad es que cinco mil filas no son cinco mil vistas.
+# What it really verifies is that five thousand rows are not five thousand views.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,40 +14,42 @@ check() {
   if grep -qE -- "$1" <<<"$OUTPUT"; then
     echo "  ok   $2"
   else
-    echo "  FALLO $2"
+    echo "  FAIL $2"
     fail=1
   fi
 }
 
 echo "== kitchen"
-check 'TextInput#[0-9]+ \[16,70 361x40\]' 'el campo de texto se midió y se colocó'
-# El campo configurable. El teclado que sale no es un adorno: uno de correo
-# con el teclado de texto obliga a buscar la arroba, y en Android las cuatro
-# props son banderas del mismo entero, así que o llegan todas o no llega
-# ninguna.
-check 'TextInput#[0-9]+ .*autoCapitalize=none autoCorrect=false' 'el campo pide el teclado sin mayúsculas ni corrector'
-check 'TextInput#[0-9]+ .*keyboardType=default .*returnKeyType=search' 'y la tecla de retorno dice «buscar»'
-check 'TextInput#[0-9]+ .*placeholderColor=#6b7a99' 'el texto de ayuda lleva su propio color'
-check 'TextInput#[0-9]+ .*ios:clearButtonMode=whileEditing' 'la equis de borrar viaja marcada como de iOS'
-check 'TextInput#[0-9]+ .*android:selectAllOnFocus=true' 'y seleccionar al enfocar, como de Android'
-check '"headless 0.0 . es-ES"' 'el módulo nativo contestó y la promesa resolvió'
-check 'ScrollView#[0-9]+ \[0,0 393x666\]' 'el ScrollView llena el hueco, no crece con su contenido'
-check 'contenido 393x312000' 'el contentSize suma fila a fila: 4000 de 56 y 1000 de 88'
-check '"fila número 6[0-9]"' 'tras desplazarse se ven las filas de esa altura'
-check 'View#[0-9]+ \[0,3744 393x88\]' 'la fila alta mide 88'
-check 'View#[0-9]+ \[0,3832 393x56\]' 'la siguiente empieza justo debajo de la alta'
-check 'desplazarse costó 0 vistas creadas y 0 destruidas' 'desplazarse recicla: ni una vista nueva'
-if grep -qE -- '"fila número (1|2|300)"' <<<"$OUTPUT"; then
-  echo "  FALLO tras desplazarse no debería quedar nada del principio ni del final"
+check 'TextInput#[0-9]+ \[16,70 361x40\]' 'the text field was measured and placed'
+# The configurable field. Which keyboard comes up is not decoration: an email
+# field with the plain text keyboard forces you to hunt for the at sign, and on
+# Android the four props are flags of the same integer, so either they all
+# arrive or none does.
+check 'TextInput#[0-9]+ .*autoCapitalize=none autoCorrect=false' 'the field asks for a keyboard with no caps and no autocorrect'
+check 'TextInput#[0-9]+ .*keyboardType=default .*returnKeyType=search' 'and the return key says "search"'
+check 'TextInput#[0-9]+ .*placeholderColor=#6b7a99' 'the hint text carries a colour of its own'
+check 'TextInput#[0-9]+ .*ios:clearButtonMode=whileEditing' 'the clear cross travels marked as an iOS one'
+check 'TextInput#[0-9]+ .*android:selectAllOnFocus=true' 'and select-on-focus as an Android one'
+check '"headless 0.0 . es-ES"' 'the native module answered and the promise resolved'
+check 'ScrollView#[0-9]+ \[0,0 393x666\]' 'the ScrollView fills the gap, it does not grow with its content'
+# "contenido"/"content" is printed by the headless runner, which is a crate and
+# translated on its own branch, so both spellings are accepted.
+check '(contenido|content) 393x312000' 'the contentSize adds up row by row: 4000 of 56 and 1000 of 88'
+check '"row number 6[0-9]"' 'after scrolling, the rows at that height are the ones on screen'
+check 'View#[0-9]+ \[0,3744 393x88\]' 'the tall row measures 88'
+check 'View#[0-9]+ \[0,3832 393x56\]' 'the next one starts right below the tall one'
+check '(desplazarse costó 0 vistas creadas y 0 destruidas|scrolling cost 0 views created and 0 destroyed)' 'scrolling recycles: not one new view'
+if grep -qE -- '"row number (1|2|300)"' <<<"$OUTPUT"; then
+  echo "  FAIL after scrolling nothing from the start or the end should be left"
   fail=1
 else
-  echo "  ok   fuera de la ventana no se monta nada"
+  echo "  ok   nothing outside the window is mounted"
 fi
-mounted="$(grep -oE 'vistas nativas montadas: [0-9]+' <<<"$OUTPUT" | grep -oE '[0-9]+')"
+mounted="$(grep -oE '(vistas nativas montadas|native views mounted): [0-9]+' <<<"$OUTPUT" | grep -oE '[0-9]+')"
 if [ -n "$mounted" ] && [ "$mounted" -lt 120 ]; then
-  echo "  ok   $mounted vistas nativas para 5000 filas"
+  echo "  ok   $mounted native views for 5000 rows"
 else
-  echo "  FALLO demasiadas vistas montadas: ${mounted:-?}"
+  echo "  FAIL too many views mounted: ${mounted:-?}"
   fail=1
 fi
 

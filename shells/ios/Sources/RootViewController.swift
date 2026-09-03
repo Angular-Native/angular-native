@@ -1,7 +1,7 @@
 import UIKit
 
-/// Todo el shell de iOS cabe aquí: crear el runtime, darle una vista donde
-/// montar, avisarle del tamaño y llamarle una vez por frame.
+/// The whole iOS shell fits in here: create the runtime, give it a view to
+/// mount into, tell it the size and call it once per frame.
 final class RootViewController: UIViewController {
     private var runtime: OpaquePointer?
     private var displayLink: CADisplayLink?
@@ -11,21 +11,22 @@ final class RootViewController: UIViewController {
         super.viewDidLoad()
 
         #if os(visionOS)
-            // Transparente, no negro.
+            // Transparent, not black.
             //
-            // La ventana de visionOS ya trae un fondo: el cristal que dibuja el
-            // sistema por detrás de la app, con su desenfoque y su sombra sobre
-            // la habitación de verdad. Pintar negro encima lo tapa entero y
-            // deja una losa opaca flotando en el salón. Lo que se vea de fondo
-            // lo decide la plantilla con `[backgroundColor]`, y lo que no
-            // pinte nada deja pasar el cristal.
+            // The visionOS window already brings a background: the glass the
+            // system draws behind the app, with its blur and its shadow over the
+            // real room. Painting black on top covers it entirely and leaves an
+            // opaque slab floating in the living room. What shows as a
+            // background is decided by the template with `[backgroundColor]`,
+            // and whatever paints nothing lets the glass through.
             view.backgroundColor = .clear
         #else
             view.backgroundColor = .black
         #endif
 
-        // Antes de crear el runtime: el core construye un módulo nativo por
-        // plugin al arrancar el motor, y lo que se registre después no entra.
+        // Before creating the runtime: the core builds one native module per
+        // plugin when the engine starts, and whatever is registered afterwards
+        // does not get in.
         AnPluginRegistry.install(host: self)
 
         let bounds = view.bounds
@@ -35,13 +36,13 @@ final class RootViewController: UIViewController {
             Float(bounds.height)
         )
         guard runtime != nil else {
-            assertionFailure("an_runtime_new devolvió nil: ¿fuera del hilo principal?")
+            assertionFailure("an_runtime_new returned nil: off the main thread?")
             return
         }
         loadBundleScript()
 
-        // El core solo trabaja cuando hay algo que aplicar; en un frame
-        // quieto `an_runtime_frame` devuelve 0 sin tocar UIKit.
+        // The core only works when there is something to apply; on a settled
+        // frame `an_runtime_frame` returns 0 without touching UIKit.
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
         link.add(to: .main, forMode: .common)
         displayLink = link
@@ -54,38 +55,38 @@ final class RootViewController: UIViewController {
         an_runtime_set_viewport(runtime, Float(view.bounds.width), Float(view.bounds.height))
     }
 
-    /// El bundle de la app trae el JS, igual que el `main.jsbundle` de React
-    /// Native.
+    /// The app bundle carries the JS, just like React Native's
+    /// `main.jsbundle`.
     private func loadBundleScript() {
         guard let path = Bundle.main.path(forResource: "main", ofType: "js"),
               let source = try? String(contentsOfFile: path, encoding: .utf8)
         else {
-            NSLog("angular-native: no hay main.js en el bundle")
+            NSLog("angular-native: there is no main.js in the bundle")
             return
         }
         if an_runtime_eval(runtime, "main.js", source) != 0 {
-            NSLog("angular-native: main.js lanzó al evaluarse")
+            NSLog("angular-native: main.js threw while being evaluated")
         }
     }
 
-    /// Solo existe si el `.app` lo armó `an dev`.
+    /// Only exists if the `.app` was built by `an dev`.
     private func connectDevServer() {
         devClient = DevClient(bundle: .main) { [weak self] source in
             guard let self, let runtime = self.runtime else { return }
-            NSLog("angular-native: recargando")
+            NSLog("angular-native: reloading")
             if an_runtime_reload(runtime, "main.js", source) != 0 {
-                NSLog("angular-native: el bundle recargado lanzó al evaluarse")
+                NSLog("angular-native: the reloaded bundle threw while being evaluated")
             }
         }
         devClient?.connect()
     }
 
     @objc private func tick(_ link: CADisplayLink) {
-        // El reloj de la app es el del vsync: los temporizadores de JS avanzan
-        // con los frames, no con un hilo aparte.
+        // The app's clock is the vsync one: the JS timers advance with the
+        // frames, not on a thread of their own.
         let applied = an_runtime_frame(runtime, link.timestamp * 1000.0)
         if applied < 0 {
-            NSLog("angular-native: el frame falló")
+            NSLog("angular-native: the frame failed")
         }
     }
 

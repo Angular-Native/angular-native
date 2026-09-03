@@ -78,7 +78,7 @@ fn javascript_builds_the_whole_screen() {
     apply(&commands, &mut tree).unwrap();
     let frame = tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
 
-    assert!(log.0.borrow().iter().any(|l| l.ends_with("main.js montado")));
+    assert!(log.0.borrow().iter().any(|l| l.ends_with("main.js mounted")));
 
     // The tree was mounted with the ids JS hands out: 1 root, 2 title, 3 its
     // raw text, 4 row, 5 and 6 the cards.
@@ -112,7 +112,7 @@ fn the_frame_is_what_sets_the_timers_clock() {
     assert!(
         frame.ops.iter().any(|op| matches!(
             op,
-            MountOp::SetText { text, .. } if text == "segundos en marcha: 1"
+            MountOp::SetText { text, .. } if text == "seconds running: 1"
         )),
         "ops: {:?}",
         frame.ops
@@ -125,7 +125,7 @@ fn the_frame_is_what_sets_the_timers_clock() {
     let frame = tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
     assert!(frame.ops.iter().any(|op| matches!(
         op,
-        MountOp::SetText { text, .. } if text == "segundos en marcha: 4"
+        MountOp::SetText { text, .. } if text == "seconds running: 4"
     )));
 }
 

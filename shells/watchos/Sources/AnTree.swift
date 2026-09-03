@@ -1,35 +1,36 @@
 import Foundation
 import Observation
 
-/// El modelo observable que SwiftUI mira.
+/// The observable model SwiftUI looks at.
 ///
-/// Es el reflejo del árbol que mantiene Rust. No se construye desde Swift: se
-/// decodifica de la foto que devuelve `an_watch_runtime_snapshot`, y solo
-/// cuando la revisión cambia. En un frame quieto no se decodifica nada y
-/// SwiftUI no recompone.
+/// It is the mirror of the tree Rust maintains. It is not built from Swift: it is
+/// decoded from the snapshot `an_watch_runtime_snapshot` returns, and only when
+/// the revision changes. On a settled frame nothing is decoded and SwiftUI does
+/// not recompose.
 @Observable
 final class AnTree {
     private(set) var root: AnNode?
-    /// Lo que el sistema presenta encima —`an-alert` y `an-modal`—, que llega
-    /// fuera del árbol porque en SwiftUI no son vistas que se coloquen sino
-    /// modificadores sobre la raíz.
+    /// What the system presents on top —`an-alert` and `an-modal`—, which
+    /// arrives outside the tree because in SwiftUI they are not views to be
+    /// placed but modifiers on the root.
     private(set) var overlays: [AnNode] = []
-    /// La revisión que ya está reflejada aquí. Empieza fuera de rango para que
-    /// el primer frame siempre entre.
+    /// The revision already mirrored here. It starts out of range so that the
+    /// first frame always gets in.
     private var mirrored: UInt64 = .max
 
-    /// Rust manda `border_radius`; Swift lo quiere como `borderRadius`. La
-    /// conversión la hace el decodificador con una regla, no una tabla de
-    /// `CodingKeys` de cuarenta líneas que habría que tocar en dos sitios cada
-    /// vez que la foto crece.
+    /// Rust sends `border_radius`; Swift wants it as `borderRadius`. The
+    /// conversion is done by the decoder with a rule, not with a forty-line
+    /// `CodingKeys` table that would have to be touched in two places every time
+    /// the snapshot grows.
     private static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         return decoder
     }()
 
-    /// Vuelca la foto si Rust dice que cambió. Devuelve si hubo cambio, que es
-    /// lo que el shell mira para saber si tiene sentido registrar el frame.
+    /// Dumps the snapshot if Rust says it changed. It returns whether there was
+    /// a change, which is what the shell looks at to know whether recording the
+    /// frame makes any sense.
     @discardableResult
     func sync(runtime: OpaquePointer?) -> Bool {
         guard let runtime else { return false }
@@ -38,11 +39,11 @@ final class AnTree {
         mirrored = revision
 
         guard let raw = an_watch_runtime_snapshot(runtime) else {
-            NSLog("angular-native: el árbol no se pudo serializar")
+            NSLog("angular-native: the tree could not be serialised")
             return false
         }
-        // `String(cString:)` copia. El puntero de Rust solo vale hasta la
-        // siguiente llamada, así que no se guarda.
+        // `String(cString:)` copies. The Rust pointer is only good until the
+        // next call, so it is not kept.
         let json = String(cString: raw)
         guard let data = json.data(using: .utf8) else { return false }
         do {
@@ -51,7 +52,7 @@ final class AnTree {
             overlays = snapshot.overlays ?? []
             return true
         } catch {
-            NSLog("angular-native: la foto del árbol no se entiende: \(error)")
+            NSLog("angular-native: the tree snapshot cannot be understood: \(error)")
             return false
         }
     }
@@ -63,15 +64,15 @@ struct AnSnapshot: Decodable {
     let overlays: [AnNode]?
 }
 
-/// Un nodo tal y como lo manda Rust.
+/// A node exactly as Rust sends it.
 ///
-/// `Identifiable` con el id que asignó JS, que es estable entre frames: sin él
-/// SwiftUI trataría cada foto como contenido nuevo y perdería, entre otras
-/// cosas, la posición de scroll en cada cambio.
+/// `Identifiable` with the id JS assigned, which is stable between frames:
+/// without it SwiftUI would treat every snapshot as new content and would lose,
+/// among other things, the scroll position on every change.
 ///
-/// Todo es opcional salvo lo que tiene todo nodo. Rust omite lo que no aplica
-/// al tipo —un `Text` no manda `minimum`— y así la foto de una pantalla se lee
-/// de un vistazo cuando hay que depurarla.
+/// Everything is optional except what every node has. Rust omits whatever does
+/// not apply to the kind —a `Text` does not send `minimum`— and that way a
+/// screen's snapshot can be read at a glance when it has to be debugged.
 struct AnNode: Decodable, Identifiable, Equatable {
     let id: UInt32
     let kind: String
@@ -80,8 +81,8 @@ struct AnNode: Decodable, Identifiable, Equatable {
     let width: Double
     let height: Double
 
-    /// Por qué el reloj no pinta esto. Lo decide Rust, que es donde está la
-    /// lista y el motivo; aquí solo se deja el hueco.
+    /// Why the watch does not paint this. Rust decides it, which is where the
+    /// list and the reason live; here only the gap is left.
     let unsupported: String?
 
     let background: [Double]?
@@ -142,10 +143,10 @@ struct AnNode: Decodable, Identifiable, Equatable {
     let contentWidth: Double?
     let contentHeight: Double?
 
-    /// Qué escucha la plantilla sobre este nodo. El shell solo engancha lo que
-    /// está aquí: un reconocedor de más se comería los gestos del
-    /// `ScrollView` de debajo, y en el reloj el sistema además realza lo que
-    /// cree tocable.
+    /// What the template listens for on this node. The shell only hooks up what
+    /// is here: one recogniser too many would eat the gestures of the
+    /// `ScrollView` underneath, and on the watch the system also highlights
+    /// whatever it believes to be tappable.
     let listens: [String]?
 
     let children: [AnNode]?

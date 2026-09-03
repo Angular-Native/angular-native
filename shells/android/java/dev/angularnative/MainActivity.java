@@ -14,19 +14,19 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Todo el shell de Android cabe aquí, igual que el de iOS: crear el runtime,
- * darle una vista donde montar, avisarle del tamaño y llamarle una vez por
+ * The whole Android shell fits in here, just like the iOS one: create the
+ * runtime, give it a view to mount into, tell it the size and call it once per
  * frame.
  */
 public final class MainActivity extends androidx.appcompat.app.AppCompatActivity {
 
     static {
-        // Los componentes de Material siguen al sistema, y las apps de aquí
-        // pintan sus colores a mano: con el sistema en claro salía una barra
-        // de navegación blanca debajo de una pantalla oscura.
+        // The Material components follow the system, and the apps here paint
+        // their colours by hand: with the system in light mode a white
+        // navigation bar came out underneath a dark screen.
         //
-        // Se fuerza el oscuro hasta que la apariencia sea algo que la app
-        // declare. Debería serlo: es una decisión suya, no del shell.
+        // Dark is forced until the appearance is something the app declares. It
+        // should be: it is the app's decision, not the shell's.
         androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
                 androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES);
     }
@@ -53,48 +53,49 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
         float widthDp = metrics.widthPixels / metrics.density;
         float heightDp = metrics.heightPixels / metrics.density;
 
-        // Antes de crear el runtime: el core construye un módulo nativo por
-        // plugin al arrancar el motor, y lo que se registre después no entra.
+        // Before creating the runtime: the core builds one native module per
+        // plugin when the engine starts, and whatever is registered afterwards
+        // does not get in.
         AnPluginRegistry.install(this);
 
         host = new AnHost(this, container);
         runtime = new AnRuntime(host, widthDp, heightDp);
         if (!runtime.isValid()) {
-            Log.e(TAG, "el runtime no arrancó");
+            Log.e(TAG, "the runtime did not start");
             return;
         }
         host.attachRuntime(runtime);
 
         String source = readAsset("main.js");
         if (source == null) {
-            Log.e(TAG, "no hay main.js en los assets");
+            Log.e(TAG, "there is no main.js in the assets");
         } else if (runtime.eval("main.js", source) != 0) {
-            Log.e(TAG, "main.js lanzó al evaluarse");
+            Log.e(TAG, "main.js threw while being evaluated");
         }
 
-        // Solo existe si el APK lo armó `an dev`.
+        // Only exists if the APK was built by `an dev`.
         devClient =
                 DevClient.create(
                         readAsset("dev-server.txt"),
                         code -> {
-                            Log.i(TAG, "recargando");
+                            Log.i(TAG, "reloading");
                             if (runtime.reload("main.js", code) != 0) {
-                                Log.e(TAG, "el bundle recargado lanzó al evaluarse");
+                                Log.e(TAG, "the reloaded bundle threw while being evaluated");
                             }
                         });
         if (devClient != null) {
             devClient.start();
         }
 
-        // El reloj de la app es el del vsync, igual que el CADisplayLink de
-        // iOS: los temporizadores de JS avanzan con los frames.
+        // The app's clock is the vsync one, just like the iOS CADisplayLink:
+        // the JS timers advance with the frames.
         frameCallback =
                 new Choreographer.FrameCallback() {
                     @Override
                     public void doFrame(long frameTimeNanos) {
                         int applied = runtime.frame(frameTimeNanos / 1_000_000.0);
                         if (applied < 0) {
-                            Log.e(TAG, "el frame falló");
+                            Log.e(TAG, "the frame failed");
                         } else if (applied > 0) {
                             host.flush();
                         }
@@ -107,8 +108,8 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
-        // Si la app tiene una pila con pantallas encima, atrás navega dentro.
-        // Si no, se comporta como siempre y sale.
+        // If the app has a stack with screens on it, back navigates inside it.
+        // If not, it behaves as always and leaves.
         if (host == null || !host.dispatchBack()) {
             super.onBackPressed();
         }

@@ -23,16 +23,16 @@
     <key>MinimumOSVersion</key>
     <string>11.0</string>
     <!--
-      App de reloj independiente, sin app de iPhone que la acompañe. Es lo que
-      distingue a un bundle de watchOS 7 en adelante del viejo par
-      "WatchKit App + WatchKit Extension": sin esta clave el simulador instala
-      el bundle y luego no encuentra nada que lanzar.
+      A standalone watch app, with no iPhone app alongside it. It is what tells a
+      watchOS 7 and later bundle from the old "WatchKit App + WatchKit Extension"
+      pair: without this key the simulator installs the bundle and then finds
+      nothing to launch.
     -->
     <key>WKApplication</key>
     <true/>
     <key>WKWatchOnly</key>
     <true/>
-    <!-- 4 es el reloj. -->
+    <!-- 4 is the watch. -->
     <key>UIDeviceFamily</key>
     <array>
         <integer>4</integer>

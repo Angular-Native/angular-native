@@ -1,49 +1,49 @@
 #!/usr/bin/env bash
-# Refresco en caliente: guardar un fichero cambia la pantalla sin reiniciar.
+# Hot reload: saving a file changes the screen without restarting.
 #
-# Se compilan dos bundles del mismo ejemplo, uno con la plantilla cambiada, y
-# se evalúa el segundo encima del primero cuando ya hay estado que perder: un
-# toque contado, un temporizador andando y un `@if` abierto. Lo que se verifica
-# es que el cambio entra y que ese estado sigue ahí.
+# Two bundles of the same example are compiled, one with the template changed,
+# and the second is evaluated on top of the first once there is state to lose: a
+# counted tap, a timer running and an open `@if`. What this verifies is that the
+# change goes in and that the state is still there.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-FUENTE="examples/hello-angular/src/app.component.ts"
-COPIA="$(mktemp)"
-ANTES="$(mktemp)"
-DESPUES="$(mktemp)"
-cp "$FUENTE" "$COPIA"
-# Pase lo que pase, el ejemplo se queda como estaba.
-trap 'cp "$COPIA" "$FUENTE"; rm -f "$COPIA" "$ANTES" "$DESPUES"' EXIT
+SOURCE="examples/hello-angular/src/app.component.ts"
+BACKUP="$(mktemp)"
+BEFORE="$(mktemp)"
+AFTER="$(mktemp)"
+cp "$SOURCE" "$BACKUP"
+# Whatever happens, the example is left as it was.
+trap 'cp "$BACKUP" "$SOURCE"; rm -f "$BACKUP" "$BEFORE" "$AFTER"' EXIT
 
 cargo an build examples/hello-angular >/dev/null
-cp build/bundle/hello-angular/main.js "$ANTES"
+cp build/bundle/hello-angular/main.js "$BEFORE"
 
-sed -i '' 's/Esto es una plantilla de Angular con señales, corriendo en QuickJS./PLANTILLA CAMBIADA EN CALIENTE./' "$FUENTE"
+sed -i '' 's/This is an Angular template with signals, running on QuickJS./TEMPLATE CHANGED WHILE HOT./' "$SOURCE"
 cargo an build examples/hello-angular >/dev/null
-cp build/bundle/hello-angular/main.js "$DESPUES"
-cp "$COPIA" "$FUENTE"
+cp build/bundle/hello-angular/main.js "$AFTER"
+cp "$BACKUP" "$SOURCE"
 
-correr() {
-  AN_HOT="$1" cargo run -q -p an-bridge --example headless -- "$ANTES" 6 2>&1
+run() {
+  AN_HOT="$1" cargo run -q -p an-bridge --example headless -- "$BEFORE" 6 2>&1
 }
 
-OUTPUT="$(correr "$DESPUES")"
+OUTPUT="$(run "$AFTER")"
 
-# Si el runner ni menciona el refresco es que no trae el soporte de `AN_HOT`:
-# `cargo test` y `cargo run --example` no siempre coinciden en qué binario del
-# ejemplo es el bueno, y el que queda puede ser de antes del cambio. Se le
-# fuerza la recompilación una vez; si sigue igual, es un fallo de verdad y no
-# vale disfrazarlo de refresco que no funciona.
-if ! grep -q 'refresco en caliente' <<<"$OUTPUT"; then
+# If the runner does not even mention the reload, it does not carry the `AN_HOT`
+# support: `cargo test` and `cargo run --example` do not always agree on which
+# binary of the example is the good one, and the one left over may predate the
+# change. It is forced to rebuild once; if it stays the same, that is a real
+# failure and dressing it up as a reload that does not work will not do.
+if ! grep -qE 'refresco en caliente|hot reload' <<<"$OUTPUT"; then
   touch crates/an-bridge/examples/headless.rs
   cargo build -q -p an-bridge --example headless
-  OUTPUT="$(correr "$DESPUES")"
+  OUTPUT="$(run "$AFTER")"
 fi
-if ! grep -q 'refresco en caliente' <<<"$OUTPUT"; then
-  echo "  FALLO el runner headless no trae el soporte de AN_HOT ni recompilándolo"
+if ! grep -qE 'refresco en caliente|hot reload' <<<"$OUTPUT"; then
+  echo "  FAIL the headless runner has no AN_HOT support, not even after a rebuild"
   exit 1
 fi
 
@@ -52,88 +52,89 @@ check() {
   if grep -qE -- "$1" <<<"$OUTPUT"; then
     echo "  ok   $2"
   else
-    echo "  FALLO $2"
+    echo "  FAIL $2"
     fail=1
   fi
 }
 
-echo "== refresco en caliente"
-check 'refresco en caliente: sí' 'el bundle nuevo se cosió sobre el que ya corría'
-check 'PLANTILLA CAMBIADA EN CALIENTE' 'la plantilla nueva está en pantalla'
-check '"toques: 1 \(último en 40, 20\)"' 'el estado del componente sobrevivió'
-check '"segundos en marcha: 5"' 'el temporizador siguió corriendo, no volvió a cero'
-check 'El @if entró a los 3 segundos' 'lo que ya se había desplegado sigue desplegado'
-if grep -qE -- 'Esto es una plantilla de Angular' <<<"$OUTPUT"; then
-  echo "  FALLO la pantalla vieja se quedó montada debajo de la nueva"
+echo "== hot reload"
+check '(refresco en caliente: sí|hot reload: yes)' 'the new bundle was stitched onto the one already running'
+check 'TEMPLATE CHANGED WHILE HOT' 'the new template is on screen'
+check '"taps: 1 \(last at 40, 20\)"' 'the component state survived'
+check '"seconds running: 5"' 'the timer kept running, it did not go back to zero'
+check 'The @if came in at 3 seconds' 'what had already unfolded is still unfolded'
+if grep -qE -- 'This is an Angular template' <<<"$OUTPUT"; then
+  echo "  FAIL the old screen stayed mounted underneath the new one"
   fail=1
 else
-  echo "  ok   la pantalla vieja se desmontó"
+  echo "  ok   the old screen was unmounted"
 fi
 
-# La mitad de arriba del bundle —Angular y el framework— no puede cambiarse en
-# caliente: hay una sola copia en el intérprete. Cuando cambia, lo honesto es
-# pedir el reinicio, y eso es lo que se comprueba aquí falseando la firma.
-sed 's/globalThis.__anVendor !== "/globalThis.__anVendor !== "x/' "$DESPUES" >"$DESPUES.otro"
-OTRO="$(correr "$DESPUES.otro")"
-if grep -qE -- 'refresco en caliente: no, toca reiniciar' <<<"$OTRO"; then
-  echo "  ok   si cambia el framework se pide reinicio en vez de mentir"
+# The top half of the bundle —Angular and the framework— cannot be reloaded
+# hot: there is a single copy inside the interpreter. When it changes, the
+# honest thing is to ask for a restart, and that is what is checked here by
+# faking the signature.
+sed 's/globalThis.__anVendor !== "/globalThis.__anVendor !== "x/' "$AFTER" >"$AFTER.other"
+OTHER="$(run "$AFTER.other")"
+if grep -qE -- '(refresco en caliente: no|hot reload: no)' <<<"$OTHER"; then
+  echo "  ok   if the framework changes a restart is asked for instead of lying"
 else
-  echo "  FALLO cambiar el framework tendría que forzar el reinicio"
+  echo "  FAIL changing the framework should force a restart"
   fail=1
 fi
-rm -f "$DESPUES.otro"
+rm -f "$AFTER.other"
 
-# Y el mismo ejercicio con una plantilla que use un componente —no una
-# directiva—, porque son dos cosas distintas y solo una se veía.
+# And the same exercise with a template that uses a component —not a
+# directive—, because they are two different things and only one of them showed.
 #
-# `hello-angular` es todo primitivas, y una primitiva es una directiva sobre un
-# elemento que el core monta igual: si el refresco deja la plantilla sin
-# directivas, `[backgroundColor]` sigue llegando como propiedad y la pantalla
-# no cambia. Lo que delata el fallo es un componente que hace algo que una
-# propiedad no puede hacer —escribir estilos desde su host y proyectar hijos—,
-# y eso es `an-safe-area`, que solo sale en `hello-wear`.
-FUENTE_W="examples/hello-wear/src/app.component.ts"
-COPIA_W="$(mktemp)"
-ANTES_W="$(mktemp)"
-DESPUES_W="$(mktemp)"
-cp "$FUENTE_W" "$COPIA_W"
-trap 'cp "$COPIA" "$FUENTE"; cp "$COPIA_W" "$FUENTE_W"; rm -f "$COPIA" "$ANTES" "$DESPUES" "$COPIA_W" "$ANTES_W" "$DESPUES_W"' EXIT
+# `hello-angular` is all primitives, and a primitive is a directive on an
+# element the core mounts either way: if the reload leaves the template with no
+# directives, `[backgroundColor]` still arrives as a property and the screen does
+# not change. What gives the bug away is a component that does something a
+# property cannot do —write styles from its host and project children—, and that
+# is `an-safe-area`, which only appears in `hello-wear`.
+SOURCE_W="examples/hello-wear/src/app.component.ts"
+BACKUP_W="$(mktemp)"
+BEFORE_W="$(mktemp)"
+AFTER_W="$(mktemp)"
+cp "$SOURCE_W" "$BACKUP_W"
+trap 'cp "$BACKUP" "$SOURCE"; cp "$BACKUP_W" "$SOURCE_W"; rm -f "$BACKUP" "$BEFORE" "$AFTER" "$BACKUP_W" "$BEFORE_W" "$AFTER_W"' EXIT
 
 cargo an build examples/hello-wear >/dev/null
-cp build/bundle/hello-wear/main.js "$ANTES_W"
-sed -i '' 's/Gira la corona: {{ alto() }} pt\./RELOJ CAMBIADO EN CALIENTE./' "$FUENTE_W"
+cp build/bundle/hello-wear/main.js "$BEFORE_W"
+sed -i '' 's/Turn the crown: {{ offset() }} pt\./WATCH CHANGED WHILE HOT./' "$SOURCE_W"
 cargo an build examples/hello-wear >/dev/null
-cp build/bundle/hello-wear/main.js "$DESPUES_W"
-cp "$COPIA_W" "$FUENTE_W"
+cp build/bundle/hello-wear/main.js "$AFTER_W"
+cp "$BACKUP_W" "$SOURCE_W"
 
-# En la esfera del emulador, para que las medidas del árbol sean las suyas.
-RELOJ="$(AN_VIEWPORT=227x227 AN_HOT="$DESPUES_W" \
-  cargo run -q -p an-bridge --example headless -- "$ANTES_W" 6 2>&1)"
+# On the emulator's watch face, so the tree measurements are the watch's own.
+WATCH="$(AN_VIEWPORT=227x227 AN_HOT="$AFTER_W" \
+  cargo run -q -p an-bridge --example headless -- "$BEFORE_W" 6 2>&1)"
 
 checkw() {
-  if grep -qE -- "$1" <<<"$RELOJ"; then
+  if grep -qE -- "$1" <<<"$WATCH"; then
     echo "  ok   $2"
   else
-    echo "  FALLO $2"
+    echo "  FAIL $2"
     fail=1
-    RELOJ_MAL=1
+    WATCH_BAD=1
   fi
 }
 
-checkw 'refresco en caliente: sí' 'el reloj también se cose en caliente'
-checkw 'RELOJ CAMBIADO EN CALIENTE' 'la plantilla nueva del reloj está en pantalla'
-# El área segura es un componente: sus estilos los escribe su host, no la
-# plantilla. Sin ella el desplazable no crece y se queda en 227x0, que es una
-# pantalla negra sin un solo error.
-checkw 'ScrollView#[0-9]+ \[0,0 227x227\]' 'los estilos del host del área segura siguen puestos'
-# Y las entradas de las primitivas siguen siendo entradas de una directiva y no
-# propiedades sueltas que casualmente acaban en el mismo sitio.
-checkw 'ScrollView#[0-9]+ .*props refreshing=false' 'las primitivas siguen casando como directivas'
+checkw '(refresco en caliente: sí|hot reload: yes)' 'the watch is stitched hot as well'
+checkw 'WATCH CHANGED WHILE HOT' "the watch's new template is on screen"
+# The safe area is a component: its styles are written by its host, not by the
+# template. Without it the scroll view does not grow and stays at 227x0, which is
+# a black screen without a single error.
+checkw 'ScrollView#[0-9]+ \[0,0 227x227\]' "the safe area host's styles are still applied"
+# And the primitives' inputs are still inputs of a directive and not loose
+# properties that happen to end up in the same place.
+checkw 'ScrollView#[0-9]+ .*props refreshing=false' 'the primitives still match as directives'
 
 if [ "$fail" -ne 0 ]; then
   echo
-  if [ -n "${RELOJ_MAL:-}" ]; then
-    echo "$RELOJ"
+  if [ -n "${WATCH_BAD:-}" ]; then
+    echo "$WATCH"
   else
     echo "$OUTPUT"
   fi

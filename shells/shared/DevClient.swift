@@ -1,14 +1,15 @@
 import Foundation
 
-/// Cliente del servidor de desarrollo.
+/// Client for the development server.
 ///
-/// El `.app` trae un `dev-server.txt` cuando lo armó `an dev`. Si está, la app
-/// abre un WebSocket y espera avisos de recarga; si no está, este objeto no
-/// llega a existir y la app se comporta como una compilación normal.
+/// The `.app` carries a `dev-server.txt` when it was built by `an dev`. If it is
+/// there, the app opens a WebSocket and waits for reload notices; if it is not,
+/// this object never comes into being and the app behaves like an ordinary
+/// build.
 ///
-/// Lo comparten el shell del teléfono y el del reloj: es Foundation pelado, no
-/// toca ni UIKit ni SwiftUI, y dos copias serían dos sitios donde arreglar el
-/// mismo fallo de reconexión.
+/// It is shared by the phone shell and the watch shell: it is plain Foundation,
+/// it touches neither UIKit nor SwiftUI, and two copies would be two places to
+/// fix the same reconnection bug.
 final class DevClient: NSObject {
     private let baseURL: URL
     private let onReload: (String) -> Void
@@ -38,7 +39,7 @@ final class DevClient: NSObject {
         let socket = session.webSocketTask(with: url)
         self.socket = socket
         socket.resume()
-        NSLog("angular-native: conectado al servidor de desarrollo en \(baseURL)")
+        NSLog("angular-native: connected to the development server at \(baseURL)")
         receive()
     }
 
@@ -50,11 +51,11 @@ final class DevClient: NSObject {
                 if case .string(let text) = message, text == "reload" {
                     self.fetchBundle()
                 }
-                // Un solo `receive` entrega un solo mensaje: hay que volver a
-                // pedir turno o la conexión queda muda.
+                // A single `receive` delivers a single message: another turn
+                // has to be asked for or the connection goes mute.
                 self.receive()
             case .failure(let error):
-                NSLog("angular-native: se cayó el servidor de desarrollo (\(error.localizedDescription))")
+                NSLog("angular-native: the development server went down (\(error.localizedDescription))")
             }
         }
     }
@@ -64,10 +65,10 @@ final class DevClient: NSObject {
         session.dataTask(with: url) { [weak self] data, _, error in
             guard let self else { return }
             guard let data, let source = String(data: data, encoding: .utf8) else {
-                NSLog("angular-native: no se pudo bajar el bundle (\(error?.localizedDescription ?? "sin datos"))")
+                NSLog("angular-native: the bundle could not be downloaded (\(error?.localizedDescription ?? "no data"))")
                 return
             }
-            // El runtime solo se toca desde el hilo principal.
+            // The runtime is only touched from the main thread.
             DispatchQueue.main.async { self.onReload(source) }
         }.resume()
     }

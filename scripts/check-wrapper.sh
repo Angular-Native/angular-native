@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Que ninguna prop de una directiva se pierda por el camino.
+# That no prop of a directive gets lost on the way.
 #
-# Una prop viaja de la directiva al núcleo y del núcleo a los dos hosts. Si un
-# host no la reconoce no pasa nada: no hay error, no hay traza, y el control se
-# queda como estaba. Eso es exactamente lo que hizo caros los fallos de estilos
-# —cuatro en un día, todos con la misma cara de "esto no hace nada"— y aquí
-# vuelve a ser posible, así que se comprueba igual que allí.
+# A prop travels from the directive to the core and from the core to both hosts.
+# If a host does not recognise it, nothing happens: no error, no trace, and the
+# control stays as it was. That is exactly what made the style bugs expensive
+# —four in one day, all with the same "this does nothing" look— and here it is
+# possible all over again, so it is checked the same way it is checked there.
 #
-# No demuestra que la prop haga lo correcto: demuestra que alguien la mira. Que
-# haga lo correcto lo dice `check-controls.sh` sobre el volcado headless, y el
-# aspecto final solo se ve en el dispositivo.
+# It does not prove the prop does the right thing: it proves somebody looks at
+# it. That it does the right thing is what `check-controls.sh` says over the
+# headless dump, and the final appearance can only be seen on the device.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,114 +18,114 @@ cd "$ROOT"
 python3 - "$ROOT" <<'PY'
 import pathlib, re, sys
 
-raiz = pathlib.Path(sys.argv[1])
-directivas = (raiz / 'packages/primitives/src/primitives.ts').read_text()
-# El crate entero y no solo `host.rs`: un host puede repartir su `set_prop` en
-# varios ficheros —la accesibilidad de Apple está en `accessibility.rs` porque
-# sus seis props se deciden juntas— y lo que esto comprueba es que el *host* las
-# mire, no que las mire un fichero concreto. Buscar solo en uno diría que una
-# prop no llega cuando llega, que es la mentira más cara de las dos.
-def crate(ruta: str) -> str:
-    return '\n'.join(f.read_text() for f in sorted((raiz / ruta).rglob('*.rs')))
+root = pathlib.Path(sys.argv[1])
+directives = (root / 'packages/primitives/src/primitives.ts').read_text()
+# The whole crate and not only `host.rs`: a host may split its `set_prop` across
+# several files —Apple's accessibility is in `accessibility.rs` because its six
+# props are decided together— and what this checks is that the *host* looks at
+# them, not that one particular file does. Searching only one would say a prop
+# does not arrive when it does, which is the more expensive of the two lies.
+def crate(path: str) -> str:
+    return '\n'.join(f.read_text() for f in sorted((root / path).rglob('*.rs')))
 
 
 ios = crate('crates/an-ios/src')
-android = (raiz / 'shells/android/java/dev/angularnative/AnHost.java').read_text()
+android = (root / 'shells/android/java/dev/angularnative/AnHost.java').read_text()
 macos = crate('crates/an-macos/src')
 
-# Props que no son para ningún host: las consume el núcleo y ahí se acaban.
-SOLO_NUCLEO = {
-    'intrinsicWidth': 'la mide el layout para reservar el hueco de una imagen',
-    'intrinsicHeight': 'la mide el layout para reservar el hueco de una imagen',
+# Props that are for no host: the core consumes them and there they end.
+CORE_ONLY = {
+    'intrinsicWidth': "the layout measures it to reserve an image's gap",
+    'intrinsicHeight': "the layout measures it to reserve an image's gap",
 }
 
-# Props que solo significan algo donde hay puntero.
+# Props that only mean something where there is a pointer.
 #
-# No son un hueco de iOS ni de Android: es que un dedo no tiene forma. Pedirle
-# a esos dos hosts que miren `cursor` sería pedirles que miren algo que no
-# pueden hacer, y meterla en PENDIENTES sería decir que algún día llegarán.
-# Quien sí tiene que mirarlas es el host de escritorio, y eso se comprueba
-# igual de fuerte que lo demás.
-SOLO_PUNTERO = {
-    'cursor': 'la forma del puntero; un dedo no tiene forma',
+# They are not a hole in iOS or in Android: it is that a finger has no shape.
+# Asking those two hosts to look at `cursor` would be asking them to look at
+# something they cannot do, and putting it in PENDING would be saying that some
+# day they will. The one that does have to look at them is the desktop host, and
+# that is checked just as hard as everything else.
+POINTER_ONLY = {
+    'cursor': "the pointer's shape; a finger has no shape",
 }
 
-# Props que sí deberían llegar y todavía no llegan. Cada una con su motivo en
-# la guía «Props and the native wrapper» del sitio. La lista solo puede encoger.
-PENDIENTES: dict[str, str] = {}
+# Props that should arrive and do not arrive yet. Each with its reason in
+# the site's "Props and the native wrapper" guide. The list can only shrink.
+PENDING: dict[str, str] = {}
 
-# Las props comunes son las claves de los `push({...})` de cada directiva, más
-# las que alguna manda a mano —el tamaño de una imagen lo escribe su oyente de
-# carga, no una entrada—.
-comunes = set(re.findall(r"this\.set\('([^']+)'", directivas))
-for cuerpo in re.findall(r"this\.push\(\{(.*?)\n    \}\)", directivas, re.S):
-    comunes.update(re.findall(r"^      (\w+):", cuerpo, re.M))
-comunes = sorted(comunes)
-fallos = []
-pendientes_vistas = set()
-for prop in comunes:
-    if prop in SOLO_NUCLEO:
+# The common props are the keys of each directive's `push({...})`, plus those
+# some of them send by hand —an image's size is written by its load listener, not
+# by an input—.
+common = set(re.findall(r"this\.set\('([^']+)'", directives))
+for body in re.findall(r"this\.push\(\{(.*?)\n    \}\)", directives, re.S):
+    common.update(re.findall(r"^      (\w+):", body, re.M))
+common = sorted(common)
+failures = []
+pending_seen = set()
+for prop in common:
+    if prop in CORE_ONLY:
         continue
-    if prop in SOLO_PUNTERO:
+    if prop in POINTER_ONLY:
         if f'"{prop}"' not in macos:
-            fallos.append(f'  FALLO "{prop}" no la mira el host de macOS, que es el del puntero')
+            failures.append(f'  FAIL "{prop}" is not looked at by the macOS host, which is the pointer one')
         continue
-    faltan = [n for n, h in (('iOS', ios), ('Android', android)) if f'"{prop}"' not in h]
-    if not faltan:
-        if prop in PENDIENTES:
-            fallos.append(f'  FALLO "{prop}" ya llega a los dos hosts: sácala de PENDIENTES')
+    missing = [n for n, h in (('iOS', ios), ('Android', android)) if f'"{prop}"' not in h]
+    if not missing:
+        if prop in PENDING:
+            failures.append(f'  FAIL "{prop}" already reaches both hosts: take it out of PENDING')
         continue
-    if prop in PENDIENTES:
-        pendientes_vistas.add(prop)
+    if prop in PENDING:
+        pending_seen.add(prop)
         continue
-    fallos.append(f'  FALLO "{prop}" no la mira {" ni ".join(faltan)}')
+    failures.append(f'  FAIL "{prop}" is not looked at by {" or ".join(missing)}')
 
-# Props de una sola plataforma: viajan con su prefijo, y el prefijo dice quién
-# tiene que mirarlas. Que aparezcan en el host de la otra sería una prop común
-# disfrazada, y entonces no debería llevar prefijo.
+# Single-platform props: they travel with their prefix, and the prefix says who
+# has to look at them. Their appearing in the other host would be a common prop
+# in disguise, and then it should not carry a prefix at all.
 HOSTS = {'ios': ('iOS', ios, 'Android', android), 'android': ('Android', android, 'iOS', ios)}
-declaradas = {'ios': set(), 'android': set()}
-for plataforma, cuerpo in re.findall(
-    r"platformKeys\(\s*'[^']+',\s*'(ios|android)',\s*\[(.*?)\]\s*\)", directivas, re.S
+declared = {'ios': set(), 'android': set()}
+for platform, body in re.findall(
+    r"platformKeys\(\s*'[^']+',\s*'(ios|android)',\s*\[(.*?)\]\s*\)", directives, re.S
 ):
-    declaradas[plataforma].update(re.findall(r"'([^']+)'", cuerpo))
+    declared[platform].update(re.findall(r"'([^']+)'", body))
 
-for plataforma, claves in declaradas.items():
-    suyo, propio, ajeno_nombre, ajeno = HOSTS[plataforma]
-    for clave in sorted(claves):
-        if f'"{plataforma}:{clave}"' not in propio:
-            fallos.append(f'  FALLO [{plataforma}] "{clave}" no la mira el host de {suyo}')
-        if f'"{plataforma}:{clave}"' in ajeno:
-            fallos.append(
-                f'  FALLO [{plataforma}] "{clave}" también la mira {ajeno_nombre}: '
-                'entonces es común y va sin prefijo'
+for platform, keys in declared.items():
+    own_name, own, other_name, other = HOSTS[platform]
+    for key in sorted(keys):
+        if f'"{platform}:{key}"' not in own:
+            failures.append(f'  FAIL [{platform}] "{key}" is not looked at by the {own_name} host')
+        if f'"{platform}:{key}"' in other:
+            failures.append(
+                f'  FAIL [{platform}] "{key}" is also looked at by {other_name}: '
+                'then it is common and goes without a prefix'
             )
 
-# El objeto de plataforma tiene que pasar por `pushPlatform()`, que es quien
-# avisa de una clave que nadie va a mirar. Mandarlo con `set()` a pelo
-# funcionaría —y por eso hay que impedirlo—: la clave viajaría y se perdería en
-# silencio. Se cuentan: una entrada `[ios]` o `[android]` por empujón.
-objetos = len(re.findall(r"^  readonly (?:ios|android) = input<", directivas, re.M))
-empujones = directivas.count('this.pushPlatform(')
-if objetos != empujones:
-    fallos.append(
-        f'  FALLO hay {objetos} entradas de plataforma y {empujones} pushPlatform(): '
-        'alguna clave desconocida se perdería sin avisar'
+# The platform object has to go through `pushPlatform()`, which is what warns
+# about a key nobody is going to look at. Sending it with a bare `set()` would
+# work —and that is why it has to be prevented—: the key would travel and be lost
+# in silence. They are counted: one `[ios]` or `[android]` input per push.
+objects = len(re.findall(r"^  readonly (?:ios|android) = input<", directives, re.M))
+pushes = directives.count('this.pushPlatform(')
+if objects != pushes:
+    failures.append(
+        f'  FAIL there are {objects} platform inputs and {pushes} pushPlatform(): '
+        'some unknown key would be lost without a word'
     )
 
-for linea in fallos:
-    print(linea)
-if fallos:
-    print('  (el inventario y los motivos están en docs-site, en guide/native-wrapper)')
+for line in failures:
+    print(line)
+if failures:
+    print('  (the inventory and the reasons are in docs-site, under guide/native-wrapper)')
     sys.exit(1)
 
-print(f'  ok   las {len(comunes) - len(SOLO_NUCLEO) - len(SOLO_PUNTERO) - len(pendientes_vistas)} '
-      'props comunes llegan a los dos hosts')
-print('  ok   las props de puntero las mira el host de escritorio: '
-      + ', '.join(sorted(SOLO_PUNTERO)))
-print(f'  ok   las {len(declaradas["ios"])} props de [ios] las mira solo iOS')
-print(f'  ok   las {len(declaradas["android"])} props de [android] las mira solo Android')
-print('  ok   todos los objetos de plataforma pasan por platform(), que avisa de lo que no reconoce')
-if pendientes_vistas:
-    print(f'  ok   {len(pendientes_vistas)} pendientes conocidas: {", ".join(sorted(pendientes_vistas))}')
+print(f'  ok   the {len(common) - len(CORE_ONLY) - len(POINTER_ONLY) - len(pending_seen)} '
+      'common props reach both hosts')
+print('  ok   the pointer props are looked at by the desktop host: '
+      + ', '.join(sorted(POINTER_ONLY)))
+print(f'  ok   the {len(declared["ios"])} [ios] props are looked at by iOS alone')
+print(f'  ok   the {len(declared["android"])} [android] props are looked at by Android alone')
+print('  ok   every platform object goes through platform(), which warns about what it does not recognise')
+if pending_seen:
+    print(f'  ok   {len(pending_seen)} known pending: {", ".join(sorted(pending_seen))}')
 PY

@@ -7,51 +7,51 @@ import {
 import { Keychain, type KeychainReadOutcome } from '@angular-native/plugin-keychain'
 import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
 
-/** La clave con la que se guarda. Una app de verdad tendría más de una. */
-const CLAVE = 'token-de-sesion'
+/** The key it is stored under. A real app would have more than one. */
+const KEY = 'session-token'
 
-/** Lo que se guarda. Aquí es de mentira; en una app sería el testigo de sesión. */
-const SECRETO = 'sk_live_9f3a-nadie-deberia-ver-esto'
+/** What is stored. Fake here; in an app it would be the session token. */
+const SECRET = 'sk_live_9f3a-nobody-should-see-this'
 
 /**
- * Cada final de una autenticación, dicho para quien está delante.
+ * Every ending an authentication can have, said for whoever is in front of it.
  *
- * Es la razón de que `authenticate` no devuelva un booleano: las once
- * situaciones piden once frases, y cuatro de ellas piden además que la app
- * haga algo distinto —mandar a Ajustes, ofrecer el código, esconder el botón—.
- * Con un `true`/`false` esta tabla no se podría escribir.
+ * It is the reason `authenticate` does not return a boolean: the eleven
+ * situations call for eleven sentences, and four of them also call for the app
+ * to do something different —send them to Settings, offer the passcode, hide the
+ * button—. With a `true`/`false` this table could not be written.
  */
-const EXPLICACION: Record<BiometricOutcome, string> = {
-  success: 'autenticado',
-  failed: 'no te ha reconocido',
-  userCancel: 'lo has cancelado tú',
-  userFallback: 'has pedido el código; vuelve a intentarlo permitiéndolo',
-  systemCancel: 'lo ha cerrado el sistema',
-  timeout: 'se ha agotado el tiempo',
-  noHardware: 'este aparato no tiene sensor biométrico',
-  notEnrolled: 'no hay ninguna cara ni huella registrada: ve a Ajustes',
-  passcodeNotSet: 'el aparato no tiene código, y sin código no hay biometría',
-  lockedOut: 'demasiados intentos; desbloquea el aparato con el código',
-  permanentlyLockedOut: 'bloqueado hasta que desbloquees el aparato con el código',
-  unavailable: 'el sistema no presta la biometría ahora mismo'
+const EXPLANATION: Record<BiometricOutcome, string> = {
+  success: 'authenticated',
+  failed: 'it did not recognise you',
+  userCancel: 'you cancelled it yourself',
+  userFallback: 'you asked for the passcode; try again allowing it',
+  systemCancel: 'the system closed it',
+  timeout: 'it timed out',
+  noHardware: 'this device has no biometric sensor',
+  notEnrolled: 'there is no face or fingerprint enrolled: go to Settings',
+  passcodeNotSet: 'the device has no passcode, and without one there is no biometrics',
+  lockedOut: 'too many attempts; unlock the device with the passcode',
+  permanentlyLockedOut: 'locked out until you unlock the device with the passcode',
+  unavailable: 'the system is not lending out biometrics right now'
 }
 
-const LECTURA: Record<KeychainReadOutcome, string> = {
-  found: 'leído',
-  notFound: 'no hay nada guardado todavía',
-  denied: 'está guardado y no has demostrado ser tú',
-  invalidated: 'cambió la biometría del aparato: ya no se puede abrir',
-  unavailable: 'no hay dónde guardar esto en este aparato'
+const READING: Record<KeychainReadOutcome, string> = {
+  found: 'read',
+  notFound: 'there is nothing stored yet',
+  denied: 'it is stored and you have not proved it is you',
+  invalidated: 'the device biometrics changed: it can no longer be opened',
+  unavailable: 'there is nowhere to store this on this device'
 }
 
 /**
- * Un secreto guardado en el llavero del sistema y protegido con biometría.
+ * A secret kept in the system keychain and protected with biometrics.
  *
- * Los dos plugins van juntos a propósito: guardar algo «seguro» que cualquiera
- * puede volver a leer no protege de nada, y pedir la cara sin atarla a lo que
- * cifra es teatro. Lo que hace el botón de abajo es lo segundo bien hecho: el
- * secreto se guarda con un control de acceso que exige biometría, y quien lo
- * desbloquea es el sistema, no este código.
+ * The two plugins go together on purpose: storing something "securely" that
+ * anybody can read back protects nothing, and asking for a face without tying it
+ * to what does the encrypting is theatre. What the button at the bottom does is
+ * the second one done properly: the secret is stored with an access control that
+ * demands biometrics, and what unlocks it is the system, not this code.
  */
 @Component({
   selector: 'app-root',
@@ -66,7 +66,7 @@ const LECTURA: Record<KeychainReadOutcome, string> = {
       [style.gap]="'14'"
       [backgroundColor]="'#0b1020'">
 
-      <an-text [fontSize]="28" [fontWeight]="'bold'" [color]="'#f4f7ff'">secretos</an-text>
+      <an-text [fontSize]="28" [fontWeight]="'bold'" [color]="'#f4f7ff'">secrets</an-text>
 
       <an-text [fontSize]="14" [color]="'#9fb0d4'">{{ sensor() }}</an-text>
 
@@ -77,10 +77,10 @@ const LECTURA: Record<KeychainReadOutcome, string> = {
         [style.justifyContent]="'center'"
         [backgroundColor]="'#1e2a4a'"
         [borderRadius]="10">
-        <an-text [fontSize]="16" [color]="'#f4f7ff'">{{ contenido() }}</an-text>
+        <an-text [fontSize]="16" [color]="'#f4f7ff'">{{ contents() }}</an-text>
       </an-view>
 
-      <an-text [fontSize]="13" [color]="'#9fb0d4'">{{ almacen() }}</an-text>
+      <an-text [fontSize]="13" [color]="'#9fb0d4'">{{ store() }}</an-text>
 
       <an-view [style.flexDirection]="'row'" [style.gap]="'10'">
         <an-view
@@ -90,8 +90,8 @@ const LECTURA: Record<KeychainReadOutcome, string> = {
           [style.justifyContent]="'center'"
           [backgroundColor]="'#2f6fed'"
           [borderRadius]="10"
-          (press)="guardar()">
-          <an-text [fontSize]="15" [fontWeight]="'600'" [color]="'#ffffff'">guardar</an-text>
+          (press)="save()">
+          <an-text [fontSize]="15" [fontWeight]="'600'" [color]="'#ffffff'">save</an-text>
         </an-view>
 
         <an-view
@@ -101,8 +101,8 @@ const LECTURA: Record<KeychainReadOutcome, string> = {
           [style.justifyContent]="'center'"
           [backgroundColor]="'#1e2a4a'"
           [borderRadius]="10"
-          (press)="leer()">
-          <an-text [fontSize]="15" [fontWeight]="'600'" [color]="'#9fb0d4'">leer</an-text>
+          (press)="read()">
+          <an-text [fontSize]="15" [fontWeight]="'600'" [color]="'#9fb0d4'">read</an-text>
         </an-view>
 
         <an-view
@@ -112,8 +112,8 @@ const LECTURA: Record<KeychainReadOutcome, string> = {
           [style.justifyContent]="'center'"
           [backgroundColor]="'#1e2a4a'"
           [borderRadius]="10"
-          (press)="borrar()">
-          <an-text [fontSize]="15" [fontWeight]="'600'" [color]="'#9fb0d4'">borrar</an-text>
+          (press)="remove()">
+          <an-text [fontSize]="15" [fontWeight]="'600'" [color]="'#9fb0d4'">delete</an-text>
         </an-view>
       </an-view>
 
@@ -123,14 +123,14 @@ const LECTURA: Record<KeychainReadOutcome, string> = {
         [style.justifyContent]="'center'"
         [backgroundColor]="'#1e2a4a'"
         [borderRadius]="10"
-        (press)="comprobar()">
+        (press)="check()">
         <an-text [fontSize]="15" [fontWeight]="'600'" [color]="'#9fb0d4'">
-          solo autenticar, sin leer nada
+          just authenticate, read nothing
         </an-text>
       </an-view>
 
-      <an-text [fontSize]="15" [color]="'#6ee7b7'">{{ estado() }}</an-text>
-      <an-text [fontSize]="12" [color]="'#7d8bb0'">{{ detalle() }}</an-text>
+      <an-text [fontSize]="15" [color]="'#6ee7b7'">{{ status() }}</an-text>
+      <an-text [fontSize]="12" [color]="'#7d8bb0'">{{ detail() }}</an-text>
     </an-view>
   `
 })
@@ -138,123 +138,124 @@ export class AppComponent {
   private readonly biometrics = inject(Biometrics)
   private readonly keychain = inject(Keychain)
 
-  readonly sensor = signal('preguntando al sistema…')
-  /** Si hay algo guardado. Va aparte de `estado` a propósito: es lo que sigue
-   * siendo cierto después de que la última acción termine y su mensaje pase. */
-  readonly almacen = signal('preguntando al llavero…')
-  readonly contenido = signal('—')
-  readonly estado = signal('')
-  readonly detalle = signal('')
+  readonly sensor = signal('asking the system…')
+  /** Whether anything is stored. It is kept apart from `status` on purpose: it
+   * is what stays true after the last action ends and its message goes by. */
+  readonly store = signal('asking the keychain…')
+  readonly contents = signal('—')
+  readonly status = signal('')
+  readonly detail = signal('')
 
   constructor() {
-    // Al arrancar se pregunta qué hay, sin sacar ningún diálogo: `availability`
-    // no interrumpe a nadie. De aquí sale lo que pone el botón.
+    // On startup it asks what is there, without bringing up any dialog:
+    // `availability` interrupts nobody. What the button says comes from here.
     this.biometrics
       .availability()
-      .then((info) => this.sensor.set(this.describir(info)))
-      .catch((error: unknown) => this.fallo(error))
+      .then((info) => this.sensor.set(this.describe(info)))
+      .catch((error: unknown) => this.failed(error))
 
-    // Y si ya hay algo guardado, se dice —sin leerlo—. `has` tampoco pide la
-    // cara: saber que el elemento existe no es abrirlo.
+    // And if there is already something stored, it says so —without reading it—.
+    // `has` does not ask for the face either: knowing the item exists is not
+    // opening it.
     this.keychain
-      .has(CLAVE)
-      .then((hay) => this.almacen.set(hay ? 'hay un secreto guardado' : 'no hay nada guardado'))
-      .catch((error: unknown) => this.fallo(error))
+      .has(KEY)
+      .then((there) => this.store.set(there ? 'there is a secret stored' : 'there is nothing stored'))
+      .catch((error: unknown) => this.failed(error))
   }
 
   /**
-   * Guarda el secreto exigiendo biometría para volver a leerlo.
+   * Stores the secret demanding biometrics to read it back.
    *
-   * En iOS esto no pregunta nada: el diálogo sale al leer. En Android sí
-   * pregunta, porque allí la clave que cifra es de un solo uso autenticado.
-   * La diferencia está en el contrato del plugin, no escondida aquí.
+   * On iOS this asks nothing: the dialog comes up on reading. On Android it does
+   * ask, because there the key that encrypts is single-use and authenticated.
+   * The difference is in the plugin's contract, not hidden away in here.
    */
-  guardar(): void {
+  save(): void {
     this.keychain
-      .set(CLAVE, SECRETO, {
+      .set(KEY, SECRET, {
         requireBiometrics: true,
-        reason: 'Guardar el testigo de sesión protegido con tu cara'
+        reason: 'Store the session token protected with your face'
       })
-      .then((resultado) => {
-        this.detalle.set(resultado.detail)
-        if (resultado.outcome === 'saved') {
-          this.contenido.set('—')
-          this.almacen.set('hay un secreto guardado')
-          this.estado.set('guardado; ahora hace falta tu cara para leerlo')
+      .then((result) => {
+        this.detail.set(result.detail)
+        if (result.outcome === 'saved') {
+          this.contents.set('—')
+          this.store.set('there is a secret stored')
+          this.status.set('stored; your face is now needed to read it')
           return
         }
-        this.estado.set(
-          resultado.outcome === 'denied'
-            ? 'no se guardó: no autenticaste'
-            : 'no se puede guardar en este aparato'
+        this.status.set(
+          result.outcome === 'denied'
+            ? 'not stored: you did not authenticate'
+            : 'it cannot be stored on this device'
         )
       })
-      .catch((error: unknown) => this.fallo(error))
+      .catch((error: unknown) => this.failed(error))
   }
 
-  /** Lee el secreto. Aquí es donde iOS saca Face ID. */
-  leer(): void {
-    this.estado.set('pidiendo tu cara…')
+  /** Reads the secret. This is where iOS brings up Face ID. */
+  read(): void {
+    this.status.set('asking for your face…')
     this.keychain
-      .get(CLAVE, { reason: 'Enseñar el testigo de sesión guardado' })
-      .then((lectura) => {
-        this.detalle.set(lectura.detail)
-        this.estado.set(LECTURA[lectura.outcome])
-        // Un valor solo se enseña con `found`. Con `denied` el secreto sigue
-        // guardado y sin abrir, que no es lo mismo que no tenerlo.
-        this.contenido.set(lectura.outcome === 'found' ? (lectura.value ?? '') : '—')
+      .get(KEY, { reason: 'Show the stored session token' })
+      .then((reading) => {
+        this.detail.set(reading.detail)
+        this.status.set(READING[reading.outcome])
+        // A value is only shown on `found`. On `denied` the secret is still
+        // stored and unopened, which is not the same as not having it.
+        this.contents.set(reading.outcome === 'found' ? (reading.value ?? '') : '—')
       })
-      .catch((error: unknown) => this.fallo(error))
+      .catch((error: unknown) => this.failed(error))
   }
 
-  borrar(): void {
+  remove(): void {
     this.keychain
-      .remove(CLAVE)
-      .then((habia) => {
-        this.contenido.set('—')
-        this.almacen.set('no hay nada guardado')
-        this.detalle.set('')
-        this.estado.set(habia ? 'borrado' : 'no había nada que borrar')
+      .remove(KEY)
+      .then((there) => {
+        this.contents.set('—')
+        this.store.set('there is nothing stored')
+        this.detail.set('')
+        this.status.set(there ? 'deleted' : 'there was nothing to delete')
       })
-      .catch((error: unknown) => this.fallo(error))
+      .catch((error: unknown) => this.failed(error))
   }
 
-  /** Biometría a secas, sin llavero de por medio. */
-  comprobar(): void {
-    this.estado.set('pidiendo tu cara…')
+  /** Biometrics on its own, with no keychain in the middle. */
+  check(): void {
+    this.status.set('asking for your face…')
     this.biometrics
       .authenticate({
-        reason: 'Comprobar que eres tú',
-        subtitle: 'sin leer ningún secreto',
-        cancelTitle: 'Ahora no'
+        reason: 'Check that it is you',
+        subtitle: 'reading no secrets',
+        cancelTitle: 'Not now'
       })
-      .then((resultado) => {
-        this.estado.set(EXPLICACION[resultado.outcome])
-        this.detalle.set(`${resultado.kind} · ${resultado.detail}`)
+      .then((result) => {
+        this.status.set(EXPLANATION[result.outcome])
+        this.detail.set(`${result.kind} · ${result.detail}`)
       })
-      .catch((error: unknown) => this.fallo(error))
+      .catch((error: unknown) => this.failed(error))
   }
 
-  private describir(info: BiometricAvailability): string {
-    const nombre: Record<string, string> = {
+  private describe(info: BiometricAvailability): string {
+    const names: Record<string, string> = {
       faceId: 'Face ID',
       touchId: 'Touch ID',
       opticId: 'Optic ID',
-      unknown: 'biometría',
-      none: 'sin sensor'
+      unknown: 'biometrics',
+      none: 'no sensor'
     }
-    const que = nombre[info.kind] ?? info.kind
+    const what = names[info.kind] ?? info.kind
     return info.status === 'available'
-      ? `${que}, listo`
-      : `${que}: ${EXPLICACION[info.status]}`
+      ? `${what}, ready`
+      : `${what}: ${EXPLANATION[info.status]}`
   }
 
   /**
-   * Un plugin que falta no se disimula. Sin el plugin dentro del `.app` la
-   * promesa se rechaza, y eso es exactamente lo que tiene que verse.
+   * A missing plugin is not glossed over. Without the plugin inside the `.app`
+   * the promise rejects, and that is exactly what has to be seen.
    */
-  private fallo(error: unknown): void {
-    this.contenido.set('—')
-    this.estado.set(`falló: ${error}`)
+  private failed(error: unknown): void {
+    this.contents.set('—')
+    this.status.set(`failed: ${error}`)
   }
 }

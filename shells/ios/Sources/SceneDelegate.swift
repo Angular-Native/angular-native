@@ -2,13 +2,13 @@
 
     import UIKit
 
-    /// La ventana de visionOS.
+    /// The visionOS window.
     ///
-    /// El nombre en Objective-C tiene que ser exactamente éste porque es el que
-    /// va escrito en `UISceneDelegateClassName` del `Info.plist`. Sin `@objc`,
-    /// Swift lo mangla con el módulo delante y UIKit no encuentra la clase: la
-    /// escena se conecta, nadie crea la ventana y la app arranca en negro sin
-    /// un solo error.
+    /// The Objective-C name has to be exactly this one because it is what is
+    /// written in the `Info.plist`'s `UISceneDelegateClassName`. Without
+    /// `@objc`, Swift mangles it with the module in front and UIKit cannot find
+    /// the class: the scene connects, nobody creates the window and the app
+    /// starts up black without a single error.
     @objc(SceneDelegate)
     final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         var window: UIWindow?
@@ -20,15 +20,15 @@
         ) {
             guard let windowScene = scene as? UIWindowScene else { return }
 
-            // Qué tamaño quiere la ventana al abrirse.
+            // What size the window wants when it opens.
             //
-            // No hay pantalla de la que deducirlo, así que si no se pide nada
-            // el sistema elige por su cuenta y la app se encuentra un tamaño
-            // que no eligió. Es una *preferencia*: visionOS puede darla o no,
-            // y el usuario puede cambiarla a mano tirando de la esquina. Por
-            // eso el viewport de verdad no sale de aquí, sale de
-            // `viewDidLayoutSubviews`, que es quien ve el tamaño que acabó
-            // teniendo.
+            // There is no screen to deduce it from, so if nothing is asked for
+            // the system picks on its own and the app finds itself with a size
+            // it did not choose. It is a *preference*: visionOS may grant it or
+            // not, and the user can change it by hand by pulling the corner.
+            // That is why the real viewport does not come from here, it comes
+            // from `viewDidLayoutSubviews`, which is what sees the size it ended
+            // up with.
             windowScene.requestGeometryUpdate(
                 .Vision(size: CGSize(width: 1280, height: 720))
             )

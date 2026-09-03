@@ -12,11 +12,12 @@ import android.widget.TextView;
 import java.util.Calendar;
 
 /**
- * Selector de fecha y hora.
+ * Date and time picker.
  *
- * En Android el selector no vive en la pantalla como en iOS: es un diálogo que
- * se abre al tocar. Lo que hay en la pantalla es la fecha escrita, formateada
- * con el idioma y la zona del dispositivo, y el diálogo lo pone el sistema.
+ * On Android the picker does not live on the screen as it does on iOS: it is a
+ * dialog that opens on being tapped. What is on the screen is the date written
+ * out, formatted with the device's language and time zone, and the dialog is put
+ * up by the system.
  */
 public final class AnDateField extends TextView {
 
@@ -33,10 +34,10 @@ public final class AnDateField extends TextView {
         setGravity(Gravity.CENTER);
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         setTextColor(Color.WHITE);
-        GradientDrawable fondo = new GradientDrawable();
-        fondo.setCornerRadius(1000f);
-        fondo.setColor(Color.argb(28, 255, 255, 255));
-        setBackground(fondo);
+        GradientDrawable background = new GradientDrawable();
+        background.setCornerRadius(1000f);
+        background.setColor(Color.argb(28, 255, 255, 255));
+        setBackground(background);
         setOnClickListener(v -> open());
         refresh();
     }
@@ -67,9 +68,9 @@ public final class AnDateField extends TextView {
                             calendar.set(Calendar.MONTH, month);
                             calendar.set(Calendar.DAY_OF_MONTH, day);
                             if ("dateAndTime".equals(mode)) {
-                                // Con los dos, la hora se pregunta después: el
-                                // sistema no trae un diálogo que haga las dos
-                                // cosas a la vez.
+                                // With both, the time is asked for afterwards:
+                                // the system ships no dialog that does the two
+                                // things at once.
                                 openTime();
                             } else {
                                 commit();

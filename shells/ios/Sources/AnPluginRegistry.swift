@@ -1,11 +1,11 @@
 import UIKit
 
-/// La respuesta de una llamada a un plugin.
+/// The answer to a plugin call.
 ///
-/// Se puede contestar en el acto o guardarse y contestar más tarde: es lo que
-/// separa leer el portapapeles de sacar una foto. Lo que no se puede es no
-/// contestar — la promesa del lado JS se queda esperando para siempre—, así
-/// que todo camino de error tiene que acabar en `reject`.
+/// It can be answered on the spot or kept and answered later: that is what
+/// separates reading the clipboard from taking a photo. What cannot be done is
+/// not answering —the promise on the JS side is left waiting for ever—, so every
+/// error path has to end in `reject`.
 final class AnPluginCall {
     private let id: UInt64
     private let lock = NSLock()
@@ -15,7 +15,7 @@ final class AnPluginCall {
         self.id = id
     }
 
-    /// Para un método que no devuelve nada.
+    /// For a method that returns nothing.
     func resolve() {
         send(json: "null")
     }
@@ -32,8 +32,8 @@ final class AnPluginCall {
         send(json: Self.encode(value))
     }
 
-    /// Para devolver un objeto. El diccionario tiene que ser serializable a
-    /// JSON: cadenas, números, booleanos, arrays y diccionarios.
+    /// For returning an object. The dictionary has to be serialisable to JSON:
+    /// strings, numbers, booleans, arrays and dictionaries.
     func resolve(_ object: [String: Any]) {
         send(json: Self.encode(object))
     }
@@ -53,42 +53,44 @@ final class AnPluginCall {
         answered = true
         lock.unlock()
         guard first else {
-            NSLog("angular-native: un plugin contestó dos veces a la misma llamada")
+            NSLog("angular-native: a plugin answered the same call twice")
             return
         }
         _ = an_plugin_resolve(id, json)
     }
 
-    /// `fragmentsAllowed` es lo que permite serializar una cadena suelta y no
-    /// solo objetos y arrays. Si algo no es serializable se manda `null`: el
-    /// core lo entrega tal cual y el error se ve en la app, no aquí.
+    /// `fragmentsAllowed` is what allows a loose string to be serialised and
+    /// not only objects and arrays. If something is not serialisable, `null` is
+    /// sent: the core hands it over as it comes and the error shows in the app,
+    /// not here.
     private static func encode(_ value: Any) -> String {
         guard
             let data = try? JSONSerialization.data(
                 withJSONObject: value, options: [.fragmentsAllowed]),
             let text = String(data: data, encoding: .utf8)
         else {
-            NSLog("angular-native: un plugin devolvió algo que no es JSON")
+            NSLog("angular-native: a plugin returned something that is not JSON")
             return "null"
         }
         return text
     }
 }
 
-/// Lo que implementa un plugin de iOS.
+/// What an iOS plugin implements.
 ///
-/// No declara su nombre: el nombre con el que JS lo invoca está en el
-/// `angularNative.module` de su `package.json` y de ahí lo saca `an` al
-/// generar el registro. Un solo sitio donde escribirlo es un sitio menos donde
-/// puedan dejar de coincidir.
+/// It does not declare its own name: the name JS calls it by is in the
+/// `angularNative.module` of its `package.json`, and that is where `an` takes it
+/// from when generating the registry. One single place to write it is one fewer
+/// place where two copies can stop matching.
 protocol AnPlugin: AnyObject {
-    /// La pantalla de la que cuelga la app, antes de la primera llamada. Es de
-    /// donde sale el `present` de quien tenga que enseñar algo —una cámara, un
-    /// selector de ficheros—. Quien no la necesite no implementa nada.
+    /// The view controller the app hangs off, before the first call. It is where
+    /// the `present` comes from for anyone who has to show something —a camera,
+    /// a file picker—. Whoever does not need it implements nothing.
     func attach(_ host: UIViewController)
 
-    /// `args` es lo que mandó JS ya decodificado. Si no mandó un objeto llega
-    /// vacío. Un método que no exista tiene que rechazarse, no ignorarse.
+    /// `args` is what JS sent, already decoded. If it sent something that is not
+    /// an object, this arrives empty. A method that does not exist has to be
+    /// rejected, not ignored.
     func call(_ method: String, _ args: [String: Any], _ respond: AnPluginCall)
 }
 
@@ -96,18 +98,18 @@ extension AnPlugin {
     func attach(_ host: UIViewController) {}
 }
 
-/// El registro de plugins del `.app`.
+/// The `.app`'s plugin registry.
 ///
-/// Quién está dentro lo decide `an` al armar la app, leyendo las dependencias
-/// del `package.json`: lo escribe en `AnGeneratedPlugins.swift`, que es lo que
-/// llama `install()`.
+/// Who is inside is decided by `an` when it builds the app, reading the
+/// dependencies of the `package.json`: it writes them into
+/// `AnGeneratedPlugins.swift`, which is what `install()` calls.
 enum AnPluginRegistry {
     private static var plugins: [String: AnPlugin] = [:]
     private static weak var host: UIViewController?
 
-    /// Se llama una vez, antes de `an_runtime_new`: el core construye un
-    /// módulo por plugin registrado al arrancar el motor, y lo que llegue
-    /// después ya no entraría.
+    /// Called once, before `an_runtime_new`: the core builds one module per
+    /// registered plugin when the engine starts, and anything arriving after
+    /// that would no longer get in.
     static func install(host: UIViewController) {
         self.host = host
         an_plugin_set_dispatch { id, module, method, args in
@@ -120,11 +122,11 @@ enum AnPluginRegistry {
         AnGeneratedPlugins.install()
     }
 
-    /// La llama el fichero generado, una vez por plugin. El nombre viene del
-    /// `package.json` del plugin, que es el único sitio donde se escribe.
+    /// Called by the generated file, once per plugin. The name comes from the
+    /// plugin's `package.json`, which is the only place it is written.
     static func register(_ name: String, _ plugin: AnPlugin) {
         guard plugins[name] == nil else {
-            NSLog("angular-native: dos plugins dicen llamarse \(name); se queda el primero")
+            NSLog("angular-native: two plugins claim to be called \(name); the first one stays")
             return
         }
         if let host { plugin.attach(host) }
@@ -132,13 +134,13 @@ enum AnPluginRegistry {
         an_plugin_register(name)
     }
 
-    /// Rust llama aquí desde el hilo principal, dentro del frame.
+    /// Rust calls in here from the main thread, inside the frame.
     private static func dispatch(id: UInt64, module: String, method: String, args: String) {
         guard let plugin = plugins[module] else {
-            // No debería poder pasar: el core solo conoce los nombres que este
-            // registro le dio. Si pasa, se dice en vez de dejar la promesa
-            // colgada.
-            _ = an_plugin_reject(id, "el plugin \(module) no está en este .app")
+            // This should not be able to happen: the core only knows the names
+            // this registry gave it. If it does happen, it is said rather than
+            // leaving the promise hanging.
+            _ = an_plugin_reject(id, "the plugin \(module) is not in this .app")
             return
         }
         let decoded = try? JSONSerialization.jsonObject(

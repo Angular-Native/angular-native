@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import SwiftUI
 
-/// Lo que un control tiene dentro mientras se toca.
+/// What a control holds inside while it is being touched.
 enum AnControlValue: Equatable {
     case number(Double)
     case text(String)
@@ -10,93 +10,92 @@ enum AnControlValue: Equatable {
     case index(Int)
 }
 
-/// El estado de los controles, que es lo único que el shell guarda por su
-/// cuenta.
+/// The controls' state, which is the only thing the shell keeps on its own.
 ///
-/// Hace falta porque los dos lados llevan el mismo dato y no van al mismo
-/// ritmo. Un `Slider` de SwiftUI necesita un `Binding` que pueda escribir en el
-/// acto —el dedo está encima— mientras que el valor de verdad vive en una
-/// señal de Angular, al otro lado de QuickJS, y no vuelve hasta el frame
-/// siguiente. Sin este intermedio el deslizador saltaría hacia atrás en cada
-/// arrastre, porque cada foto lo devolvería al valor viejo.
+/// It is needed because both sides carry the same datum and do not run at the
+/// same rhythm. A SwiftUI `Slider` needs a `Binding` it can write to on the spot
+/// —the finger is on it— while the real value lives in an Angular signal, on the
+/// other side of QuickJS, and does not come back until the next frame. Without
+/// this middle layer the slider would jump backwards on every drag, because
+/// every snapshot would return it to the old value.
 ///
-/// La regla de reconciliación es una sola y es la que evita que el shell y la
-/// app se peleen:
+/// There is a single reconciliation rule and it is what keeps the shell and the
+/// app from fighting:
 ///
-/// > si el valor que llega de Rust **es distinto del que llegó la última vez**,
-/// > lo cambió la app, y manda la app. Si es el mismo, manda lo que haya tocado
-/// > el dedo.
+/// > if the value arriving from Rust **differs from the one that arrived last
+/// > time**, the app changed it, and the app wins. If it is the same, whatever
+/// > the finger touched wins.
 ///
-/// Así una señal que cambia el valor desde código se ve enseguida, y un
-/// arrastre no se pisa con el eco de su propio evento.
+/// That way a signal that changes the value from code shows straight away, and a
+/// drag is not trampled by the echo of its own event.
 ///
-/// Y por eso mismo el estado sobrevive a la recarga en caliente: `an dev`
-/// mantiene el árbol montado y los ids, así que aquí no se toca nada; lo que
-/// desaparece del árbol se limpia en `reconcile`, que es también lo que vacía
-/// esto cuando una recarga en frío tira el árbol entero.
+/// And for the same reason the state survives a hot reload: `an dev` keeps the
+/// tree mounted and the ids, so nothing is touched here; what disappears from
+/// the tree is cleaned up in `reconcile`, which is also what empties this when a
+/// cold reload throws the whole tree away.
 @MainActor
 @Observable
 final class AnControls {
-    /// Lo que se está tocando ahora mismo.
+    /// What is being touched right now.
     private var locals: [UInt32: AnControlValue] = [:]
-    /// Lo último que dijo Rust, para saber si un valor nuevo viene de la app.
+    /// The last thing Rust said, so it can be told whether a new value comes
+    /// from the app.
     private var mirrored: [UInt32: AnControlValue] = [:]
-    /// Presentaciones que el sistema ya ha cerrado y cuya plantilla todavía
-    /// no se ha enterado.
+    /// Presentations the system has already closed and whose template has not
+    /// found out yet.
     ///
-    /// Sin esto un diálogo se reabriría solo: al pulsar un botón SwiftUI lo
-    /// cierra, pero `[visible]` sigue valiendo `true` hasta que JS reacciona al
-    /// `(select)`, y el frame de en medio lo volvería a presentar.
-    private var cerrados: Set<UInt32> = []
-    /// Lo que lleva girado la corona sobre cada nodo.
+    /// Without this a dialog would reopen on its own: on pressing a button
+    /// SwiftUI closes it, but `[visible]` is still `true` until JS reacts to the
+    /// `(select)`, and the frame in between would present it again.
+    private var closed: Set<UInt32> = []
+    /// How far the crown has turned on each node.
     ///
-    /// Va aparte de `locals` y no compartiendo sitio con el valor de los
-    /// controles porque un mismo nodo puede ser las dos cosas: un `an-slider`
-    /// con un `(crown)` encima existe, y con un solo diccionario el valor del
-    /// deslizador se llevaría por delante el acumulado del giro en cuanto la
-    /// app lo cambiase.
-    private var giros: [UInt32: Double] = [:]
+    /// It is kept apart from `locals` rather than sharing a slot with the
+    /// controls' values because one node can be both things: an `an-slider` with
+    /// a `(crown)` on it exists, and with a single dictionary the slider's value
+    /// would run over the accumulated rotation as soon as the app changed it.
+    private var turns: [UInt32: Double] = [:]
 
-    /// Por dónde salen los cambios hacia JS.
+    /// The way changes go out towards JS.
     @ObservationIgnored var dispatch: (UInt32, String, [String: Any]) -> Void = { _, _, _ in }
 
-    /// Reconcilia el estado con la foto recién llegada y olvida los nodos que
-    /// ya no están.
+    /// Reconciles the state with the snapshot that has just arrived and forgets
+    /// the nodes that are no longer there.
     func reconcile(root: AnNode?, overlays: [AnNode]) {
-        var vivos: Set<UInt32> = []
+        var alive: Set<UInt32> = []
         if let root {
-            walk(root, &vivos)
+            walk(root, &alive)
         }
         for overlay in overlays {
-            walk(overlay, &vivos)
+            walk(overlay, &alive)
         }
-        locals = locals.filter { vivos.contains($0.key) }
-        mirrored = mirrored.filter { vivos.contains($0.key) }
-        cerrados = cerrados.filter { vivos.contains($0) }
-        giros = giros.filter { vivos.contains($0.key) }
+        locals = locals.filter { alive.contains($0.key) }
+        mirrored = mirrored.filter { alive.contains($0.key) }
+        closed = closed.filter { alive.contains($0) }
+        turns = turns.filter { alive.contains($0.key) }
     }
 
-    private func walk(_ node: AnNode, _ vivos: inout Set<UInt32>) {
-        vivos.insert(node.id)
-        // La plantilla ya se enteró de que estaba cerrado: la próxima vez que
-        // lo abra hay que dejarla.
+    private func walk(_ node: AnNode, _ alive: inout Set<UInt32>) {
+        alive.insert(node.id)
+        // The template has found out it was closed: next time it opens it, it
+        // has to be allowed to.
         if node.visible == false {
-            cerrados.remove(node.id)
+            closed.remove(node.id)
         }
         if let incoming = Self.declared(node) {
-            // Un valor distinto del anterior solo puede venir de la app: el
-            // eco del dedo llegó ya en la foto pasada.
+            // A value different from the previous one can only come from the
+            // app: the echo of the finger already arrived in the last snapshot.
             if mirrored[node.id] != incoming {
                 locals[node.id] = incoming
             }
             mirrored[node.id] = incoming
         }
         for child in node.children ?? [] {
-            walk(child, &vivos)
+            walk(child, &alive)
         }
     }
 
-    /// El valor que la plantilla declara para este nodo, si es un control.
+    /// The value the template declares for this node, if it is a control.
     private static func declared(_ node: AnNode) -> AnControlValue? {
         switch node.kind {
         case "Switch": return .flag(node.on ?? false)
@@ -113,32 +112,33 @@ final class AnControls {
 
     // ------------------------------------------------------------- bindings
 
-    /// Un número: `an-slider`, `an-stepper`.
+    /// A number: `an-slider`, `an-stepper`.
     ///
-    /// El evento sale con la misma clave que en iOS —`change` con `value`—
-    /// porque el que lo recibe es el mismo `outputFromObservable` de la
-    /// directiva, no un código de reloj.
+    /// The event goes out under the same key as on iOS —`change` with `value`—
+    /// because what receives it is the directive's own `outputFromObservable`,
+    /// not any watch-specific code.
     func number(_ node: AnNode) -> Binding<Double> {
         Binding(
             get: {
                 if case .number(let value)? = self.current(node) { return value }
                 return node.value ?? 0
             },
-            set: { nuevo in
-                self.locals[node.id] = .number(nuevo)
-                self.dispatch(node.id, "change", ["value": nuevo])
+            set: { value in
+                self.locals[node.id] = .number(value)
+                self.dispatch(node.id, "change", ["value": value])
             }
         )
     }
 
-    /// Una fecha. Viaja en milisegundos desde 1970 en los dos sentidos, que es
-    /// lo que da y toma `Date` en JS: formatearla depende del idioma y de la
-    /// zona del dispositivo, y de eso ya se encarga el sistema al pintarla.
+    /// A date. It travels as milliseconds since 1970 in both directions, which
+    /// is what `Date` gives and takes in JS: formatting it depends on the
+    /// device's language and time zone, and the system already takes care of that
+    /// when painting it.
     func date(_ node: AnNode) -> Binding<Date> {
-        let numero = number(node)
+        let millis = number(node)
         return Binding(
-            get: { Date(timeIntervalSince1970: numero.wrappedValue / 1000.0) },
-            set: { numero.wrappedValue = $0.timeIntervalSince1970 * 1000.0 }
+            get: { Date(timeIntervalSince1970: millis.wrappedValue / 1000.0) },
+            set: { millis.wrappedValue = $0.timeIntervalSince1970 * 1000.0 }
         )
     }
 
@@ -148,9 +148,9 @@ final class AnControls {
                 if case .flag(let value)? = self.current(node) { return value }
                 return node.on ?? false
             },
-            set: { nuevo in
-                self.locals[node.id] = .flag(nuevo)
-                self.dispatch(node.id, "change", ["value": nuevo])
+            set: { value in
+                self.locals[node.id] = .flag(value)
+                self.dispatch(node.id, "change", ["value": value])
             }
         )
     }
@@ -161,60 +161,60 @@ final class AnControls {
                 if case .text(let value)? = self.current(node) { return value }
                 return node.field ?? ""
             },
-            set: { nuevo in
-                self.locals[node.id] = .text(nuevo)
-                self.dispatch(node.id, "change", ["value": nuevo])
+            set: { value in
+                self.locals[node.id] = .text(value)
+                self.dispatch(node.id, "change", ["value": value])
             }
         )
     }
 
-    /// La opción elegida de un `an-select`. El evento lleva `index`, no
-    /// `value`: es lo que espera `NativeIndexEvent` en la directiva.
+    /// The option selected in an `an-select`. The event carries `index`, not
+    /// `value`: it is what `NativeIndexEvent` expects in the directive.
     func index(_ node: AnNode) -> Binding<Int> {
         Binding(
             get: {
                 if case .index(let value)? = self.current(node) { return value }
                 return node.selectedIndex ?? 0
             },
-            set: { nuevo in
-                self.locals[node.id] = .index(nuevo)
-                self.dispatch(node.id, "change", ["index": nuevo])
+            set: { value in
+                self.locals[node.id] = .index(value)
+                self.dispatch(node.id, "change", ["index": value])
             }
         )
     }
 
-    // --------------------------------------------------- lo que se presenta
+    // ------------------------------------------------- what gets presented
 
-    /// Si un `an-alert` o un `an-modal` está a la vista.
+    /// Whether an `an-alert` or an `an-modal` is on screen.
     ///
-    /// Escribir `false` es el sistema diciendo que lo ha cerrado —un botón, el
-    /// gesto de bajar la hoja—, y de eso hay que avisar: si no, la señal que lo
-    /// abrió se queda diciendo que sigue abierto y volver a ponerla a `true` no
-    /// hace nada.
+    /// Writing `false` is the system saying it has closed it —a button, the
+    /// gesture of pulling the sheet down—, and that has to be reported:
+    /// otherwise the signal that opened it goes on saying it is still open and
+    /// setting it back to `true` does nothing.
     func presented(_ node: AnNode) -> Binding<Bool> {
         Binding(
-            get: { node.visible == true && !self.cerrados.contains(node.id) },
-            set: { abierto in
-                guard !abierto else { return }
-                self.cerrados.insert(node.id)
+            get: { node.visible == true && !self.closed.contains(node.id) },
+            set: { open in
+                guard !open else { return }
+                self.closed.insert(node.id)
                 self.dispatch(node.id, "dismiss", [:])
             }
         )
     }
 
-    // ----------------------------------------------------------- la corona
+    // --------------------------------------------------------- the crown
 
-    /// Cuánto lleva girada la corona sobre este nodo.
+    /// How far the crown has turned on this node.
     ///
-    /// La corona de SwiftUI se pide con un `Binding` sobre un número que ella
-    /// mueve; el evento que interesa —cuánto y a qué velocidad— llega aparte,
-    /// por `onChange`. Este acumulador existe porque sin un sitio donde
-    /// guardarlo el giro se reiniciaría en cada foto, y con él la corona
-    /// arrastraría el valor de vuelta al que tenía.
+    /// SwiftUI's crown is asked for with a `Binding` over a number it moves; the
+    /// event that matters —how far and how fast— arrives separately, through
+    /// `onChange`. This accumulator exists because without somewhere to keep it
+    /// the rotation would reset on every snapshot, and with that the crown would
+    /// drag the value back to where it was.
     func crown(_ id: UInt32) -> Binding<Double> {
         Binding(
-            get: { self.giros[id] ?? 0 },
-            set: { self.giros[id] = $0 }
+            get: { self.turns[id] ?? 0 },
+            set: { self.turns[id] = $0 }
         )
     }
 }

@@ -7,17 +7,18 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
-      Sin barra de acción: la pantalla la dibuja la app entera, igual que en
-      iOS, y el layout ya reserva el hueco de la barra de estado.
+      No action bar: the whole screen is drawn by the app, just as on iOS, and
+      the layout already reserves the gap for the status bar.
 
-      El tema es el de Material 3, que viene con la librería de Material: la
-      plataforma no lo trae. Con `DeviceDefault` los controles salían con el
-      aspecto que el fabricante mantiene al día, que no es lo mismo: los
-      componentes de Material 3 —la barra de navegación, los botones— no están
-      en la plataforma y necesitan su tema para dibujarse bien.
+      The theme is Material 3's, which comes with the Material library: the
+      platform does not ship it. With `DeviceDefault` the controls came out with
+      the look the manufacturer keeps up to date, which is not the same thing:
+      the Material 3 components —the navigation bar, the buttons— are not in the
+      platform and need their theme to be drawn properly.
 
-      El estilo concreto vive en `res/values/styles.xml`, no aquí: el reloj
-      necesita atributos propios y los dos temas se declaran juntos.
+      The concrete style lives in `res/values/styles.xml` and not here: the
+      watch needs attributes of its own and the two themes are declared
+      together.
     -->
     <application
         android:label="AngularNative"

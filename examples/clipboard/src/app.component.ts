@@ -2,19 +2,20 @@ import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@a
 import { Clipboard } from '@angular-native/plugin-clipboard'
 import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
 
-const FRASES = [
-  'hola desde angular-native',
-  'un plugin es un paquete npm',
-  'Swift y Java, compilados desde fuente'
+const PHRASES = [
+  'hello from angular-native',
+  'a plugin is an npm package',
+  'Swift and Java, compiled from source'
 ]
 
 /**
- * El portapapeles del sistema, desde un plugin.
+ * The system clipboard, from a plugin.
  *
- * La app no sabe que hay un plugin de por medio: inyecta `Clipboard` y llama a
- * sus métodos, igual que inyectaría `Device`. Lo único que la distingue de una
- * app cualquiera es la línea del `package.json` que declara la dependencia; de
- * ahí sale todo lo demás, incluido que `an` compile el Swift y el Java.
+ * The app does not know there is a plugin in the middle: it injects `Clipboard`
+ * and calls its methods, just as it would inject `Device`. The only thing that
+ * tells it apart from any other app is the line in `package.json` that declares
+ * the dependency; everything else follows from there, including `an` compiling
+ * the Swift and the Java.
  */
 @Component({
   selector: 'app-root',
@@ -29,10 +30,10 @@ const FRASES = [
       [style.gap]="'16'"
       [backgroundColor]="'#0b1020'">
 
-      <an-text [fontSize]="28" [fontWeight]="'bold'" [color]="'#f4f7ff'">portapapeles</an-text>
+      <an-text [fontSize]="28" [fontWeight]="'bold'" [color]="'#f4f7ff'">clipboard</an-text>
 
       <an-text [fontSize]="14" [color]="'#9fb0d4'">
-        un plugin: paquete npm, Swift, Java y esta línea de TypeScript
+        one plugin: an npm package, Swift, Java and this line of TypeScript
       </an-text>
 
       <an-view
@@ -40,7 +41,7 @@ const FRASES = [
         [style.paddingHorizontal]="'14'"
         [backgroundColor]="'#1e2a4a'"
         [borderRadius]="10">
-        <an-text [fontSize]="17" [color]="'#f4f7ff'">{{ texto() }}</an-text>
+        <an-text [fontSize]="17" [color]="'#f4f7ff'">{{ text() }}</an-text>
       </an-view>
 
       <an-view [style.flexDirection]="'row'" [style.gap]="'12'">
@@ -51,8 +52,8 @@ const FRASES = [
           [style.justifyContent]="'center'"
           [backgroundColor]="'#2f6fed'"
           [borderRadius]="10"
-          (press)="copiar()">
-          <an-text [fontSize]="16" [fontWeight]="'600'" [color]="'#ffffff'">copiar</an-text>
+          (press)="copy()">
+          <an-text [fontSize]="16" [fontWeight]="'600'" [color]="'#ffffff'">copy</an-text>
         </an-view>
 
         <an-view
@@ -62,8 +63,8 @@ const FRASES = [
           [style.justifyContent]="'center'"
           [backgroundColor]="'#1e2a4a'"
           [borderRadius]="10"
-          (press)="pegar()">
-          <an-text [fontSize]="16" [fontWeight]="'600'" [color]="'#9fb0d4'">pegar</an-text>
+          (press)="paste()">
+          <an-text [fontSize]="16" [fontWeight]="'600'" [color]="'#9fb0d4'">paste</an-text>
         </an-view>
 
         <an-view
@@ -73,64 +74,64 @@ const FRASES = [
           [style.justifyContent]="'center'"
           [backgroundColor]="'#1e2a4a'"
           [borderRadius]="10"
-          (press)="siguiente()">
-          <an-text [fontSize]="16" [fontWeight]="'600'" [color]="'#9fb0d4'">otra frase</an-text>
+          (press)="next()">
+          <an-text [fontSize]="16" [fontWeight]="'600'" [color]="'#9fb0d4'">another phrase</an-text>
         </an-view>
       </an-view>
 
-      <an-text [fontSize]="15" [color]="'#6ee7b7'">en el portapapeles: {{ contenido() }}</an-text>
-      <an-text [fontSize]="13" [color]="'#f2b8b5'">{{ estado() }}</an-text>
+      <an-text [fontSize]="15" [color]="'#6ee7b7'">on the clipboard: {{ contents() }}</an-text>
+      <an-text [fontSize]="13" [color]="'#f2b8b5'">{{ status() }}</an-text>
     </an-view>
   `
 })
 export class AppComponent {
   private readonly clipboard = inject(Clipboard)
 
-  private readonly frase = signal(0)
-  readonly texto = computed(() => FRASES[this.frase() % FRASES.length])
-  readonly contenido = signal('…')
-  readonly estado = signal('')
+  private readonly phrase = signal(0)
+  readonly text = computed(() => PHRASES[this.phrase() % PHRASES.length])
+  readonly contents = signal('…')
+  readonly status = signal('')
 
   constructor() {
-    // Al arrancar se pregunta si hay algo, no qué hay: en iOS 16 y posteriores
-    // leer lo que copió otra app enseña un aviso del sistema, y salirle a
-    // alguien nada más abrir la app sin que haya pedido nada está feo.
-    // `hasText` no lo dispara. La llamada no bloquea: la respuesta llega en un
-    // frame, el mismo o uno posterior.
+    // On startup it asks whether there is anything, not what there is: on iOS 16
+    // and later, reading what another app copied shows a system banner, and
+    // throwing one at somebody the moment they open the app without their
+    // having asked for anything is rude. `hasText` does not trigger it. The call
+    // does not block: the answer arrives in a frame, the same one or a later one.
     this.clipboard
       .hasText()
-      .then((hay) => this.estado.set(hay ? 'hay algo copiado' : 'el portapapeles está vacío'))
-      .catch((error: unknown) => this.fallo(error))
+      .then((there) => this.status.set(there ? 'something is copied' : 'the clipboard is empty'))
+      .catch((error: unknown) => this.failed(error))
   }
 
-  copiar(): void {
+  copy(): void {
     this.clipboard
-      .write(this.texto())
+      .write(this.text())
       .then(() => {
-        this.estado.set('copiado')
-        // Releer lo que acaba de escribir la propia app no dispara el aviso.
-        return this.pegar()
+        this.status.set('copied')
+        // Re-reading what the app itself has just written does not trigger the banner.
+        return this.paste()
       })
-      .catch((error: unknown) => this.fallo(error))
+      .catch((error: unknown) => this.failed(error))
   }
 
-  pegar(): void {
+  paste(): void {
     this.clipboard
       .read()
-      .then((texto) => this.contenido.set(texto === '' ? '(vacío)' : texto))
-      .catch((error: unknown) => this.fallo(error))
+      .then((text) => this.contents.set(text === '' ? '(empty)' : text))
+      .catch((error: unknown) => this.failed(error))
   }
 
-  siguiente(): void {
-    this.frase.update((actual) => actual + 1)
+  next(): void {
+    this.phrase.update((current) => current + 1)
   }
 
   /**
-   * Un plugin que falta no se disimula: se enseña el motivo. Sin plugin en el
-   * `.app` la promesa se rechaza, y eso es exactamente lo que tiene que pasar.
+   * A missing plugin is not glossed over: the reason is shown. With no plugin in
+   * the `.app` the promise rejects, and that is exactly what has to happen.
    */
-  private fallo(error: unknown): void {
-    this.contenido.set('—')
-    this.estado.set(`el portapapeles falló: ${error}`)
+  private failed(error: unknown): void {
+    this.contents.set('—')
+    this.status.set(`the clipboard failed: ${error}`)
   }
 }

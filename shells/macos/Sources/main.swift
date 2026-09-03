@@ -1,16 +1,17 @@
-// Punto de entrada. Sin xib y sin storyboard: la app es una ventana con un
-// único NSViewController del que cuelga el árbol que dibuja Rust.
+// Entry point. No xib and no storyboard: the app is a window with a single
+// NSViewController from which hangs the tree Rust draws.
 //
-// `NSApplicationMain` no vale aquí porque necesita un `NSPrincipalClass` y un
-// nib en el bundle. Montar la aplicación a mano son cinco líneas y deja el
-// arranque a la vista, que es lo mismo que hace el shell de iOS con su
-// `UIApplicationMain`.
+// `NSApplicationMain` is no good here because it needs an `NSPrincipalClass` and
+// a nib in the bundle. Setting the application up by hand is five lines and
+// leaves the startup in plain sight, which is the same thing the iOS shell does
+// with its `UIApplicationMain`.
 import AppKit
 
 let app = NSApplication.shared
-// `.regular` es una app con icono en el Dock y con menú. Sin esto, un
-// ejecutable lanzado fuera de un `.app` sale sin menú y sin poder hacerse
-// frontal, y el fallo se ve como «la ventana no coge el foco».
+// `.regular` is an app with an icon in the Dock and a menu. Without this, an
+// executable launched outside an `.app` comes up with no menu and unable to
+// bring itself to the front, and the bug looks like "the window will not take
+// the focus".
 app.setActivationPolicy(.regular)
 
 let delegate = AppDelegate()

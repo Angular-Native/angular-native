@@ -1,34 +1,34 @@
 import AppKit
 
-/// La vista donde monta el host. Va volteada por lo mismo que las que crea el
-/// propio host (ver `crates/an-macos/src/flipped.rs`): el núcleo coloca de
-/// arriba abajo y AppKit, por defecto, de abajo arriba.
+/// The view the host mounts into. It is flipped for the same reason as the ones
+/// the host itself creates (see `crates/an-macos/src/flipped.rs`): the core lays
+/// out top to bottom and AppKit, by default, bottom to top.
 final class AnRootView: NSView {
     override var isFlipped: Bool { true }
 }
 
-/// Todo el shell de macOS cabe aquí: crear el runtime, darle una vista donde
-/// montar, avisarle del tamaño y llamarle una vez por frame.
+/// The whole macOS shell fits in here: create the runtime, give it a view to
+/// mount into, tell it the size and call it once per frame.
 ///
-/// Es el mismo fichero que el `RootViewController` de iOS con dos diferencias,
-/// y las dos son del escritorio:
+/// It is the same file as the iOS `RootViewController` with two differences, and
+/// both of them are desktop ones:
 ///
-/// - `viewDidLayout` se llama **mientras** se arrastra la esquina de la
-///   ventana, no solo al girar el aparato. El viewport cambia en caliente y el
-///   layout se rehace en el frame siguiente.
-/// - El `CADisplayLink` se pide a la vista y no a la pantalla: en un Mac hay
-///   varias pantallas y pueden ir a refrescos distintos, así que el reloj
-///   correcto es el de la pantalla donde está la ventana, y eso lo sabe la
-///   vista. Se añade en modo `.common` para que siga latiendo mientras se
-///   arrastra la ventana o se abre un menú, que en AppKit corren en un bucle de
-///   eventos aparte.
+/// - `viewDidLayout` is called **while** the corner of the window is being
+///   dragged, not only when the device is rotated. The viewport changes live and
+///   the layout is redone on the next frame.
+/// - The `CADisplayLink` is asked of the view and not of the screen: on a Mac
+///   there are several screens and they can run at different refresh rates, so
+///   the right clock is the one of the screen the window is on, and the view is
+///   what knows that. It is added in `.common` mode so it keeps beating while
+///   the window is dragged or a menu is open, which in AppKit run in a separate
+///   event loop.
 final class RootViewController: NSViewController {
     private var runtime: OpaquePointer?
     private var displayLink: CADisplayLink?
     private var devClient: DevClient?
-    /// Solo existe si alguien puso `AN_SCREENSHOT` en el entorno; ver
-    /// `Screenshot.swift`. Es `nil` en cualquier ejecución normal.
-    private var screenshot: Screenshot.Disparador?
+    /// Only exists if somebody put `AN_SCREENSHOT` in the environment; see
+    /// `Screenshot.swift`. It is `nil` in any normal run.
+    private var screenshot: Screenshot.Trigger?
 
     override func loadView() {
         let root = AnRootView(frame: NSRect(x: 0, y: 0, width: 720, height: 820))
@@ -47,7 +47,7 @@ final class RootViewController: NSViewController {
             Float(bounds.height)
         )
         guard runtime != nil else {
-            assertionFailure("an_runtime_new devolvió nil: ¿fuera del hilo principal?")
+            assertionFailure("an_runtime_new returned nil: off the main thread?")
             return
         }
         loadBundleScript()
@@ -57,51 +57,51 @@ final class RootViewController: NSViewController {
         displayLink = link
 
         connectDevServer()
-        screenshot = Screenshot.destino.map(Screenshot.Disparador.init(path:))
+        screenshot = Screenshot.destination.map(Screenshot.Trigger.init(path:))
     }
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        // Se llama en cada paso del arrastre. El lado de Rust descarta los
-        // tamaños repetidos, así que llamar de más no cuesta nada.
+        // Called on every step of the drag. The Rust side discards repeated
+        // sizes, so calling too often costs nothing.
         an_runtime_set_viewport(runtime, Float(view.bounds.width), Float(view.bounds.height))
     }
 
-    /// El bundle de la app trae el JS, igual que el `main.jsbundle` de React
-    /// Native.
+    /// The app bundle carries the JS, just like React Native's
+    /// `main.jsbundle`.
     private func loadBundleScript() {
         guard let path = Bundle.main.path(forResource: "main", ofType: "js"),
               let source = try? String(contentsOfFile: path, encoding: .utf8)
         else {
-            NSLog("angular-native: no hay main.js en el bundle")
+            NSLog("angular-native: there is no main.js in the bundle")
             return
         }
         if an_runtime_eval(runtime, "main.js", source) != 0 {
-            NSLog("angular-native: main.js lanzó al evaluarse")
+            NSLog("angular-native: main.js threw while being evaluated")
         }
     }
 
-    /// Solo existe si el `.app` lo armó `an dev`. El cliente es el mismo que
-    /// usan el teléfono y el reloj: vive en `shells/shared` y es Foundation
-    /// pelado, sin nada de UIKit ni de AppKit.
+    /// Only exists if the `.app` was built by `an dev`. The client is the same
+    /// one the phone and the watch use: it lives in `shells/shared` and is plain
+    /// Foundation, with nothing from UIKit or AppKit.
     private func connectDevServer() {
         devClient = DevClient(bundle: .main) { [weak self] source in
             guard let self, let runtime = self.runtime else { return }
-            NSLog("angular-native: recargando")
+            NSLog("angular-native: reloading")
             if an_runtime_reload(runtime, "main.js", source) != 0 {
-                NSLog("angular-native: el bundle recargado lanzó al evaluarse")
+                NSLog("angular-native: the reloaded bundle threw while being evaluated")
             }
-            self.screenshot?.recargado()
+            self.screenshot?.reloaded()
         }
         devClient?.connect()
     }
 
     @objc private func tick(_ link: CADisplayLink) {
-        // El reloj de la app es el del vsync: los temporizadores de JS avanzan
-        // con los frames, no con un hilo aparte.
+        // The app's clock is the vsync one: the JS timers advance with the
+        // frames, not on a thread of their own.
         let applied = an_runtime_frame(runtime, link.timestamp * 1000.0)
         if applied < 0 {
-            NSLog("angular-native: el frame falló")
+            NSLog("angular-native: the frame failed")
         }
         screenshot?.frame(applied: applied, view: view)
     }

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Baja Material Components y todo lo que arrastra.
+"""Downloads Material Components and everything it drags along.
 
-Android no trae en la plataforma ni la barra de navegación inferior ni los
-botones de Material 3: viven en `com.google.android.material`, que es una
-librería aparte. Gradle la resolvería sola; aquí no hay Gradle, así que se
-resuelve a mano leyendo los POM y se deja todo en `vendor/android/`.
+Android ships neither the bottom navigation bar nor the Material 3 buttons in
+the platform: they live in `com.google.android.material`, which is a separate
+library. Gradle would resolve it on its own; there is no Gradle here, so it is
+resolved by hand by reading the POMs and everything is left in
+`vendor/android/`.
 
-No es un gestor de dependencias: no resuelve conflictos de versión con
-ninguna estrategia sofisticada —se queda con la primera que ve, que es la más
-cercana a la raíz, igual que hace Gradle— y no toca los `scope` de prueba.
+It is not a dependency manager: it resolves version conflicts with no
+sophisticated strategy —it keeps the first one it sees, which is the one nearest
+the root, the same as Gradle does— and it does not touch the test `scope`s.
 """
 
 import pathlib
@@ -24,84 +25,84 @@ REPOS = [
     "https://repo1.maven.org/maven2",
 ]
 
-RAIZ = pathlib.Path(__file__).resolve().parent.parent
-DESTINO = RAIZ / "vendor" / "android"
-EXTRAIDO = DESTINO / "extracted"
-BUILD = DESTINO / "build"
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+TARGET = ROOT / "vendor" / "android"
+EXTRACTED = TARGET / "extracted"
+BUILD = TARGET / "build"
 NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 
-# Lo que se pide. El resto sale de aquí.
-SEMILLA = [("com.google.android.material", "material", "1.13.0")]
+# What is asked for. The rest comes out of this.
+SEED = [("com.google.android.material", "material", "1.13.0")]
 
-# Lo que no hace falta: anotaciones que solo existen en tiempo de compilación
-# y cosas de Kotlin que no usamos.
-IGNORAR = {
+# What is not needed: annotations that only exist at compile time and Kotlin
+# things we do not use.
+IGNORE = {
     "com.google.errorprone:error_prone_annotations",
     "org.jetbrains.kotlin:kotlin-bom",
     "com.google.guava:listenablefuture",
-    # Desde Kotlin 1.8 `kotlin-stdlib` trae dentro lo que antes estaba en
-    # estos tres. Siguen publicándose para no romper a quien los pida, pero
-    # traer los dos juegos deja las mismas clases dos veces y `d8` se planta.
+    # Since Kotlin 1.8 `kotlin-stdlib` carries inside it what used to be in these
+    # three. They are still published so as not to break whoever asks for them,
+    # but bringing both sets leaves the same classes twice over and `d8` refuses.
     "org.jetbrains.kotlin:kotlin-stdlib-jdk7",
     "org.jetbrains.kotlin:kotlin-stdlib-jdk8",
     "org.jetbrains.kotlin:kotlin-stdlib-common",
 }
 
 
-def descargar(url: str) -> bytes | None:
+def download(url: str) -> bytes | None:
     try:
-        with urllib.request.urlopen(url, timeout=30) as respuesta:
-            return respuesta.read()
+        with urllib.request.urlopen(url, timeout=30) as response:
+            return response.read()
     except Exception:
         return None
 
 
-def buscar(grupo: str, artefacto: str, version: str, extension: str) -> bytes | None:
-    ruta = f"{grupo.replace('.', '/')}/{artefacto}/{version}/{artefacto}-{version}.{extension}"
+def fetch(group: str, artefact: str, version: str, extension: str) -> bytes | None:
+    path = f"{group.replace('.', '/')}/{artefact}/{version}/{artefact}-{version}.{extension}"
     for repo in REPOS:
-        datos = descargar(f"{repo}/{ruta}")
-        if datos:
-            return datos
+        data = download(f"{repo}/{path}")
+        if data:
+            return data
     return None
 
 
-def texto(nodo, etiqueta: str) -> str | None:
-    hijo = nodo.find(f"m:{etiqueta}", NS)
-    return hijo.text.strip() if hijo is not None and hijo.text else None
+def text(node, tag: str) -> str | None:
+    child = node.find(f"m:{tag}", NS)
+    return child.text.strip() if child is not None and child.text else None
 
 
-def gestion_de(raiz, profundidad: int = 0) -> dict[str, str]:
-    """Las versiones que fija `dependencyManagement`, incluidos los BOM.
+def management_of(root, depth: int = 0) -> dict[str, str]:
+    """The versions `dependencyManagement` pins, BOMs included.
 
-    Una sección de gestión puede no listar versiones sino *importar* otro POM
-    que las lista —eso es un BOM—, así que hay que seguirlos. Sin esto, media
-    androidx se queda sin versión y no se descarga.
+    A management section may list no versions at all and instead *import*
+    another POM that lists them —that is a BOM—, so they have to be followed.
+    Without this, half of androidx is left with no version and is not downloaded.
     """
-    gestionadas: dict[str, str] = {}
-    if profundidad > 4:
-        return gestionadas
-    for dep in raiz.iterfind("m:dependencyManagement/m:dependencies/m:dependency", NS):
-        g, a, v = texto(dep, "groupId"), texto(dep, "artifactId"), texto(dep, "version")
+    managed: dict[str, str] = {}
+    if depth > 4:
+        return managed
+    for dep in root.iterfind("m:dependencyManagement/m:dependencies/m:dependency", NS):
+        g, a, v = text(dep, "groupId"), text(dep, "artifactId"), text(dep, "version")
         if not (g and a and v):
             continue
-        if (texto(dep, "scope") or "") == "import":
-            bom = buscar(g, a, v, "pom")
+        if (text(dep, "scope") or "") == "import":
+            bom = fetch(g, a, v, "pom")
             if bom:
-                gestionadas.update(gestion_de(ET.fromstring(bom), profundidad + 1))
+                managed.update(management_of(ET.fromstring(bom), depth + 1))
             continue
-        gestionadas[f"{g}:{a}"] = v
-    return gestionadas
+        managed[f"{g}:{a}"] = v
+    return managed
 
 
-def concreta(version: str | None) -> str | None:
-    """Una versión concreta a partir de lo que declare el POM.
+def concrete(version: str | None) -> str | None:
+    """A concrete version out of whatever the POM declares.
 
-    Maven admite rangos: `[1.7.0]` es "exactamente esa" y `[1.7.0,2.0)` es
-    "de esa en adelante". Los dos se resuelven a la cota de abajo, que es lo
-    que quiere quien los escribe. Antes se descartaba todo lo que llevara
-    corchetes, y con ello media androidx: appcompat pide sus recursos como
-    `[1.7.0]` y se quedaban fuera sin que nada fallara hasta que la app
-    arrancaba y no encontraba una clase.
+    Maven allows ranges: `[1.7.0]` is "exactly that one" and `[1.7.0,2.0)` is
+    "that one and later". Both are resolved to the lower bound, which is what
+    whoever writes them wants. Everything with brackets in it used to be
+    discarded, and with it half of androidx: appcompat asks for its resources as
+    `[1.7.0]` and they were left out without anything failing until the app
+    started and could not find a class.
     """
     if not version:
         return None
@@ -110,107 +111,107 @@ def concreta(version: str | None) -> str | None:
         return None
     if not version.startswith(("[", "(")):
         return version
-    dentro = version.strip("[]()")
-    cota = dentro.split(",")[0].strip()
-    return cota or None
+    inside = version.strip("[]()")
+    bound = inside.split(",")[0].strip()
+    return bound or None
 
 
-def orden(version: str) -> tuple:
-    """Compara versiones por sus números; lo que no sea número va detrás."""
-    partes = re.findall(r"\d+|[a-zA-Z]+", version)
-    return tuple((0, int(p)) if p.isdigit() else (1, p) for p in partes)
+def order(version: str) -> tuple:
+    """Compares versions by their numbers; anything that is not a number sorts last."""
+    parts = re.findall(r"\d+|[a-zA-Z]+", version)
+    return tuple((0, int(p)) if p.isdigit() else (1, p) for p in parts)
 
 
-def una_vuelta(gestion_global: dict[str, str]) -> dict[str, tuple[str, str, str, str]]:
-    """Camina los POM una vez. Ante dos versiones del mismo, gana la alta."""
-    elegido: dict[str, tuple[str, str, str, str]] = {}
-    cola = list(SEMILLA)
-    while cola:
-        grupo, artefacto, version = cola.pop(0)
-        clave = f"{grupo}:{artefacto}"
-        if clave in IGNORAR:
+def one_pass(global_management: dict[str, str]) -> dict[str, tuple[str, str, str, str]]:
+    """Walks the POMs once. Faced with two versions of the same, the higher wins."""
+    chosen: dict[str, tuple[str, str, str, str]] = {}
+    queue = list(SEED)
+    while queue:
+        group, artefact, version = queue.pop(0)
+        key = f"{group}:{artefact}"
+        if key in IGNORE:
             continue
-        anterior = elegido.get(clave)
-        if anterior and orden(anterior[2]) >= orden(version):
+        previous = chosen.get(key)
+        if previous and order(previous[2]) >= order(version):
             continue
-        pom = buscar(grupo, artefacto, version, "pom")
+        pom = fetch(group, artefact, version, "pom")
         if pom is None:
-            print(f"  aviso: sin POM para {clave}:{version}", file=sys.stderr)
+            print(f"  warning: no POM for {key}:{version}", file=sys.stderr)
             continue
-        raiz = ET.fromstring(pom)
-        empaquetado = texto(raiz, "packaging") or "jar"
-        elegido[clave] = (grupo, artefacto, version, empaquetado)
+        root = ET.fromstring(pom)
+        packaging = text(root, "packaging") or "jar"
+        chosen[key] = (group, artefact, version, packaging)
 
-        # La gestión se acumula entre POM: una dependencia puede venir sin
-        # versión aquí y tenerla fijada en la sección de gestión de otro
-        # módulo de la misma familia, que es como androidx reparte las suyas.
-        gestion_global.update(gestion_de(raiz))
+        # The management accumulates across POMs: a dependency may arrive with no
+        # version here and have it pinned in the management section of another
+        # module of the same family, which is how androidx hands out its own.
+        global_management.update(management_of(root))
 
-        for dep in raiz.iterfind("m:dependencies/m:dependency", NS):
-            alcance = texto(dep, "scope") or "compile"
-            opcional = (texto(dep, "optional") or "false") == "true"
-            if alcance not in ("compile", "runtime") or opcional:
+        for dep in root.iterfind("m:dependencies/m:dependency", NS):
+            scope = text(dep, "scope") or "compile"
+            optional = (text(dep, "optional") or "false") == "true"
+            if scope not in ("compile", "runtime") or optional:
                 continue
-            g = texto(dep, "groupId")
-            a = texto(dep, "artifactId")
+            g = text(dep, "groupId")
+            a = text(dep, "artifactId")
             if not (g and a):
                 continue
-            v = concreta(texto(dep, "version")) or gestion_global.get(f"{g}:{a}")
+            v = concrete(text(dep, "version")) or global_management.get(f"{g}:{a}")
             if not v:
-                print(f"  aviso: {g}:{a} sin versión utilizable, se salta", file=sys.stderr)
+                print(f"  warning: {g}:{a} has no usable version, skipping", file=sys.stderr)
                 continue
-            cola.append((g, a, v))
-    return elegido
+            queue.append((g, a, v))
+    return chosen
 
 
-def resolver() -> dict[str, tuple[str, str, str, str]]:
-    """Resuelve el árbol.
+def resolve() -> dict[str, tuple[str, str, str, str]]:
+    """Resolves the tree.
 
-    Se camina dos veces: en la primera vuelta se aprenden las versiones que
-    fija cada sección de gestión, y en la segunda ya se pueden resolver las
-    dependencias que llegaron sin versión antes de conocerlas. Sin la segunda
-    vuelta se queda fuera media androidx, y eso no se ve hasta que falta una
-    clase con la app ya corriendo.
+    It is walked twice: on the first pass the versions each management section
+    pins are learned, and on the second the dependencies that arrived with no
+    version before those were known can be resolved. Without the second pass half
+    of androidx is left out, and that does not show until a class is missing with
+    the app already running.
     """
-    gestion: dict[str, str] = {}
-    una_vuelta(gestion)
-    return una_vuelta(gestion)
+    management: dict[str, str] = {}
+    one_pass(management)
+    return one_pass(management)
 
 
 def main() -> int:
-    DESTINO.mkdir(parents=True, exist_ok=True)
-    artefactos = resolver()
-    print(f"==> {len(artefactos)} artefactos")
-    esperados: set[str] = set()
-    for clave, (grupo, artefacto, version, empaquetado) in sorted(artefactos.items()):
-        extension = "aar" if empaquetado == "aar" else "jar"
-        salida = DESTINO / f"{artefacto}-{version}.{extension}"
-        esperados.add(salida.name)
-        if salida.exists():
+    TARGET.mkdir(parents=True, exist_ok=True)
+    artefacts = resolve()
+    print(f"==> {len(artefacts)} artefacts")
+    expected: set[str] = set()
+    for key, (group, artefact, version, packaging) in sorted(artefacts.items()):
+        extension = "aar" if packaging == "aar" else "jar"
+        output = TARGET / f"{artefact}-{version}.{extension}"
+        expected.add(output.name)
+        if output.exists():
             continue
-        datos = buscar(grupo, artefacto, version, extension)
-        if datos is None and extension == "aar":
-            datos, extension = buscar(grupo, artefacto, version, "jar"), "jar"
-            salida = DESTINO / f"{artefacto}-{version}.jar"
-        if datos is None:
-            print(f"  aviso: sin binario para {clave}:{version}", file=sys.stderr)
+        data = fetch(group, artefact, version, extension)
+        if data is None and extension == "aar":
+            data, extension = fetch(group, artefact, version, "jar"), "jar"
+            output = TARGET / f"{artefact}-{version}.jar"
+        if data is None:
+            print(f"  warning: no binary for {key}:{version}", file=sys.stderr)
             continue
-        salida.write_bytes(datos)
-        esperados.add(salida.name)
-        print(f"  {salida.name} ({len(datos) // 1024} KB)")
+        output.write_bytes(data)
+        expected.add(output.name)
+        print(f"  {output.name} ({len(data) // 1024} KB)")
 
-    # Fuera lo que una resolución anterior dejó y esta ya no elige. Dos
-    # versiones del mismo artefacto sueltas en la carpeta acaban las dos en el
-    # dex, y `d8` se planta con "definido dos veces".
-    for viejo in list(DESTINO.glob("*.jar")) + list(DESTINO.glob("*.aar")):
-        if viejo.name not in esperados:
-            print(f"  fuera {viejo.name}")
-            viejo.unlink()
-            for resto in [EXTRAIDO / viejo.stem, BUILD / f"{viejo.stem}.zip"]:
-                if resto.is_dir():
-                    shutil.rmtree(resto)
-                elif resto.exists():
-                    resto.unlink()
+    # Out with whatever an earlier resolution left behind and this one no longer
+    # picks. Two versions of the same artefact loose in the folder both end up in
+    # the dex, and `d8` refuses with "defined twice".
+    for old in list(TARGET.glob("*.jar")) + list(TARGET.glob("*.aar")):
+        if old.name not in expected:
+            print(f"  dropping {old.name}")
+            old.unlink()
+            for leftover in [EXTRACTED / old.stem, BUILD / f"{old.stem}.zip"]:
+                if leftover.is_dir():
+                    shutil.rmtree(leftover)
+                elif leftover.exists():
+                    leftover.unlink()
     return 0
 
 

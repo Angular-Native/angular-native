@@ -2,24 +2,23 @@ import { ChangeDetectionStrategy, Component, signal } from '@angular/core'
 import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
 
 /**
- * La misma clase de componente que corre en el teléfono, en una ventana
- * volumétrica.
+ * The same kind of component that runs on the phone, in a volumetric window.
  *
- * Dos cosas que esta pantalla enseña a propósito:
+ * Two things this screen shows on purpose:
  *
- * 1. **El fondo no se pinta entero.** La ventana de visionOS ya trae uno: el
- *    cristal que dibuja el sistema, con su desenfoque y su sombra sobre la
- *    habitación de verdad. El shell deja la raíz transparente y aquí solo se
- *    pintan las tarjetas, así que el cristal se ve entre ellas. Un
- *    `[backgroundColor]` en el contenedor de arriba lo taparía y la app sería
- *    una losa opaca flotando en el salón.
+ * 1. **The background is not painted whole.** The visionOS window already brings
+ *    one: the glass the system draws, with its blur and its shadow over the real
+ *    room. The shell leaves the root transparent and only the cards are painted
+ *    here, so the glass shows between them. A `[backgroundColor]` on the top
+ *    container would cover it and the app would be an opaque slab floating in
+ *    the living room.
  *
- * 2. **No hay tamaño de pantalla.** El usuario tira de la esquina y la ventana
- *    cambia de tamaño cuando quiere. Nada de aquí está en puntos fijos: los
- *    anchos van en porcentaje y en `flexGrow`, y el viewport llega por
- *    `viewDidLayoutSubviews` como en cualquier otra familia. Los `an-view` con
- *    `(press)` los realza el sistema al mirarlos, porque el host les pone
- *    `hoverStyle`.
+ * 2. **There is no screen size.** The user pulls the corner and the window
+ *    changes size whenever they like. Nothing here is in fixed points: the
+ *    widths go in percentages and in `flexGrow`, and the viewport arrives
+ *    through `viewDidLayoutSubviews` as in any other family. The `an-view`s with
+ *    `(press)` are highlighted by the system when looked at, because the host
+ *    gives them a `hoverStyle`.
  */
 @Component({
   selector: 'app-root',
@@ -35,37 +34,37 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
       <an-text [fontSize]="44" [fontWeight]="'bold'" [color]="'#f4f7ff'">angular-native</an-text>
 
       <an-text [fontSize]="20" [color]="'#c8d3ea'">
-        Sin fondo propio: lo que se ve detrás es el cristal de la ventana, que
-        lo pinta el sistema. Mira una tarjeta y pellízcala.
+        No background of its own: what shows behind is the window's glass, which
+        the system paints. Look at a card and pinch it.
       </an-text>
 
       <an-view [style.flexDirection]="'row'" [style.gap]="'24'" [style.width]="'100%'">
-        @for (tarjeta of tarjetas; track tarjeta) {
+        @for (card of cards; track card) {
           <an-view
             [style.flexGrow]="'1'"
             [style.height]="'160'"
             [borderRadius]="24"
             [backgroundColor]="'#1e2a4a'"
-            (press)="elige(tarjeta)">
+            (press)="choose(card)">
             <an-text
               [style.width]="'100%'"
               [style.height]="'160'"
               [fontSize]="24"
               [textAlign]="'center'"
-              [color]="'#f4f7ff'">{{ tarjeta }}</an-text>
+              [color]="'#f4f7ff'">{{ card }}</an-text>
           </an-view>
         }
       </an-view>
 
-      <an-text [fontSize]="20" [color]="'#9fb0d4'">{{ elegida() }}</an-text>
+      <an-text [fontSize]="20" [color]="'#9fb0d4'">{{ chosen() }}</an-text>
     </an-view>
   `
 })
 export class AppComponent {
-  readonly tarjetas = ['una', 'dos', 'tres']
-  readonly elegida = signal('nada elegido todavía')
+  readonly cards = ['one', 'two', 'three']
+  readonly chosen = signal('nothing chosen yet')
 
-  elige(tarjeta: string): void {
-    this.elegida.set(`elegiste: ${tarjeta}`)
+  choose(card: string): void {
+    this.chosen.set(`you chose: ${card}`)
   }
 }

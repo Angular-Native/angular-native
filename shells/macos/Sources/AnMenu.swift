@@ -1,24 +1,25 @@
 import AppKit
 
-/// El menú de la app.
+/// The app menu.
 ///
-/// **Es del sistema y no se expone a Angular.** En un teléfono no hay menú; en
-/// un Mac lo hay siempre, vive en la barra de arriba y no dentro de la ventana,
-/// así que no cabe en el árbol de vistas que el núcleo monta: no hay ningún
-/// `NodeKind` al que corresponda y no se puede inventar uno sin abrir
-/// `packages/primitives`, que es de otro. Lo pone el shell y punto.
+/// **It belongs to the system and is not exposed to Angular.** On a phone there
+/// is no menu; on a Mac there always is one, it lives in the bar at the top and
+/// not inside the window, so it does not fit in the view tree the core mounts:
+/// there is no `NodeKind` it corresponds to and one cannot be invented without
+/// opening `packages/primitives`, which belongs to somebody else. The shell puts
+/// it there, full stop.
 ///
-/// Lo que sí hace falta es que **esté**, y con las entradas de verdad. Un menú
-/// vacío no es un detalle estético: los atajos de edición de macOS —⌘X, ⌘C,
-/// ⌘V, ⌘Z, ⌘A— no los implementa `NSTextField`, los reparte el menú por la
-/// cadena de responder. Sin menú de Edición, copiar y pegar en un
-/// `<an-text-input>` no funciona, sin ningún error y sin nada que mirar. Es
-/// exactamente el tipo de fallo silencioso que este repositorio no admite, y
-/// por eso el menú mínimo incluye Edición y no solo Salir.
+/// What is needed is that it **exists**, and with the real entries in it. An
+/// empty menu is not a cosmetic detail: the macOS editing shortcuts —⌘X, ⌘C,
+/// ⌘V, ⌘Z, ⌘A— are not implemented by `NSTextField`, they are dispatched by the
+/// menu along the responder chain. With no Edit menu, copy and paste in an
+/// `<an-text-input>` does not work, with no error and nothing to look at. That
+/// is exactly the kind of silent failure this repository does not allow, and
+/// that is why the minimal menu includes Edit and not only Quit.
 ///
-/// Las entradas se enganchan con `nil` como destino a propósito: eso es lo que
-/// hace que AppKit las mande por la cadena de responder hasta quien sepa
-/// atenderlas, que es el campo de texto que tenga el foco.
+/// The entries are hooked up with `nil` as their target on purpose: that is what
+/// makes AppKit send them along the responder chain to whoever knows how to
+/// handle them, which is the text field that has the focus.
 enum AnMenu {
     static func build() -> NSMenu {
         let root = NSMenu()
@@ -52,35 +53,35 @@ enum AnMenu {
     private static func appMenu() -> NSMenuItem {
         let name = ProcessInfo.processInfo.processName
         return submenu(name, [
-            entry("Acerca de \(name)", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), ""),
+            entry("About \(name)", #selector(NSApplication.orderFrontStandardAboutPanel(_:)), ""),
             .separator(),
-            entry("Ocultar \(name)", #selector(NSApplication.hide(_:)), "h"),
+            entry("Hide \(name)", #selector(NSApplication.hide(_:)), "h"),
             entry(
-                "Ocultar los demás",
+                "Hide Others",
                 #selector(NSApplication.hideOtherApplications(_:)),
                 "h",
                 modifiers: [.command, .option]
             ),
             .separator(),
-            entry("Salir de \(name)", #selector(NSApplication.terminate(_:)), "q"),
+            entry("Quit \(name)", #selector(NSApplication.terminate(_:)), "q"),
         ])
     }
 
     private static func editMenu() -> NSMenuItem {
-        submenu("Edición", [
-            entry("Deshacer", Selector(("undo:")), "z"),
-            entry("Rehacer", Selector(("redo:")), "z", modifiers: [.command, .shift]),
+        submenu("Edit", [
+            entry("Undo", Selector(("undo:")), "z"),
+            entry("Redo", Selector(("redo:")), "z", modifiers: [.command, .shift]),
             .separator(),
-            entry("Cortar", #selector(NSText.cut(_:)), "x"),
-            entry("Copiar", #selector(NSText.copy(_:)), "c"),
-            entry("Pegar", #selector(NSText.paste(_:)), "v"),
-            entry("Seleccionar todo", #selector(NSText.selectAll(_:)), "a"),
+            entry("Cut", #selector(NSText.cut(_:)), "x"),
+            entry("Copy", #selector(NSText.copy(_:)), "c"),
+            entry("Paste", #selector(NSText.paste(_:)), "v"),
+            entry("Select All", #selector(NSText.selectAll(_:)), "a"),
         ])
     }
 
     private static func windowMenu() -> NSMenuItem {
-        submenu("Ventana", [
-            entry("Minimizar", #selector(NSWindow.performMiniaturize(_:)), "m"),
+        submenu("Window", [
+            entry("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
             entry("Zoom", #selector(NSWindow.performZoom(_:)), ""),
         ])
     }

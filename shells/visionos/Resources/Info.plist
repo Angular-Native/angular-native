@@ -22,7 +22,7 @@
     <string>1</string>
     <key>MinimumOSVersion</key>
     <string>1.0</string>
-    <!-- 7 es el visor. -->
+    <!-- 7 is the headset. -->
     <key>UIDeviceFamily</key>
     <array>
         <integer>7</integer>
@@ -32,23 +32,23 @@
         <string>arm64</string>
     </array>
     <!--
-      El ciclo de vida por escenas, que en visionOS no es opcional.
+      The scene-based lifecycle, which on visionOS is not optional.
 
-      En iOS una app puede seguir naciendo por el camino viejo: el delegado
-      crea una ventana del tamaño de la pantalla y ya. Aquí no hay pantalla
-      —`UIScreen` está marcado `API_UNAVAILABLE(visionos)`—, así que la ventana
-      solo puede salir de un `UIWindowScene`, y el sistema solo crea uno si
-      este manifiesto declara quién lo va a atender.
+      On iOS an app can still come into being the old way: the delegate creates a
+      window the size of the screen and that is that. Here there is no screen
+      —`UIScreen` is marked `API_UNAVAILABLE(visionos)`—, so the window can only
+      come out of a `UIWindowScene`, and the system only creates one if this
+      manifest declares who is going to handle it.
 
-      `SceneDelegate` es el nombre en Objective-C, el que le pone `@objc` a la
-      clase de Swift. Si no coincidiera, la escena se conectaría, nadie crearía
-      la ventana y la app arrancaría en negro sin un solo error.
+      `SceneDelegate` is the Objective-C name, the one `@objc` gives the Swift
+      class. Were they not to match, the scene would connect, nobody would create
+      the window and the app would start up black without a single error.
     -->
     <key>UIApplicationSceneManifest</key>
     <dict>
         <!--
-          Una ventana y no varias. El árbol de nodos tiene una raíz y un
-          viewport: dos escenas serían dos raíces, y eso no está hecho.
+          One window and not several. The node tree has one root and one
+          viewport: two scenes would be two roots, and that has not been built.
         -->
         <key>UIApplicationSupportsMultipleScenes</key>
         <false/>
@@ -65,7 +65,7 @@
             </array>
         </dict>
     </dict>
-    <!-- El servidor de desarrollo habla HTTP plano contra localhost. -->
+    <!-- The development server speaks plain HTTP to localhost. -->
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>

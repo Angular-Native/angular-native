@@ -37,7 +37,7 @@ pub fn reject_plugins(plugins: &[Plugin]) -> Result<()> {
     let names: Vec<&str> = plugins.iter().map(|plugin| plugin.package.as_str()).collect();
     bail!(
         "esta app no se puede compilar para watchOS: el reloj todavía no carga plugins, \
-         y depende de {}. Ver docs/plugins.md.",
+         y depende de {}. Ver https://angular-native.dev/extending/plugins/.",
         names.join(", ")
     )
 }

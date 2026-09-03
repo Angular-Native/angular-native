@@ -364,7 +364,7 @@ pub fn assemble(
 /// simulator.
 ///
 /// A real device would need the other route —identity and profile— and that is
-/// not here: `an` installs on the simulator. See docs/plugins.md.
+/// not here: `an` installs on the simulator. See https://angular-native.dev/extending/plugins/.
 fn write_entitlements(
     plugins: &[Plugin],
     bundle_id: &str,

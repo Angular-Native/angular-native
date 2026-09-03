@@ -11,14 +11,15 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Cliente del servidor de desarrollo.
+ * Client for the development server.
  *
- * Android no trae cliente de WebSocket en la plataforma, y añadir OkHttp solo
- * para esto no compensa: se usa espera larga sobre HTTP. El hilo pregunta a
- * `/wait`, el servidor no contesta hasta que hay una recarga, y entonces se
- * baja el bundle. Cuesta lo mismo que un WebSocket y no añade dependencias.
+ * Android ships no WebSocket client in the platform, and adding OkHttp just for
+ * this does not pay off: long polling over HTTP is used instead. The thread asks
+ * `/wait`, the server does not answer until there is a reload, and then the
+ * bundle is downloaded. It costs the same as a WebSocket and adds no
+ * dependencies.
  *
- * Desde el emulador, la máquina anfitriona es 10.0.2.2.
+ * From the emulator, the host machine is 10.0.2.2.
  */
 final class DevClient {
 
@@ -38,7 +39,7 @@ final class DevClient {
         this.onReload = onReload;
     }
 
-    /** Devuelve null si el APK no lo armó `an dev`. */
+    /** Returns null if the APK was not built by `an dev`. */
     static DevClient create(String baseUrl, Reload onReload) {
         if (baseUrl == null || baseUrl.isEmpty()) {
             return null;
@@ -50,7 +51,7 @@ final class DevClient {
         Thread thread =
                 new Thread(
                         () -> {
-                            Log.i(TAG, "conectado al servidor de desarrollo en " + baseUrl);
+                            Log.i(TAG, "connected to the development server at " + baseUrl);
                             while (running) {
                                 try {
                                     if (waitForChange()) {
@@ -60,9 +61,9 @@ final class DevClient {
                                         }
                                     }
                                 } catch (Exception error) {
-                                    Log.w(TAG, "servidor de desarrollo inalcanzable: " + error);
-                                    // Sin pausa, un servidor caído convertiría
-                                    // esto en un bucle a toda velocidad.
+                                    Log.w(TAG, "development server unreachable: " + error);
+                                    // Without a pause, a server that is down
+                                    // would turn this into a full-speed loop.
                                     sleep(2000);
                                 }
                             }
@@ -78,7 +79,7 @@ final class DevClient {
 
     private boolean waitForChange() throws Exception {
         HttpURLConnection connection = open("/wait");
-        // Más que el timeout del servidor, que responde 204 a los 30 segundos.
+        // Longer than the server's timeout, which answers 204 after 30 seconds.
         connection.setReadTimeout(45000);
         try {
             return connection.getResponseCode() == 200;

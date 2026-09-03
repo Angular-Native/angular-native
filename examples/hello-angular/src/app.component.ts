@@ -2,9 +2,9 @@ import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/c
 import { NATIVE_PRIMITIVES, type NativePressEvent } from '@angular-native/primitives'
 
 /**
- * Un componente Angular normal. Lo único distinto es que los elementos son
- * primitivas nativas: la plantilla, las señales, el `@for` y los bindings son
- * exactamente los de siempre.
+ * An ordinary Angular component. The only difference is that the elements are
+ * native primitives: the template, the signals, the `@for` and the bindings are
+ * exactly the usual ones.
  */
 @Component({
   selector: 'app-root',
@@ -32,34 +32,34 @@ import { NATIVE_PRIMITIVES, type NativePressEvent } from '@angular-native/primit
       <an-text [fontSize]="16" [color]="'#f4f7ff'">{{ tapLabel() }}</an-text>
 
       <an-text [fontSize]="16" [color]="'#9fb0d4'">
-        Esto es una plantilla de Angular con señales, corriendo en QuickJS.
-        Cada elemento es una vista nativa: UIView en iOS, View en Android.
+        This is an Angular template with signals, running on QuickJS.
+        Every element is a native view: UIView on iOS, View on Android.
       </an-text>
 
       <an-text [fontSize]="16" [color]="'#6ee7b7'">{{ label() }}</an-text>
 
       @if (seconds() >= 3) {
-        <an-text [fontSize]="14" [color]="'#f59e0b'">El &#64;if entró a los 3 segundos.</an-text>
+        <an-text [fontSize]="14" [color]="'#f59e0b'">The &#64;if came in at 3 seconds.</an-text>
       }
     </an-view>
   `
 })
 export class AppComponent {
   readonly cards = [
-    // Radios distintos por esquina, que es lo que UIKit no sabe hacer solo.
+    // A different radius per corner, which is what UIKit cannot do on its own.
     { color: '#1e2a4a', grow: 1, corners: [24, 4, 24, 4] },
     { color: '#2b1e4a', grow: 2, corners: [4, 24, 4, 24] }
   ]
 
   readonly seconds = signal(0)
-  readonly label = computed(() => `segundos en marcha: ${this.seconds()}`)
+  readonly label = computed(() => `seconds running: ${this.seconds()}`)
 
   readonly taps = signal(0)
   readonly lastPoint = signal<NativePressEvent | null>(null)
   readonly tapLabel = computed(() => {
     const point = this.lastPoint()
-    if (!point) return 'toca una tarjeta; dos toques la ponen a cero'
-    return `toques: ${this.taps()} (último en ${Math.round(point.x)}, ${Math.round(point.y)})`
+    if (!point) return 'tap a card; a double tap resets it'
+    return `taps: ${this.taps()} (last at ${Math.round(point.x)}, ${Math.round(point.y)})`
   })
 
   onPress(event: NativePressEvent): void {

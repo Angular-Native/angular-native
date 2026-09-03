@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
-# Que el shell Java compile.
+# That the Java shell compiles.
 #
-# `cargo test` y los volcados headless no tocan Java: el host de Android son
-# 2.600 líneas que hasta ahora solo se compilaban al armar el APK a mano, y una
-# tanda entera de props podía quedarse con un error de tipos sin que nada lo
-# dijera. Armar el APK sin instalarlo cuesta medio minuto y lo compila todo:
-# `aapt2` enlaza los recursos, `javac` compila el shell contra Material, y `d8`
-# lo dexa.
+# `cargo test` and the headless dumps touch no Java: the Android host is 2,600
+# lines that until now were only compiled when the APK was built by hand, and a
+# whole batch of props could sit there with a type error without anything saying
+# so. Building the APK without installing it costs half a minute and compiles
+# everything: `aapt2` links the resources, `javac` compiles the shell against
+# Material, and `d8` dexes it.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-echo "== shell Java de Android"
-# La salida va a un fichero y no a /dev/null: con `set -e` y `pipefail`, un
-# fallo de compilación dentro de un `$(...)` mata el script sin imprimir nada
-# y el comprobador se queda callado, que es justo lo que no puede pasar.
+echo "== Android Java shell"
+# The output goes to a file and not to /dev/null: with `set -e` and `pipefail`, a
+# compilation failure inside a `$(...)` kills the script without printing
+# anything and the checker is left silent, which is exactly what must not happen.
 LOG="$(mktemp)"
 trap 'rm -f "$LOG"' EXIT
 if ! cargo an android examples/controls --no-launch >"$LOG" 2>&1; then
-  echo "  FALLO el APK no llegó a armarse"
+  echo "  FAIL the APK never got built"
   tail -30 "$LOG"
   exit 1
 fi
 APK="$(tail -1 "$LOG")"
 if [ ! -f "$APK" ]; then
-  echo "  FALLO el APK no llegó a armarse"
+  echo "  FAIL the APK never got built"
   tail -30 "$LOG"
   exit 1
 fi
-echo "  ok   javac compila AnHost y compañía contra Material 3"
+echo "  ok   javac compiles AnHost and friends against Material 3"

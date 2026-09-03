@@ -1,8 +1,8 @@
 package dev.angularnative;
 
 /**
- * Cara Java del runtime en Rust. Es el equivalente exacto de la cabecera C que
- * consume el shell de iOS.
+ * The Java face of the Rust runtime. It is the exact equivalent of the C header
+ * the iOS shell consumes.
  */
 public final class AnRuntime {
 
@@ -32,31 +32,31 @@ public final class AnRuntime {
         nativeSetViewport(handle, widthDp, heightDp);
     }
 
-    /** Un frame completo. `nowMs` es la marca del Choreographer. */
+    /** One whole frame. `nowMs` is the Choreographer's timestamp. */
     public int frame(double nowMs) {
         return nativeFrame(handle, nowMs);
     }
 
-    /** Encola un evento nativo; se despacha al principio del frame siguiente. */
+    /** Queues a native event; it is dispatched at the start of the next frame. */
     public void dispatchEvent(int target, String name, float x, float y) {
         nativeDispatchEvent(handle, target, name, x, y);
     }
 
-    /** Eventos que llevan texto: escribir, entrar y salir de un campo. */
+    /** Events that carry text: typing, and entering and leaving a field. */
     public void dispatchValueEvent(int target, String name, String value) {
         nativeDispatchValueEvent(handle, target, name, value);
     }
 
     /**
-     * Gestos. Llevan más de dos cifras y un estado, así que no caben en
-     * {@link #dispatchEvent}: los nombres de los campos viajan al lado de los
-     * valores para que las dos plataformas manden exactamente lo mismo.
+     * Gestures. They carry more than two numbers plus a state, so they do not fit
+     * in {@link #dispatchEvent}: the field names travel alongside the values so
+     * that both platforms send exactly the same thing.
      */
     public void dispatchGesture(int target, String name, String state, String keys, float[] values) {
         nativeDispatchGesture(handle, target, name, state, keys, values);
     }
 
-    /** Eventos que llevan un índice: la pestaña elegida, por ejemplo. */
+    /** Events that carry an index: the selected tab, for instance. */
     public void dispatchIndexEvent(int target, String name, int index) {
         nativeDispatchIndexEvent(handle, target, name, index);
     }
@@ -70,21 +70,21 @@ public final class AnRuntime {
 
     // ── Plugins ────────────────────────────────────────────────────────────
     //
-    // No llevan `handle`: los plugins son del proceso, no de un runtime. Se
-    // registran antes de crear el primero y sobreviven a un reinicio en
-    // caliente, igual que el `.app` de iOS.
+    // They carry no `handle`: plugins belong to the process, not to a runtime.
+    // They are registered before the first one is created and survive a hot
+    // restart, just as in the iOS `.app`.
 
-    /** Guarda el registro al que Rust le pasará cada llamada. */
+    /** Keeps the registry Rust will hand every call to. */
     static void setPluginRegistry(AnPluginRegistry registry) {
         nativeSetPluginRegistry(registry);
     }
 
-    /** Da de alta un plugin por el nombre con el que JS lo invoca. */
+    /** Registers a plugin under the name JS calls it by. */
     static void registerPlugin(String name) {
         nativeRegisterPlugin(name);
     }
 
-    /** Contesta a una llamada. `json` es el valor de vuelta ya serializado. */
+    /** Answers one call. `json` is the return value, already serialised. */
     static void pluginResolve(long id, String json) {
         nativePluginResolve(id, json);
     }

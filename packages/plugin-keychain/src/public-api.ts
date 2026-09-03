@@ -92,7 +92,7 @@ export interface KeychainBacking {
  * hay llavero —Android no tiene ninguna API que guarde secretos por ti—, así
  * que el equivalente honrado es: una clave AES en el **almacén de claves de
  * Android**, que nunca sale de él, cifrando un fichero de preferencias privado
- * de la app. Lo que protege y lo que no está en `docs/plugins.md`, y conviene
+ * de la app. Lo que protege y lo que no está en `https://angular-native.dev/extending/plugins/`, y conviene
  * leerlo antes de guardar algo aquí.
  *
  * **Esto no es una base de datos.** Son cadenas cortas: un testigo de sesión,

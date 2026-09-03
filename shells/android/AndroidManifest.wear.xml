@@ -7,19 +7,18 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
-      Sin esto el APK es el del teléfono y el reloj lo trata como tal: la
-      Play Store no lo ofrece para el reloj y el sistema no aplica ninguna de
-      sus reglas de forma. Es la declaración que convierte un APK de Android
-      en un APK de Wear OS, y por eso el manifiesto es otro fichero y no una
-      línea condicional del de siempre.
+      Without this the APK is the phone's and the watch treats it as such: the
+      Play Store does not offer it for the watch and the system applies none of
+      its form-factor rules. It is the declaration that turns an Android APK
+      into a Wear OS APK, and that is why the manifest is a separate file and
+      not a conditional line in the usual one.
     -->
     <uses-feature android:name="android.hardware.type.watch" android:required="true" />
 
     <!--
-      La corona. Se declara como no obligatoria porque los relojes cuadrados
-      de Wear no siempre la traen, y una app que solo se pueda desplazar con
-      ella no debería negarse a instalarse en los que no la tienen: el dedo
-      sigue funcionando.
+      The crown. It is declared as not required because square Wear watches do
+      not always have one, and an app that can only be scrolled with it should
+      not refuse to install on the ones that do not: a finger still works.
     -->
     <uses-feature
         android:name="android.hardware.rotaryencoder.lowres"
@@ -33,9 +32,9 @@
         android:usesCleartextTraffic="true">
 
         <!--
-          Que la app no necesita un teléfono emparejado para funcionar. Sin
-          esta clave, Wear OS asume que es la mitad de una app de teléfono y
-          la esconde del lanzador si no encuentra la otra mitad.
+          That the app does not need a paired phone to work. Without this key,
+          Wear OS assumes it is one half of a phone app and hides it from the
+          launcher if it cannot find the other half.
         -->
         <meta-data
             android:name="com.google.android.wearable.standalone"

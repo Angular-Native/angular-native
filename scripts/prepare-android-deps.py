@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Deja las dependencias de Android listas para enlazar.
+"""Gets the Android dependencies ready to link.
 
-Un `.aar` es un zip con las clases, los recursos y su manifiesto. Gradle sabe
-desmontarlos; aquí se hace a mano: se extrae cada uno, se compilan sus
-recursos con `aapt2 compile` y se apunta el nombre de su paquete, que hace
-falta para generar su clase `R`.
+An `.aar` is a zip with the classes, the resources and its manifest. Gradle
+knows how to take them apart; here it is done by hand: each one is extracted,
+its resources compiled with `aapt2 compile` and its package name noted down,
+which is needed to generate its `R` class.
 
-El resultado queda en `vendor/android/build/`, y solo se rehace lo que falte:
-compilar los recursos de cincuenta librerías tarda, y no cambian nunca.
+The result ends up in `vendor/android/build/`, and only what is missing is
+redone: compiling the resources of fifty libraries takes a while, and they never
+change.
 """
 
 import os
@@ -18,81 +19,81 @@ import subprocess
 import sys
 import zipfile
 
-RAIZ = pathlib.Path(__file__).resolve().parent.parent
-VENDOR = RAIZ / "vendor" / "android"
-EXTRAIDO = VENDOR / "extracted"
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+VENDOR = ROOT / "vendor" / "android"
+EXTRACTED = VENDOR / "extracted"
 BUILD = VENDOR / "build"
 
 
 def sdk() -> pathlib.Path:
-    for candidata in [os.environ.get("ANDROID_HOME"), os.environ.get("ANDROID_SDK_ROOT"),
+    for candidate in [os.environ.get("ANDROID_HOME"), os.environ.get("ANDROID_SDK_ROOT"),
                       str(pathlib.Path.home() / "Library/Android/sdk")]:
-        if candidata and pathlib.Path(candidata).is_dir():
-            return pathlib.Path(candidata)
-    raise SystemExit("no encuentro el SDK de Android")
+        if candidate and pathlib.Path(candidate).is_dir():
+            return pathlib.Path(candidate)
+    raise SystemExit("cannot find the Android SDK")
 
 
 def aapt2() -> pathlib.Path:
-    herramientas = sorted((sdk() / "build-tools").iterdir(), reverse=True)
-    for version in herramientas:
-        binario = version / "aapt2"
-        if binario.exists():
-            return binario
-    raise SystemExit("no encuentro aapt2")
+    tools = sorted((sdk() / "build-tools").iterdir(), reverse=True)
+    for version in tools:
+        binary = version / "aapt2"
+        if binary.exists():
+            return binary
+    raise SystemExit("cannot find aapt2")
 
 
-def paquete_de(manifiesto: pathlib.Path) -> str | None:
-    if not manifiesto.exists():
+def package_of(manifest: pathlib.Path) -> str | None:
+    if not manifest.exists():
         return None
-    encontrado = re.search(r'package="([^"]+)"', manifiesto.read_text(errors="ignore"))
-    return encontrado.group(1) if encontrado else None
+    found = re.search(r'package="([^"]+)"', manifest.read_text(errors="ignore"))
+    return found.group(1) if found else None
 
 
 def main() -> int:
     BUILD.mkdir(parents=True, exist_ok=True)
-    EXTRAIDO.mkdir(parents=True, exist_ok=True)
-    compilador = aapt2()
+    EXTRACTED.mkdir(parents=True, exist_ok=True)
+    compiler = aapt2()
 
     jars: list[str] = []
     flats: list[str] = []
-    paquetes: list[str] = []
+    packages: list[str] = []
 
-    for artefacto in sorted(VENDOR.glob("*.jar")) + sorted(VENDOR.glob("*.aar")):
-        nombre = artefacto.stem
-        if artefacto.suffix == ".jar":
-            jars.append(str(artefacto))
+    for artefact in sorted(VENDOR.glob("*.jar")) + sorted(VENDOR.glob("*.aar")):
+        name = artefact.stem
+        if artefact.suffix == ".jar":
+            jars.append(str(artefact))
             continue
 
-        destino = EXTRAIDO / nombre
-        if not destino.exists():
-            with zipfile.ZipFile(artefacto) as zf:
-                zf.extractall(destino)
+        target = EXTRACTED / name
+        if not target.exists():
+            with zipfile.ZipFile(artefact) as zf:
+                zf.extractall(target)
 
-        clases = destino / "classes.jar"
-        if clases.exists():
-            jars.append(str(clases))
-        for extra in sorted((destino / "libs").glob("*.jar")) if (destino / "libs").is_dir() else []:
+        classes = target / "classes.jar"
+        if classes.exists():
+            jars.append(str(classes))
+        for extra in sorted((target / "libs").glob("*.jar")) if (target / "libs").is_dir() else []:
             jars.append(str(extra))
 
-        paquete = paquete_de(destino / "AndroidManifest.xml")
-        if paquete:
-            paquetes.append(paquete)
+        package = package_of(target / "AndroidManifest.xml")
+        if package:
+            packages.append(package)
 
-        res = destino / "res"
+        res = target / "res"
         if res.is_dir() and any(res.iterdir()):
-            flat = BUILD / f"{nombre}.zip"
+            flat = BUILD / f"{name}.zip"
             if not flat.exists():
-                print(f"  recursos de {nombre}")
+                print(f"  resources of {name}")
                 subprocess.run(
-                    [str(compilador), "compile", "--dir", str(res), "-o", str(flat)],
+                    [str(compiler), "compile", "--dir", str(res), "-o", str(flat)],
                     check=True,
                 )
             flats.append(str(flat))
 
     (BUILD / "classpath.txt").write_text("\n".join(jars))
     (BUILD / "resources.txt").write_text("\n".join(flats))
-    (BUILD / "packages.txt").write_text("\n".join(sorted(set(paquetes))))
-    print(f"==> {len(jars)} jars, {len(flats)} paquetes de recursos, {len(set(paquetes))} paquetes")
+    (BUILD / "packages.txt").write_text("\n".join(sorted(set(packages))))
+    print(f"==> {len(jars)} jars, {len(flats)} resource packages, {len(set(packages))} packages")
     return 0
 
 

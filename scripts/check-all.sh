@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Todo lo verificable sin dispositivo.
+# Everything that can be verified without a device.
 set -euo pipefail
 
-# Red de seguridad: decir qué se cayó.
+# A safety net: say what fell over.
 #
-# Un sub-script puede morirse sin llegar a imprimir su `FALLO` —basta con que
-# `set -e` lo mate dentro de un `$(...)` que tapaba la salida—, y entonces esto
-# salía con 1 y sin una sola línea que leer, que es la peor forma de fallar
-# posible: parece que no ha fallado nada. Lo que se cayó se dice aquí aunque
-# allí no se dijera nada.
-trap 'echo "  FALLO salió con error: ${BASH_COMMAND} (check-all.sh línea ${LINENO})"' ERR
+# A sub-script can die without ever printing its own `FAIL` —it is enough for
+# `set -e` to kill it inside a `$(...)` that was covering its output—, and then
+# this exited with 1 and without a single line to read, which is the worst
+# possible way of failing: it looks as though nothing failed. What fell over is
+# said here even when nothing was said there.
+trap 'echo "  FAIL exited with an error: ${BASH_COMMAND} (check-all.sh line ${LINENO})"' ERR
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-echo "== listas duplicadas"
+echo "== duplicated lists"
 "$ROOT/scripts/check-styles.sh"
 "$ROOT/scripts/check-kinds.sh"
 
@@ -22,11 +22,11 @@ echo
 "$ROOT/scripts/check-signals.sh"
 
 echo
-echo "== props que llegan a los dos hosts"
+echo "== props that reach both hosts"
 "$ROOT/scripts/check-wrapper.sh"
 
 echo
-echo "== núcleo Rust"
+echo "== Rust core"
 cargo test --quiet 2>&1 | tail -1
 
 "$ROOT/scripts/check-angular.sh"
@@ -72,16 +72,16 @@ echo
 "$ROOT/scripts/check-a11y.sh"
 
 echo
-echo "== compilación cruzada"
+echo "== cross-compilation"
 for target in aarch64-apple-ios-sim aarch64-linux-android; do
   case "$target" in
     *ios*) crate=an-ios ;;
     *) crate=an-android ;;
   esac
   if cargo build --quiet -p "$crate" --target "$target" 2>/dev/null; then
-    echo "  ok   $crate para $target"
+    echo "  ok   $crate for $target"
   else
-    echo "  FALLO $crate para $target"
+    echo "  FAIL $crate for $target"
     exit 1
   fi
 done

@@ -3,11 +3,11 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
 import type { NativeTextEvent } from '@angular-native/primitives'
 
 /**
- * Cabecera, texto de varias líneas, navegador embebido y hoja de acciones.
+ * Navigation bar, multi-line text, embedded browser and action sheet.
  *
- * La cabecera y el navegador son del sistema; la hoja de acciones la presenta
- * el sistema y no ocupa sitio en el layout. El `<an-web-view>` es una vista más:
- * ocupa lo que le dé el layout y convive con las demás.
+ * The bar and the browser belong to the system; the action sheet is presented
+ * by the system and takes up no room in the layout. The `<an-web-view>` is one
+ * more view: it takes whatever the layout gives it and lives among the rest.
  */
 @Component({
   selector: 'app-root',
@@ -18,69 +18,69 @@ import type { NativeTextEvent } from '@angular-native/primitives'
       <an-safe-area [edges]="['top', 'left', 'right']" [style.flex]="1">
         <an-navigation-bar
           [style.height]="44"
-          [title]="'Notas'"
+          [title]="'Notes'"
           [showsBack]="true"
-          [backTitle]="'Atrás'"
-          (back)="ultimo.set('atrás')" />
+          [backTitle]="'Back'"
+          (back)="last.set('back')" />
 
         <an-view [style.flex]="1" [style.padding]="'16'" [style.gap]="'12'">
-          <an-text [color]="'#94a3b8'" [fontSize]="14">último: {{ ultimo() }}</an-text>
+          <an-text [color]="'#94a3b8'" [fontSize]="14">last: {{ last() }}</an-text>
 
           <an-textarea
             [style.height]="110"
             [color]="'#e2e8f0'"
-            [value]="nota()"
-            (change)="onNota($event)"></an-textarea>
+            [value]="note()"
+            (change)="onNote($event)"></an-textarea>
 
           <an-button
-            [title]="'Compartir…'"
+            [title]="'Share…'"
             [variant]="'tonal'"
             [color]="'#6ee7b7'"
             [style.height]="44"
-            (press)="hoja.set(true)"></an-button>
+            (press)="sheet.set(true)"></an-button>
 
-          <an-web-view [style.flex]="1" [borderRadius]="12" [html]="pagina" />
+          <an-web-view [style.flex]="1" [borderRadius]="12" [html]="page" />
         </an-view>
       </an-safe-area>
 
       <an-alert
-        [visible]="hoja()"
+        [visible]="sheet()"
         [sheet]="true"
-        [title]="'Compartir la nota'"
-        [buttons]="opciones"
-        (select)="onOpcion($event)" />
+        [title]="'Share the note'"
+        [buttons]="options"
+        (select)="onOption($event)" />
     </an-view>
   `
 })
 export class AppComponent {
-  readonly opciones = ['Copiar', 'Enviar por correo', 'Cancelar']
+  readonly options = ['Copy', 'Send by email', 'Cancel']
 
-  readonly ultimo = signal('nada')
-  readonly nota = signal('Un texto de varias líneas.\nLa segunda cabe entera.')
-  readonly hoja = signal(false)
+  readonly last = signal('nothing')
+  readonly note = signal('A text of several lines.\nThe second one fits whole.')
+  readonly sheet = signal(false)
 
   /**
-   * HTML suelto en vez de una dirección: así el ejemplo no depende de que haya
-   * red, y se ve igual que si viniera de fuera.
+   * Loose HTML instead of a URL: this way the example does not depend on there
+   * being a network, and it looks the same as if it had come from outside.
    */
-  readonly pagina = `
+  readonly page = `
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <body style="margin:0;font:16px -apple-system,system-ui;background:#111a33;color:#cbd5f5">
       <div style="padding:16px">
-        <h2 style="margin:0 0 8px">Dentro de un WebView</h2>
+        <h2 style="margin:0 0 8px">Inside a WebView</h2>
         <p style="margin:0;color:#94a3b8">
-          Esto lo dibuja el navegador del sistema, no el framework.
+          This is drawn by the system browser, not by the framework.
         </p>
       </div>
     </body>`
 
-  onNota(event: NativeTextEvent): void {
-    this.nota.set(event.value)
-    this.ultimo.set(`escribiste ${event.value.length} letras`)
+  onNote(event: NativeTextEvent): void {
+    this.note.set(event.value)
+    this.last.set(`you typed ${event.value.length} characters`)
   }
 
-  onOpcion(index: number): void {
-    this.hoja.set(false)
-    this.ultimo.set(this.opciones[index] ?? 'nada')
+  onOption(index: number): void {
+    this.sheet.set(false)
+    this.last.set(this.options[index] ?? 'nothing')
   }
 }

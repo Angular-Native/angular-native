@@ -11,12 +11,12 @@ import android.view.ViewConfiguration;
 import android.widget.ScrollView;
 
 /**
- * Scroll con «tirar para recargar».
+ * A scroll view with "pull to refresh".
  *
- * Android no trae uno en la plataforma: `SwipeRefreshLayout` vive en AndroidX,
- * que es una dependencia aparte. Se detecta el arrastre hacia abajo estando
- * arriba del todo y se dibuja un arco, que es lo que hace el propio sistema,
- * para que `refreshing` signifique lo mismo que el `UIRefreshControl` de iOS.
+ * Android ships none in the platform: `SwipeRefreshLayout` lives in AndroidX,
+ * which is a separate dependency. The downward drag while scrolled to the very
+ * top is detected and an arc is drawn, which is what the system itself does, so
+ * that `refreshing` means the same thing as the iOS `UIRefreshControl`.
  */
 public final class AnScrollView extends ScrollView {
 
@@ -24,7 +24,7 @@ public final class AnScrollView extends ScrollView {
         void onRefresh();
     }
 
-    /** Cuánto hay que tirar, en dp, para que cuente. */
+    /** How far it has to be pulled, in dp, for it to count. */
     private static final float THRESHOLD_DP = 72;
 
     private final float density;
@@ -33,7 +33,7 @@ public final class AnScrollView extends ScrollView {
 
     private OnRefresh listener;
     private boolean refreshing;
-    /** Si el dedo mueve el contenido. Sigue recortando igual. */
+    /** Whether the finger moves the content. It keeps clipping either way. */
     private boolean scrollEnabled = true;
     private float startY = Float.NaN;
     private float pull;
@@ -65,16 +65,16 @@ public final class AnScrollView extends ScrollView {
     }
 
     /**
-     * Deja que la corona del reloj desplace esta vista.
+     * Lets the watch crown scroll this view.
      *
-     * Los eventos de la corona llegan a la vista que tiene el foco, y una lista
-     * no lo pide sola: sin `setFocusableInTouchMode` el sistema los manda a
-     * quien sea que lo tenga —normalmente a nadie— y la corona no hace nada,
-     * sin error ninguno.
+     * Crown events reach the view that has the focus, and a list does not ask
+     * for it on its own: without `setFocusableInTouchMode` the system sends them
+     * to whoever does have it —usually nobody— and the crown does nothing, with
+     * no error at all.
      *
-     * Se enciende solo en el reloj y no siempre: en un teléfono, una vista
-     * scrollable que pide el foco al tocarla se lo quita al `EditText` que
-     * hubiera debajo, y eso sí se nota.
+     * It is only turned on on the watch, and not always: on a phone, a
+     * scrollable view that takes the focus when touched takes it away from the
+     * `EditText` underneath, and that is very noticeable.
      */
     public void enableRotary() {
         rotary = true;
@@ -93,16 +93,16 @@ public final class AnScrollView extends ScrollView {
     }
 
     /**
-     * La corona giratoria.
+     * The rotary crown.
      *
-     * No es un toque: llega como `ACTION_SCROLL` desde `SOURCE_ROTARY_ENCODER`,
-     * por el camino de los eventos genéricos y no por el de los táctiles, que
-     * es por lo que `onTouchEvent` nunca la vio. El valor de `AXIS_SCROLL` va
-     * en muescas de rueda, no en píxeles: lo que las convierte es el factor de
-     * desplazamiento del sistema, el mismo que usa un ratón.
+     * It is not a touch: it arrives as `ACTION_SCROLL` from
+     * `SOURCE_ROTARY_ENCODER`, along the generic event path and not the touch
+     * one, which is why `onTouchEvent` never saw it. The `AXIS_SCROLL` value is
+     * in wheel detents, not pixels: what converts them is the system's scroll
+     * factor, the same one a mouse uses.
      *
-     * El signo se invierte porque la corona hacia arriba devuelve valores
-     * positivos y bajar por la lista es aumentar `scrollY`.
+     * The sign is inverted because turning the crown upwards returns positive
+     * values and going down the list means increasing `scrollY`.
      */
     @Override
     public boolean onGenericMotionEvent(MotionEvent event) {
@@ -112,13 +112,14 @@ public final class AnScrollView extends ScrollView {
             float notches = event.getAxisValue(MotionEvent.AXIS_SCROLL);
             float pixels =
                     -notches * ViewConfiguration.get(getContext()).getScaledVerticalScrollFactor();
-            // `scrollBy` no recorta por sí solo; sin el tope, la corona sigue
-            // «desplazando» una lista que ya se acabó y el evento `scroll` que
-            // sale de aquí contaría un desplazamiento que no ocurrió.
+            // `scrollBy` does not clamp on its own; without the cap, the crown
+            // keeps "scrolling" a list that has already ended and the `scroll`
+            // event that comes out of here would report a scroll that never
+            // happened.
             int max = Math.max(0, contentHeight() - getHeight());
-            int destino = Math.min(max, Math.max(0, getScrollY() + Math.round(pixels)));
-            if (destino != getScrollY()) {
-                scrollTo(0, destino);
+            int target = Math.min(max, Math.max(0, getScrollY() + Math.round(pixels)));
+            if (target != getScrollY()) {
+                scrollTo(0, target);
             }
             return true;
         }
@@ -130,11 +131,11 @@ public final class AnScrollView extends ScrollView {
     }
 
     /**
-     * Sin gesto, el `ScrollView` no llega ni a mirar el toque.
+     * With no gesture, the `ScrollView` does not even get to look at the touch.
      *
-     * Android no tiene un `setScrollEnabled` como el de UIKit: lo que hay es
-     * decidir si se intercepta el arrastre, así que se dice aquí y el toque
-     * sigue su camino hacia los hijos.
+     * Android has no `setScrollEnabled` like UIKit's: what there is is deciding
+     * whether to intercept the drag, so it is said here and the touch carries on
+     * its way down to the children.
      */
     @Override
     public boolean onInterceptTouchEvent(MotionEvent event) {
@@ -182,7 +183,7 @@ public final class AnScrollView extends ScrollView {
         if (!refreshing && pull <= 0) {
             return;
         }
-        // Mientras se tira, el arco crece con el dedo; una vez recargando, gira.
+        // While being pulled, the arc grows with the finger; once refreshing, it spins.
         float radius = 10 * density;
         float centerX = getWidth() / 2f;
         float centerY = getScrollY() + 28 * density;

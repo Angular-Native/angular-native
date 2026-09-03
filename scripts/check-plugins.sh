@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# Plugins: que se descubran, que se enlacen y que contesten.
+# Plugins: that they are discovered, that they link and that they answer.
 #
-# Cubre las tres mitades del sistema sin simulador ni emulador:
+# It covers the three halves of the system with no simulator and no emulator:
 #
-#   1. Descubrimiento — `an plugins` encuentra el plugin por las dependencias
-#      del package.json de la app, y dice qué plataformas cubre.
-#   2. La plataforma que falta da la cara — un plugin que solo trae iOS para el
-#      build de Android, con un mensaje que dice cuál y por qué.
-#   3. La llamada va y vuelve — el ejemplo llama al módulo, la promesa resuelve
-#      y lo que contestó acaba en pantalla; sin plugin, se rechaza y se ve.
+#   1. Discovery — `an plugins` finds the plugin through the dependencies of the
+#      app's package.json, and says which platforms it covers.
+#   2. The missing platform owns up — a plugin that only ships iOS, for the
+#      Android build, with a message that says which one and why.
+#   3. The call goes out and comes back — the example calls the module, the
+#      promise resolves and the answer ends up on screen; with no plugin, it is
+#      rejected and it shows.
 #
-# Y luego lo que sí cuesta medio minuto pero compila de verdad: armar el .app y
-# el APK del ejemplo. Ahí es donde se comprueba que las fuentes Swift y Java del
-# plugin entran en la misma invocación de `swiftc` y de `javac` que el shell, y
-# que el registro generado compila.
+# And then the part that does take half a minute but really compiles: building
+# the example's .app and APK. That is where it is checked that the plugin's
+# Swift and Java sources go into the same `swiftc` and `javac` invocation as the
+# shell, and that the generated registry compiles.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -21,131 +22,142 @@ cd "$ROOT"
 
 fail=0
 ok() { echo "  ok   $1"; }
-ko() { echo "  FALLO $1"; fail=1; }
+ko() { echo "  FAIL $1"; fail=1; }
 
-# Comprueba que una salida contenga un patrón. El `-e` no sobra: hay patrones
-# que empiezan por guion y sin él grep los toma por opciones suyas.
-contiene() {
+# Check that some output contains a pattern. The `-e` is not redundant: there
+# are patterns starting with a dash, and without it grep takes them for options
+# of its own.
+contains() {
   if grep -qE -e "$2" <<<"$1"; then ok "$3"; else ko "$3"; fi
 }
 
 echo "== plugins"
 
-# ── 1. Descubrimiento ───────────────────────────────────────────────────────
-LISTA="$(cargo an plugins examples/clipboard 2>&1)"
-contiene "$LISTA" '^clipboard  \(@angular-native/plugin-clipboard\)' \
-  'el plugin se descubre por la dependencia del package.json'
-contiene "$LISTA" 'ios \+ android' 'y dice que cubre las dos plataformas'
-contiene "$LISTA" 'packages/plugin-clipboard' 'y de dónde salió el paquete'
+# ── 1. Discovery ────────────────────────────────────────────────────────────
+LIST="$(cargo an plugins examples/clipboard 2>&1)"
+contains "$LIST" '^clipboard  \(@angular-native/plugin-clipboard\)' \
+  'the plugin is discovered through the package.json dependency'
+contains "$LIST" 'ios \+ android' 'and it says it covers both platforms'
+contains "$LIST" 'packages/plugin-clipboard' 'and where the package came from'
 
-SIN="$(cargo an plugins examples/kitchen 2>&1)"
-contiene "$SIN" 'no depende de ningún plugin' 'una app sin plugins lo dice y no inventa ninguno'
+# The CLI is a crate and is being translated on its own branch, so the patterns
+# that read its prose accept either language.
+NONE="$(cargo an plugins examples/kitchen 2>&1)"
+contains "$NONE" '(no depende de ningún plugin|depends on no plugin|not depend on any plugin)' \
+  'an app with no plugins says so and does not invent one'
 
 for platform in ios android; do
   if cargo an plugins examples/clipboard --platform "$platform" >/dev/null 2>&1; then
-    ok "el ejemplo pasa la comprobación de $platform"
+    ok "the example passes the $platform check"
   else
-    ko "el ejemplo debería pasar la comprobación de $platform"
+    ko "the example should pass the $platform check"
   fi
 done
 
-# ── 2. La plataforma que falta da la cara ───────────────────────────────────
+# ── 2. The missing platform owns up ─────────────────────────────────────────
 #
-# Con un plugin de mentira que solo declara iOS. Se monta en `build/` para no
-# meter un paquete de pega en los workspaces del repo: lo que se prueba es la
-# resolución de dependencias, y `node_modules` dentro de la app es justo por
-# donde Node —y `an`— buscan primero.
+# With a fake plugin that only declares iOS. It is set up under `build/` so as
+# not to put a sham package into the repo's workspaces: what is being tested is
+# dependency resolution, and `node_modules` inside the app is exactly where Node
+# —and `an`— look first.
 FIXTURE="$ROOT/build/plugins-fixture"
 rm -rf "$FIXTURE"
-mkdir -p "$FIXTURE/app/node_modules/@fixture/solo-ios/native/ios"
+mkdir -p "$FIXTURE/app/node_modules/@fixture/ios-only/native/ios"
 cat >"$FIXTURE/app/package.json" <<'JSON'
 {
-  "name": "@fixture/app-solo-ios",
+  "name": "@fixture/app-ios-only",
   "private": true,
-  "dependencies": { "@fixture/solo-ios": "0.0.1" }
+  "dependencies": { "@fixture/ios-only": "0.0.1" }
 }
 JSON
-# `an` solo pide que exista para reconocer el directorio como app.
+# `an` only asks that it exists to recognise the directory as an app.
 echo '{}' >"$FIXTURE/app/tsconfig.json"
-cat >"$FIXTURE/app/node_modules/@fixture/solo-ios/package.json" <<'JSON'
+cat >"$FIXTURE/app/node_modules/@fixture/ios-only/package.json" <<'JSON'
 {
-  "name": "@fixture/solo-ios",
+  "name": "@fixture/ios-only",
   "version": "0.0.1",
   "angularNative": {
-    "module": "soloios",
-    "ios": { "sources": "native/ios", "register": "SoloIosPlugin" }
+    "module": "iosonly",
+    "ios": { "sources": "native/ios", "register": "IosOnlyPlugin" }
   }
 }
 JSON
-echo '// solo para que el directorio tenga una fuente' \
-  >"$FIXTURE/app/node_modules/@fixture/solo-ios/native/ios/SoloIosPlugin.swift"
+echo '// only so the directory has a source in it' \
+  >"$FIXTURE/app/node_modules/@fixture/ios-only/native/ios/IosOnlyPlugin.swift"
 
 if cargo an plugins build/plugins-fixture/app --platform ios >/dev/null 2>&1; then
-  ok 'un plugin que solo trae iOS pasa la comprobación de iOS'
+  ok 'a plugin that only ships iOS passes the iOS check'
 else
-  ko 'un plugin que solo trae iOS debería pasar la comprobación de iOS'
+  ko 'a plugin that only ships iOS should pass the iOS check'
 fi
 
-if NEGATIVO="$(cargo an plugins build/plugins-fixture/app --platform android 2>&1)"; then
-  ko 'compilar para Android con un plugin que solo trae iOS tendría que fallar'
+if NEGATIVE="$(cargo an plugins build/plugins-fixture/app --platform android 2>&1)"; then
+  ko 'building for Android with a plugin that only ships iOS should fail'
 else
-  ok 'compilar para Android con un plugin que solo trae iOS falla'
-  contiene "$NEGATIVO" '@fixture/solo-ios' 'y el mensaje dice qué paquete es'
-  contiene "$NEGATIVO" 'no se puede compilar para Android' 'y para qué plataforma'
-  contiene "$NEGATIVO" 'angularNative.android' 'y qué hay que hacer para arreglarlo'
+  ok 'building for Android with a plugin that only ships iOS fails'
+  contains "$NEGATIVE" '@fixture/ios-only' 'and the message says which package it is'
+  contains "$NEGATIVE" '(no se puede compilar para Android|cannot be built for Android)' \
+    'and for which platform'
+  contains "$NEGATIVE" 'angularNative.android' 'and what has to be done to fix it'
 fi
 rm -rf "$FIXTURE"
 
-# ── 3. La llamada va y vuelve ───────────────────────────────────────────────
+# ── 3. The call goes out and comes back ─────────────────────────────────────
 cargo an build examples/clipboard >/dev/null
-ok 'el bundle compila con el import del plugin resuelto'
+ok 'the bundle compiles with the plugin import resolved'
 
-# Con el plugin contestando. `AN_PLUGINS` monta un módulo de respuestas fijas
-# por cada nombre: los plugins de verdad son Swift y Java, y aquí no hay
-# ninguno de los dos, pero el camino —registro, llamada, promesa— es el mismo.
-CON="$(AN_PLUGINS='{"clipboard":{"read":"texto de prueba","write":null,"hasText":true}}' \
+# With the plugin answering. `AN_PLUGINS` mounts a module of canned answers for
+# each name: real plugins are Swift and Java, and there is neither of the two
+# here, but the path —registry, call, promise— is the same one.
+WITH="$(AN_PLUGINS='{"clipboard":{"read":"test text","write":null,"hasText":true}}' \
   cargo run -q -p an-bridge --example headless -- build/bundle/clipboard/main.js 6 2>&1)"
-contiene "$CON" '-- plugin de mentira: clipboard' 'el módulo se registra con el nombre de su package.json'
-contiene "$CON" 'en el portapapeles: texto de prueba' 'lo que contestó el plugin llega a la pantalla'
-contiene "$CON" '"copiado"' 'y el toque escribió: write resolvió y disparó la relectura'
+contains "$WITH" '(plugin de mentira|fake plugin|stub plugin): clipboard' \
+  'the module is registered under the name from its package.json'
+contains "$WITH" 'on the clipboard: test text' "what the plugin answered reaches the screen"
+contains "$WITH" '"copied"' 'and the tap wrote: write resolved and triggered the re-read'
 
-# Sin plugin: la promesa se rechaza y se ve. Es la mitad que más importa —un
-# método que se traga la llamada dejaría esta misma pantalla con un guion y sin
-# ninguna pista de por qué.
-SIN_PLUGIN="$(cargo run -q -p an-bridge --example headless -- build/bundle/clipboard/main.js 4 2>&1)"
-contiene "$SIN_PLUGIN" 'el portapapeles falló: Error: no hay nin' \
-  'sin plugin la promesa se rechaza diciendo que el módulo no existe'
-
-# Un método que el plugin no declara tampoco se traga.
-OTRO="$(AN_PLUGINS='{"clipboard":{"read":"algo"}}' \
-  cargo run -q -p an-bridge --example headless -- build/bundle/clipboard/main.js 4 2>&1)"
-contiene "$OTRO" 'el portapapeles falló: Error: el plugin' \
-  'un método que el plugin no atiende rechaza la promesa'
-
-# ── 4. Que compile de verdad ────────────────────────────────────────────────
+# With no plugin: the promise is rejected and it shows. This is the half that
+# matters most —a method that swallowed the call would leave this same screen
+# with a dash on it and no hint at all as to why.
 #
-# Lo anterior no toca ni Swift ni Java. Armar el .app y el APK sin instalarlos
-# sí: `swiftc` compila el plugin junto al shell, `javac` lo mismo, y los dos
-# tienen que ver el registro que `an` acaba de generar.
+# The pattern is short because the dump truncates node text at forty characters,
+# and the prefix the example writes eats twenty-nine of them: only eleven of the
+# bridge's own message survive. Those eleven come from a crate translated on
+# another branch, so both openings are accepted.
+WITHOUT="$(cargo run -q -p an-bridge --example headless -- build/bundle/clipboard/main.js 4 2>&1)"
+contains "$WITHOUT" 'the clipboard failed: Error: (no hay ning|no native|there is no)' \
+  'with no plugin the promise is rejected saying the module does not exist'
+
+# A method the plugin does not declare is not swallowed either.
+OTHER="$(AN_PLUGINS='{"clipboard":{"read":"something"}}' \
+  cargo run -q -p an-bridge --example headless -- build/bundle/clipboard/main.js 4 2>&1)"
+contains "$OTHER" 'the clipboard failed: Error: (el plugin|the plugin)' \
+  'a method the plugin does not serve rejects the promise'
+
+# ── 4. That it really compiles ──────────────────────────────────────────────
+#
+# None of the above touches Swift or Java. Building the .app and the APK without
+# installing them does: `swiftc` compiles the plugin alongside the shell,
+# `javac` likewise, and both have to see the registry `an` has just generated.
 if cargo an ios examples/clipboard --no-launch >/dev/null 2>&1; then
-  ok 'swiftc compila el plugin y su registro dentro del .app'
+  ok 'swiftc compiles the plugin and its registry into the .app'
 else
-  ko 'el .app con el plugin no llegó a armarse'
+  ko 'the .app with the plugin never got built'
   cargo an ios examples/clipboard --no-launch 2>&1 | tail -20
 fi
-GENERADO="build/ios/generated/AnGeneratedPlugins.swift"
-if [ -f "$GENERADO" ]; then
-  contiene "$(cat "$GENERADO")" 'AnPluginRegistry.register\("clipboard", AnClipboardPlugin\(\)\)' \
-    'el registro de iOS enlaza el nombre del manifiesto con el tipo Swift'
+GENERATED="build/ios/generated/AnGeneratedPlugins.swift"
+if [ -f "$GENERATED" ]; then
+  contains "$(cat "$GENERATED")" 'AnPluginRegistry.register\("clipboard", AnClipboardPlugin\(\)\)' \
+    'the iOS registry links the manifest name to the Swift type'
 else
-  ko 'no se generó el registro de iOS'
+  ko 'the iOS registry was not generated'
 fi
 
-# El build va a un fichero y no dentro de un `$(...)` con la salida tapada.
-# Con `set -e` y `pipefail`, una asignación así no llega nunca a la rama del
-# `ko`: el fallo del build mata el script en la propia línea, y como su salida
-# iba a /dev/null, `check-all` se quedaba saliendo con 1 sin una sola línea que
-# leer. Es lo que pasa cuando falta `vendor/android`.
+# The build goes to a file and not inside a `$(...)` with its output covered up.
+# With `set -e` and `pipefail`, an assignment like that never reaches the `ko`
+# branch: the build failure kills the script on that very line, and since its
+# output went to /dev/null, `check-all` was left exiting with 1 without a single
+# line to read. That is what happens when `vendor/android` is missing.
 APK_LOG="$(mktemp)"
 if cargo an android examples/clipboard --no-launch >"$APK_LOG" 2>&1; then
   APK="$(tail -1 "$APK_LOG")"
@@ -153,19 +165,19 @@ else
   APK=""
 fi
 if [ -n "$APK" ] && [ -f "$APK" ]; then
-  ok 'javac compila el plugin y su registro dentro del APK'
+  ok 'javac compiles the plugin and its registry into the APK'
 else
-  ko 'el APK con el plugin no llegó a armarse'
+  ko 'the APK with the plugin never got built'
   tail -20 "$APK_LOG"
 fi
 rm -f "$APK_LOG"
-GENERADO="build/android/gen-plugins/dev/angularnative/AnGeneratedPlugins.java"
-if [ -f "$GENERADO" ]; then
-  contiene "$(cat "$GENERADO")" \
+GENERATED="build/android/gen-plugins/dev/angularnative/AnGeneratedPlugins.java"
+if [ -f "$GENERATED" ]; then
+  contains "$(cat "$GENERATED")" \
     'AnPluginRegistry.register\("clipboard", new dev.angularnative.plugins.ClipboardPlugin\(\)\);' \
-    'el registro de Android enlaza el nombre del manifiesto con la clase Java'
+    'the Android registry links the manifest name to the Java class'
 else
-  ko 'no se generó el registro de Android'
+  ko 'the Android registry was not generated'
 fi
 
 exit "$fail"

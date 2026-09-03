@@ -1,5 +1,5 @@
-// Punto de entrada. Sin storyboard y sin SceneDelegate: la app es una ventana
-// con un único UIViewController del que cuelga el árbol que dibuja Rust.
+// Entry point. No storyboard and no SceneDelegate: the app is a window with a
+// single UIViewController from which hangs the tree Rust draws.
 import UIKit
 
 UIApplicationMain(

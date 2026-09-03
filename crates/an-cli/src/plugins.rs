@@ -379,7 +379,7 @@ fn read_dict(
             bail!(
                 "{}: angularNative.ios.{section}[{key:?}] es {value}; solo se admiten cadenas, \
                  booleanos, números y listas de cadenas. Un diccionario anidado todavía no se \
-                 funde. Ver docs/plugins.md.",
+                 funde. Ver https://angular-native.dev/extending/plugins/.",
                 manifest.display()
             );
         }
@@ -452,7 +452,7 @@ fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<Ma
             }
             other => bail!(
                 "{}: angularNative.android.manifest no sabe de {other:?}; de momento solo se \
-                 aportan \"uses-permission\" y \"uses-feature\". Ver docs/plugins.md.",
+                 aportan \"uses-permission\" y \"uses-feature\". Ver https://angular-native.dev/extending/plugins/.",
                 manifest.display()
             ),
         }
@@ -647,7 +647,7 @@ pub fn sources(plugin: &Plugin, platform: Platform) -> Result<Vec<String>> {
         // files in it.
         bail!(
             "{}: {} lleva fuentes Kotlin y todavía no se compilan; el lado Android \
-             de un plugin es Java. Ver docs/plugins.md.",
+             de un plugin es Java. Ver https://angular-native.dev/extending/plugins/.",
             plugin.package,
             native.sources.display()
         );

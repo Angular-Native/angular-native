@@ -7,12 +7,12 @@ import type {
 } from '@angular-native/primitives'
 
 /**
- * Los controles de elegir: segmentos, desplegable, pasos, búsqueda y fecha.
+ * The controls for choosing: segments, dropdown, stepper, search and date.
  *
- * Todos son del sistema donde el sistema los tiene. Los dos que Android no
- * trae en la plataforma —el segmentado y el de pasos— se dibujan con vistas
- * del sistema respetando su aspecto actual, y se dice cuál es cuál en vez de
- * hacer como si fueran nativos.
+ * All of them belong to the system wherever the system has them. The two
+ * Android does not ship in the platform —the segmented control and the
+ * stepper— are drawn with system views respecting their current look, and it
+ * is said which is which instead of pretending they are native.
  */
 @Component({
   selector: 'app-root',
@@ -21,97 +21,97 @@ import type {
   template: `
     <an-view [style.width]="'100%'" [style.height]="'100%'" [backgroundColor]="'#0b1020'">
       <an-safe-area [style.flex]="1" [padding]="20" [style.gap]="18">
-        <an-text [fontSize]="26" [fontWeight]="700" [color]="'#f8fafc'">elegir</an-text>
+        <an-text [fontSize]="26" [fontWeight]="700" [color]="'#f8fafc'">choose</an-text>
 
         <an-search-bar
           [style.height]="52"
-          [placeholder]="'Buscar…'"
+          [placeholder]="'Search…'"
           (input)="onSearch($event)" />
-        <an-text [color]="'#94a3b8'" [fontSize]="14">{{ busqueda() || 'sin buscar nada' }}</an-text>
+        <an-text [color]="'#94a3b8'" [fontSize]="14">{{ search() || 'nothing searched for' }}</an-text>
 
         <an-segmented-control
           [style.height]="36"
-          [items]="vistas"
-          [selectedIndex]="vista()"
+          [items]="views"
+          [selectedIndex]="view()"
           [color]="'#6ee7b7'"
-          (change)="onVista($event)" />
-        <an-text [color]="'#94a3b8'" [fontSize]="14">vista: {{ vistas[vista()] }}</an-text>
+          (change)="onView($event)" />
+        <an-text [color]="'#94a3b8'" [fontSize]="14">view: {{ views[view()] }}</an-text>
 
         <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'16'">
-          <an-text [color]="'#cbd5f5'" [style.flexGrow]="'1'">Prioridad</an-text>
+          <an-text [color]="'#cbd5f5'" [style.flexGrow]="'1'">Priority</an-text>
           <an-select
             [style.width]="150"
             [style.height]="40"
-            [items]="prioridades"
-            [selectedIndex]="prioridad()"
-            (change)="prioridad.set($event.index)" />
+            [items]="priorities"
+            [selectedIndex]="priority()"
+            (change)="priority.set($event.index)" />
         </an-view>
 
         <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'16'">
-          <an-text [color]="'#cbd5f5'" [style.flexGrow]="'1'">Cantidad: {{ cantidad() }}</an-text>
+          <an-text [color]="'#cbd5f5'" [style.flexGrow]="'1'">Quantity: {{ quantity() }}</an-text>
           <an-stepper
             [style.width]="140"
             [style.height]="40"
-            [value]="cantidad()"
+            [value]="quantity()"
             [minimumValue]="0"
             [maximumValue]="10"
-            (change)="cantidad.set($event.value)" />
+            (change)="quantity.set($event.value)" />
         </an-view>
 
         <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'16'">
-          <an-text [color]="'#cbd5f5'" [style.flexGrow]="'1'">Fecha</an-text>
+          <an-text [color]="'#cbd5f5'" [style.flexGrow]="'1'">Date</an-text>
           <an-date-picker
             [style.width]="180"
             [style.height]="40"
-            [value]="fecha()"
-            (change)="fecha.set($event.value)" />
+            [value]="date()"
+            (change)="date.set($event.value)" />
         </an-view>
 
-        <!-- Las tres variantes de botón, que es lo que las separa de un texto. -->
+        <!-- The three button variants, which is what tells them from a text. -->
         <an-view [style.flexDirection]="'row'" [style.gap]="'12'" [style.height]="48">
           <an-button
             [style.flexGrow]="'1'"
-            [title]="'Texto'"
+            [title]="'Text'"
             [color]="'#6ee7b7'"
-            (press)="pulsado.set('texto')"></an-button>
+            (press)="pressed.set('text')"></an-button>
           <an-button
             [style.flexGrow]="'1'"
             [title]="'Tonal'"
             [variant]="'tonal'"
             [color]="'#6ee7b7'"
-            (press)="pulsado.set('tonal')"></an-button>
+            (press)="pressed.set('tonal')"></an-button>
           <an-button
             [style.flexGrow]="'1'"
-            [title]="'Relleno'"
+            [title]="'Filled'"
             [variant]="'filled'"
             [color]="'#6ee7b7'"
-            (press)="pulsado.set('relleno')"></an-button>
+            (press)="pressed.set('filled')"></an-button>
         </an-view>
-        <an-text [color]="'#94a3b8'" [fontSize]="14">último botón: {{ pulsado() }}</an-text>
+        <an-text [color]="'#94a3b8'" [fontSize]="14">last button: {{ pressed() }}</an-text>
       </an-safe-area>
     </an-view>
   `
 })
 export class AppComponent {
-  readonly vistas = ['Día', 'Semana', 'Mes']
-  readonly prioridades = ['Baja', 'Normal', 'Alta']
+  readonly views = ['Day', 'Week', 'Month']
+  readonly priorities = ['Low', 'Normal', 'High']
 
-  readonly busqueda = signal('')
-  readonly vista = signal(1)
-  readonly prioridad = signal(1)
-  readonly cantidad = signal(3)
-  readonly fecha = signal(Date.now())
-  readonly pulsado = signal('ninguno')
+  readonly search = signal('')
+  readonly view = signal(1)
+  readonly priority = signal(1)
+  readonly quantity = signal(3)
+  readonly date = signal(Date.now())
+  readonly pressed = signal('none')
 
   onSearch(event: NativeTextEvent): void {
-    this.busqueda.set(event.value)
+    this.search.set(event.value)
   }
 
-  onVista(event: NativeIndexEvent): void {
-    this.vista.set(event.index)
+  onView(event: NativeIndexEvent): void {
+    this.view.set(event.index)
   }
 
-  onCantidad(event: NativeValueEvent): void {
-    this.cantidad.set(event.value)
+  onQuantity(event: NativeValueEvent): void {
+    this.quantity.set(event.value)
   }
 }

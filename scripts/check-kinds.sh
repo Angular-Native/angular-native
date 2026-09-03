@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Que la etiqueta, el nombre de la primitiva y el código del protocolo sigan
-# diciendo lo mismo.
+# That the tag, the primitive's name and the protocol's code still say the same
+# thing.
 #
-# La etiqueta no se traduce con una tabla: se le quita `an-` y se junta en
-# PascalCase. Eso quita una lista que mantener, pero deja una cadena de tres
-# eslabones —selector de la directiva, `NATIVE_KINDS` del renderer, `KIND` del
-# prelude— que se puede romper por cualquiera de ellos sin que nada falle a la
-# vista: un nombre que no case sale del renderer como envoltorio, se monta como
-# una vista de más y no da error. Mismo trato que `check-styles.sh` y por el
-# mismo motivo.
+# The tag is not translated with a table: `an-` is stripped off and the rest is
+# joined into PascalCase. That removes one list to maintain, but leaves a chain
+# of three links —the directive's selector, the renderer's `NATIVE_KINDS`, the
+# prelude's `KIND`— that can be broken by any one of them without anything
+# failing visibly: a name that does not match comes out of the renderer as a
+# wrapper, mounts as one extra view and raises no error. Same treatment as
+# `check-styles.sh` and for the same reason.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,79 +17,79 @@ cd "$ROOT"
 python3 - "$ROOT" <<'PY'
 import pathlib, re, sys
 
-raiz = pathlib.Path(sys.argv[1])
+root = pathlib.Path(sys.argv[1])
 
-# Los dos nombres que el núcleo no puede cambiar. `Picker` y `TextEditor` se
-# eligieron cuando la etiqueta no podía llamarse `Select` ni `TextArea` porque
-# Angular no auto-cierra lo que se llame como un elemento de HTML; con prefijo
-# la etiqueta ya recuperó su nombre, pero el enum de Rust y los tres hosts
-# siguen con el viejo, y renombrarlos sería cambiar el protocolo.
-NATURALES = {'Select': 'Picker', 'Textarea': 'TextEditor'}
+# The two names the core cannot change. `Picker` and `TextEditor` were chosen
+# when the tag could not be called `Select` or `TextArea` because Angular does
+# not self-close anything named like an HTML element; with a prefix the tag got
+# its name back, but the Rust enum and the three hosts still carry the old one,
+# and renaming them would mean changing the protocol.
+NATURAL = {'Select': 'Picker', 'Textarea': 'TextEditor'}
 
 
-def de_etiqueta(tag):
-    """La misma regla que el renderer: quitar `an-` y juntar en PascalCase."""
+def from_tag(tag):
+    """The same rule as the renderer: strip `an-` and join into PascalCase."""
     return re.sub(r'(^|-)([a-z])', lambda m: m.group(2).upper(), tag[len('an-'):])
 
 
-fallos = []
+failures = []
 
-# 1. Selector de cada directiva -> nombre de primitiva.
-directivas = (raiz / 'packages/primitives/src/primitives.ts').read_text()
-etiquetas = re.findall(r"@Directive\(\{ selector: '([^']+)' \}\)", directivas)
-sin_prefijo = [t for t in etiquetas if not t.startswith('an-')]
-if sin_prefijo:
-    fallos.append(f"  FALLO estas etiquetas no llevan el prefijo an-: {', '.join(sin_prefijo)}")
-desde_etiquetas = [de_etiqueta(t) for t in etiquetas if t.startswith('an-')]
+# 1. Each directive's selector -> primitive name.
+directives = (root / 'packages/primitives/src/primitives.ts').read_text()
+tags = re.findall(r"@Directive\(\{ selector: '([^']+)' \}\)", directives)
+unprefixed = [t for t in tags if not t.startswith('an-')]
+if unprefixed:
+    failures.append(f"  FAIL these tags do not carry the an- prefix: {', '.join(unprefixed)}")
+from_tags = [from_tag(t) for t in tags if t.startswith('an-')]
 
-# 2. La lista del renderer.
-renderer = (raiz / 'packages/platform-native/src/native-node.ts').read_text()
-cuerpo = renderer[renderer.index('const NATIVE_KINDS = ['):renderer.index('] as const')]
-del_renderer = re.findall(r"'([^']+)'", cuerpo)
+# 2. The renderer's list.
+renderer = (root / 'packages/platform-native/src/native-node.ts').read_text()
+body = renderer[renderer.index('const NATIVE_KINDS = ['):renderer.index('] as const')]
+from_renderer = re.findall(r"'([^']+)'", body)
 
-# 3. La del prelude, con su código.
-prelude = (raiz / 'packages/runtime/runtime.js').read_text()
-cuerpo = prelude[prelude.index('const KIND = {'):]
-cuerpo = cuerpo[:cuerpo.index('}')]
-del_prelude = {n: int(c) for n, c in re.findall(r'(\w+): (\d+)', cuerpo)}
+# 3. The prelude's, with its code.
+prelude = (root / 'packages/runtime/runtime.js').read_text()
+body = prelude[prelude.index('const KIND = {'):]
+body = body[:body.index('}')]
+from_prelude = {n: int(c) for n, c in re.findall(r'(\w+): (\d+)', body)}
 
-# 4. La de Rust, con su código.
-protocolo = (raiz / 'crates/an-bridge/src/protocol.rs').read_text()
-cuerpo = protocolo[protocolo.index('pub fn kind_from_byte'):protocolo.index('pub fn kind_to_byte')]
-del_nucleo = {int(c): n for c, n in re.findall(r'(\d+) => NodeKind::(\w+)', cuerpo)}
+# 4. Rust's, with its code.
+protocol = (root / 'crates/an-bridge/src/protocol.rs').read_text()
+body = protocol[protocol.index('pub fn kind_from_byte'):protocol.index('pub fn kind_to_byte')]
+from_core = {int(c): n for c, n in re.findall(r'(\d+) => NodeKind::(\w+)', body)}
 
-faltan = sorted(set(desde_etiquetas) - set(del_renderer))
-sobran = sorted(set(del_renderer) - set(desde_etiquetas))
-if faltan:
-    fallos.append(f"  FALLO en NATIVE_KINDS faltan: {', '.join(faltan)}")
-if sobran:
-    fallos.append(f"  FALLO NATIVE_KINDS tiene primitivas sin directiva: {', '.join(sobran)}")
+missing = sorted(set(from_tags) - set(from_renderer))
+extra = sorted(set(from_renderer) - set(from_tags))
+if missing:
+    failures.append(f"  FAIL NATIVE_KINDS is missing: {', '.join(missing)}")
+if extra:
+    failures.append(f"  FAIL NATIVE_KINDS has primitives with no directive: {', '.join(extra)}")
 
-# `RawText` no se escribe en ninguna plantilla: no tiene etiqueta ni directiva.
-faltan = sorted(set(del_renderer) - set(del_prelude))
-sobran = sorted(set(del_prelude) - set(del_renderer) - {'RawText'})
-if faltan:
-    fallos.append(f"  FALLO el prelude no sabe mandar: {', '.join(faltan)}")
-if sobran:
-    fallos.append(f"  FALLO el prelude manda lo que el renderer no crea: {', '.join(sobran)}")
+# `RawText` is written in no template: it has neither a tag nor a directive.
+missing = sorted(set(from_renderer) - set(from_prelude))
+extra = sorted(set(from_prelude) - set(from_renderer) - {'RawText'})
+if missing:
+    failures.append(f"  FAIL the prelude does not know how to send: {', '.join(missing)}")
+if extra:
+    failures.append(f"  FAIL the prelude sends what the renderer does not create: {', '.join(extra)}")
 
-for nombre, codigo in sorted(del_prelude.items(), key=lambda par: par[1]):
-    esperado = NATURALES.get(nombre, nombre)
-    real = del_nucleo.get(codigo)
-    if real is None:
-        fallos.append(f'  FALLO "{nombre}" viaja con el código {codigo} y Rust no lo reconoce')
-    elif real != esperado:
-        fallos.append(
-            f'  FALLO "{nombre}" viaja con el código {codigo}, que en Rust es "{real}"'
+for name, code in sorted(from_prelude.items(), key=lambda pair: pair[1]):
+    expected = NATURAL.get(name, name)
+    actual = from_core.get(code)
+    if actual is None:
+        failures.append(f'  FAIL "{name}" travels with code {code} and Rust does not recognise it')
+    elif actual != expected:
+        failures.append(
+            f'  FAIL "{name}" travels with code {code}, which in Rust is "{actual}"'
         )
 
-for linea in fallos:
-    print(linea)
-if fallos:
+for line in failures:
+    print(line)
+if failures:
     sys.exit(1)
 
-print(f'  ok   las {len(etiquetas)} etiquetas an-* dan el nombre de su primitiva sin tabla de por medio')
-print(f'  ok   las {len(del_prelude)} primitivas del prelude viajan con el código que Rust espera')
-print(f'  ok   {len(NATURALES)} nombres naturales declarados: '
-      + ', '.join(f'{js} es {rust} en el núcleo' for js, rust in sorted(NATURALES.items())))
+print(f'  ok   the {len(tags)} an-* tags give their primitive name with no table in between')
+print(f'  ok   the {len(from_prelude)} prelude primitives travel with the code Rust expects')
+print(f'  ok   {len(NATURAL)} natural names declared: '
+      + ', '.join(f'{js} is {rust} in the core' for js, rust in sorted(NATURAL.items())))
 PY

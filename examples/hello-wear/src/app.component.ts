@@ -2,27 +2,27 @@ import { ChangeDetectionStrategy, Component, signal } from '@angular/core'
 import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
 
 /**
- * Wear OS con las primitivas de siempre.
+ * Wear OS with the same primitives as everywhere else.
  *
- * A diferencia del reloj de Apple, aquí no hay nada de reloj en el código: un
- * Wear OS corre `android.view.View`, así que el host es el mismo que el del
- * teléfono y estas etiquetas son las mismas. Lo que cambia es la pantalla, y
- * cambia en dos cosas que sí se ven desde la plantilla:
+ * Unlike the Apple watch, there is nothing watch-shaped in the code here: a
+ * Wear OS device runs `android.view.View`, so the host is the same one the
+ * phone uses and these tags are the same tags. What changes is the screen, and
+ * it changes in two ways the template can actually see:
  *
- * 1. **Es redonda.** Lo que se ponga en la esquina no se recorta: no se pinta,
- *    porque ahí no hay pantalla. Quien lo aparta es `an-safe-area`, igual que
- *    aparta del notch en el teléfono; el host cuenta el cuadrado inscrito en la
- *    circunferencia como un margen más del sistema. La plantilla no sabe si el
- *    margen viene de una muesca o de una curva, y no tiene por qué.
+ * 1. **It is round.** Whatever is put in a corner is not clipped: it is never
+ *    drawn, because there is no screen there. What moves it out of the way is
+ *    `an-safe-area`, the same way it moves things out of the notch on a phone;
+ *    the host counts the square inscribed in the circle as one more system
+ *    inset. The template does not know whether the inset comes from a notch or
+ *    from a curve, and it has no reason to.
  *
- * 2. **Se recorre con la corona.** Eso no se declara: `an-scroll-view` la
- *    escucha en el reloj, y `(scroll)` sale igual que si el dedo la hubiera
- *    arrastrado. Y si además se quiere la corona en crudo —para subir un
- *    valor, no para desplazar—, `(crown)` la trae en muescas sin que la lista
- *    deje de moverse.
+ * 2. **It is scrolled with the crown.** That is not declared: `an-scroll-view`
+ *    listens to it on the watch, and `(scroll)` fires just as if a finger had
+ *    dragged it. And if the raw crown is wanted as well —to raise a value, not
+ *    to scroll—, `(crown)` delivers it in detents without the list stopping.
  *
- * Las medidas son de esfera. La pantalla del emulador son 227 puntos, y el
- * cuadrado que cabe dentro son 160: un `fontSize` de 28 no entra.
+ * The measurements are watch-face ones. The emulator screen is 227 points, and
+ * the square that fits inside it is 160: a `fontSize` of 28 does not fit.
  */
 @Component({
   selector: 'app-root',
@@ -30,10 +30,10 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
   imports: [NATIVE_PRIMITIVES, SafeArea],
   template: `
     <!--
-      El área segura envuelve al desplazable y no al revés. Al revés el
-      contenido llegaría al borde, que es lo bonito en un reloj, pero la
-      primera y la última fila se comerían el arco: en una esfera, lo que está
-      arriba del todo está en el punto más estrecho.
+      The safe area wraps the scroll view and not the other way round. The other
+      way round the content would reach the edge, which is the pretty thing on a
+      watch, but the first and last rows would be eaten by the arc: on a round
+      face, whatever sits right at the top sits at the narrowest point.
     -->
     <an-view
       [style.width]="'100%'"
@@ -43,36 +43,36 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
         <an-scroll-view
         [style.width]="'100%'"
         [style.flexGrow]="'1'"
-        (scroll)="alto.set(Math.round($event.y))"
-        (crown)="girar($event)"
-        (crownIdle)="girando.set(false)">
+        (scroll)="offset.set(Math.round($event.y))"
+        (crown)="turn($event)"
+        (crownIdle)="turning.set(false)">
         <an-view [style.width]="'100%'" [style.gap]="'6'" [style.paddingBottom]="'8'">
           <an-text [fontSize]="16" [fontWeight]="'bold'" [color]="'#f4f7ff'">
             angular-native
           </an-text>
 
           <an-text [fontSize]="11" [color]="'#9fb0d4'">
-            Gira la corona: {{ alto() }} pt.
+            Turn the crown: {{ offset() }} pt.
           </an-text>
 
-          <an-text [fontSize]="11" [color]="girando() ? '#f59e0b' : '#64748b'">
-            {{ muescas().toFixed(1) }} muescas{{ girando() ? ' · girando' : '' }}
+          <an-text [fontSize]="11" [color]="turning() ? '#f59e0b' : '#64748b'">
+            {{ detents().toFixed(1) }} detents{{ turning() ? ' · turning' : '' }}
           </an-text>
 
-          @for (fila of filas; track fila.numero) {
+          @for (row of rows; track row.number) {
             <an-view
               [style.width]="'100%'"
               [style.height]="'30'"
               [borderRadius]="8"
-              [backgroundColor]="fila.numero === marcada() ? '#2b1e4a' : '#152036'"
-              (press)="marcada.set(fila.numero)">
+              [backgroundColor]="row.number === marked() ? '#2b1e4a' : '#152036'"
+              (press)="marked.set(row.number)">
               <an-text
                 [style.width]="'100%'"
                 [style.height]="'30'"
                 [fontSize]="12"
                 [textAlign]="'center'"
-                [color]="fila.numero === marcada() ? '#f59e0b' : '#9fb0d4'">
-                {{ fila.texto }}
+                [color]="row.number === marked() ? '#f59e0b' : '#9fb0d4'">
+                {{ row.text }}
               </an-text>
             </an-view>
           }
@@ -83,52 +83,52 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
   `
 })
 export class AppComponent {
-  /** La plantilla no ve los globales; el redondeo se hace con este. */
+  /** The template cannot see globals; the rounding is done through this one. */
   protected readonly Math = Math
 
-  /** Cuánto lleva desplazada la lista, en puntos. Lo cuenta `(scroll)`. */
-  readonly alto = signal(0)
+  /** How far the list has scrolled, in points. `(scroll)` keeps the count. */
+  readonly offset = signal(0)
 
-  /** La fila tocada, para que se vea que el dedo también sigue valiendo. */
-  readonly marcada = signal(0)
+  /** The row that was tapped, to show that a finger still works too. */
+  readonly marked = signal(0)
 
   /**
-   * Lo que lleva girado la corona, en muescas.
+   * How far the crown has turned, in detents.
    *
-   * No es lo mismo que `alto()`, que son los puntos que se ha desplazado la
-   * lista: una muesca son unos cuarenta puntos, y quien quiera la corona para
-   * otra cosa —un volumen, una hora— quiere la muesca y no el desplazamiento
-   * que el sistema hizo con ella.
+   * This is not the same as `offset()`, which is how many points the list has
+   * scrolled: one detent is about forty points, and whoever wants the crown for
+   * something else —a volume, a time— wants the detent and not the scroll the
+   * system did with it.
    */
-  readonly muescas = signal(0)
+  readonly detents = signal(0)
 
-  /** Si está girando ahora mismo. Lo cierra `(crownIdle)`. */
-  readonly girando = signal(false)
+  /** Whether it is turning right now. `(crownIdle)` closes it. */
+  readonly turning = signal(false)
 
   /**
-   * El tipo va escrito aquí y no importado: `NativeCrownEvent` existe en
-   * `packages/primitives` pero su `public-api` todavía no lo saca, así que por
-   * nombre no se puede pedir. La forma es la misma, que es lo que comprueba
-   * TypeScript, y la plantilla ya lo tipa sola porque la salida sí está
-   * declarada.
+   * The type is written out here rather than imported: `NativeCrownEvent`
+   * exists in `packages/primitives` but its `public-api` does not export it
+   * yet, so it cannot be asked for by name. The shape is the same, which is
+   * what TypeScript checks, and the template already types it on its own
+   * because the output is declared.
    */
-  girar(event: { delta: number; offset: number; velocity: number }): void {
-    this.muescas.set(event.offset)
-    this.girando.set(true)
+  turn(event: { delta: number; offset: number; velocity: number }): void {
+    this.detents.set(event.offset)
+    this.turning.set(true)
   }
 
-  readonly filas = [
-    { numero: 1, texto: 'una' },
-    { numero: 2, texto: 'dos' },
-    { numero: 3, texto: 'tres' },
-    { numero: 4, texto: 'cuatro' },
-    { numero: 5, texto: 'cinco' },
-    { numero: 6, texto: 'seis' },
-    { numero: 7, texto: 'siete' },
-    { numero: 8, texto: 'ocho' },
-    { numero: 9, texto: 'nueve' },
-    { numero: 10, texto: 'diez' },
-    { numero: 11, texto: 'once' },
-    { numero: 12, texto: 'doce' }
+  readonly rows = [
+    { number: 1, text: 'one' },
+    { number: 2, text: 'two' },
+    { number: 3, text: 'three' },
+    { number: 4, text: 'four' },
+    { number: 5, text: 'five' },
+    { number: 6, text: 'six' },
+    { number: 7, text: 'seven' },
+    { number: 8, text: 'eight' },
+    { number: 9, text: 'nine' },
+    { number: 10, text: 'ten' },
+    { number: 11, text: 'eleven' },
+    { number: 12, text: 'twelve' }
   ]
 }
