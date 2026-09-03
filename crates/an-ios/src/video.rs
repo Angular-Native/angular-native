@@ -1,11 +1,11 @@
-//! Reproducción de vídeo: `AVPlayer` dentro de un `AVPlayerLayer`.
+//! Video playback: an `AVPlayer` inside an `AVPlayerLayer`.
 //!
-//! No hay una vista de vídeo en UIKit: lo que hay es una capa que se cuelga de
-//! cualquier vista. Así que la vista es una `UIView` normal y el host le
-//! ajusta la capa cuando cambia el marco, que es lo que haría cualquier app.
+//! There is no video view in UIKit: what there is is a layer that hangs off
+//! any view. So the view is an ordinary `UIView` and the host resizes the
+//! layer when the frame changes, which is what any app would do.
 //!
-//! Las clases se declaran a mano por lo mismo que `WKWebView`: los crates
-//! generados no traen las de iOS.
+//! The classes are declared by hand for the same reason as `WKWebView`: the
+//! generated crates do not ship iOS's.
 
 use objc2::rc::Retained;
 use objc2::{extern_class, extern_methods, ClassType, MainThreadMarker, MainThreadOnly};
@@ -20,13 +20,13 @@ unsafe extern "C" {}
 unsafe extern "C" {}
 
 extern_class!(
-    /// El reproductor con su vista y sus controles.
+    /// The player with its view and its controls.
     ///
-    /// Es la forma que soporta Apple para enseñar vídeo: colgar un
-    /// `AVPlayerLayer` de una vista cualquiera se compila y se ejecuta, pero
-    /// la capa nunca llega a entregar fotogramas —`readyForDisplay` se queda
-    /// en falso con el reproductor sonando—. Además así vienen los controles
-    /// del sistema, igual que trae el `VideoView` de Android.
+    /// It is the way Apple supports showing video: hanging an `AVPlayerLayer`
+    /// off some arbitrary view compiles and runs, but the layer never gets as
+    /// far as delivering frames —`readyForDisplay` stays false with the player
+    /// audibly playing. It also brings the system's controls along, the same
+    /// way Android's `VideoView` does.
     #[unsafe(super(UIViewController, UIResponder, NSObject))]
     #[thread_kind = MainThreadOnly]
     #[derive(Debug, PartialEq, Eq, Hash)]
@@ -72,7 +72,8 @@ impl AVPlayer {
         #[unsafe(method(status))]
         pub fn status(&self) -> isize;
 
-        /// Cero es parado. Sirve para saber si un `play()` prendió de verdad.
+        /// Zero means stopped. Good for telling whether a `play()` really
+        /// caught.
         #[unsafe(method(rate))]
         pub fn rate(&self) -> f32;
 
@@ -94,8 +95,9 @@ impl AVPlayerLayer {
     }
 
     extern_methods!(
-        /// `AVLayerVideoGravityResizeAspect` y compañía. Se pasa la cadena
-        /// directamente para no arrastrar las constantes del framework.
+        /// `AVLayerVideoGravityResizeAspect` and company. The string is
+        /// passed straight through so as not to drag in the framework's
+        /// constants.
         #[unsafe(method(setVideoGravity:))]
         pub fn setVideoGravity(&self, gravity: &NSString);
 

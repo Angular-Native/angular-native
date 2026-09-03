@@ -1,8 +1,8 @@
-//! Host iOS: implementa `HostRenderer` y `TextMeasurer` sobre UIKit, y expone
-//! el runtime al shell de Xcode por FFI.
+//! The iOS host: it implements `HostRenderer` and `TextMeasurer` over UIKit,
+//! and exposes the runtime to the Xcode shell over FFI.
 //!
-//! Todo aquí corre en el hilo principal. UIKit no admite otra cosa y el
-//! `MainThreadMarker` de objc2 lo hace explícito en el tipo.
+//! Everything here runs on the main thread. UIKit will have it no other way
+//! and objc2's `MainThreadMarker` makes that explicit in the type.
 
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod accessibility;
@@ -18,12 +18,12 @@ mod events;
 mod family;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod ffi;
-/// El motor de foco solo existe en tvOS: es la plataforma sin toques.
+/// The focus engine only exists on tvOS: it is the platform with no touches.
 #[cfg(target_os = "tvos")]
 mod focus;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod host;
-/// El realce de la mirada solo existe en visionOS.
+/// The gaze highlight only exists on visionOS.
 #[cfg(target_os = "visionos")]
 mod hover;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
@@ -42,9 +42,10 @@ mod modal;
 mod modules;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 mod video;
-/// El navegador embebido no existe en tvOS: WebKit no forma parte de su SDK.
-/// El módulo entero sale del binario, y no solo por la clase: su `#[link]`
-/// haría que el enlazado buscase un framework que en ese SDK no está.
+/// The embedded browser does not exist on tvOS: WebKit is not part of its
+/// SDK. The whole module leaves the binary, and not only because of the class:
+/// its `#[link]` would have the linker look for a framework that is not in
+/// that SDK.
 #[cfg(any(target_os = "ios", target_os = "visionos"))]
 mod web;
 
@@ -53,15 +54,16 @@ pub use host::UikitHost;
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 pub use measure::UikitMeasurer;
 
-/// Árbol de ejemplo con el que se valida el pipeline sin motor JS todavía:
-/// cabecera, fila de dos tarjetas y un párrafo que tiene que partir solo.
+/// A sample tree the pipeline is validated against while there is still no JS
+/// engine: a header, a row of two cards and a paragraph that has to wrap on
+/// its own.
 ///
-/// Vive fuera del `cfg` de iOS para poder comprobarlo en `cargo test` con el
-/// medidor aproximado, sin simulador.
+/// It lives outside the iOS `cfg` so it can be checked from `cargo test` with
+/// the approximate measurer, with no simulator.
 pub fn build_demo(tree: &mut an_core::ShadowTree) -> Result<(), an_core::tree::Error> {
     use an_core::{NodeKind, PropValue};
 
-    // 1 raíz > 2 cabecera > 3 texto cabecera, 4 fila > 5,6 tarjetas, 7 párrafo
+    // 1 root > 2 header > 3 header text, 4 row > 5,6 cards, 7 paragraph
     tree.create_node(1, NodeKind::View)?;
     tree.set_style(1, "width", "100%")?;
     tree.set_style(1, "height", "100%")?;
@@ -101,8 +103,8 @@ pub fn build_demo(tree: &mut an_core::ShadowTree) -> Result<(), an_core::tree::E
     tree.create_node(8, NodeKind::RawText)?;
     tree.set_text(
         8,
-        "Este párrafo lo mide UIKit y lo coloca taffy. Ninguna vista de esta \
-         pantalla es un WebView: son UIView, UILabel y nada más.",
+        "UIKit measures this paragraph and taffy places it. No view on this \
+         screen is a WebView: they are UIView, UILabel and nothing else.",
     )?;
     tree.insert_child(7, 8, 0)?;
     tree.insert_child(1, 7, 2)?;

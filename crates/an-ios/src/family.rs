@@ -1,22 +1,22 @@
-//! Qué trae de verdad cada familia de UIKit.
+//! What each UIKit family actually ships.
 //!
-//! `an-ios` compila para iOS, tvOS y visionOS. Las tres traen UIKit y las tres
-//! montan `UIView` con marcos absolutos, así que el host es uno solo. Lo que no
-//! es uno solo es el catálogo de controles: `UISwitch`, `UISlider`, `UIStepper`,
-//! `UIDatePicker` y `WKWebView` están marcados `API_UNAVAILABLE(tvos)` en el
-//! SDK.
+//! `an-ios` compiles for iOS, tvOS and visionOS. All three ship UIKit and all
+//! three mount `UIView`s with absolute frames, so the host is a single one.
+//! What is not a single one is the catalogue of controls: `UISwitch`,
+//! `UISlider`, `UIStepper`, `UIDatePicker` and `WKWebView` are marked
+//! `API_UNAVAILABLE(tvos)` in the SDK.
 //!
-//! El compilador no ayuda a notarlo. `objc2-ui-kit` genera los enlaces para
-//! todas las plataformas Apple sin mirar la anotación de disponibilidad, así
-//! que `UISwitch::new(mtm)` **compila** para tvOS y lo que falla es la búsqueda
-//! de la clase en tiempo de ejecución, ya dentro del simulador y con el proceso
-//! abortando. Por eso esta lista está escrita a mano: es la anotación del SDK
-//! traída al Rust, y es lo que separa «no se puede» de «se cierra sin decir por
-//! qué».
+//! The compiler is no help in noticing. `objc2-ui-kit` generates the bindings
+//! for every Apple platform without looking at the availability annotation, so
+//! `UISwitch::new(mtm)` **compiles** for tvOS and what fails is the class
+//! lookup at run time, by then inside the simulator and with the process
+//! aborting. Hence this list being written by hand: it is the SDK's annotation
+//! brought over into Rust, and it is what separates "this cannot be done" from
+//! "it quits without saying why".
 
 use an_core::NodeKind;
 
-/// El nombre de la familia, para los mensajes.
+/// The family's name, for the messages.
 pub const NAME: &str = if cfg!(target_os = "tvos") {
     "tvOS"
 } else if cfg!(target_os = "visionos") {
@@ -25,33 +25,34 @@ pub const NAME: &str = if cfg!(target_os = "tvos") {
     "iOS"
 };
 
-/// Por qué esta familia no puede montar esta primitiva, o `None` si sí puede.
+/// Why this family cannot mount this primitive, or `None` if it can.
 ///
-/// El motivo se escribe entero porque acaba en el log del dispositivo, que es
-/// donde alguien lo va a leer sin este fichero delante.
+/// The reason is written out in full because it ends up in the device's log,
+/// which is where somebody is going to read it without this file in front of
+/// them.
 pub fn missing_kind(kind: NodeKind) -> Option<&'static str> {
     #[cfg(target_os = "tvos")]
     {
         match kind {
-            // Los tres controles de valor de iOS no existen en el SDK de tvOS.
-            // No es que se vean distintos: la clase no está en UIKit.
+            // iOS's three value controls do not exist in the tvOS SDK. It is
+            // not that they look different: the class is not in UIKit.
             NodeKind::Switch => Some(
-                "UISwitch no existe en tvOS. La pantalla de una tele se maneja con el mando, y \
-                 ahí un interruptor es una fila enfocable que se pulsa; no hay control del \
-                 sistema equivalente",
+                "UISwitch does not exist on tvOS. A television's screen is driven with the \
+                 remote, and there a switch is a focusable row you press; there is no \
+                 equivalent system control",
             ),
             NodeKind::Slider => Some(
-                "UISlider no existe en tvOS. Lo más cercano que sí trae la plataforma es \
-                 UIProgressView, que solo enseña un valor: no se puede arrastrar",
+                "UISlider does not exist on tvOS. The nearest thing the platform does ship is \
+                 UIProgressView, which only shows a value: it cannot be dragged",
             ),
-            NodeKind::Stepper => Some("UIStepper no existe en tvOS"),
+            NodeKind::Stepper => Some("UIStepper does not exist on tvOS"),
             NodeKind::DatePicker => Some(
-                "UIDatePicker no existe en tvOS. El sistema pide las fechas con una pantalla \
-                 propia, no con un control que quepa en un marco",
+                "UIDatePicker does not exist on tvOS. The system asks for dates with a screen \
+                 of its own, not with a control that fits in a frame",
             ),
-            // WebKit entero: el SDK de tvOS no trae el framework.
+            // The whole of WebKit: the tvOS SDK does not ship the framework.
             NodeKind::WebView => {
-                Some("WebKit no forma parte del SDK de tvOS: no hay WKWebView que montar")
+                Some("WebKit is not part of the tvOS SDK: there is no WKWebView to mount")
             }
             _ => None,
         }
@@ -63,32 +64,33 @@ pub fn missing_kind(kind: NodeKind) -> Option<&'static str> {
     }
 }
 
-/// Lo dice una vez y no lo repite.
+/// Says it once and does not repeat it.
 ///
-/// El host llama aquí desde `create`, y `create` corre cada vez que el árbol
-/// da de alta un nodo: sin el filtro, un `@for` de veinte interruptores
-/// llenaría el log veinte veces y el aviso dejaría de leerse.
+/// The host calls in here from `create`, and `create` runs every time the tree
+/// registers a node: without the filter, an `@for` over twenty switches would
+/// fill the log twenty times and the warning would stop being read.
 ///
-/// El estado es `thread_local` y no un `Mutex` porque todo esto vive en el hilo
-/// principal —UIKit no admite otra cosa— y así no hay ningún candado que tomar
-/// en mitad de un frame.
+/// The state is `thread_local` and not a `Mutex` because all of this lives on
+/// the main thread —UIKit will have it no other way— and so there is no lock
+/// to take in the middle of a frame.
 pub fn report(what: &str, why: &str) {
     use std::cell::RefCell;
     use std::collections::HashSet;
     use std::io::Write;
 
     thread_local! {
-        static DICHO: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
+        static SAID: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
     }
 
-    let nuevo = DICHO.with(|dicho| dicho.borrow_mut().insert(what.to_owned()));
-    if !nuevo {
+    let fresh = SAID.with(|said| said.borrow_mut().insert(what.to_owned()));
+    if !fresh {
         return;
     }
-    // A mano y con `flush`, por lo mismo que el gancho de pánico de `ffi.rs`:
-    // si el proceso se cierra justo después, lo que quedó en el búfer no llega
-    // a salir y el aviso se pierde justo cuando más falta hace.
-    let mut salida = std::io::stderr().lock();
-    let _ = writeln!(salida, "angular-native: {what} no está disponible en {NAME}: {why}");
-    let _ = salida.flush();
+    // By hand and with a `flush`, for the same reason as `ffi.rs`'s panic
+    // hook: if the process quits right afterwards, whatever was left in the
+    // buffer never gets out and the warning is lost precisely when it is most
+    // needed.
+    let mut out = std::io::stderr().lock();
+    let _ = writeln!(out, "angular-native: {what} is not available on {NAME}: {why}");
+    let _ = out.flush();
 }

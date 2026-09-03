@@ -1,10 +1,10 @@
-//! Medición de texto con la tipografía real del sistema.
+//! Text measurement with the system's real typeface.
 //!
-//! El layout pide el tamaño de cada `<Text>` varias veces por nodo y por frame
-//! (mínimo intrínseco, máximo intrínseco, y el definitivo), así que la caché no
-//! es una optimización: sin ella cada frame cruza a Objective-C cientos de
-//! veces. La clave incluye el ancho disponible porque el salto de línea depende
-//! de él.
+//! The layout asks for each `<Text>`'s size several times per node and per
+//! frame (intrinsic minimum, intrinsic maximum, and the final one), so the
+//! cache is not an optimisation: without it every frame crosses into
+//! Objective-C hundreds of times. The key includes the available width because
+//! where the lines break depends on it.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -17,8 +17,8 @@ use objc2_ui_kit::{
     NSFontAttributeName, NSStringDrawingOptions, NSStringNSExtendedStringDrawing, UIFont,
 };
 
-/// Ancho redondeado a 1/8 de punto: anchos que difieren en flotantes
-/// irrelevantes comparten entrada de caché.
+/// Width rounded to 1/8 of a point: widths that differ by floats nobody cares
+/// about share a cache entry.
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct Key {
     text: String,
@@ -33,9 +33,9 @@ struct Key {
 #[derive(Default)]
 pub struct UikitMeasurer {
     cache: RefCell<HashMap<Key, (f32, f32)>>,
-    /// Tamaños naturales de los controles, preguntados en el arranque. No se
-    /// pueden consultar aquí: crear un `UISwitch` exige el hilo principal, y
-    /// el medidor vive en el del motor.
+    /// The controls' natural sizes, asked for at startup. They cannot be
+    /// asked about here: creating a `UISwitch` demands the main thread, and
+    /// the measurer lives on the engine's.
     controls: crate::controls::ControlSizes,
 }
 
@@ -44,7 +44,7 @@ impl UikitMeasurer {
         UikitMeasurer { cache: RefCell::new(HashMap::new()), controls }
     }
 
-    /// Se llama cuando cambia la escala de la pantalla o la fuente dinámica.
+    /// Called when the screen's scale or the dynamic type size changes.
     pub fn clear_cache(&self) {
         self.cache.borrow_mut().clear();
     }
@@ -64,7 +64,7 @@ impl UikitMeasurer {
         if font.italic {
             return UIFont::italicSystemFontOfSize(size);
         }
-        // Escala CSS 100..900 a la escala de pesos de UIKit, -1.0..1.0.
+        // Scales CSS's 100..900 onto UIKit's weight scale, -1.0..1.0.
         let weight = match font.weight {
             0..=199 => -0.8,
             200..=299 => -0.6,
@@ -85,8 +85,8 @@ impl TextMeasurer for UikitMeasurer {
         let Some((width, height)) = self.controls.get(name).copied() else {
             return (0.0, 0.0);
         };
-        // Deslizadores, barras de progreso y de pestañas ocupan todo el ancho
-        // que se les dé; su medida natural solo manda en el alto.
+        // Sliders, progress bars and tab bars take whatever width they are
+        // given; their natural measurement only rules the height.
         let stretches = matches!(name, "Slider" | "ProgressBar" | "TabBar" | "SearchBar" | "SegmentedControl");
         match available_width {
             Some(available) if stretches && available.is_finite() => (available, height),
@@ -135,8 +135,8 @@ impl TextMeasurer for UikitMeasurer {
         let mut width = rect.size.width as f32;
         let mut height = rect.size.height as f32;
 
-        // `boundingRect` no conoce `lineHeight` ni `numberOfLines`: los
-        // aplicamos sobre el número de líneas que devolvió.
+        // `boundingRect` knows nothing of `lineHeight` or `numberOfLines`:
+        // they are applied to the number of lines it came back with.
         let lines = if natural_line > 0.0 {
             (height / natural_line).round().max(1.0)
         } else {
@@ -152,8 +152,8 @@ impl TextMeasurer for UikitMeasurer {
         if let Some(limit) = max_width.filter(|w| w.is_finite()) {
             width = width.min(limit);
         }
-        // UIKit devuelve fraccionarios; redondear hacia arriba evita el
-        // truncado de la última letra.
+        // UIKit returns fractional values; rounding up keeps the last letter
+        // from being clipped.
         let result = (width.ceil(), height.ceil());
         self.cache.borrow_mut().insert(key, result);
         result

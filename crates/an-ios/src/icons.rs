@@ -1,29 +1,29 @@
-//! Iconos del sistema: SF Symbols.
+//! The system's icons: SF Symbols.
 //!
-//! No se dibuja nada ni se empaqueta ningún juego de iconos. Se pide el
-//! símbolo por su nombre y lo entrega el sistema, con el peso y el grosor que
-//! le toquen a esa versión de iOS y a los ajustes de accesibilidad del
-//! usuario. Un icono así envejece con el sistema en vez de quedarse anclado al
-//! día en que se metió en el proyecto.
+//! Nothing is drawn and no icon set is bundled. The symbol is asked for by
+//! name and the system supplies it, with whatever weight and stroke that
+//! version of iOS and the user's accessibility settings give it. An icon like
+//! that ages with the system instead of staying pinned to the day it went into
+//! the project.
 
 use objc2::rc::Retained;
 use objc2_foundation::NSString;
 use objc2_ui_kit::{UIImage, UIImageSymbolConfiguration};
 
-/// El símbolo que corresponde a un nombre, al tamaño pedido.
+/// The symbol a name maps to, at the size asked for.
 ///
-/// El nombre puede ser el de un SF Symbol tal cual —`chevron.left`,
-/// `square.and.arrow.up`— o uno de los comunes, que se traducen al de cada
-/// plataforma para no obligar a escribir dos plantillas.
+/// The name may be an SF Symbol's as it stands —`chevron.left`,
+/// `square.and.arrow.up`— or one of the common ones, which are translated into
+/// each platform's so that nobody has to write two templates.
 pub fn symbol(name: &str, size: f32, weight: u16) -> Option<Retained<UIImage>> {
     let resolved = translate(name);
     let image = unsafe { UIImage::systemImageNamed(&NSString::from_str(resolved)) }?;
     if size <= 0.0 {
         return Some(image);
     }
-    // El tamaño de un símbolo no es el de una imagen: se pide por
-    // configuración, y así el sistema elige el trazo que le corresponde en vez
-    // de escalar el dibujo.
+    // A symbol's size is not an image's: it is asked for through a
+    // configuration, and that way the system picks the stroke that goes with
+    // it instead of scaling the drawing.
     let config = unsafe {
         UIImageSymbolConfiguration::configurationWithPointSize_weight(
             size as f64,
@@ -33,12 +33,12 @@ pub fn symbol(name: &str, size: f32, weight: u16) -> Option<Retained<UIImage>> {
     unsafe { image.imageByApplyingSymbolConfiguration(&config) }
 }
 
-/// Nombres comunes, traducidos al SF Symbol que les toca.
+/// Common names, translated into the SF Symbol each one gets.
 ///
-/// La lista es corta a propósito: cubre lo que lleva casi cualquier app —una
-/// barra de pestañas, una cabecera— y para lo demás se escribe el nombre del
-/// símbolo directamente, que son más de cinco mil y no tiene sentido
-/// duplicarlos aquí.
+/// The list is short on purpose: it covers what almost any app carries —a tab
+/// bar, a header— and for anything else the symbol's name is written
+/// directly, there being more than five thousand of them and no sense in
+/// duplicating them here.
 fn translate(name: &str) -> &str {
     match name {
         "home" => "house.fill",

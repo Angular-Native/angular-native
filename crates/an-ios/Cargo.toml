@@ -6,7 +6,7 @@ license.workspace = true
 repository.workspace = true
 
 [lib]
-# staticlib para enlazar desde Xcode; rlib para poder testear desde Rust.
+# staticlib to link from Xcode; rlib so it can be tested from Rust.
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
@@ -17,22 +17,22 @@ serde = { version = "1", features = ["derive"] }
 an-layout.workspace = true
 serde_json = "1.0.151"
 
-# UIKit solo existe en plataformas Apple móviles. Fuera de ellas el crate
-# compila vacío, para que `cargo test` del workspace siga funcionando en Mac.
+# UIKit only exists on Apple's mobile platforms. Off them the crate compiles
+# empty, so that the workspace's `cargo test` keeps working on a Mac.
 #
-# Las tres familias comparten la lista de dependencias porque comparten el
-# host: `objc2-ui-kit` genera los enlaces sin mirar la disponibilidad del SDK,
-# así que `UISwitch` compila también para tvOS aunque allí la clase no exista.
-# Lo que no existe está en `src/family.rs`, y lo que hay que enlazar y sí falta
-# —WebKit en tvOS— sale del binario por `cfg`.
+# The three families share one dependency list because they share the host:
+# `objc2-ui-kit` generates the bindings without looking at SDK availability, so
+# `UISwitch` compiles for tvOS too even though the class does not exist there.
+# What does not exist is listed in `src/family.rs`, and what has to be linked
+# and really is missing —WebKit on tvOS— leaves the binary through a `cfg`.
 [target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))'.dependencies]
 objc2 = { version = "0.6", default-features = false, features = ["std"] }
 block2 = "0.6"
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
   "std", "NSString", "NSAttributedString", "NSDictionary", "NSValue", "NSGeometry",
-  # Las manías del teclado se ponen por nombre de propiedad: en iOS 26 sus
-  # setters no están en la tabla de métodos de la clase.
+  # The keyboard's quirks are set by property name: on iOS 26 their setters
+  # are not in the class's method table.
   "NSKeyValueCoding",
   "NSURL", "NSURLSession", "NSURLRequest", "NSData", "NSOperation", "NSError", "NSURLResponse",
   "NSArray", "block2", "objc2-core-foundation",
@@ -64,9 +64,9 @@ objc2-ui-kit = { version = "0.3", default-features = false, features = [
   "UIBezierPath", "UIScreenEdgePanGestureRecognizer", "UIPanGestureRecognizer",
   "UIGeometry", "block2",
   "NSStringDrawing", "NSParagraphStyle", "NSText", "NSAttributedString",
-  # El motor de foco (tvOS) y el realce de la mirada (visionOS). Se piden en
-  # las tres familias porque la lista de features es una sola; lo que decide
-  # quién los usa es el `cfg` de `focus.rs` y `hover.rs`.
+  # The focus engine (tvOS) and the gaze highlight (visionOS). They are asked
+  # for in all three families because the feature list is a single one; what
+  # decides who uses them is the `cfg` on `focus.rs` and `hover.rs`.
   "UIFocus", "UIFocusAnimationCoordinator", "UIFocusUpdateContext_UIKitAdditions",
   "UIPress", "UIHoverStyle",
 ] }

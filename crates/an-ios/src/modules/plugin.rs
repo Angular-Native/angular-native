@@ -1,23 +1,24 @@
-//! El lado iOS de los plugins.
+//! The iOS side of plugins.
 //!
-//! Un plugin no se compila dentro del core: es Swift que trae un paquete npm y
-//! que `an-cli` enlaza en el `.app`. Rust no sabe qué hace ni qué métodos
-//! tiene; solo lleva la llamada al hilo principal y trae la respuesta.
+//! A plugin is not compiled into the core: it is Swift that an npm package
+//! brings and that `an-cli` links into the `.app`. Rust does not know what it
+//! does or what methods it has; it only carries the call to the main thread
+//! and brings the answer back.
 //!
-//! Todo lo que hay aquí es global al proceso y no al runtime. El registro
-//! ocurre antes de `an_runtime_new` —Swift no tiene dónde guardarlo si no— y
-//! sobrevive a un reinicio en caliente: el `.app` es el mismo, los plugins
-//! también.
+//! Everything here is global to the process and not to the runtime.
+//! Registration happens before `an_runtime_new` —Swift has nowhere to keep it
+//! otherwise— and it survives a hot restart: the `.app` is the same one, and so
+//! are the plugins.
 
 use std::ffi::{c_char, CStr, CString};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use an_bridge::plugins::{HostPlugin, PluginBridge};
 
-/// Lo que Swift instala para que Rust pueda avisarle de una llamada.
+/// What Swift installs so that Rust can tell it about a call.
 ///
-/// Las cadenas son prestadas y solo valen mientras dure la llamada: el shell
-/// las copia a `String` nada más entrar.
+/// The strings are borrowed and only hold for the duration of the call: the
+/// shell copies them into `String`s the moment it is entered.
 pub type DispatchFn =
     unsafe extern "C" fn(id: u64, module: *const c_char, method: *const c_char, args: *const c_char);
 
@@ -36,34 +37,35 @@ fn dispatch() -> &'static Mutex<Option<DispatchFn>> {
     DISPATCH.get_or_init(|| Mutex::new(None))
 }
 
-/// Un módulo por plugin registrado, listo para viajar al hilo del motor.
+/// One module per registered plugin, ready to travel to the engine's thread.
 ///
-/// Se construyen en `an_runtime_new`, después de que Swift haya registrado los
-/// suyos y antes de arrancar el worker.
+/// They are built in `an_runtime_new`, after Swift has registered its own and
+/// before the worker is started.
 pub fn host_plugins() -> Vec<HostPlugin> {
     names()
         .lock()
-        .expect("registro de plugins envenenado")
+        .expect("poisoned plugin registry")
         .iter()
         .map(|name| HostPlugin::new(name, bridge().clone()))
         .collect()
 }
 
-/// Lleva al shell las llamadas que se hayan acumulado. Se llama desde
-/// `an_runtime_frame`, que corre en el hilo principal: es justo donde un
-/// plugin puede tocar UIKit.
+/// Carries the queued calls over to the shell. It is called from
+/// `an_runtime_frame`, which runs on the main thread: exactly where a plugin
+/// may touch UIKit.
 pub fn pump() {
     let calls = bridge().take_calls();
     if calls.is_empty() {
         return;
     }
-    let Some(dispatch) = *dispatch().lock().expect("despachador envenenado") else {
-        // Hay plugins registrados pero nadie que los atienda. Es un fallo de
-        // montaje del shell, y callarlo dejaría la promesa colgada sin pista.
+    let Some(dispatch) = *dispatch().lock().expect("poisoned dispatcher") else {
+        // There are plugins registered and nobody to serve them. It is a
+        // wiring failure in the shell, and keeping quiet about it would leave
+        // the promise hanging with no clue why.
         for call in calls {
             let _ = bridge().reject(
                 call.id,
-                "el shell de iOS no instaló el despachador de plugins",
+                "the iOS shell did not install the plugin dispatcher",
             );
         }
         return;
@@ -74,66 +76,66 @@ pub fn pump() {
             CString::new(call.method.as_str()),
             CString::new(call.args.as_str()),
         ) else {
-            let _ = bridge().reject(call.id, "los argumentos llevaban un cero dentro");
+            let _ = bridge().reject(call.id, "the arguments carried a zero byte inside them");
             continue;
         };
         unsafe { dispatch(call.id, module.as_ptr(), method.as_ptr(), args.as_ptr()) };
     }
 }
 
-/// Da de alta un plugin por su nombre de módulo. Lo llama el registro de Swift
-/// al arrancar, antes de crear el runtime.
+/// Registers a plugin under its module name. The Swift registry calls it at
+/// startup, before the runtime is created.
 ///
 /// # Safety
-/// `name` tiene que ser una cadena C válida y terminada en cero.
+/// `name` has to be a valid, nul-terminated C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_plugin_register(name: *const c_char) {
     if name.is_null() {
         return;
     }
     let Ok(name) = (unsafe { CStr::from_ptr(name) }).to_str() else { return };
-    let mut names = names().lock().expect("registro de plugins envenenado");
-    // Registrar dos veces el mismo nombre daría dos módulos con el mismo
-    // nombre en el registro, y el segundo no lo vería nadie.
+    let mut names = names().lock().expect("poisoned plugin registry");
+    // Registering the same name twice would put two modules under one name in
+    // the registry, and nobody would ever see the second.
     if names.iter().any(|existing| existing == name) {
-        eprintln!("angular-native: el plugin {name:?} ya estaba registrado");
+        eprintln!("angular-native: plugin {name:?} was already registered");
         return;
     }
     names.push(name.to_owned());
 }
 
-/// Instala el despachador. Pasar `None` lo quita.
+/// Installs the dispatcher. Passing `None` takes it away.
 #[unsafe(no_mangle)]
 pub extern "C" fn an_plugin_set_dispatch(callback: Option<DispatchFn>) {
-    *dispatch().lock().expect("despachador envenenado") = callback;
+    *dispatch().lock().expect("poisoned dispatcher") = callback;
 }
 
-/// Contesta a una llamada. `json` es el valor de vuelta ya serializado.
-/// Devuelve 0 si la llamada existía y -1 si no.
+/// Answers a call. `json` is the return value, already serialised.
+/// Returns 0 if the call existed and -1 if it did not.
 ///
 /// # Safety
-/// `json` tiene que ser una cadena C válida y terminada en cero.
+/// `json` has to be a valid, nul-terminated C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_plugin_resolve(id: u64, json: *const c_char) -> i32 {
     let text = match unsafe { read(json) } {
         Some(text) => text,
-        None => return report(bridge().reject(id, "el plugin contestó con una cadena inválida")),
+        None => return report(bridge().reject(id, "the plugin answered with an invalid string")),
     };
     report(bridge().resolve(id, &text))
 }
 
-/// Rechaza una llamada. Devuelve 0 si la llamada existía y -1 si no.
+/// Rejects a call. Returns 0 if the call existed and -1 if it did not.
 ///
 /// # Safety
-/// `message` tiene que ser una cadena C válida y terminada en cero.
+/// `message` has to be a valid, nul-terminated C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_plugin_reject(id: u64, message: *const c_char) -> i32 {
-    let text = unsafe { read(message) }.unwrap_or_else(|| "el plugin falló".to_owned());
+    let text = unsafe { read(message) }.unwrap_or_else(|| "the plugin failed".to_owned());
     report(bridge().reject(id, &text))
 }
 
 /// # Safety
-/// `text` tiene que ser nulo o una cadena C válida.
+/// `text` has to be null or a valid C string.
 unsafe fn read(text: *const c_char) -> Option<String> {
     if text.is_null() {
         return None;

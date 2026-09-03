@@ -1,10 +1,9 @@
-//! Controles del sistema: interruptor, deslizador, indicadores, botón y barra
-//! de pestañas.
+//! The system's controls: switch, slider, indicators, button and tab bar.
 //!
-//! Cuánto miden no lo decide el framework. Un `UISwitch` no mide lo mismo en
-//! iOS 17 que en iOS 26, y con texto grande de accesibilidad tampoco. Se le
-//! pregunta a cada control una vez, al arrancar y en el hilo principal, porque
-//! crearlos fuera de él no está permitido.
+//! How big they are is not the framework's to decide. A `UISwitch` does not
+//! measure the same on iOS 17 as on iOS 26, nor does it at the large
+//! accessibility text size. Each control is asked once, at startup and on the
+//! main thread, because creating them off it is not allowed.
 
 use std::collections::HashMap;
 
@@ -12,17 +11,18 @@ use objc2::rc::Retained;
 use objc2::MainThreadMarker;
 use objc2_core_foundation::CGSize;
 use objc2_ui_kit::{UIActivityIndicatorView, UIButton, UIProgressView, UITabBar, UIView};
-// tvOS no las tiene, y un `use` de algo que no se va a usar es un aviso.
+// tvOS does not have them, and a `use` of something that will not be used is
+// a warning.
 #[cfg(not(target_os = "tvos"))]
 use objc2_ui_kit::{UISlider, UISwitch};
 
-/// Tamaños naturales, en puntos, indexados por el nombre del control.
+/// Natural sizes, in points, indexed by the control's name.
 pub type ControlSizes = HashMap<String, (f32, f32)>;
 
-/// Le pregunta a cada control cuánto ocupa. Se llama una vez, en el arranque.
+/// Asks each control how much room it takes. Called once, at startup.
 pub fn measure_controls(mtm: MainThreadMarker) -> ControlSizes {
-    // Ancho infinito para que cada uno diga su tamaño natural sin que se lo
-    // recorte nada.
+    // An infinite width so each one gives its natural size with nothing
+    // clipping it.
     let unbounded = CGSize { width: f64::MAX / 2.0, height: f64::MAX / 2.0 };
     let mut sizes = ControlSizes::new();
 
@@ -31,11 +31,11 @@ pub fn measure_controls(mtm: MainThreadMarker) -> ControlSizes {
         sizes.insert(name.to_owned(), (fitted.width as f32, fitted.height as f32));
     };
 
-    // Los tres que tvOS no tiene se saltan enteros: preguntar por el tamaño
-    // de una clase que no existe no es una medida que salga mal, es un
-    // `objc_getClass` que devuelve nulo y un proceso que se cierra. Sin
-    // entrada en la tabla, `measure_control` devuelve (0, 0) y el hueco se ve
-    // en la pantalla, que es lo que corresponde a un control que no está.
+    // The ones tvOS does not have are skipped altogether: asking for the size
+    // of a class that does not exist is not a measurement that comes out
+    // wrong, it is an `objc_getClass` returning null and a process quitting.
+    // With no entry in the table, `measure_control` returns (0, 0) and the gap
+    // shows on the screen, which is what a control that is not there deserves.
     #[cfg(not(target_os = "tvos"))]
     {
         record("Switch", &UISwitch::new(mtm));
@@ -49,19 +49,20 @@ pub fn measure_controls(mtm: MainThreadMarker) -> ControlSizes {
     record("TabBar", &UITabBar::new(mtm));
     record("SegmentedControl", &objc2_ui_kit::UISegmentedControl::new(mtm));
     record("SearchBar", &objc2_ui_kit::UISearchBar::new(mtm));
-    // El desplegable es un botón con menú: mide lo que mide un botón.
+    // The drop-down is a button with a menu: it measures what a button
+    // measures.
     record("Picker", &UIButton::new(mtm));
 
-    // `sizeThatFits` de algunos devuelve cero porque no tienen contenido
-    // todavía; para esos manda el tamaño natural conocido.
+    // Some of them return zero from `sizeThatFits` because they have no
+    // content yet; for those the known natural size wins.
     for (name, fallback) in [
         #[cfg(not(target_os = "tvos"))]
         ("Slider", (200.0, 32.0)),
         ("ProgressBar", (200.0, 4.0)),
         ("Button", (80.0, 44.0)),
-        // Un control segmentado sin segmentos y una barra de búsqueda sin
-        // texto no miden nada útil: hasta que tengan contenido manda su
-        // tamaño conocido.
+        // A segmented control with no segments and a search bar with no text
+        // measure nothing useful: until they have content their known size
+        // wins.
         ("SegmentedControl", (320.0, 32.0)),
         ("SearchBar", (320.0, 56.0)),
         #[cfg(not(target_os = "tvos"))]
@@ -81,7 +82,8 @@ pub fn measure_controls(mtm: MainThreadMarker) -> ControlSizes {
     sizes
 }
 
-/// Un `UITabBar` sin ítems no mide nada útil, y con ellos hay que construirlos.
+/// A `UITabBar` with no items measures nothing useful, and having them means
+/// building them.
 pub fn tab_bar_items(
     mtm: MainThreadMarker,
     titles: &[String],
@@ -94,8 +96,8 @@ pub fn tab_bar_items(
         .iter()
         .enumerate()
         .map(|(index, title)| {
-            // El icono no lleva tamaño: en una barra de pestañas lo elige
-            // UIKit, y forzarlo aquí sería pelearse con la barra.
+            // The icon carries no size: in a tab bar UIKit picks it, and
+            // forcing it here would be fighting the bar.
             let image = icons.get(index).and_then(|name| crate::icons::symbol(name, 0.0, 400));
             unsafe {
                 UITabBarItem::initWithTitle_image_tag(

@@ -1,24 +1,24 @@
-//! El realce de visionOS.
+//! visionOS's highlight.
 //!
-//! visionOS sí tiene toques —el pellizco con la mano cuenta como un toque
-//! indirecto y llega por los mismos reconocedores que en iOS—, así que aquí no
-//! hace falta ningún motor de foco. Lo que sí cambia es cómo sabe el usuario
-//! qué va a pulsar: apunta con la mirada, y sin realce no hay forma de ver
-//! dónde está apuntando.
+//! visionOS does have touches —a pinch of the hand counts as an indirect touch
+//! and arrives through the same recognisers as on iOS— so no focus engine is
+//! needed here. What does change is how the user knows what they are about to
+//! press: they aim with their gaze, and without a highlight there is no way to
+//! see where they are aiming.
 //!
-//! Ese realce lo dibuja el sistema, fuera del proceso de la app y sin pasar por
-//! nuestro ciclo de frames, pero solo si la vista lo pide con `hoverStyle`. Una
-//! `UIView` con un reconocedor de toque no lo pide: el valor de fábrica es
-//! `nil`, «esta vista no tiene realce». `UIButton` y compañía sí lo traen, por
-//! lo mismo que en tvOS traen el foco.
+//! The system draws that highlight, outside the app's process and without
+//! going through our frame loop, but only if the view asks for it with
+//! `hoverStyle`. A `UIView` with a tap recogniser does not ask: the factory
+//! value is `nil`, "this view has no highlight". `UIButton` and company do
+//! bring it, for the same reason they bring focus on tvOS.
 //!
-//! `automaticStyle` es el realce del sistema con la forma que el propio UIKit
-//! deduce de la vista. No se dibuja nada a mano: si visionOS cambia el aspecto
-//! del realce en una versión, esto cambia con él.
+//! `automaticStyle` is the system's highlight with the shape UIKit itself
+//! infers from the view. Nothing is drawn by hand: if visionOS changes how the
+//! highlight looks in some release, this changes with it.
 
 use objc2_ui_kit::{UIHoverStyle, UIView};
 
-/// Marca una vista como pulsable a la vista del usuario.
+/// Marks a view as pressable in the user's eyes.
 pub fn mark_pressable(mtm: objc2::MainThreadMarker, view: &UIView) {
     if view.hoverStyle().is_some() {
         return;

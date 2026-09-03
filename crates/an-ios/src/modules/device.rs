@@ -1,31 +1,31 @@
-//! Información del dispositivo.
+//! Information about the device.
 //!
-//! Los valores se leen una sola vez, al arrancar y en el hilo principal:
-//! `UIDevice` y `UIScreen` solo se pueden tocar ahí, y el módulo vive en el
-//! hilo del motor. Como además no cambian durante la vida del proceso, no hay
-//! nada que perder por capturarlos.
+//! The values are read once only, at startup and on the main thread: `UIDevice`
+//! and `UIScreen` can only be touched there, and the module lives on the
+//! engine's thread. Since on top of that they do not change over the life of
+//! the process, there is nothing to lose by capturing them.
 //!
-//! Un módulo que sí necesite hablar con UIKit en cada llamada tendrá que
-//! encolar el trabajo en el hilo principal y contestar desde allí con su
-//! `Responder`, que para eso se puede guardar y resolver más tarde.
+//! A module that does need to talk to UIKit on every call will have to queue
+//! the work on the main thread and answer from there with its `Responder`,
+//! which can be kept and resolved later for exactly that purpose.
 
 use an_bridge::native_module;
 
-/// Dónde corre esto. Sale del `cfg` y no de una comprobación en tiempo de
-/// ejecución: la familia se decide al compilar, y preguntarlo luego sería
-/// poder equivocarse.
+/// Where this is running. It comes from the `cfg` and not from a run-time
+/// check: the family is settled at compile time, and asking about it later
+/// would be room to get it wrong.
 #[cfg(target_os = "tvos")]
-const PLATAFORMA: &str = "tvos";
+const PLATFORM: &str = "tvos";
 #[cfg(target_os = "visionos")]
-const PLATAFORMA: &str = "visionos";
+const PLATFORM: &str = "visionos";
 #[cfg(not(any(target_os = "tvos", target_os = "visionos")))]
-const PLATAFORMA: &str = "ios";
+const PLATFORM: &str = "ios";
 use objc2::MainThreadMarker;
 use objc2_foundation::NSLocale;
 use objc2_ui_kit::UIDevice;
-// `UIScreen` está marcado `API_UNAVAILABLE(visionos)`: allí una app no vive en
-// una pantalla, vive en una ventana que el usuario coloca en la habitación y
-// redimensiona cuando quiere. Ver `docs/visionos.md`.
+// `UIScreen` is marked `API_UNAVAILABLE(visionos)`: over there an app does not
+// live on a screen, it lives in a window the user places in the room and
+// resizes whenever they like. See `docs/visionos.md`.
 #[cfg(not(target_os = "visionos"))]
 use objc2_ui_kit::UIScreen;
 use serde::Serialize;
@@ -45,16 +45,17 @@ pub struct DeviceModule {
 }
 
 impl DeviceModule {
-    /// Se llama desde el hilo principal, antes de arrancar el worker.
+    /// Called from the main thread, before the worker is started.
     pub fn capture(mtm: MainThreadMarker) -> Self {
         let device = UIDevice::currentDevice(mtm);
         let locale = NSLocale::currentLocale();
 
-        // La escala de pantalla. En visionOS no hay ninguna que preguntar: la
-        // app se dibuja para dos ojos y a la distancia a la que el usuario
-        // ponga la ventana, y el sistema no expone un número que signifique lo
-        // mismo que aquí. Sale 0 y se dice en la documentación, en vez de
-        // inventarse un 2.0 que alguien acabaría usando para calcular píxeles.
+        // The screen's scale. On visionOS there is none to ask for: the app
+        // is drawn for two eyes and at whatever distance the user puts the
+        // window, and the system exposes no number that means the same thing
+        // as this one. It comes out 0 and that is said in the documentation,
+        // rather than inventing a 2.0 somebody would end up computing pixels
+        // with.
         #[cfg(not(target_os = "visionos"))]
         let scale = UIScreen::mainScreen(mtm).scale();
         #[cfg(target_os = "visionos")]
@@ -62,11 +63,12 @@ impl DeviceModule {
 
         DeviceModule {
             info: DeviceInfo {
-                // Las tres familias comparten host, pero no son el mismo
-                // sitio: en una tele no se toca, en el visor la ventana no es
-                // una pantalla, y una app que quiera adaptarse necesita
-                // distinguirlas. El tipo del cliente las declara todas.
-                platform: PLATAFORMA,
+                // The three families share a host, but they are not the same
+                // place: on a television nothing is touched, in the headset
+                // the window is not a screen, and an app that wants to adapt
+                // needs to tell them apart. The client's type declares all
+                // three.
+                platform: PLATFORM,
                 system_version: device.systemVersion().to_string(),
                 model: device.model().to_string(),
                 scale,

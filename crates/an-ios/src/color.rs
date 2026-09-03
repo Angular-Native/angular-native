@@ -1,9 +1,9 @@
-//! Colores en iOS: el análisis lo hace el núcleo; aquí solo se envuelve el
-//! resultado en un `UIColor`.
+//! Colours on iOS: the core does the parsing; here the result is only wrapped
+//! in a `UIColor`.
 //!
-//! La tabla vivía aquí hasta que apareció un tercer host. Con watchOS pintando
-//! por su cuenta, dos copias de la misma tabla eran dos sitios donde `#0b1020`
-//! podía dejar de ser el mismo azul.
+//! The table lived here until a third host turned up. With watchOS painting on
+//! its own, two copies of the same table were two places where `#0b1020` could
+//! stop being the same blue.
 
 pub use an_core::color::{contrast_on, parse};
 
