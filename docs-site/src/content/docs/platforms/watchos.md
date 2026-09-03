@@ -314,15 +314,32 @@ warning per frame is an unreadable log:
 Event payloads are flat only. A nested object or an array is rejected with a
 log, because the value type on the wire cannot represent them.
 
+## Native modules
+
+`device` is registered, so `Device.info()` resolves and `'watchos'` — a value of
+`NativePlatform` that until then no host produced — is a value an app can
+actually read.
+
+The four fields it answers come **from the shell**, handed to
+`an_watch_runtime_new` as JSON alongside the control sizes: `systemVersion`,
+`model` and `scale` are `WKInterfaceDevice`'s, which is WatchKit, has no Rust
+binding, and would be four trips through Objective-C for what Swift settles in
+one line. Android does exactly this with `AnHost.deviceInfo()`.
+
+`platform` is the one field the shell does **not** send. That is the crate's
+word — this host cannot be running anywhere but a watch — for the same reason
+`an-ios` takes it from the `cfg`: asking somebody else would only be room to get
+it wrong. With nothing handed over, the call is rejected saying so, rather than
+answering an object with holes in it that would read as real data.
+
 ## What is missing
 
-- **No native modules at all.** `an-watch`'s FFI registers zero of them, where
-  iOS registers the device module and its host plugins. `Device.info()` on the
-  watch rejects with "there is no native module called…", and the `'watchos'`
-  value in `NativePlatform` is never produced by watch code.
 - **Plugins.** `an-watch` has no registry, so `an watchos` refuses to build an
   app that depends on one rather than shipping an app in which every call would
-  be rejected at runtime.
+  be rejected at runtime. `device` is not one: it is compiled into the host and
+  it works here (see below). A module name reached at run time is rejected with
+  the name *and* the reason there is nothing under it, which is not the message
+  a typo would get.
 - **No resources can be put into the `.app`.** `an watchos` copies the
   `Info.plist` and `main.js` and nothing else, so an `an-image` with a
   schemeless `[source]` does not find the file and says so in the log. An
