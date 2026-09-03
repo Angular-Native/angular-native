@@ -1,6 +1,8 @@
 ---
 title: Wear OS
 description: Angular on an Android watch — the same host as the phone, a round screen, the rotary crown, and the seven primitives that do not belong on a dial.
+sidebar:
+  order: 7
 ---
 
 Angular on the Android watch: same core, same layout, same bundle and — this

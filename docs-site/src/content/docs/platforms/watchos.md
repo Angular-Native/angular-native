@@ -1,6 +1,8 @@
 ---
 title: watchOS
 description: Angular on the Apple Watch — the one host that is not a view hierarchy, the digital crown, and the eight primitives the SDK does not have.
+sidebar:
+  order: 6
 ---
 
 Same core, same layout, same bundle. What changes is who paints.

@@ -1,0 +1,166 @@
+---
+title: How it works
+description: Why there is no WebView, what the Rust core actually does, and how one Angular tick becomes native views on screen.
+sidebar:
+  order: 2
+---
+
+An Angular template compiled by AOT emits instructions. In a browser those
+instructions reach a `Renderer2` that creates `div`s. Here they reach a
+`Renderer2` that creates a `UIView`, an `android.view.View`, an `NSView` or a
+SwiftUI view. That is the whole trick, and everything below is the machinery
+that makes it hold up.
+
+## Why not a WebView
+
+A WebView renders a page. A page can be made to *look* like the platform, and it
+will look like it on the day it was written. What it will not do is age with the
+platform: a lookalike switch does not change when the system's does, does not
+pick up the new haptic, does not answer the accessibility API the way the real
+one does, and does not know what the user set in Settings.
+
+So `<an-switch>` **is** a `UISwitch` and a `MaterialSwitch`. Nothing is drawn by
+hand to resemble a control, and where a platform has no equivalent the primitive
+is not created at all and says so — see [Components](/reference/components/).
+
+What follows from that is the interesting part: if the views are the platform's,
+the **layout** cannot be. UIKit, AppKit and Android each lay out differently, and
+SwiftUI does not let you lay out at all. So layout leaves the platform entirely.
+
+## The four layers
+
+```text
+  ┌──────────────────────────────────────────────────────┐
+  │  Angular, AOT-compiled, zoneless                     │  JS
+  │  NativeRenderer (Renderer2) → command buffer         │
+  └──────────────────────────────────────────────────────┘
+                          │ one buffer per tick
+  ┌──────────────────────────────────────────────────────┐
+  │  an-bridge   QuickJS, the protocol, native modules   │
+  │  an-core     the shadow tree, props, colours, icons  │  Rust
+  │  an-layout   flexbox over taffy, and measuring       │
+  │  an-host     HostRenderer + TextMeasurer, two traits │
+  └──────────────────────────────────────────────────────┘
+                          │ Frame { MountOp[] }
+  ┌──────────────────────────────────────────────────────┐
+  │  an-ios · an-android · an-macos · an-watch           │  the hosts
+  │  + the Swift and Java shells                         │
+  └──────────────────────────────────────────────────────┘
+```
+
+The core knows nothing about UIKit or Android. Everything a platform has to
+bring is in **two traits**: `HostRenderer`, which mounts views, and
+`TextMeasurer`, which measures text in the system's real typeface. A new
+platform is those two traits and a shell.
+
+## One buffer, not a thousand crossings
+
+JS does not call into Rust once per mutation. It writes commands into a buffer
+and hands the whole thing over at the end of the tick.
+
+An `@for` over 200 rows is around 1,200 mutations. One call each is 1,200 border
+crossings; a buffer is one. The protocol is thirteen opcodes — create, destroy,
+insert, remove, set style, set a string/number/boolean/null prop, set text, set a
+listener, set the root — little-endian, with strings carrying a length and UTF-8
+bytes and no alignment, so the decoder reads byte by byte and needs none.
+
+A command the core turns down does not fail quietly: the error carries **which**
+opcode failed and at what offset, not merely that one of them did.
+
+## Two threads, and why
+
+The JS engine does not run on the UI thread, and it is not for parallelism — it
+is for the stack. QuickJS needs around 4 MB to get Angular's router through one
+navigation, seventeen chained RxJS operators deep, and iOS's main thread has
+1 MB you cannot change. A thread of its own takes whatever stack it is asked
+for.
+
+The work splits into two halves that can sit on different threads:
+
+- **The shadow side** owns the tree, the layout and the measuring. It produces
+  frames.
+- **The mount side** owns the native views. It consumes them.
+
+The only thing crossing between them is a `Frame`, which is `Send`.
+
+## What one frame does
+
+The clock is the platform's — `CADisplayLink` on Apple, `Choreographer` on
+Android, a 30 Hz timer on the watch, because watchOS has no display link. On
+each tick:
+
+1. The UI thread sends the worker a tick with the current time and whatever
+   native events queued up since the last one, **and waits, with a deadline**.
+2. On the engine thread, JS runs its timers and its frame callbacks.
+   `requestAnimationFrame` here is literally the frame, so Angular's zoneless
+   scheduler batches change detection against real vsync rather than an
+   approximation of it.
+3. Native module answers are settled **before** microtasks are drained, so a
+   module that answered immediately resolves its promise inside this frame.
+4. Whatever the promises produced is written into the same buffer, not the next
+   one.
+5. The buffer is applied to the shadow tree, taffy lays it out, and the
+   difference comes back as a `Frame` of mount ops.
+6. The UI thread applies them in order — structure, then props, then layout —
+   and calls `flush` once.
+
+That deadline in step 1 is the whole design. Always blocking freezes the
+interface whenever Angular takes its time; never waiting adds a frame of latency
+to every touch even when the turn took two milliseconds. So: if the JS turn fits
+in what is left of the frame — the normal case — it mounts in that same frame
+with no latency added. If it runs over, the UI thread carries on and mounts that
+frame when it comes, without freezing. Control operations — evaluating,
+reloading, changing the viewport — do wait: they are rare and the order matters.
+
+A tick is never queued on top of one that has not finished. If JS is running
+slow, the queue would grow without end and every mounted frame would be older
+than the last.
+
+## The layout is not the platform's
+
+Flexbox runs once, in the core, over [taffy](https://github.com/DioxusLabs/taffy),
+and every host is handed absolute frames in logical points. The same template
+lays out identically on a phone, a TV and a watch — what differs is which
+control gets mounted.
+
+Two defaults are React Native's rather than CSS's, and both matter: children
+stack **downwards** unless told otherwise, and nothing shrinks below its size
+unless asked to. The full set of accepted styles, and what an unrecognised one
+does, is in [Styles and layout](/reference/styles/).
+
+A leaf with no explicit size is measured by asking the platform through
+`TextMeasurer`: text in the system's real typeface, controls from a sample
+control measured once at startup, images from their intrinsic size. That is why
+a `UISwitch` occupies exactly what a `UISwitch` occupies on this version of this
+system with this user's accessibility settings, rather than what a table in this
+repository once said it did.
+
+## Angular, unmodified
+
+Signals, `@if`, `@for`, the router, AOT templates, dependency injection. No
+dialect and no subset.
+
+**Zoneless**, because the frame loop is what drives change detection: zone.js
+exists to know when something might have changed, and here the answer is "on the
+frame". There is no `document`, so a fake one satisfies the pieces of Angular
+that ask; there is no address bar, so the router runs over an in-memory history
+stack — see [Native modules](/reference/native-modules/).
+
+One renderer serves the whole app rather than one per component: with no style
+encapsulation there is nothing to isolate, so creating one per view would only
+burn memory.
+
+## What is not free
+
+- **A gap has to be visible.** A prop no host reads, a style nobody recognises,
+  an event a platform cannot deliver: each warns once, and several are enforced
+  by scripts that fail the build. The expensive bug in a system like this is not
+  a crash — it is a feature that travels, is read by nobody, raises nothing, and
+  looks exactly like "this does not work".
+- **Every list is duplicated somewhere.** The style names live in Rust and in
+  TypeScript; the primitive names live in three places plus a wire code. Each
+  duplication has a script comparing the copies, because the failure mode of a
+  drift is silence.
+- **The whole vocabulary is closed.** A plugin can add a method; it cannot yet
+  add a view. Opening the core's node kinds to names it does not know at compile
+  time is the big outstanding piece — see [Plugins](/extending/plugins/).

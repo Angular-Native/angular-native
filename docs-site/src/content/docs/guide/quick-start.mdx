@@ -1,6 +1,8 @@
 ---
 title: Quick start
 description: From an empty directory to an Angular app running on native views, on the platform of your choice.
+sidebar:
+  order: 1
 ---
 
 import { Steps, Tabs, TabItem, Aside, CardGrid, LinkCard } from '@astrojs/starlight/components'
@@ -78,22 +80,29 @@ import { Steps, Tabs, TabItem, Aside, CardGrid, LinkCard } from '@astrojs/starli
      <TabItem label="iOS · tvOS · visionOS">
        ```bash
        an add ios && an ios
-       an add tvos && an tvos
-       an add visionos && an visionos
+       an add tvos && an tvos .
+       an add visionos && an visionos .
        ```
      </TabItem>
      <TabItem label="Android · Wear OS">
        ```bash
        an add android && an android
-       an wearos
+       an wearos .
        ```
      </TabItem>
      <TabItem label="macOS">
        ```bash
-       an macos
+       an macos .
        ```
      </TabItem>
    </Tabs>
+
+   <Aside type="tip" title="Why the trailing dot">
+   `an ios` and `an android` fall back to the project you are standing in.
+   The other five carry a default example from this repository instead, and
+   outside the monorepo naming any directory other than the project root is an
+   error — so pass `.` and they build yours.
+   </Aside>
 
 </Steps>
 
@@ -102,11 +111,13 @@ import { Steps, Tabs, TabItem, Aside, CardGrid, LinkCard } from '@astrojs/starli
 ```bash
 an dev              # iPhone simulator
 an dev --android    # Android emulator
-an dev --macos      # a window on your Mac
 an dev --tvos       # Apple TV simulator
+an dev --visionos   # Vision Pro simulator
 an dev --watchos    # Apple Watch simulator
 an dev --wearos     # Wear OS emulator
 ```
+
+There is no `an dev --macos` yet: rebuild with `an macos`.
 
 Saving a component swaps its definition in the running app. You stay on the
 same screen, with whatever you had typed and the timers still running.
@@ -156,12 +167,12 @@ absolute frames.
   />
   <LinkCard
     title="Accessibility"
-    href="/guide/accessibility/"
+    href="/accessibility/apple/"
     description="Labels, roles and state, and how they reach VoiceOver and TalkBack."
   />
   <LinkCard
     title="Plugins"
-    href="/extending/plugin-permissions/"
+    href="/extending/plugins/"
     description="Native methods written outside this repository."
   />
 </CardGrid>

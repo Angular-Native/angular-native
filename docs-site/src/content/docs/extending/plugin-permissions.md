@@ -1,6 +1,8 @@
 ---
 title: Permissions a plugin needs
 description: How a plugin declares Info.plist keys, entitlements and AndroidManifest entries, and how `an` merges them.
+sidebar:
+  order: 2
 ---
 
 A plugin that talks to the camera, the microphone, the keychain or Face ID does

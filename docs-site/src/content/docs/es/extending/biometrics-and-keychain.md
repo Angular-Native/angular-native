@@ -1,6 +1,8 @@
 ---
 title: Biometría y llavero
 description: Dos plugins que van juntos — la comprobación biométrica del sistema, y secretos guardados donde el sistema guarda los suyos.
+sidebar:
+  order: 3
 ---
 
 Dos plugins escritos fuera del núcleo, y la razón de que exista el

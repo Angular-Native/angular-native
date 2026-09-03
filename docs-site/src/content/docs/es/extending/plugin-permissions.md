@@ -1,6 +1,8 @@
 ---
 title: Permisos que necesita un plugin
 description: Cómo declara un plugin claves del Info.plist, derechos y entradas del AndroidManifest, y cómo los funde `an`.
+sidebar:
+  order: 2
 ---
 
 Un plugin que habla con la cámara, el micrófono, el llavero o Face ID no

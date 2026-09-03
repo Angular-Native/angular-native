@@ -1,6 +1,8 @@
 ---
 title: visionOS
 description: Angular on the Vision Pro — the same core, the same host as iOS, and a window that is not a screen.
+sidebar:
+  order: 5
 ---
 
 Angular on the Vision Pro: same core, same layout, same bundle and the same

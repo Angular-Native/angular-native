@@ -1,6 +1,8 @@
 ---
 title: Plugins
 description: An npm package that ships native code as well as TypeScript — the contract, one written end to end, and what a missing platform does to your build.
+sidebar:
+  order: 1
 ---
 
 A plugin is an **npm package that ships native code as well as TypeScript**. It

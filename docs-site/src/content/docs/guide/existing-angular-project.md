@@ -1,6 +1,8 @@
 ---
 title: Taking an Angular project to mobile
 description: You already have an `ng new` app and want it running on native views. Nothing has to move into this repository.
+sidebar:
+  order: 3
 ---
 
 This page is for someone who already has an Angular app — one from `ng new` —

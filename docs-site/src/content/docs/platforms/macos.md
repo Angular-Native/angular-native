@@ -1,6 +1,8 @@
 ---
 title: macOS
 description: Angular as a desktop app — real NSViews, a window that resizes, a pointer with a shape, and the one platform you can check without starting anything.
+sidebar:
+  order: 3
 ---
 
 Angular running as a desktop app: same core, same layout, same bundle, and real
