@@ -28,7 +28,7 @@ estilos = leer('shells/android/res/values/styles.xml')
 host = leer('shells/android/java/dev/angularnative/AnHost.java')
 scroll = leer('shells/android/java/dev/angularnative/AnScrollView.java')
 cli = leer('crates/an-cli/src/android.rs')
-doc = leer('docs/wearos.md')
+doc = leer('docs-site/src/content/docs/platforms/wearos.md')
 primitivas = leer('packages/primitives/src/primitives.ts')
 
 # 1. El manifiesto del reloj declara la forma del aparato. Sin esto el APK es
@@ -67,7 +67,8 @@ if 'android:windowSwipeToDismiss' not in estilos:
 # 3. La lista de primitivas que no se montan.
 #
 #    Vive en dos métodos de Java —el motivo y la etiqueta— y se documenta en
-#    `docs/wearos.md`. Tres sitios que se pueden separar: una primitiva con
+#    `docs-site/src/content/docs/platforms/wearos.md`. Tres sitios que se
+#    pueden separar: una primitiva con
 #    motivo y sin etiqueta sale como «kind 7», y una en Java y no en el
 #    documento solo se descubre cuando alguien la usa.
 def kinds_de(metodo: str) -> set[str]:
@@ -112,7 +113,7 @@ if inventadas:
 sin_documentar = sorted(t for t in etiquetas_declaradas if f'`{t}`' not in doc)
 if sin_documentar:
     fallos.append(
-        '  FALLO no van en el reloj y docs/wearos.md no las nombra: '
+        '  FALLO no van en el reloj y la página de Wear OS no las nombra: '
         + ', '.join(sin_documentar)
     )
 
@@ -208,7 +209,7 @@ print(f'  ok   el manifiesto del reloj declara su característica y su tema')
 print(f'  ok   los {len(declarados)} temas de res/values/styles.xml cubren los dos manifiestos')
 print(
     f'  ok   las {len(etiquetas_declaradas)} primitivas que no van en el reloj '
-    'coinciden en Java y en docs/wearos.md'
+    'coinciden en Java y en la página de Wear OS'
 )
 print('  ok   la corona llega por onGenericMotionEvent y solo en el reloj')
 print('  ok   (crown) y (crownIdle) los entrega el host, y fuera del reloj lo dicen')

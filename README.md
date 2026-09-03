@@ -77,23 +77,23 @@ cargo an build --release      # solo el bundle: 276 KB frente a 1,3 MB en debug
 
 La tele, el visor y el reloj piden nightly: `aarch64-apple-tvos-sim`,
 `aarch64-apple-visionos-sim` y `aarch64-apple-watchos-sim` son targets de nivel
-3 y su `std` se construye en el momento. Ver [docs/tvos.md](docs/tvos.md),
-[docs/visionos.md](docs/visionos.md) y [docs/watchos.md](docs/watchos.md).
+3 y su `std` se construye en el momento. Ver [platforms/tvos](https://angular-native.dev/platforms/tvos/),
+[platforms/visionos](https://angular-native.dev/platforms/visionos/) y [platforms/watchos](https://angular-native.dev/platforms/watchos/).
 
 En la tele no hay toques: se navega con el mando y el motor de foco, y un
 control que no se puede enfocar no se puede pulsar. Eso no es un detalle de
 implementación, es la plataforma, y cambia lo que una plantilla puede dar por
-hecho. Está todo en [docs/tvos.md](docs/tvos.md).
+hecho. Está todo en [platforms/tvos](https://angular-native.dev/platforms/tvos/).
 
 El reloj de Android no pide nada de eso: un Wear OS es Android, así que corre
 `android.view.View` y el host del teléfono le vale entero. Lo que cambia son
 cuatro cosas —el manifiesto, la pantalla redonda, la corona y las primitivas
-que allí no tienen sentido— y están en [docs/wearos.md](docs/wearos.md).
+que allí no tienen sentido— y están en [platforms/wearos](https://angular-native.dev/platforms/wearos/).
 
 El escritorio no pide nada: `aarch64-apple-darwin` es la máquina, así que no hay
 simulador que arrancar ni aparato que buscar. Es también la única plataforma
 donde una comprobación puede arrancar la app, moverle el ratón por encima y
-mirar la foto de lo que pintó. Ver [docs/macos.md](docs/macos.md).
+mirar la foto de lo que pintó. Ver [platforms/macos](https://angular-native.dev/platforms/macos/).
 
 Todo va por el mismo binario, `an`. No hay `.xcodeproj` ni Gradle: las
 herramientas de cada SDK ya hacen el trabajo y el proceso cabe en un fichero
@@ -116,7 +116,7 @@ an ios                               # al simulador
 `an build`, `an ios`, `an android` y `an dev` funcionan igual desde el monorepo
 que desde fuera; averiguar en cuál de los dos está es cosa del CLI. El flujo
 entero, y por qué los paquetes van empaquetados y el `.app` no se commitea, en
-[docs/proyecto-externo.md](docs/proyecto-externo.md).
+[guide/existing-angular-project](https://angular-native.dev/guide/existing-angular-project/).
 
 ## Qué hay
 
@@ -170,7 +170,7 @@ que llevaras escrito.
 con su Swift y su Java dentro; la app lo declara como dependencia y `an`
 compila y registra lo suyo al armar el `.app` o el APK. Si un plugin no cubre la
 plataforma que se está compilando, el build se para y lo dice, en vez de dejar
-un método que se traga la llamada. Ver [docs/plugins.md](docs/plugins.md).
+un método que se traga la llamada. Ver [extending/plugins](https://angular-native.dev/extending/plugins/).
 
 ## Verificación sin dispositivo
 
@@ -311,7 +311,7 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   llamada que devuelve una promesa— pero no una primitiva nueva que se monte en
   el árbol: eso exige abrir el `NodeKind` del core a nombres que no conoce en
   tiempo de compilación y que los tres hosts sepan construir una vista ajena.
-  Lo que falta, en [docs/plugins.md](docs/plugins.md).
+  Lo que falta, en [extending/plugins](https://angular-native.dev/extending/plugins/).
 
 - **En el visor no hay nada volumétrico.** visionOS monta el host de iOS tal
   cual, en una ventana plana dentro del espacio 3D, que es lo que el sistema
@@ -320,7 +320,7 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   otro host, como pasó con el reloj. Falta también el icono y, sobre todo,
   poder conducir la mirada y el pellizco desde fuera: el simulador no deja, así
   que ahí no hay ni script ni captura que enseñe el realce de la mirada. En
-  [docs/visionos.md](docs/visionos.md).
+  [platforms/visionos](https://angular-native.dev/platforms/visionos/).
 
 - **De la tele faltan dos controles y el icono.** tvOS monta el host de iOS tal
   cual —es el mismo UIKit, las mismas `UIView` y los mismos marcos absolutos—,
@@ -332,7 +332,7 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   plantilla pueda escuchar `(focus)` y `(blur)`: el host los emite, pero esas
   dos salidas solo existen hoy en `an-text-input`. Y falta el icono, que en
   tvOS es un catálogo de assets compilado con `actool`. En
-  [docs/tvos.md](docs/tvos.md).
+  [platforms/tvos](https://angular-native.dev/platforms/tvos/).
 
 - **El reloj monta diecisiete de las veinticinco, y dice por qué no las otras
   ocho.** Se quedan fuera `an-tab-bar` y `an-navigation-bar` —en 205 puntos de
@@ -346,7 +346,7 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   del host de iOS: watchOS no tiene jerarquía de `UIView`, así que el árbol se
   refleja en un modelo que redibuja SwiftUI. Faltan la animación y las
   transformaciones. El porqué de cada decisión, en
-  [docs/watchos.md](docs/watchos.md).
+  [platforms/watchos](https://angular-native.dev/platforms/watchos/).
 
 - **Del reloj de Android falta el modo ambiente y el propio reloj.** Wear OS
   monta el host de Android tal cual, y el APK, la pantalla redonda, la corona
@@ -356,7 +356,7 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   declara simplemente se cierra—, la corona como fuente de valor para un
   `an-slider`, y las complicaciones y esferas, que no comparten nada con esto.
   Y falta un reloj de verdad: todo se ha visto en el emulador, que simula la
-  corona y no trae códecs de vídeo. En [docs/wearos.md](docs/wearos.md).
+  corona y no trae códecs de vídeo. En [platforms/wearos](https://angular-native.dev/platforms/wearos/).
 
 - **Del escritorio falta el campo de contraseña y las transiciones de la
   pila.** macOS monta las veinticinco primitivas: veintidós con un control del
@@ -366,7 +366,7 @@ rápida de depurar sin simulador, y es lo que usan todos los scripts.
   contraseña es otra clase y una vista no puede cambiar de clase en marcha—, las
   transiciones de `an-native-stack`, y los plugins. El menú de la app lo pone el
   shell y no se expone a Angular. Todo ello, en
-  [docs/macos.md](docs/macos.md).
+  [platforms/macos](https://angular-native.dev/platforms/macos/).
 
 ## Desarrollo
 

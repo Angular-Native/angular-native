@@ -195,7 +195,7 @@ the Wear image — Android 14 — does not write the `hint` attribute at all, wh
 Android 16's does; the check notices that and says the hint went unchecked
 rather than failing on a tool that never reported it. And the primitives Wear OS
 does not mount — `an-tab-bar`, `an-select` and the five others in
-[docs/wearos.md](https://github.com/nesgarbo/angular-native/blob/main/docs/wearos.md) —
+[Wear OS](/platforms/wearos/) —
 leave a visible marker in their place, and that marker keeps its own: it takes
 no props of the primitive it replaces, accessibility included, precisely so it
 cannot disguise itself as the control that is not there.
