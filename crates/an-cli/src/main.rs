@@ -244,6 +244,8 @@ enum Command {
 enum PlatformArg {
     Ios,
     Android,
+    Macos,
+    Watchos,
 }
 
 impl From<PlatformArg> for plugins::Platform {
@@ -251,6 +253,8 @@ impl From<PlatformArg> for plugins::Platform {
         match value {
             PlatformArg::Ios => plugins::Platform::Ios,
             PlatformArg::Android => plugins::Platform::Android,
+            PlatformArg::Macos => plugins::Platform::Macos,
+            PlatformArg::Watchos => plugins::Platform::Watchos,
         }
     }
 }

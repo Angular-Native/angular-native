@@ -22,25 +22,38 @@ use serde_json::Value;
 
 use crate::workspace::Workspace;
 
+/// Every platform an app can be built for, which is every platform a plugin can
+/// be asked to cover.
+///
+/// The four Apple ones do not collapse into one. `ios` covers the phone, the TV
+/// and the headset because those three share a shell and a `UIKit`; macOS and
+/// watchOS do not, and that is not a packaging detail: `NSPasteboard` is not
+/// `UIPasteboard`, and a watch has no pasteboard at all. A plugin that declared
+/// one Apple half for all four would compile for the Mac and fail to link, or
+/// —worse— link and answer nonsense.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
     Ios,
     Android,
+    Macos,
+    Watchos,
 }
 
 impl Platform {
     /// Its key inside `angularNative`.
-    fn key(self) -> &'static str {
+    pub fn key(self) -> &'static str {
         match self {
             Platform::Ios => "ios",
             Platform::Android => "android",
+            Platform::Macos => "macos",
+            Platform::Watchos => "watchos",
         }
     }
 
     /// The extension its sources carry.
     fn extension(self) -> &'static str {
         match self {
-            Platform::Ios => "swift",
+            Platform::Ios | Platform::Macos | Platform::Watchos => "swift",
             Platform::Android => "java",
         }
     }
@@ -49,6 +62,8 @@ impl Platform {
         match self {
             Platform::Ios => "iOS",
             Platform::Android => "Android",
+            Platform::Macos => "macOS",
+            Platform::Watchos => "watchOS",
         }
     }
 }
@@ -71,13 +86,18 @@ pub struct Native {
 /// is the other way round. A common type would force a translation between the
 /// two to be invented, and that translation would be a lie in both directions.
 pub enum Contributions {
-    /// iOS: `angularNative.ios.plist` and `angularNative.ios.entitlements`.
+    /// Any Apple platform: `plist` and `entitlements` under its own key.
     ///
     /// Both are dictionaries and both merge the same way, but they end up in
     /// different files inside the `.app` and they are for different things: the
     /// `Info.plist` says what the app tells the user, and the entitlements say
     /// what the system lets it do.
-    Ios {
+    ///
+    /// The shape is shared by iOS, macOS and watchOS; the values are not, and
+    /// they are read from each platform's own section. A Mac wants
+    /// `com.apple.security.*` where a phone wants none of them, and a watch
+    /// wants neither. See [`Platform`].
+    Apple {
         plist: BTreeMap<String, Value>,
         entitlements: BTreeMap<String, Value>,
     },
@@ -124,31 +144,51 @@ pub struct Plugin {
     pub entry: Option<PathBuf>,
     pub ios: Option<Native>,
     pub android: Option<Native>,
+    pub macos: Option<Native>,
+    pub watchos: Option<Native>,
+    /// Per platform key, the plugin's own words for why it cannot exist there.
+    ///
+    /// It is written as `angularNative.<platform>.unsupported`, and it is the
+    /// difference between a build that stops saying "this plugin does not cover
+    /// watchOS" —which anybody could have guessed from the `package.json`— and
+    /// one that says "watchOS has no `UIPasteboard`". Only the person who wrote
+    /// the plugin knows the second, so only they can say it.
+    pub unsupported: BTreeMap<&'static str, String>,
 }
 
 impl Plugin {
-    fn native(&self, platform: Platform) -> Option<&Native> {
+    pub fn native(&self, platform: Platform) -> Option<&Native> {
         match platform {
             Platform::Ios => self.ios.as_ref(),
             Platform::Android => self.android.as_ref(),
+            Platform::Macos => self.macos.as_ref(),
+            Platform::Watchos => self.watchos.as_ref(),
         }
+    }
+
+    /// Why this plugin says it cannot cover that platform, if it says anything.
+    pub fn unsupported(&self, platform: Platform) -> Option<&str> {
+        self.unsupported.get(platform.key()).map(String::as_str)
     }
 
     /// Which platforms it covers, for showing.
     pub fn coverage(&self) -> String {
-        let mut covered: Vec<&str> = Vec::new();
-        if self.ios.is_some() {
-            covered.push("ios");
-        }
-        if self.android.is_some() {
-            covered.push("android");
-        }
+        let covered: Vec<&str> = ALL_PLATFORMS
+            .iter()
+            .filter(|platform| self.native(**platform).is_some())
+            .map(|platform| platform.key())
+            .collect();
         if covered.is_empty() {
-            return "ninguna".to_owned();
+            return "none".to_owned();
         }
         covered.join(" + ")
     }
 }
+
+/// Every platform, in the order they are listed in. It is the order `an plugins`
+/// prints and the order the messages name them in, so it is written down once.
+pub const ALL_PLATFORMS: [Platform; 4] =
+    [Platform::Ios, Platform::Android, Platform::Macos, Platform::Watchos];
 
 /// An app's plugins: those of its dependencies that carry a manifest.
 ///
@@ -250,14 +290,45 @@ fn read_manifest(package: &str, dir: &Path) -> Result<Option<Plugin>> {
         None => None,
     };
 
-    Ok(Some(Plugin {
+    let mut plugin = Plugin {
         package: package.to_owned(),
         dir: dir.to_owned(),
         module: module.to_owned(),
         entry,
-        ios: read_native(declared.get("ios"), dir, Platform::Ios, &manifest)?,
-        android: read_native(declared.get("android"), dir, Platform::Android, &manifest)?,
-    }))
+        ios: None,
+        android: None,
+        macos: None,
+        watchos: None,
+        unsupported: BTreeMap::new(),
+    };
+    for platform in ALL_PLATFORMS {
+        match read_native(declared.get(platform.key()), dir, platform, &manifest)? {
+            Half::Covered(native) => match platform {
+                Platform::Ios => plugin.ios = Some(native),
+                Platform::Android => plugin.android = Some(native),
+                Platform::Macos => plugin.macos = Some(native),
+                Platform::Watchos => plugin.watchos = Some(native),
+            },
+            Half::Unsupported(reason) => {
+                plugin.unsupported.insert(platform.key(), reason);
+            }
+            Half::Absent => {}
+        }
+    }
+    Ok(Some(plugin))
+}
+
+/// What a platform's section in the manifest turned out to be.
+///
+/// The middle one is the whole point of this enum. A plugin that says nothing
+/// about watchOS and a plugin that says "watchOS has no pasteboard" are not the
+/// same plugin, even though neither of them can be built for a watch: the first
+/// one is unfinished and the second one is finished. Folding them together would
+/// throw away the only sentence anybody reading the refusal actually wants.
+enum Half {
+    Covered(Native),
+    Unsupported(String),
+    Absent,
 }
 
 /// The module name travels untouched all the way to a Swift literal and a Java
@@ -286,9 +357,9 @@ fn read_native(
     dir: &Path,
     platform: Platform,
     manifest: &Path,
-) -> Result<Option<Native>> {
+) -> Result<Half> {
     let Some(declared) = declared else {
-        return Ok(None);
+        return Ok(Half::Absent);
     };
     let declared = declared.as_object().with_context(|| {
         format!(
@@ -297,6 +368,37 @@ fn read_native(
             platform.key()
         )
     })?;
+    // `unsupported` is a plugin owning up in its own words, and it is exclusive
+    // with `sources`: a half that exists needs no excuse, and one that does not
+    // exist has nothing to compile. Accepting both would leave it to whoever
+    // reads the JSON to guess which of the two the plugin meant.
+    if let Some(reason) = declared.get("unsupported") {
+        let reason = reason.as_str().with_context(|| {
+            format!(
+                "{}: angularNative.{}.unsupported has to be the sentence that explains why, \
+                 as a string",
+                manifest.display(),
+                platform.key()
+            )
+        })?;
+        if reason.trim().is_empty() {
+            bail!(
+                "{}: angularNative.{}.unsupported is empty. The whole point of it is the \
+                 reason; an empty one says less than leaving the section out.",
+                manifest.display(),
+                platform.key()
+            );
+        }
+        if declared.contains_key("sources") {
+            bail!(
+                "{}: angularNative.{} declares both sources and unsupported. It is one or the \
+                 other: either the half exists or it does not.",
+                manifest.display(),
+                platform.key()
+            );
+        }
+        return Ok(Half::Unsupported(reason.to_owned()));
+    }
     let sources = declared
         .get("sources")
         .and_then(Value::as_str)
@@ -327,15 +429,20 @@ fn read_native(
         );
     }
     let contributes = match platform {
-        Platform::Ios => Contributions::Ios {
-            plist: read_dict(declared.get("plist"), "plist", manifest)?,
-            entitlements: read_dict(declared.get("entitlements"), "entitlements", manifest)?,
+        Platform::Ios | Platform::Macos | Platform::Watchos => Contributions::Apple {
+            plist: read_dict(declared.get("plist"), platform, "plist", manifest)?,
+            entitlements: read_dict(
+                declared.get("entitlements"),
+                platform,
+                "entitlements",
+                manifest,
+            )?,
         },
         Platform::Android => {
             Contributions::Manifest(read_manifest_entries(declared.get("manifest"), manifest)?)
         }
     };
-    Ok(Some(Native {
+    Ok(Half::Covered(Native {
         sources,
         register: register.to_owned(),
         contributes,
@@ -350,17 +457,16 @@ fn read_native(
 /// is what saves whoever installs it from having to know.
 fn read_dict(
     declared: Option<&Value>,
+    platform: Platform,
     section: &str,
     manifest: &Path,
 ) -> Result<BTreeMap<String, Value>> {
+    let key_path = format!("angularNative.{}.{section}", platform.key());
     let Some(declared) = declared else {
         return Ok(BTreeMap::new());
     };
     let declared = declared.as_object().with_context(|| {
-        format!(
-            "{}: angularNative.ios.{section} has to be an object",
-            manifest.display()
-        )
+        format!("{}: {key_path} has to be an object", manifest.display())
     })?;
     let mut entries = BTreeMap::new();
     for (key, value) in declared {
@@ -368,16 +474,23 @@ fn read_dict(
         // path separator: `a.b` would not be a key called "a.b" but the "b"
         // inside the "a". No system key has a dot in it, so it stops here rather
         // than writing somewhere nobody asked for.
-        if key.is_empty() || key.contains('.') {
+        //
+        // The macOS entitlements are the exception that had to be carved out:
+        // every one of them is `com.apple.security.something`, dots and all, and
+        // they are what a sandboxed Mac app lives or dies by. They are not
+        // written with `plutil -replace` —they go into a dictionary that is
+        // serialised whole— so the path-separator problem does not reach them.
+        let dots_allowed = section == "entitlements";
+        if key.is_empty() || (key.contains('.') && !dots_allowed) {
             bail!(
-                "{}: angularNative.ios.{section} has the key {key:?}; only top-level keys with \
+                "{}: {key_path} has the key {key:?}; only top-level keys with \
                  no dots in them are accepted",
                 manifest.display()
             );
         }
         if !plist_value_ok(value) {
             bail!(
-                "{}: angularNative.ios.{section}[{key:?}] is {value}; only strings, booleans, \
+                "{}: {key_path}[{key:?}] is {value}; only strings, booleans, \
                  numbers and lists of strings are accepted. A nested dictionary is not merged \
                  yet. See https://angular-native.dev/extending/plugins/.",
                 manifest.display()
@@ -476,9 +589,9 @@ pub fn require(plugins: &[Plugin], platform: Platform) -> Result<()> {
         // `an plugins --platform ios`, without burning half a minute of `swiftc`
         // only to say the same thing.
         match platform {
-            Platform::Ios => {
-                plist_entries(plugins)?;
-                entitlement_entries(plugins)?;
+            Platform::Ios | Platform::Macos | Platform::Watchos => {
+                plist_entries(plugins, platform)?;
+                entitlement_entries(plugins, platform)?;
             }
             Platform::Android => {
                 manifest_entries(plugins)?;
@@ -492,26 +605,53 @@ pub fn require(plugins: &[Plugin], platform: Platform) -> Result<()> {
         missing.len(),
         if missing.len() == 1 { "es" } else { "" }
     );
+    // Two kinds of missing, and they get two different lines. The plugin that
+    // explained itself gets its own sentence quoted; the one that said nothing
+    // gets the list of what it does bring, which is all anybody can say about it.
     for plugin in &missing {
+        match plugin.unsupported(platform) {
+            Some(reason) => message.push_str(&format!(
+                "  · {} (module {:?}) says it cannot: {reason}\n",
+                plugin.package, plugin.module
+            )),
+            None => message.push_str(&format!(
+                "  · {} (module {:?}) only brings {}\n",
+                plugin.package,
+                plugin.module,
+                plugin.coverage()
+            )),
+        }
+    }
+    // If every one of them explained itself, there is nothing to add: the app
+    // depends on plugins that will never work there, and telling whoever reads
+    // this to go and write the missing half would be telling them to do
+    // something impossible.
+    if missing.iter().all(|plugin| plugin.unsupported(platform).is_some()) {
         message.push_str(&format!(
-            "  · {} (module {:?}) only brings {}\n",
-            plugin.package,
-            plugin.module,
-            plugin.coverage()
+            "\nThese are not unfinished halves: they cannot exist on {}. The app has to stop \
+             depending on them for this build, or not be built for {}.",
+            platform.label(),
+            platform.label()
+        ));
+    } else {
+        message.push_str(&format!(
+            "\nEither the plugin adds its {} half —sources in angularNative.{} of its \
+             package.json—, or it says why it cannot in angularNative.{}.unsupported, or the \
+             app stops depending on it.",
+            platform.label(),
+            platform.key(),
+            platform.key()
         ));
     }
-    message.push_str(&format!(
-        "\nEither the plugin adds its {} half —sources in angularNative.{} of its package.json—, \
-         or the app stops depending on it.",
-        platform.label(),
-        platform.key()
-    ));
     bail!(message)
 }
 
-/// Merges the `Info.plist` keys all the plugins ask for.
-pub fn plist_entries(plugins: &[Plugin]) -> Result<BTreeMap<String, Contributed>> {
-    merge_dicts(plugins, "the Info.plist", |plist, _| plist)
+/// Merges the `Info.plist` keys all the plugins ask for, for one Apple platform.
+pub fn plist_entries(
+    plugins: &[Plugin],
+    platform: Platform,
+) -> Result<BTreeMap<String, Contributed>> {
+    merge_dicts(plugins, platform, "the Info.plist", |plist, _| plist)
 }
 
 /// Merges the entitlements all the plugins ask for.
@@ -521,8 +661,11 @@ pub fn plist_entries(plugins: &[Plugin]) -> Result<BTreeMap<String, Contributed>
 /// `errSecMissingEntitlement` and saves nothing. Nobody sees that error until
 /// the app runs, and by then it looks like a keychain bug and not a signature
 /// that was missing.
-pub fn entitlement_entries(plugins: &[Plugin]) -> Result<BTreeMap<String, Contributed>> {
-    merge_dicts(plugins, "the entitlements", |_, entitlements| entitlements)
+pub fn entitlement_entries(
+    plugins: &[Plugin],
+    platform: Platform,
+) -> Result<BTreeMap<String, Contributed>> {
+    merge_dicts(plugins, platform, "the entitlements", |_, entitlements| entitlements)
 }
 
 /// The merge both of them share.
@@ -534,6 +677,7 @@ pub fn entitlement_entries(plugins: &[Plugin]) -> Result<BTreeMap<String, Contri
 /// gets in the system's dialog— so the build stops.
 fn merge_dicts<'a>(
     plugins: &'a [Plugin],
+    platform: Platform,
     what: &str,
     pick: fn(
         &'a BTreeMap<String, Value>,
@@ -542,8 +686,8 @@ fn merge_dicts<'a>(
 ) -> Result<BTreeMap<String, Contributed>> {
     let mut merged: BTreeMap<String, Contributed> = BTreeMap::new();
     for plugin in plugins {
-        let Some(native) = plugin.ios.as_ref() else { continue };
-        let Contributions::Ios { plist, entitlements } = &native.contributes else { continue };
+        let Some(native) = plugin.native(platform) else { continue };
+        let Contributions::Apple { plist, entitlements } = &native.contributes else { continue };
         for (key, value) in pick(plist, entitlements) {
             if let Some(previous) = merged.get(key) {
                 if &previous.value != value {
@@ -667,11 +811,17 @@ pub fn sources(plugin: &Plugin, platform: Platform) -> Result<Vec<String>> {
         .collect())
 }
 
-/// The registry that wires the plugins to the iOS shell.
+/// The registry that wires the plugins to a Swift shell.
+///
+/// One function for the three Apple platforms, because the file it writes is the
+/// same file: `AnPluginRegistry.register(name, Type())`, once per plugin. What
+/// differs between iOS, macOS and watchOS is the registry on the other side —its
+/// `AnPlugin` protocol hangs off `UIViewController`, `NSViewController` or
+/// nothing at all— and none of that shows up here.
 ///
 /// It is always generated, even when there are none: the shell calls it
 /// unconditionally, and an empty `install()` reads better than an `#if`.
-pub fn generate_ios(plugins: &[Plugin], out: &Path) -> Result<PathBuf> {
+pub fn generate_swift(plugins: &[Plugin], platform: Platform, out: &Path) -> Result<PathBuf> {
     let mut code = String::from(
         "// Generated by `an` when it puts the .app together. Do not edit: it is\n\
          // rewritten on every build.\n\
@@ -685,7 +835,7 @@ pub fn generate_ios(plugins: &[Plugin], out: &Path) -> Result<PathBuf> {
     }
     for plugin in plugins {
         let native = plugin
-            .native(Platform::Ios)
+            .native(platform)
             .expect("require() already checked it");
         code.push_str(&format!(
             "        AnPluginRegistry.register({:?}, {}())\n",
@@ -780,6 +930,15 @@ pub fn list(workspace: &Workspace, plugins: &[Plugin]) {
             plugin.coverage(),
             dir.display()
         );
+        // A platform the plugin has ruled out on purpose is worth a line of its
+        // own here, where somebody is looking at the list precisely because they
+        // are wondering what will happen on that platform. Finding it out from a
+        // failed build half a minute later is finding it out too late.
+        for platform in ALL_PLATFORMS {
+            if let Some(reason) = plugin.unsupported(platform) {
+                println!("    no {}: {reason}", platform.key());
+            }
+        }
     }
 }
 
