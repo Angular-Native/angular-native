@@ -286,6 +286,20 @@ impl Settings {
     }
 }
 
+/// The scan, run on a manifest that has just been parsed.
+///
+/// It hangs off `Project::read` and not off [`Settings::read`], so **every**
+/// command that runs inside a project pays for it — `an build` included. A
+/// secret that is only noticed by the command that needs it is a secret that
+/// sits in a repository for months, and the whole point of refusing it is to
+/// refuse it early.
+pub fn check_manifest_secrets(path: &Path, manifest: &Value) -> Result<()> {
+    match manifest.get("signing") {
+        Some(Value::Object(sections)) => check_for_secrets(path, sections),
+        _ => Ok(()),
+    }
+}
+
 /// Walks the whole `signing` object looking for a key that holds a secret.
 ///
 /// Recursive, because a section could grow subsections; and by key name rather
@@ -697,11 +711,23 @@ pub fn macos(settings: &Settings, notarising: bool) -> Result<Macos> {
     let wanted = settings
         .value("macos", "identity", "AN_MACOS_IDENTITY")
         .ok_or_else(|| settings.missing("macos", "an macos --sign", block, variables))?;
-    let (identity, identity_name) = find_developer_id(&wanted)?;
 
+    // The two of them are reported together when both are missing, and that is
+    // worth the extra branch: getting a Developer ID certificate and storing
+    // notarytool credentials are two errands, each of them minutes long, and
+    // finding out about the second one only after finishing the first is an
+    // afternoon spent twice.
     let notary_profile = settings.value("macos", "notaryProfile", "AN_MACOS_NOTARY_PROFILE");
+    let mut problems: Vec<String> = Vec::new();
+    let identity = match find_developer_id(&wanted) {
+        Ok(found) => Some(found),
+        Err(error) => {
+            problems.push(format!("{error}"));
+            None
+        }
+    };
     if notarising && notary_profile.is_none() {
-        bail!(
+        problems.push(format!(
             "`an macos --notarize` needs a notarytool keychain profile, and neither \
              signing.macos.notaryProfile nor AN_MACOS_NOTARY_PROFILE says which one.\n\n\
              Create it once, with an app-specific password from \
@@ -711,11 +737,15 @@ pub fn macos(settings: &Settings, notarising: bool) -> Result<Macos> {
              \x20       --team-id ABCDE12345 \\\n\
              \x20       --password xxxx-xxxx-xxxx-xxxx\n\n\
              Then put \"notaryProfile\": \"an-notary\" in {}. The password itself stays \
-             in the keychain and never reaches the project.\nSee {DOCS}",
+             in the keychain and never reaches the project.",
             settings.where_from()
-        );
+        ));
+    }
+    if !problems.is_empty() {
+        bail!("{}\nSee {DOCS}", problems.join("\n\n"));
     }
 
+    let (identity, identity_name) = identity.expect("with no problems there is an identity");
     Ok(Macos { identity, identity_name, notary_profile })
 }
 
@@ -740,7 +770,7 @@ fn find_developer_id(wanted: &str) -> Result<(String, String)> {
          paid Apple Developer Program: a free Apple ID cannot issue one, and without it \
          an app cannot be notarised.\n\
          For a build that only has to run on this machine, leave `--sign` off: \
-         `an macos` signs ad hoc and needs nobody's account.\nSee {DOCS}",
+         `an macos` signs ad hoc and needs nobody's account.",
         if found.is_empty() {
             "This keychain has no codesigning identity at all.".to_owned()
         } else {
@@ -812,7 +842,8 @@ pub fn android(settings: &Settings) -> Result<Android> {
             )
         })?;
 
-    let store_password = settings.password("android", "storePasswordEnv", "AN_ANDROID_KEYSTORE_PASSWORD")?;
+    let store_password =
+        settings.password("android", "storePasswordEnv", "AN_ANDROID_KEYSTORE_PASSWORD")?;
     // The key password defaults to the keystore's, which is what `keytool`
     // itself does when you press return at its prompt, and what almost every
     // keystore in existence ends up with.
@@ -820,7 +851,87 @@ pub fn android(settings: &Settings) -> Result<Android> {
         .password("android", "keyPasswordEnv", "AN_ANDROID_KEY_PASSWORD")
         .unwrap_or_else(|_| store_password.clone());
 
+    open_keystore(&keystore, &key_alias, &store_password)?;
+
     Ok(Android { keystore, key_alias, store_password, key_password })
+}
+
+/// Opens the keystore, here and now, to find out whether the password is right
+/// and the alias is in it.
+///
+/// It costs a third of a second and it moves two failures from the end of the
+/// build to the beginning. Without it, a mistyped password is a Java exception
+/// from `apksigner` about a "mac check" after two minutes of `javac` and `d8`,
+/// and a wrong alias is another one; neither mentions a password or an alias.
+///
+/// The password goes in on **standard input**, which is what `keytool` reads
+/// when `-storepass` is not given. On the command line it would be readable with
+/// `ps` by every other user on the machine, which is the thing this whole module
+/// is careful about.
+///
+/// Only the store password is checked. `keytool -list` does not open the key
+/// itself, so a key password that differs from the store's and is wrong is still
+/// apksigner's to report — and that one, at least, arrives with the word
+/// "password" in it.
+fn open_keystore(keystore: &Path, alias: &str, store_password: &str) -> Result<()> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut child = Command::new("keytool")
+        .args(["-list", "-keystore"])
+        .arg(keystore)
+        .args(["-alias", alias])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("keytool could not be run; it comes with the JDK, same as javac")?;
+    child
+        .stdin
+        .as_mut()
+        .context("keytool would not take the password")?
+        .write_all(format!("{store_password}\n").as_bytes())
+        .context("the password could not be handed to keytool")?;
+    let output = child.wait_with_output().context("keytool could not be run")?;
+    if output.status.success() {
+        return Ok(());
+    }
+
+    // keytool is localised, so its exact sentence depends on the machine's
+    // language. What is stable is the exception class name, which it prints
+    // either way.
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if said.contains("does not exist") || said.contains("no existe") {
+        bail!(
+            "there is no key called {alias:?} in {}.\n\
+             `keytool -list -keystore {}` prints the aliases it holds. The alias comes \
+             from signing.android.keyAlias, or from AN_ANDROID_KEY_ALIAS.\nSee {DOCS}",
+            keystore.display(),
+            keystore.display()
+        );
+    }
+    if said.contains("UnrecoverableKeyException")
+        || said.contains("password was incorrect")
+        || said.contains("Keystore was tampered")
+        || said.contains("IOException")
+    {
+        bail!(
+            "the password for {} is wrong, so it could not be opened.\n\
+             It is read from the environment variable named in \
+             signing.android.storePasswordEnv, which defaults to \
+             AN_ANDROID_KEYSTORE_PASSWORD.\nSee {DOCS}",
+            keystore.display()
+        );
+    }
+    bail!(
+        "{} could not be opened.\n{}\nSee {DOCS}",
+        keystore.display(),
+        said.trim()
+    )
 }
 
 // ---------------------------------------------------------------------------

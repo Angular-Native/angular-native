@@ -1,6 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="dev.angularnative">
+    package="dev.angularnative"
+    android:versionCode="1"
+    android:versionName="1.0">
+
+    <!--
+      The version. A device never asks for it, which is why this manifest went
+      without one for so long, but a store does: Google Play refuses a bundle
+      whose versionCode it has already seen, and `bundletool` refuses one that
+      has no versionCode at all — with "Version code not found in manifest",
+      after everything else has already been built.
+
+      versionCode is an integer nobody sees and it has to go up with every
+      upload. versionName is the string people read, and Play does not care what
+      it says.
+    -->
 
     <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="36" />
 

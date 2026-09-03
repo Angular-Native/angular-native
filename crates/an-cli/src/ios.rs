@@ -706,7 +706,7 @@ pub fn swift_sources(dir: &Path) -> Result<Vec<String>> {
 pub fn launch(package: &Package, device: &str) -> Result<()> {
     let family = package.family;
     let udid = find_device(family, device)?;
-    eprintln!("==> simulador: {device}");
+    eprintln!("==> simulator: {device}");
     let _ = Command::new("xcrun").args(["simctl", "boot", &udid]).output();
     let _ = Command::new("open")
         .args(["-a", "Simulator", "--args", "-CurrentDeviceUDID", &udid])

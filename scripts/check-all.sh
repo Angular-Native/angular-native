@@ -78,6 +78,14 @@ echo
 "$ROOT/scripts/check-wearos.sh"
 
 echo
+# Signing and distribution. It goes after the Android checks because it builds
+# two more Android artefacts and everything they need is warm by now, and it is
+# written so that it passes with no Apple account and no release keystore: what
+# it checks is the plumbing and the refusals, plus the one release path that
+# needs nobody's permission.
+"$ROOT/scripts/check-signing.sh"
+
+echo
 # Only the half that costs nothing. The other one — build the APK, install it
 # and ask the system for its accessibility tree — is `check-a11y-device.sh`,
 # and it needs a device.

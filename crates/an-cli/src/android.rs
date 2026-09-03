@@ -114,7 +114,7 @@ impl Sdk {
             .context("the SDK has no platform installed")?;
         let android_jar = platform.join("android.jar");
         if !android_jar.is_file() {
-            bail!("no encuentro android.jar en {}", platform.display());
+            bail!("there is no android.jar in {}", platform.display());
         }
         Ok(Sdk {
             root,
@@ -264,7 +264,7 @@ pub fn assemble(
     let manifest = workspace
         .overlay("android", form.manifest_name())
         .unwrap_or_else(|| root.join(form.manifest()));
-    check_manifest(&manifest)?;
+    check_manifest(&manifest, packaging.aab)?;
     // And the one handed to `aapt2` is the project's plus whatever the plugins
     // ask for. The original is left alone: it is the user's.
     let manifest =
@@ -892,9 +892,25 @@ fn attribute(attributes: &str, name: &str) -> Option<String> {
 /// If somebody changes it by hand, `javac` compiles just the same —the classes
 /// carry their `package` inside them— but Android cannot find the activity and
 /// the app does not open. Better to stop it here.
-fn check_manifest(manifest: &Path) -> Result<()> {
+fn check_manifest(manifest: &Path, aab: bool) -> Result<()> {
     let text = std::fs::read_to_string(manifest)
         .with_context(|| format!("{} could not be read", manifest.display()))?;
+    // A device never asks for a version, which is why a manifest can go without
+    // one for years. A store does, and bundletool says so only after everything
+    // has been built — so it is said here instead, before anything is.
+    if aab && !declares_version(&text) {
+        bail!(
+            "{}: there is no android:versionCode, and Google Play will not take a \
+             bundle without one.\n\
+             Add it to the <manifest> element, next to the package:\n\
+             \x20   android:versionCode=\"1\"\n\
+             \x20   android:versionName=\"1.0\"\n\
+             versionCode is an integer that has to go up on every upload; Play refuses \
+             one it has already seen.\nSee {}",
+            manifest.display(),
+            signing::DOCS
+        );
+    }
     if !text.contains(&format!("package=\"{PACKAGE}\"")) {
         bail!(
             "{}: the manifest has to declare package=\"{PACKAGE}\", which is where the \
@@ -1065,7 +1081,7 @@ pub fn install_and_launch(
         Some(asked_for) => check_device(&adb, asked_for, form)?,
         None => pick_device(&adb, form)?,
     };
-    eprintln!("==> instalando en {serial}");
+    eprintln!("==> installing on {serial}");
     // Same reason as on iOS: installing over a running app does not reload the
     // new bundle.
     let _ = Command::new(&adb)
@@ -1138,5 +1154,44 @@ impl AsCwd for &Workspace {
 impl AsCwd for &PathBuf {
     fn cwd(&self) -> PathBuf {
         (*self).clone()
+    }
+}
+
+
+/// Whether a manifest declares a version code.
+///
+/// By attribute name and not by parsing the XML: the only thing being asked is
+/// whether the attribute is written anywhere in the `<manifest>` element, and
+/// there is exactly one of those.
+fn declares_version(manifest: &str) -> bool {
+    manifest.contains("android:versionCode")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_manifest_with_no_version_code_is_caught_before_bundletool_sees_it() {
+        let without = r#"<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.angularnative">
+</manifest>"#;
+        assert!(!declares_version(without));
+        assert!(declares_version(
+            r#"<manifest package="dev.angularnative" android:versionCode="7">"#
+        ));
+    }
+
+    /// The shells ship one. Without this, the manifests in the repository could
+    /// lose it in a merge and only the first person to build a bundle would find
+    /// out.
+    #[test]
+    fn both_shell_manifests_declare_one() {
+        for manifest in [Form::Phone.manifest(), Form::Watch.manifest()] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(manifest);
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|_| panic!("{} could not be read", path.display()));
+            assert!(declares_version(&text), "{manifest} has no android:versionCode");
+        }
     }
 }
