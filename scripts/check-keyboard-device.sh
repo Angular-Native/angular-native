@@ -109,6 +109,27 @@ fi
 # And the notification shade, which a stray drag in an earlier run leaves open
 # over everything and which `uiautomator` then dumps instead of the app.
 "$ADB" -s "$SERIAL" shell cmd statusbar collapse >/dev/null 2>&1 || true
+
+# And then it is checked, because `dismiss-keyguard` only opens a swipe lock: a
+# phone with a PIN, a pattern or a fingerprint stays shut and there is nothing
+# adb can do about it. Left undetected, the dump reads the lock screen and the
+# failure comes out as "the form never came up", which blames the code for a
+# phone lying face down on a desk. That is the same lie the accessibility check
+# used to tell, and it costs the same half hour to see through.
+WINDOWS="$("$ADB" -s "$SERIAL" shell dumpsys window 2>/dev/null | tr -d '\r')"
+if grep -q 'mDreamingLockscreen=true' <<<"$WINDOWS"; then
+  echo "  --   the keyboard is not measured: $SERIAL is locked."
+  echo "       Unlock the phone —a PIN or a fingerprint cannot be entered over adb—"
+  echo "       and run it again. Everything above this line was checked; nothing"
+  echo "       below it can be."
+  exit 0
+fi
+if [ "$("$ADB" -s "$SERIAL" shell dumpsys deviceidle 2>/dev/null | sed -n 's/.*mScreenOn=//p' | tr -d '\r')" = "false" ]; then
+  echo "  --   the keyboard is not measured: the screen on $SERIAL is off and did"
+  echo "       not come on. Wake it and run it again."
+  exit 0
+fi
+
 "$ADB" -s "$SERIAL" shell am force-stop dev.angularnative
 "$ADB" -s "$SERIAL" shell am start -n dev.angularnative/.MainActivity >/dev/null
 
