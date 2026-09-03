@@ -34,6 +34,9 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
   # The keyboard's quirks are set by property name: on iOS 26 their setters
   # are not in the class's method table.
   "NSKeyValueCoding",
+  # The keyboard announces itself over the notification centre: no view sees it
+  # come up, and the frame, the duration and the curve travel in the userInfo.
+  "NSNotification",
   "NSURL", "NSURLSession", "NSURLRequest", "NSData", "NSOperation", "NSError", "NSURLResponse",
   "NSArray", "block2", "objc2-core-foundation",
 ] }
