@@ -54,7 +54,7 @@
 }
 
 .an-hero h1 {
-	font-size: clamp(2.125rem, 1.2rem + 3.6vw, 3.25rem);
+	font-size: clamp(2.125rem, 1.2rem + 3.2vw, 2.875rem);
 	line-height: 1.08;
 	letter-spacing: -0.035em;
 	font-weight: 700;
@@ -66,6 +66,19 @@
 .an-hero h1 em {
 	font-style: normal;
 	color: var(--sl-color-text-accent);
+}
+
+/* The headline is two sentences and it should break between them, not inside
+   the second one. Only once there is room for each on a line of its own —
+   below that the browser wraps it as it sees fit. */
+.an-hero h1 br {
+	display: none;
+}
+
+@media (min-width: 60rem) {
+	.an-hero h1 br {
+		display: inline;
+	}
 }
 
 .an-hero__tagline {
@@ -178,15 +191,14 @@
    document, so it loses the hairline the docs pages use — eight of those would
    cut the page into strips — and keeps only the space around it. */
 :root[data-has-hero] .sl-markdown-content h2 {
-	margin-top: 0;
-	padding-top: 0;
-	border-top: none;
 	font-size: clamp(1.375rem, 1.1rem + 1vw, 1.75rem);
 	letter-spacing: -0.02em;
 }
 
 :root[data-has-hero] .sl-markdown-content .sl-heading-wrapper {
 	margin-top: 4.5rem;
+	padding-top: 0;
+	border-top: none;
 }
 
 :root[data-has-hero] .sl-markdown-content .sl-heading-wrapper + * {
@@ -212,7 +224,16 @@
 	margin: 0;
 	display: grid;
 	gap: 0.75rem;
-	grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+	/* Two to a row on a phone rather than eight stacked: the point of this
+	   section is that there are eight of them, which a column of one does not
+	   show. */
+	grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+}
+
+@media (min-width: 40rem) {
+	.an-platforms {
+		grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+	}
 }
 
 .an-platform {

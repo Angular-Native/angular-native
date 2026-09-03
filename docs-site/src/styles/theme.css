@@ -29,6 +29,17 @@
 	--sl-color-gray-6: hsl(220 13% 17%);
 	--sl-color-black: hsl(220 16% 8%);
 
+	/* The four aside hues, pulled down in saturation so a note is a note and not
+	   a second accent shouting over the vermilion. */
+	--sl-color-blue: hsl(215 80% 62%);
+	--sl-color-blue-high: hsl(215 90% 80%);
+	--sl-color-purple: hsl(265 65% 68%);
+	--sl-color-purple-high: hsl(265 85% 84%);
+	--sl-color-orange: hsl(38 88% 58%);
+	--sl-color-orange-high: hsl(38 92% 76%);
+	--sl-color-red: hsl(352 78% 62%);
+	--sl-color-red-high: hsl(352 88% 80%);
+
 	--sl-color-accent-low: hsl(12 50% 15%);
 	--sl-color-accent: hsl(14 90% 62%);
 	--sl-color-accent-high: hsl(16 96% 80%);
@@ -111,6 +122,15 @@
 	--sl-color-gray-6: hsl(220 20% 93%);
 	--sl-color-gray-7: hsl(220 30% 97%);
 	--sl-color-black: hsl(0 0% 100%);
+
+	--sl-color-blue: hsl(215 78% 46%);
+	--sl-color-blue-high: hsl(215 72% 32%);
+	--sl-color-purple: hsl(265 58% 52%);
+	--sl-color-purple-high: hsl(265 60% 36%);
+	--sl-color-orange: hsl(33 88% 45%);
+	--sl-color-orange-high: hsl(30 82% 30%);
+	--sl-color-red: hsl(352 72% 50%);
+	--sl-color-red-high: hsl(352 70% 34%);
 
 	--sl-color-accent-low: hsl(12 90% 95%);
 	--sl-color-accent: hsl(12 80% 45%);
@@ -459,16 +479,39 @@ mobile-starlight-toc nav > button {
 
 /* ---------------------------------------------------------------- asides -- */
 
+/*
+ * The stock aside is a block of saturated colour. One of those on a page is a
+ * poster; three of them is a page nobody reads. It becomes the same surface
+ * every other panel on the site uses, tinted a tenth of the way towards its own
+ * colour, with the colour itself kept for the rule and the label.
+ */
 .starlight-aside {
 	border-inline-start-width: 2px;
 	border-radius: 0 var(--an-radius) var(--an-radius) 0;
 	padding: 0.875rem 1.125rem;
+	color: var(--sl-color-text);
+	background-color: var(--an-surface);
+}
+
+@supports (background-color: color-mix(in srgb, red 10%, blue)) {
+	.starlight-aside {
+		background-color: color-mix(in srgb, var(--sl-color-asides-border) 10%, var(--an-surface));
+	}
 }
 
 .starlight-aside__title {
 	font-size: 0.75rem;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
+}
+
+/* ----------------------------------------------------------------- steps -- */
+
+.sl-steps > li::before {
+	background-color: var(--an-accent-tint-strong);
+	color: var(--sl-color-text-accent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sl-color-accent) 40%, transparent);
+	font-weight: 650;
 }
 
 /* ----------------------------------------------------------------- cards -- */
