@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Controles del sistema: que existan, que midan lo suyo y que se coloquen.
+# System controls: that they exist, that they measure their own size and that
+# they get placed.
 #
-# Los tamaños son los que devuelve el medidor aproximado, no los de la
-# plataforma: lo que se comprueba aquí es que cada control se mide como control
-# y no como caja vacía.
+# The sizes are the ones the rough measurer returns, not the platform's: what is
+# checked here is that each control is measured as a control and not as an empty
+# box.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,57 +17,59 @@ check() {
   if grep -qE -- "$1" <<<"$OUTPUT"; then
     echo "  ok   $2"
   else
-    echo "  FALLO $2"
+    echo "  FAIL $2"
     fail=1
   fi
 }
 
 echo "== controls"
-check 'Switch#[0-9]+ \[[0-9]+,[0-9]+ 51x31\]' 'el interruptor mide lo que mide un interruptor'
-check 'Slider#[0-9]+ \[[0-9]+,[0-9]+ 361x32\]' 'el deslizador estira a lo ancho y mantiene su alto'
-check 'ProgressBar#[0-9]+ \[[0-9]+,[0-9]+ 361x4\]' 'la barra de progreso también estira'
-check 'ActivityIndicator#[0-9]+ \[[0-9]+,[0-9]+ 20x20\]' 'la ruedecilla tiene su tamaño propio'
-check 'Button#[0-9]+ \[[0-9]+,[0-9]+ [0-9]+x44\]' 'el botón tiene el alto de un botón'
-check 'TabBar#[0-9]+ \[0,803 393x49\]' 'la barra de pestañas se pega abajo con su alto'
-check 'Modal#[0-9]+ \[0,0 393x852\]' 'el modal cubre la pantalla'
-# Que las props lleguen, no solo que el control se monte. El volcado las
-# imprime porque una prop que llega y una que se pierde se ven igual en el
-# árbol: ninguna de las dos cambia el marco.
-check 'Switch#[0-9]+ .*props .*color=#6ee7b7 .*on=true' 'el interruptor recibe su estado y su color'
-check 'ProgressBar#[0-9]+ .*props color=#6ee7b7 progress=0.35' 'la barra recibe el progreso calculado'
-# El interlineado y el espaciado los medía el núcleo y no los dibujaba ningún
-# host: el layout reservaba un hueco que el texto no llenaba.
-check 'Text#[0-9]+ .*letterSpacing=2' 'el espaciado entre letras llega al host'
-check 'Text#[0-9]+ .*lineHeight=34' 'el interlineado llega al host'
-# El botón configurable: lo que existe en las dos plataformas va como entrada
-# normal, y lo que solo tiene una va en su objeto y viaja con su prefijo, que
-# es lo que permite que cada host descarte lo que no es suyo.
-check 'Button#[0-9]+ .*fontSize=17 fontWeight=bold' 'el botón recibe su tipografía'
-check 'Button#[0-9]+ .*icon=star .*variant=filled' 'el botón recibe icono y variante'
-check 'Button#[0-9]+ .*iconPosition=trailing .*variant=outlined' 'y el contorno con el icono al otro lado'
-check 'Button#[0-9]+ .*enabled=true' 'un control se puede apagar'
-check 'Button#[0-9]+ .*ios:subtitle=a pantalla completa' 'el subtítulo viaja marcado como de iOS'
-check 'Button#[0-9]+ .*android:allCaps=false android:rippleColor=#ffffff55' 'y la onda y las mayúsculas como de Android'
-# Las cuatro variantes con rótulo. El de `filled` no se dibujaba en iOS —salía
-# del mismo color que el relleno— y de esta fila sale la captura con la que se
-# comprueba. El volcado no ve colores, pero sí que la fila sigue ahí: si alguien
-# la quita, la regresión se queda sin prueba visual.
-check 'Button#[0-9]+ .*title=Texto variant=text' 'la variante de solo texto lleva su rótulo'
-check 'Button#[0-9]+ .*title=Relleno variant=filled' 'la de relleno también'
-check 'Button#[0-9]+ .*title=Tonal variant=tonal' 'la tonal también'
-check 'Button#[0-9]+ .*title=Borde variant=outlined' 'y la de contorno'
-# El interruptor y el deslizador: `[color]` es el principal —lo encendido, el
-# tramo recorrido— y el resto de piezas van con su nombre.
-check 'Switch#[0-9]+ .*android:trackColor=#334155 color=#6ee7b7 .*thumbColor=#0b1020' 'el interruptor tiñe pulgar y vía por separado'
-check 'Slider#[0-9]+ .*maximumTrackColor=#1e2a4a .*minimumTrackColor=#6ee7b7' 'el deslizador tiñe los dos tramos'
-check 'Slider#[0-9]+ .*android:stepSize=5 .*ios:continuous=true' 'y cada plataforma pide lo suyo: pasos allí, avisar al arrastrar aquí'
-check 'Text#[0-9]+ .*android:selectable=true .*textDecoration=underline' 'el texto se subraya, y en Android además se puede copiar'
-check 'ScrollView#[0-9]+ .*ios:keyboardDismissMode=onDrag .*scrollEnabled=true' 'el desplazamiento se puede quitar, y el teclado se va al arrastrar en iOS'
-check 'TabBar#[0-9]+ .*ios:translucent=true .*unselectedColor=#6b7a99' 'las pestañas apagadas tienen su color, y la barra deja ver por detrás en iOS'
-# Los iconos: que midan lo suyo. El 24 es el de por defecto, sin `[size]`; los
-# otros vienen del tamaño pedido, que además elige el trazo del símbolo.
-check 'Icon#[0-9]+ \[[0-9]+,[0-9]+ 24x24\]' 'un icono sin medidas mide 24'
-check 'Icon#[0-9]+ \[[0-9]+,[0-9]+ 40x40\]' 'y con [size] mide lo que se le pide'
+check 'Switch#[0-9]+ \[[0-9]+,[0-9]+ 51x31\]' 'the switch measures what a switch measures'
+check 'Slider#[0-9]+ \[[0-9]+,[0-9]+ 361x32\]' 'the slider stretches across and keeps its height'
+check 'ProgressBar#[0-9]+ \[[0-9]+,[0-9]+ 361x4\]' 'the progress bar stretches too'
+check 'ActivityIndicator#[0-9]+ \[[0-9]+,[0-9]+ 20x20\]' 'the spinner has a size of its own'
+check 'Button#[0-9]+ \[[0-9]+,[0-9]+ [0-9]+x44\]' 'the button has the height of a button'
+check 'TabBar#[0-9]+ \[0,803 393x49\]' 'the tab bar sticks to the bottom with its height'
+check 'Modal#[0-9]+ \[0,0 393x852\]' 'the modal covers the screen'
+# That the props arrive, not just that the control mounts. The dump prints them
+# because a prop that arrives and one that is lost look the same in the tree:
+# neither of the two changes the frame.
+check 'Switch#[0-9]+ .*props .*color=#6ee7b7 .*on=true' 'the switch receives its state and its colour'
+check 'ProgressBar#[0-9]+ .*props color=#6ee7b7 progress=0.35' 'the bar receives the computed progress'
+# The line height and the letter spacing were measured by the core and drawn by
+# no host: the layout reserved a gap the text did not fill.
+check 'Text#[0-9]+ .*letterSpacing=2' 'the letter spacing reaches the host'
+check 'Text#[0-9]+ .*lineHeight=34' 'the line height reaches the host'
+# The configurable button: what exists on both platforms travels as an ordinary
+# input, and what only one of them has travels in its own object with its
+# prefix, which is what lets each host discard what is not its own.
+check 'Button#[0-9]+ .*fontSize=17 fontWeight=bold' 'the button receives its typography'
+check 'Button#[0-9]+ .*icon=star .*variant=filled' 'the button receives an icon and a variant'
+check 'Button#[0-9]+ .*iconPosition=trailing .*variant=outlined' 'and the outlined one with the icon on the other side'
+check 'Button#[0-9]+ .*enabled=true' 'a control can be switched off'
+check 'Button#[0-9]+ .*ios:subtitle=full screen' 'the subtitle travels marked as an iOS one'
+check 'Button#[0-9]+ .*android:allCaps=false android:rippleColor=#ffffff55' 'and the ripple and the caps as Android ones'
+# The four variants with their label. The `filled` one was not drawn on iOS —it
+# came out the same colour as the fill— and this row is what the screenshot the
+# regression is checked against comes from. The dump does not see colours, but
+# it does see that the row is still there: if somebody removes it, the
+# regression loses its visual proof.
+check 'Button#[0-9]+ .*title=Text variant=text' 'the text-only variant carries its label'
+check 'Button#[0-9]+ .*title=Filled variant=filled' 'so does the filled one'
+check 'Button#[0-9]+ .*title=Tonal variant=tonal' 'so does the tonal one'
+check 'Button#[0-9]+ .*title=Outlined variant=outlined' 'and so does the outlined one'
+# The switch and the slider: `[color]` is the main one —what is on, the track
+# already covered— and the remaining pieces travel under their own names.
+check 'Switch#[0-9]+ .*android:trackColor=#334155 color=#6ee7b7 .*thumbColor=#0b1020' 'the switch tints thumb and track separately'
+check 'Slider#[0-9]+ .*maximumTrackColor=#1e2a4a .*minimumTrackColor=#6ee7b7' 'the slider tints both stretches'
+check 'Slider#[0-9]+ .*android:stepSize=5 .*ios:continuous=true' 'and each platform asks for its own: steps there, reporting while dragging here'
+check 'Text#[0-9]+ .*android:selectable=true .*textDecoration=underline' 'the text is underlined, and on Android it can also be copied'
+check 'ScrollView#[0-9]+ .*ios:keyboardDismissMode=onDrag .*scrollEnabled=true' 'scrolling can be turned off, and on iOS the keyboard goes away on drag'
+check 'TabBar#[0-9]+ .*ios:translucent=true .*unselectedColor=#6b7a99' 'unselected tabs have their colour, and on iOS the bar lets the content show through'
+# The icons: that they measure what they should. 24 is the default, with no
+# `[size]`; the others come from the size asked for, which also picks the
+# symbol's stroke weight.
+check 'Icon#[0-9]+ \[[0-9]+,[0-9]+ 24x24\]' 'an icon with no measurements measures 24'
+check 'Icon#[0-9]+ \[[0-9]+,[0-9]+ 40x40\]' 'and with [size] it measures what it is asked for'
 
 if [ "$fail" -ne 0 ]; then
   echo

@@ -3,11 +3,11 @@ import { hotState } from '@angular-native/platform'
 import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
 
 /**
- * Todos los controles del sistema en una pantalla.
+ * Every system control on one screen.
  *
- * Ninguno está dibujado por el framework: son `UITabBar`, `UISwitch`,
- * `UISlider`, `UIActivityIndicatorView`, `UIProgressView` y `UIButton` de
- * verdad, con sus tamaños naturales, y sus equivalentes en Android.
+ * None of them is drawn by the framework: they are real `UITabBar`,
+ * `UISwitch`, `UISlider`, `UIActivityIndicatorView`, `UIProgressView` and
+ * `UIButton`, with their natural sizes, and their Android counterparts.
  */
 @Component({
   selector: 'app-root',
@@ -37,7 +37,7 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
         </an-text>
 
         <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'12'">
-          <an-text [fontSize]="16" [color]="'#9fb0d4'" [style.flexGrow]="'1'">Notificaciones</an-text>
+          <an-text [fontSize]="16" [color]="'#9fb0d4'" [style.flexGrow]="'1'">Notifications</an-text>
           <an-switch
             [on]="notify()"
             [color]="'#6ee7b7'"
@@ -47,7 +47,7 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
         </an-view>
 
         <an-view [style.gap]="'6'">
-          <an-text [fontSize]="16" [color]="'#9fb0d4'">Volumen: {{ volumeLabel() }}</an-text>
+          <an-text [fontSize]="16" [color]="'#9fb0d4'">Volume: {{ volumeLabel() }}</an-text>
           <an-slider
             [style.width]="'100%'"
             [value]="volume()"
@@ -63,21 +63,21 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
         </an-view>
 
         <an-view [style.gap]="'6'">
-          <an-text [fontSize]="16" [color]="'#9fb0d4'">Descarga</an-text>
+          <an-text [fontSize]="16" [color]="'#9fb0d4'">Download</an-text>
           <an-progress-bar [style.width]="'100%'" [progress]="volume() / 100" [color]="'#6ee7b7'" />
         </an-view>
 
         <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'12'">
           <an-activity-indicator [animating]="notify()" [color]="'#f4f7ff'" />
           <an-text [fontSize]="14" [color]="'#6b7a99'">
-            {{ notify() ? 'trabajando…' : 'en reposo' }}
+            {{ notify() ? 'working…' : 'idle' }}
           </an-text>
         </an-view>
 
         <!--
-          El botón del subtítulo lleva alto propio: el tamaño natural de un
-          control se pregunta una vez al arrancar, con uno de muestra, y ese no
-          sabe que este va a llevar dos líneas.
+          The button with the subtitle carries a height of its own: a control's
+          natural size is asked for once at startup, from a sample one, and that
+          sample does not know this one is going to carry two lines.
         -->
         <an-view
           [style.flexDirection]="'row'"
@@ -92,12 +92,12 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
             [fontSize]="17"
             [fontWeight]="'bold'"
             [color]="'#6ee7b7'"
-            [ios]="{ subtitle: 'a pantalla completa' }"
+            [ios]="{ subtitle: 'full screen' }"
             [android]="{ rippleColor: '#ffffff55', allCaps: false }"
             (press)="modal.set(true)"></an-button>
           <an-button
             [style.flexGrow]="'1'"
-            [title]="'Diálogo'"
+            [title]="'Dialog'"
             [variant]="'outlined'"
             [icon]="'settings'"
             [iconPosition]="'trailing'"
@@ -107,19 +107,19 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
         </an-view>
 
         <!--
-          Las cuatro variantes, con el mismo rótulo y el mismo color, para ver
-          de un vistazo que las cuatro lo dibujan: la de relleno invierte el
-          color del texto y las otras tres lo pintan del color pedido.
+          The four variants, with the same label and the same colour, to see at
+          a glance that all four draw it: the filled one inverts the text colour
+          and the other three paint it in the colour asked for.
         -->
         <an-view [style.flexDirection]="'row'" [style.gap]="'8'">
           <an-button
             [style.flexGrow]="'1'"
-            [title]="'Texto'"
+            [title]="'Text'"
             [variant]="'text'"
             [color]="'#6ee7b7'"></an-button>
           <an-button
             [style.flexGrow]="'1'"
-            [title]="'Relleno'"
+            [title]="'Filled'"
             [variant]="'filled'"
             [color]="'#6ee7b7'"></an-button>
           <an-button
@@ -129,7 +129,7 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
             [color]="'#6ee7b7'"></an-button>
           <an-button
             [style.flexGrow]="'1'"
-            [title]="'Borde'"
+            [title]="'Outlined'"
             [variant]="'outlined'"
             [color]="'#6ee7b7'"></an-button>
         </an-view>
@@ -163,9 +163,9 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
 
       <an-alert
         [visible]="alert()"
-        [title]="'Confirmar'"
-        [message]="'Esto lo presenta el sistema, no el framework.'"
-        [buttons]="['Aceptar', 'Cancelar']"
+        [title]="'Confirm'"
+        [message]="'This is presented by the system, not by the framework.'"
+        [buttons]="['OK', 'Cancel']"
         (select)="onAnswer($event)" />
 
       <an-modal
@@ -186,22 +186,22 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
           [style.width]="'80%'"
           [backgroundColor]="'#141c33'"
           [borderRadius]="16">
-          <an-text [fontSize]="18" [fontWeight]="'bold'" [color]="'#f4f7ff'">Presentado</an-text>
+          <an-text [fontSize]="18" [fontWeight]="'bold'" [color]="'#f4f7ff'">Presented</an-text>
           <an-text [fontSize]="15" [color]="'#9fb0d4'">
-            Un UIViewController en iOS y un Dialog en Android, no una vista
-            puesta encima.
+            A UIViewController on iOS and a Dialog on Android, not a view laid
+            on top.
           </an-text>
-          <an-button [title]="'Cerrar'" [color]="'#6ee7b7'" (press)="modal.set(false)"></an-button>
+          <an-button [title]="'Close'" [color]="'#6ee7b7'" (press)="modal.set(false)"></an-button>
         </an-view>
       </an-modal>
     </an-view>
   `
 })
 export class AppComponent {
-  readonly tabTitles = ['Ajustes', 'Actividad', 'Cuenta']
+  readonly tabTitles = ['Settings', 'Activity', 'Account']
 
-  // Estas sobreviven a una recarga en caliente: al guardar un fichero, la
-  // pestaña y el volumen siguen donde estaban.
+  // These survive a hot reload: on saving a file, the tab and the volume are
+  // still where they were.
   readonly tab = hotState('controls.tab', 0)
   readonly volume = hotState('controls.volume', 35)
 
@@ -209,12 +209,12 @@ export class AppComponent {
   readonly modal = signal(false)
   readonly tabIcons = ['settings', 'list', 'profile']
   readonly alert = signal(false)
-  readonly answer = signal('sin respuesta todavía')
+  readonly answer = signal('no answer yet')
 
   readonly volumeLabel = computed(() => `${Math.round(this.volume())}%`)
 
   onAnswer(index: number): void {
     this.alert.set(false)
-    this.answer.set(index === 0 ? 'aceptaste' : 'cancelaste')
+    this.answer.set(index === 0 ? 'you accepted' : 'you cancelled')
   }
 }

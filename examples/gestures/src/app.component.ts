@@ -7,15 +7,16 @@ import type {
 } from '@angular-native/primitives'
 
 /**
- * Gestos y transformaciones.
+ * Gestures and transforms.
  *
- * La tarjeta se mueve con un dedo, se escala y se gira con dos. Ninguna de las
- * tres cosas toca el layout: `translateX`, `scale` y `rotate` se aplican sobre
- * la vista ya colocada, así que seguir al dedo no recalcula nada.
+ * The card moves with one finger, and scales and rotates with two. None of the
+ * three touches the layout: `translateX`, `scale` and `rotate` are applied to
+ * the view once it is already placed, so following the finger recomputes
+ * nothing.
  *
- * Los reconocedores son los del sistema —`UIPanGestureRecognizer` y compañía en
- * iOS, `GestureDetector` en Android—, así que los umbrales de cuándo un
- * arrastre empieza a contar son los de cada plataforma.
+ * The recognisers are the system's —`UIPanGestureRecognizer` and friends on
+ * iOS, `GestureDetector` on Android—, so the thresholds for when a drag starts
+ * to count are each platform's own.
  */
 @Component({
   selector: 'app-root',
@@ -31,7 +32,7 @@ import type {
         [padding]="20"
         [style.gap]="14">
         <an-text [fontSize]="26" [fontWeight]="700" [color]="'#f8fafc'">
-          gestos
+          gestures
         </an-text>
 
         <an-text [color]="'#94a3b8'" [fontSize]="15">
@@ -67,41 +68,42 @@ import type {
         </an-view>
 
         <!--
-          El panel crece y se destiñe animándose. Nada de esto vuelve a pasar
-          por JavaScript: se le dice a la vista cuánto tarda en llegar, y de
-          ahí en adelante los cambios los interpola la plataforma en su hilo
-          de dibujo.
+          The panel grows and fades with an animation. None of this goes back
+          through JavaScript: the view is told how long it has to get there, and
+          from then on the platform interpolates the changes on its own drawing
+          thread.
         -->
         <an-view
           [animate]="260"
-          [style.height]="abierto() ? 160 : 72"
-          [style.opacity]="abierto() ? 1 : 0.55"
+          [style.height]="open() ? 160 : 72"
+          [style.opacity]="open() ? 1 : 0.55"
           [backgroundColor]="'#1e293b'"
           [borderRadius]="12"
-          (press)="abierto.set(!abierto())"
+          (press)="open.set(!open())"
           [style.alignItems]="'center'"
           [style.justifyContent]="'center'"
-          (swipeLeft)="onSwipe('izquierda')"
-          (swipeRight)="onSwipe('derecha')"
-          (swipeUp)="onSwipe('arriba')"
-          (swipeDown)="onSwipe('abajo')">
+          (swipeLeft)="onSwipe('left')"
+          (swipeRight)="onSwipe('right')"
+          (swipeUp)="onSwipe('up')"
+          (swipeDown)="onSwipe('down')">
           <!--
-            Este va con \`[style.fontSize]\` a propósito. Lo normal y lo
-            recomendado es la entrada tipada \`[fontSize]\`, que el compilador
-            comprueba; esto está aquí para que el otro camino —el que Angular
-            deja escribir siempre— no se quede en nada sin avisar.
+            This one uses \`[style.fontSize]\` on purpose. The normal and
+            recommended way is the typed input \`[fontSize]\`, which the
+            compiler checks; this is here so that the other path —the one
+            Angular always lets you write— does not quietly come to nothing.
           -->
-          <an-text [color]="'#cbd5f5'" [style.fontSize]="18">desliza aquí: {{ swipe() }}</an-text>
-          <an-text [color]="'#64748b'">{{ abierto() ? 'toca para cerrar' : 'toca para abrir' }}</an-text>
+          <an-text [color]="'#cbd5f5'" [style.fontSize]="18">swipe here: {{ swipe() }}</an-text>
+          <an-text [color]="'#64748b'">{{ open() ? 'tap to close' : 'tap to open' }}</an-text>
         </an-view>
       </an-safe-area>
     </an-view>
   `
 })
 export class AppComponent {
-  // Lo acumulado de gestos anteriores, y lo que va del gesto actual. Se
-  // guardan aparte porque cada gesto manda su desplazamiento desde donde
-  // empezó: sumarlo directamente contaría dos veces lo mismo en cada evento.
+  // What earlier gestures added up to, and what the current gesture has moved
+  // so far. They are kept apart because every gesture reports its translation
+  // from where it started: adding it straight in would count the same thing
+  // twice on every event.
   private committedX = 0
   private committedY = 0
   private committedScale = 1
@@ -112,10 +114,10 @@ export class AppComponent {
   readonly scale = signal(1)
   readonly angle = signal(0)
 
-  readonly label = signal('arrástrame')
-  readonly status = signal('un dedo mueve; dos escalan y giran')
+  readonly label = signal('drag me')
+  readonly status = signal('one finger moves; two scale and rotate')
   readonly swipe = signal('—')
-  readonly abierto = signal(false)
+  readonly open = signal(false)
 
 
   onPan(event: NativePanEvent): void {
@@ -124,11 +126,11 @@ export class AppComponent {
     if (event.state === 'end') {
       this.committedX = this.x()
       this.committedY = this.y()
-      this.status.set(`soltado a ${Math.round(event.velocityX)} pt/s`)
+      this.status.set(`let go at ${Math.round(event.velocityX)} pt/s`)
     }
     if (event.state === 'cancel') {
-      // El sistema se llevó el gesto: se vuelve a donde estaba, no se deja a
-      // medias donde el dedo dejó de contar.
+      // The system took the gesture away: it goes back to where it was, it is
+      // not left halfway wherever the finger stopped counting.
       this.x.set(this.committedX)
       this.y.set(this.committedY)
     }
@@ -149,15 +151,15 @@ export class AppComponent {
   }
 
   onLongPress(): void {
-    this.label.set('mantenido')
-    this.status.set('pulsación larga')
+    this.label.set('held')
+    this.status.set('long press')
   }
 
   onSwipe(direction: string): void {
     this.swipe.set(direction)
   }
 
-  /** Dos toques devuelven la tarjeta a su sitio. */
+  /** A double tap puts the card back where it belongs. */
   reset(): void {
     this.committedX = 0
     this.committedY = 0
@@ -167,7 +169,7 @@ export class AppComponent {
     this.y.set(0)
     this.scale.set(1)
     this.angle.set(0)
-    this.label.set('arrástrame')
-    this.status.set('a cero')
+    this.label.set('drag me')
+    this.status.set('reset')
   }
 }
