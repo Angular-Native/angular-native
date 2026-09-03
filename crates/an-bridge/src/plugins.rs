@@ -88,7 +88,7 @@ impl PluginBridge {
             // promise is rejected with the exact reason rather than resolved
             // with an `undefined` nobody could trace back to anything.
             Err(error) => responder
-                .reject(format!("el plugin contestó con algo que no es JSON válido: {error}")),
+                .reject(format!("the plugin answered with something that is not valid JSON: {error}")),
         }
         Ok(())
     }
@@ -105,7 +105,7 @@ impl PluginBridge {
 
     fn take_waiting(&self, id: u64) -> Result<Responder, String> {
         self.waiting.lock().expect("the plugin mailbox is poisoned").remove(&id).ok_or_else(|| {
-            format!("no hay ninguna llamada a plugin con el id {id} esperando respuesta")
+            format!("there is no plugin call with id {id} waiting for an answer")
         })
     }
 
@@ -191,9 +191,9 @@ mod tests {
     #[test]
     fn the_arguments_arrive_serialised() {
         let (mut registry, bridge) = registry_with_clipboard();
-        registry.invoke("clipboard", "write", serde_json::json!({ "text": "ñandú" }));
+        registry.invoke("clipboard", "write", serde_json::json!({ "text": "ünïcôde" }));
         let calls = bridge.take_calls();
-        assert_eq!(calls[0].args, r#"{"text":"ñandú"}"#);
+        assert_eq!(calls[0].args, r#"{"text":"ünïcôde"}"#);
     }
 
     #[test]

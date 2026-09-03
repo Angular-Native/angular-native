@@ -53,8 +53,8 @@ impl Form {
     /// What to call this when it has to be said on screen.
     pub fn label(self) -> &'static str {
         match self {
-            Form::Phone => "teléfono",
-            Form::Watch => "reloj",
+            Form::Phone => "phone",
+            Form::Watch => "watch",
         }
     }
 }
@@ -73,12 +73,12 @@ impl Sdk {
                 PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Library/Android/sdk")
             });
         if !root.is_dir() {
-            bail!("no encuentro el SDK de Android; define ANDROID_HOME");
+            bail!("I cannot find the Android SDK; set ANDROID_HOME");
         }
         let build_tools = newest_dir(&root.join("build-tools"))
-            .context("el SDK no tiene build-tools instaladas")?;
+            .context("the SDK has no build-tools installed")?;
         let platform = newest_dir(&root.join("platforms"))
-            .context("el SDK no tiene ninguna plataforma instalada")?;
+            .context("the SDK has no platform installed")?;
         let android_jar = platform.join("android.jar");
         if !android_jar.is_file() {
             bail!("no encuentro android.jar en {}", platform.display());
@@ -146,9 +146,9 @@ pub fn assemble(
         .args(&cargo_args)
         .current_dir(root)
         .status()
-        .context("no se pudo ejecutar cargo")?;
+        .context("cargo could not be run")?;
     if !status.success() {
-        bail!("la compilación del core para Android falló");
+        bail!("the core build for Android failed");
     }
     std::fs::copy(
         workspace
@@ -167,7 +167,7 @@ pub fn assemble(
             root.join("shells/android/assets").join(asset),
             staging.join("assets").join(asset),
         )
-        .with_context(|| format!("no se pudo copiar {asset}"))?;
+        .with_context(|| format!("{asset} could not be copied"))?;
     }
     if let Some(url) = dev_server {
         std::fs::write(staging.join("assets/dev-server.txt"), url)?;
@@ -191,7 +191,7 @@ pub fn assemble(
     let packages = read_list("packages.txt");
     if jars.is_empty() {
         bail!(
-            "faltan las dependencias de Android; ejecuta \
+            "the Android dependencies are missing; run \
              python3 scripts/prepare-android-deps.py"
         );
     }
@@ -199,7 +199,7 @@ pub fn assemble(
     // The shell's own resources —the app's theme— are compiled here and not in
     // `prepare-android-deps.py` because they are ours and they change; the
     // libraries' never change, which is why those get cached.
-    eprintln!("==> aapt2 compile (recursos del shell)");
+    eprintln!("==> aapt2 compile (the shell's resources)");
     let app_res = out.join("shell-res.zip");
     let _ = std::fs::remove_file(&app_res);
     run(
@@ -212,7 +212,7 @@ pub fn assemble(
             "-o",
             &app_res.to_string_lossy(),
         ],
-        "aapt2 compile de los recursos del shell falló",
+        "aapt2 compile of the shell's resources failed",
     )?;
 
     // Linking the resources comes before `javac`: this is where the `R` classes
@@ -273,7 +273,7 @@ pub fn assemble(
         root,
         &sdk.tool("aapt2").to_string_lossy(),
         &link,
-        "aapt2 link falló",
+        "aapt2 link failed",
     )?;
 
     eprintln!("==> shell Java");
@@ -288,7 +288,7 @@ pub fn assemble(
             .map(|path| path.to_string_lossy().into_owned())
             .collect();
     if sources.is_empty() {
-        bail!("no hay fuentes Java en shells/android");
+        bail!("there are no Java sources in shells/android");
     }
     // The plugins: their Java sources and the registry that hooks them up. It
     // all goes into the same `javac` invocation as the shell, so a plugin sees
@@ -296,7 +296,7 @@ pub fn assemble(
     for plugin in plugins {
         let contributed = plugins::sources(plugin, Platform::Android)?;
         eprintln!(
-            "==> plugin {} ({} fuentes Java)",
+            "==> plugin {} ({} Java sources)",
             plugin.module,
             contributed.len()
         );
@@ -331,7 +331,7 @@ pub fn assemble(
             .filter(|path| path.extension().is_some_and(|e| e == "java"))
             .map(|path| path.to_string_lossy().into_owned()),
     );
-    run(root, "javac", &javac, "la compilación del shell Java falló")?;
+    run(root, "javac", &javac, "the Java shell build failed")?;
 
     eprintln!("==> d8");
     let class_files: Vec<String> = walk(&classes)
@@ -353,7 +353,7 @@ pub fn assemble(
     d8.extend(class_files);
     // And the libraries: their classes have to end up in the same dex.
     d8.extend(jars.iter().cloned());
-    run(root, &sdk.tool("d8").to_string_lossy(), &d8, "d8 falló")?;
+    run(root, &sdk.tool("d8").to_string_lossy(), &d8, "d8 failed")?;
 
     eprintln!("==> firma");
     // `aapt2` only puts the manifest in: the dex, the native library and the
@@ -368,7 +368,7 @@ pub fn assemble(
         .collect();
     dexes.sort();
     if dexes.is_empty() {
-        bail!("d8 no dejó ningún .dex");
+        bail!("d8 left no .dex behind");
     }
     let mut entries = dexes;
     entries.extend([
@@ -390,9 +390,9 @@ pub fn assemble(
         .args(&zip_args)
         .current_dir(&staging)
         .status()
-        .context("no se pudo ejecutar zip")?;
+        .context("zip could not be run")?;
     if !status.success() {
-        bail!("no se pudo empaquetar el APK");
+        bail!("the APK could not be packed");
     }
 
     let aligned = out.join("aligned.apk");
@@ -406,7 +406,7 @@ pub fn assemble(
             &unsigned.to_string_lossy(),
             &aligned.to_string_lossy(),
         ],
-        "zipalign falló",
+        "zipalign failed",
     )?;
 
     let keystore = debug_keystore()?;
@@ -435,7 +435,7 @@ pub fn assemble(
             &apk.to_string_lossy(),
             &aligned.to_string_lossy(),
         ],
-        "la firma falló",
+        "the signing failed",
     )?;
 
     let size = std::fs::metadata(&apk)?.len();
@@ -470,7 +470,7 @@ fn application_id(workspace: &Workspace) -> String {
 fn write_manifest(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result<PathBuf> {
     let entries = plugins::manifest_entries(plugins)?;
     let text = std::fs::read_to_string(base)
-        .with_context(|| format!("no se pudo leer {}", base.display()))?;
+        .with_context(|| format!("{} could not be read", base.display()))?;
     if entries.is_empty() {
         return Ok(base.to_owned());
     }
@@ -494,8 +494,8 @@ fn write_manifest(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result
             let declared = current.as_deref().unwrap_or("true");
             if declared != required.to_string() {
                 eprintln!(
-                    "==> AndroidManifest.xml: {name} ya la declara la app con \
-                     android:required=\"{declared}\"; se queda la suya"
+                    "==> AndroidManifest.xml: {name} is already declared by the app with \
+                     android:required=\"{declared}\"; the app's one stays"
                 );
             }
             continue;
@@ -513,7 +513,7 @@ fn write_manifest(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result
         // and where whoever opens it will go looking for them.
         let cut = text.find("<application").with_context(|| {
             format!(
-                "{}: no encuentro <application>, y ahí es donde van los permisos",
+                "{}: I cannot find <application>, and that is where the permissions go",
                 base.display()
             )
         })?;
@@ -523,7 +523,7 @@ fn write_manifest(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result
             .map(|newline| newline + 1)
             .unwrap_or(cut);
         format!(
-            "{}    <!-- De los plugins. Lo escribe `an` al armar el APK. -->\n{}\n{}",
+            "{}    <!-- From the plugins. Written by `an` when it puts the APK together. -->\n{}\n{}",
             &text[..cut],
             lines.trim_end(),
             &text[cut..]
@@ -533,7 +533,7 @@ fn write_manifest(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(destination, output)
-        .with_context(|| format!("no se pudo escribir {}", destination.display()))?;
+        .with_context(|| format!("{} could not be written", destination.display()))?;
     Ok(destination.to_owned())
 }
 
@@ -581,12 +581,12 @@ fn attribute(attributes: &str, name: &str) -> Option<String> {
 /// the app does not open. Better to stop it here.
 fn check_manifest(manifest: &Path) -> Result<()> {
     let text = std::fs::read_to_string(manifest)
-        .with_context(|| format!("no se pudo leer {}", manifest.display()))?;
+        .with_context(|| format!("{} could not be read", manifest.display()))?;
     if !text.contains(&format!("package=\"{PACKAGE}\"")) {
         bail!(
-            "{}: el manifiesto tiene que declarar package=\"{PACKAGE}\", que es donde están \
-             las clases del shell.\n\
-             El identificador de la aplicación no se pone aquí: sale de app.bundleId en \
+            "{}: the manifest has to declare package=\"{PACKAGE}\", which is where the \
+             shell's classes are.\n\
+             The application identifier does not go here: it comes from app.bundleId in \
              angular-native.json.",
             manifest.display()
         );
@@ -624,9 +624,9 @@ fn debug_keystore() -> Result<PathBuf> {
             "CN=Android Debug,O=Android,C=US",
         ])
         .status()
-        .context("no se pudo ejecutar keytool")?;
+        .context("keytool could not be run")?;
     if !status.success() {
-        bail!("no se pudo crear el almacén de claves de depuración");
+        bail!("the debug keystore could not be created");
     }
     Ok(path)
 }
@@ -635,9 +635,9 @@ fn devices(adb: &Path) -> Result<Vec<(String, Form)>> {
     let output = Command::new(adb)
         .args(["devices"])
         .output()
-        .context("no se pudo ejecutar adb devices")?;
+        .context("adb devices could not be run")?;
     if !output.status.success() {
-        bail!("adb devices falló");
+        bail!("adb devices failed");
     }
     let listing = String::from_utf8_lossy(&output.stdout);
     let mut found = Vec::new();
@@ -649,7 +649,7 @@ fn devices(adb: &Path) -> Result<Vec<(String, Form)>> {
         let props = Command::new(adb)
             .args(["-s", serial, "shell", "getprop", "ro.build.characteristics"])
             .output()
-            .with_context(|| format!("no se pudo preguntar por {serial}"))?;
+            .with_context(|| format!("{serial} could not be asked about"))?;
         let form = if String::from_utf8_lossy(&props.stdout).contains("watch") {
             Form::Watch
         } else {
@@ -677,12 +677,12 @@ fn pick_device(adb: &Path, form: Form) -> Result<String> {
     match candidates.as_slice() {
         [one] => Ok((*one).clone()),
         [] if found.is_empty() => bail!(
-            "no hay ningún aparato conectado; arranca un emulador de {} \
-             (`emulator -avd <nombre>`)",
+            "there is no device connected; start a {} emulator \
+             (`emulator -avd <name>`)",
             form.label()
         ),
         [] => bail!(
-            "no hay ningún aparato con forma de {}; lo que hay es: {}",
+            "there is no device shaped like a {}; what there is is: {}",
             form.label(),
             found
                 .iter()
@@ -691,7 +691,7 @@ fn pick_device(adb: &Path, form: Form) -> Result<String> {
                 .join(", ")
         ),
         several => bail!(
-            "hay {} aparatos con forma de {}: {}. Elige con --device",
+            "there are {} devices shaped like a {}: {}. Pick one with --device",
             several.len(),
             form.label(),
             several
@@ -715,14 +715,14 @@ fn check_device(adb: &Path, serial: &str, form: Form) -> Result<String> {
     match found.iter().find(|(s, _)| s == serial) {
         Some((s, shape)) if *shape == form => Ok(s.clone()),
         Some((_, shape)) => bail!(
-            "{serial} tiene forma de {}, y esto es un APK de {}",
+            "{serial} is shaped like a {}, and this is a {} APK",
             shape.label(),
             form.label()
         ),
         None => bail!(
-            "no hay ningún aparato {serial}; lo que hay es: {}",
+            "there is no device {serial}; what there is is: {}",
             if found.is_empty() {
-                "nada".to_owned()
+                "nothing".to_owned()
             } else {
                 found
                     .iter()
@@ -762,7 +762,7 @@ pub fn install_and_launch(
         workspace,
         &adb.to_string_lossy(),
         &["-s", &serial, "install", "-r", &apk.to_string_lossy()],
-        "adb install falló",
+        "adb install failed",
     )?;
     run(
         workspace,
@@ -779,7 +779,7 @@ pub fn install_and_launch(
             "-n",
             &format!("{application_id}/{ACTIVITY}"),
         ],
-        "no se pudo lanzar la app",
+        "the app could not be launched",
     )?;
     Ok(())
 }
@@ -805,7 +805,7 @@ fn run<T: AsRef<str>>(cwd: impl AsCwd, program: &str, args: &[T], context: &str)
         .args(args.iter().map(|a| a.as_ref()))
         .current_dir(cwd.cwd())
         .status()
-        .with_context(|| format!("no se pudo ejecutar {program}"))?;
+        .with_context(|| format!("{program} could not be run"))?;
     if !status.success() {
         bail!("{context}");
     }

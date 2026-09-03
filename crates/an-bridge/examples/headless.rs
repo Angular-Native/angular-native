@@ -7,8 +7,6 @@
 //!
 //! Usage: cargo run -p an-bridge --example headless -- bundle.js [frames] [ms]
 
-// The strings this example prints are matched by `scripts/check-*.sh`, so they
-// stay in Spanish until those scripts are translated too.
 
 use std::collections::HashMap;
 
@@ -134,9 +132,9 @@ an_bridge::native_module! {
             Ok(serde_json::json!({
                 "platform": "headless",
                 "systemVersion": "0.0",
-                "model": "sin dispositivo",
+                "model": "no device",
                 "scale": 3.0,
-                "locale": "es-ES"
+                "locale": "en-GB"
             }))
         }
     }
@@ -171,7 +169,7 @@ impl NativeModule for CannedPlugin {
             // The same thing the real plugin would do: say which method was
             // asked for.
             None => respond.reject(format!(
-                "el plugin {} no tiene ninguna respuesta preparada para {method:?}",
+                "the {} plugin has no canned answer for {method:?}",
                 self.name
             )),
         }
@@ -184,12 +182,12 @@ fn canned_plugins() -> Vec<CannedPlugin> {
     let parsed: serde_json::Value = match serde_json::from_str(&raw) {
         Ok(parsed) => parsed,
         Err(error) => {
-            eprintln!("AN_PLUGINS no es JSON válido: {error}");
+            eprintln!("AN_PLUGINS is not valid JSON: {error}");
             std::process::exit(2);
         }
     };
     let Some(modules) = parsed.as_object() else {
-        eprintln!("AN_PLUGINS tiene que ser un objeto de módulos");
+        eprintln!("AN_PLUGINS has to be an object of modules");
         std::process::exit(2);
     };
     modules
@@ -206,13 +204,13 @@ fn canned_plugins() -> Vec<CannedPlugin> {
 fn main() {
     let mut args = std::env::args().skip(1);
     let path = args.next().unwrap_or_else(|| {
-        eprintln!("uso: headless <bundle.js> [frames] [ms-por-frame]");
+        eprintln!("usage: headless <bundle.js> [frames] [ms-per-frame]");
         std::process::exit(2)
     });
     let frames: u32 = args.next().and_then(|v| v.parse().ok()).unwrap_or(3);
     let step: f64 = args.next().and_then(|v| v.parse().ok()).unwrap_or(1000.0);
 
-    let code = std::fs::read_to_string(&path).expect("no se pudo leer el bundle");
+    let code = std::fs::read_to_string(&path).expect("the bundle could not be read");
     // `AN_HOT` points at a second bundle: the same example with something
     // changed. It is evaluated on top of the first one to test hot refresh with
     // neither a simulator nor a dev server.
@@ -223,13 +221,13 @@ fn main() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(QuickJsRuntime::DEFAULT_STACK_SIZE);
     let mut js = QuickJsRuntime::with_options(std::rc::Rc::new(an_bridge::runtime::StderrLog), stack)
-        .expect("no arrancó el motor JS");
+        .expect("the JS engine never started");
     // A pretend `device`: it makes the whole path of a native module testable
     // —promise in JS, registry, answer, resolution— with no simulator.
     js.register_module(Box::new(FakeDevice));
     // And whatever plugins `AN_PLUGINS` declares, if any.
     for plugin in canned_plugins() {
-        println!("-- plugin de mentira: {}", plugin.name);
+        println!("-- fake plugin: {}", plugin.name);
         js.register_module(Box::new(plugin));
     }
     if let Err(error) = js.eval(&path, &code) {
@@ -268,18 +266,19 @@ fn main() {
         // the core emits— go in before anything else.
         let pending = renderer.drain_events();
         if !pending.is_empty() {
-            js.dispatch_events(&pending).expect("despacho de eventos");
+            js.dispatch_events(&pending).expect("dispatching events");
         }
 
         // Near the end, once there has been a tap and there is state to lose,
         // the new bundle goes in.
         if let Some(other) = hot.as_ref() {
             if frame + 2 == frames {
-                let updated = std::fs::read_to_string(other).expect("no se pudo leer el bundle");
+                let updated =
+                    std::fs::read_to_string(other).expect("the bundle could not be read");
                 match js.eval_hot(other, &updated) {
-                    Ok(true) => println!("-- refresco en caliente: sí"),
-                    Ok(false) => println!("-- refresco en caliente: no, toca reiniciar"),
-                    Err(error) => println!("-- refresco en caliente: falló ({error})"),
+                    Ok(true) => println!("-- hot reload: yes"),
+                    Ok(false) => println!("-- hot reload: no, a restart is needed"),
+                    Err(error) => println!("-- hot reload: failed ({error})"),
                 }
             }
         }
@@ -287,7 +286,7 @@ fn main() {
         // Halfway through the run, a tap on the first node that is listening.
         if !tapped && frame >= frames / 2 {
             if let Some(target) = renderer.host().pressable.first().copied() {
-                println!("-- toque simulado en #{target}");
+                println!("-- simulated tap on #{target}");
                 js.dispatch_events(&[HostEvent {
                     target,
                     name: "press".to_owned(),
@@ -296,7 +295,7 @@ fn main() {
                         ("y".to_owned(), PropValue::Number(20.0)),
                     ],
                 }])
-                .expect("despacho de eventos");
+                .expect("dispatching events");
                 tapped = true;
             }
         }
@@ -306,7 +305,7 @@ fn main() {
         if !scrolled && frame >= frames / 2 {
             if let Some(target) = renderer.host().scrollable.first().copied() {
                 before_scroll = (renderer.host().created, renderer.host().destroyed);
-                println!("-- desplazamiento simulado en #{target} hasta y=4000");
+                println!("-- simulated scroll on #{target} to y=4000");
                 js.dispatch_events(&[HostEvent {
                     target,
                     name: "scroll".to_owned(),
@@ -315,7 +314,7 @@ fn main() {
                         ("y".to_owned(), PropValue::Number(4000.0)),
                     ],
                 }])
-                .expect("despacho de eventos");
+                .expect("dispatching events");
                 scrolled = true;
             }
         }
@@ -327,7 +326,7 @@ fn main() {
         if !panned && frame >= frames / 2 {
             let target = renderer.host().pannable.first().copied();
             if let Some(target) = target {
-                println!("-- arrastre simulado en #{target}");
+                println!("-- simulated drag on #{target}");
                 for (state, dx, dy) in
                     [("begin", 0.0, 0.0), ("move", 60.0, 25.0), ("end", 60.0, 25.0)]
                 {
@@ -344,12 +343,12 @@ fn main() {
                             ("state".to_owned(), PropValue::Str(state.to_owned())),
                         ],
                     }])
-                    .expect("despacho de eventos");
+                    .expect("dispatching events");
                     // Each state in its own turn, applying whatever comes out:
                     // on the device the three do not arrive in the same frame
                     // either, and whoever is dragging updates on every one.
-                    let commands = js.tick(now).expect("turno de arrastre");
-                    apply(&commands, &mut renderer).expect("búfer del arrastre");
+                    let commands = js.tick(now).expect("the drag's turn");
+                    apply(&commands, &mut renderer).expect("the drag's buffer");
                 }
                 panned = true;
             }
@@ -360,13 +359,13 @@ fn main() {
         if !went_back && frames > 3 && frame == frames - 2 {
             if let Some(target) = renderer.host().backable.first().copied() {
                 before_back = (renderer.host().created, renderer.host().destroyed);
-                println!("-- atrás simulado en #{target}");
+                println!("-- simulated back on #{target}");
                 js.dispatch_events(&[HostEvent {
                     target,
                     name: "back".to_owned(),
                     payload: Vec::new(),
                 }])
-                .expect("despacho de eventos");
+                .expect("dispatching events");
                 went_back = true;
             }
         }
@@ -379,30 +378,30 @@ fn main() {
             }
         };
         if let Err(error) = apply(&commands, &mut renderer) {
-            eprintln!("frame {frame}: búfer inválido: {error:?}");
+            eprintln!("frame {frame}: invalid buffer: {error:?}");
             std::process::exit(1);
         }
         let applied = renderer.render_frame().expect("commit");
-        println!("-- frame {frame} (t={now}ms): {applied} operaciones");
+        println!("-- frame {frame} (t={now}ms): {applied} operations");
     }
 
-    println!("\n== árbol resuelto ==");
+    println!("\n== resolved tree ==");
     let host = renderer.host();
     match host.root {
         Some(root) => print_node(host, root, 0),
-        None => println!("(sin raíz: la app no llegó a montar nada)"),
+        None => println!("(no root: the app never mounted anything)"),
     }
-    println!("\nvistas nativas montadas: {}", host.kinds.len());
+    println!("\nnative views mounted: {}", host.kinds.len());
     if scrolled {
         println!(
-            "desplazarse costó {} vistas creadas y {} destruidas",
+            "scrolling cost {} views created and {} destroyed",
             host.created - before_scroll.0,
             host.destroyed - before_scroll.1
         );
     }
     if went_back {
         println!(
-            "volver atrás costó {} vistas creadas y {} destruidas",
+            "going back cost {} views created and {} destroyed",
             host.created - before_back.0,
             host.destroyed - before_back.1
         );
@@ -420,7 +419,7 @@ fn print_node(host: &TreeRecorder, id: NodeId, depth: usize) {
     let content = host
         .content
         .get(&id)
-        .map(|(w, h)| format!("  contenido {w:.0}x{h:.0}"))
+        .map(|(w, h)| format!("  content {w:.0}x{h:.0}"))
         .unwrap_or_default();
     // The transforms are printed sorted: they are a map, and unsorted the
     // output would change from one run to the next and could not be checked.

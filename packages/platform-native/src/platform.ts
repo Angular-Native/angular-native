@@ -70,7 +70,7 @@ export async function bootstrapNativeApplication(
     try {
       globals.__anHotOk = hotRefresh(rootComponent)
     } catch (error) {
-      console.warn('[angular-native] el refresco en caliente falló, se reinicia:', error)
+      console.warn('[angular-native] the hot reload failed, restarting:', error)
       globals.__anHotOk = false
     }
     return already

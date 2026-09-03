@@ -215,9 +215,7 @@ output="$(cd "$APP" && must_fail "$AN" add windows)"
 # knows: it is the first thing read by whoever gets the name wrong, and one
 # missing from it is one nobody is going to try.
 #
-# The conjunction is the CLI's own word and the CLI is a crate translated on
-# another branch, so both are accepted.
-contains "$output" 'ios, tvos, visionos (y|and) android' \
+contains "$output" 'ios, tvos, visionos and android' \
   'an add of a platform that does not exist says which ones it knows'
 
 # ---------------------------------------------------------------------------
@@ -237,10 +235,10 @@ fi
 output="$(cargo run -q -p an-bridge --example headless -- "$BUNDLE" 3 2>&1)"
 contains "$output" 'Angular is running in development mode' 'the bundle starts Angular'
 contains "$output" 'Text#[0-9]+ .*"MyApp"' "the app's title reached a native Text node"
-# The button's label is written by the scaffold the CLI generates, and the CLI is
-# a crate translated on another branch. What is checked is the count, which is
-# what proves the tap arrived: before it, the title carries a zero.
-contains "$output" 'Button#[0-9]+ .*title=.*1' 'a tap made it all the way to the component signal'
+# The label is written by the scaffold the CLI generates. What is checked is the
+# count, which is what proves the tap arrived: before it, the title carries a
+# zero.
+contains "$output" 'Button#[0-9]+ .*title=Taps: 1' 'a tap made it all the way to the component signal'
 
 # ---------------------------------------------------------------------------
 # The plist and the manifest, out of step

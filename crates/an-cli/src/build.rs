@@ -44,8 +44,8 @@ pub fn bundle(
             let tsconfig = project.tsconfig();
             if !tsconfig.is_file() {
                 bail!(
-                    "falta {}, que es el tsconfig con el que se compila la app.\n\
-                     Lo escribe `an init`; vuelve a ejecutarlo en {}.",
+                    "{} is missing, and it is the tsconfig the app is compiled with.\n\
+                     `an init` writes it; run it again in {}.",
                     tsconfig.display(),
                     project.root.display()
                 );
@@ -66,10 +66,10 @@ pub fn bundle(
     };
 
     eprintln!("==> ngc (AOT) {}", app.display());
-    run_in(&cwd, "npx", &["ngc", "-p", &tsconfig.to_string_lossy()], "la compilación AOT falló")?;
+    run_in(&cwd, "npx", &["ngc", "-p", &tsconfig.to_string_lossy()], "the AOT compilation failed")?;
 
     eprintln!("==> esbuild{}", if release { " (release)" } else { "" });
-    std::fs::create_dir_all(out.parent().expect("la salida tiene padre"))?;
+    std::fs::create_dir_all(out.parent().expect("the output has a parent"))?;
 
     // The packaging goes through a Node script and not esbuild's binary: the
     // Angular Linker is needed, and that is a Babel plugin. The script lives in
@@ -98,10 +98,10 @@ pub fn bundle(
         args.push("--release".into());
     }
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
-    run_in(&cwd, "node", &borrowed, "el empaquetado falló")?;
+    run_in(&cwd, "node", &borrowed, "the bundling failed")?;
 
     let size = std::fs::metadata(&out)?.len();
-    eprintln!("==> {} KB en {}", size / 1024, out.display());
+    eprintln!("==> {} KB in {}", size / 1024, out.display());
     Ok(out)
 }
 
@@ -114,7 +114,7 @@ pub fn run_in(cwd: &Path, program: &str, args: &[&str], context: &str) -> Result
         .args(args)
         .current_dir(cwd)
         .status()
-        .with_context(|| format!("no se pudo ejecutar {program}"))?;
+        .with_context(|| format!("{program} could not be run"))?;
     if !status.success() {
         bail!("{context}");
     }

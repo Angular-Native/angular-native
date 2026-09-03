@@ -24,13 +24,6 @@ contains() {
   if grep -qF -e "$2" <<<"$1"; then ok "$3"; else ko "$3"; fi
 }
 
-# The same thing for a line that comes out of a crate rather than out of the
-# example: those are being translated on another branch, so the pattern is a
-# regular expression that accepts either language.
-contains_either() {
-  if grep -qE -e "$2" <<<"$1"; then ok "$3"; else ko "$3"; fi
-}
-
 echo "== biometrics and keychain"
 
 cargo an build examples/secrets >/dev/null
@@ -57,9 +50,9 @@ ALL='{
 # The sensor line and the one saying whether anything is stored are signals
 # separate from the last result, so the simulated tap does not run them over.
 STARTUP="$(AN_PLUGINS="$ALL" headless 6)"
-contains_either "$STARTUP" '(plugin de mentira|fake plugin|stub plugin): biometrics' \
+contains "$STARTUP" 'fake plugin: biometrics' \
   'the biometrics module is registered under its name'
-contains_either "$STARTUP" '(plugin de mentira|fake plugin|stub plugin): keychain' \
+contains "$STARTUP" 'fake plugin: keychain' \
   'and the keychain one too'
 contains "$STARTUP" 'Face ID, ready' 'availability arrives and the app says which sensor there is'
 contains "$STARTUP" 'there is a secret stored' 'keychain.has arrives without asking for biometrics'
@@ -94,7 +87,7 @@ not_recognised lockedOut 'too many attempts'
 # the opening of the rejection. Those first words come out of a crate, so both
 # languages are accepted.
 WITHOUT="$(headless 4)"
-contains_either "$WITHOUT" 'failed: Error: (no hay ningún módulo|no native module|there is no native)' \
+contains "$WITHOUT" 'failed: Error: there is no native module' \
   'with no plugin the promise is rejected saying the module does not exist'
 
 # ── A method with no canned answer is not swallowed either ──────────────────
@@ -106,7 +99,7 @@ HALFWAY="$(AN_PLUGINS='{
 }' headless 6)"
 # The method name goes inside the message, and the plugin itself answers for
 # that.
-contains_either "$HALFWAY" 'failed: Error: (el plugin keychain|the plugin keychain|plugin keychain)' \
+contains "$HALFWAY" 'failed: Error: the keychain plugin' \
   'a method the plugin does not serve rejects the promise'
 
 # ── And that the Android side compiles ──────────────────────────────────────

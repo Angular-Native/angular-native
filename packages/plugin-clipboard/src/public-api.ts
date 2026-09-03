@@ -2,37 +2,38 @@ import { inject, Injectable } from '@angular/core'
 import { NativeModules } from '@angular-native/platform'
 
 /**
- * El portapapeles del sistema.
+ * The system clipboard.
  *
- * Es el ejemplo de referencia de cómo se escribe un plugin: un servicio de
- * Angular que no tiene lógica ninguna —los tipos de ida y vuelta y poco más—
- * sobre un módulo nativo que sí la tiene, y que está escrito una vez en Swift
- * y otra en Java.
+ * It is the reference example of how a plugin is written: an Angular service
+ * with no logic in it whatsoever —the types out and back and little else— on top
+ * of a native module that does have some, written once in Swift and once in
+ * Java.
  *
- * En iOS es `UIPasteboard`; en Android, `ClipboardManager`. Ninguna de las dos
- * se puede tocar desde el hilo del motor, así que las llamadas van por la cola
- * de plugins y se atienden en el hilo de UI. De ahí que todo devuelva promesa.
+ * On iOS it is `UIPasteboard`; on Android, `ClipboardManager`. Neither of the
+ * two can be touched from the engine's thread, so the calls go through the
+ * plugin queue and are served on the UI thread. Hence everything returning a
+ * promise.
  */
 @Injectable({ providedIn: 'root' })
 export class Clipboard {
   private readonly modules = inject(NativeModules)
 
-  /** Copia un texto. */
+  /** Copies a piece of text. */
   write(text: string): Promise<void> {
     return this.modules.call<void>('clipboard', 'write', { text })
   }
 
   /**
-   * Lo que haya copiado, o cadena vacía si no hay texto.
+   * Whatever has been copied, or an empty string if there is no text.
    *
-   * En iOS 16 y posteriores, leer algo que copió otra app enseña un aviso del
-   * sistema; leer lo que copió la propia app, no.
+   * On iOS 16 and later, reading something another app copied shows a system
+   * notice; reading what the app itself copied does not.
    */
   read(): Promise<string> {
     return this.modules.call<string>('clipboard', 'read')
   }
 
-  /** Si hay texto, sin leerlo. En iOS esto no dispara el aviso del sistema. */
+  /** Whether there is text, without reading it. On iOS this does not trigger the system notice. */
   hasText(): Promise<boolean> {
     return this.modules.call<boolean>('clipboard', 'hasText')
   }

@@ -72,9 +72,9 @@ function warnUnknownStyle(name: string): void {
   if (KNOWN_STYLES.has(camel) || TEXT_PROPS.has(camel) || warned.has(camel)) return
   warned.add(camel)
   console.warn(
-    `[angular-native] nadie reconoce el estilo "${name}", así que no hará nada. ` +
-      'Si es una propiedad del control —color, título, valor— va como entrada ' +
-      'tipada, no como estilo.'
+    `[angular-native] nobody recognises the style "${name}", so it will do nothing. ` +
+      'If it is a property of the control —colour, title, value— it goes as a typed ' +
+      'input, not as a style.'
   )
 }
 
@@ -112,7 +112,7 @@ export class NativeRenderer extends Renderer2 {
 
   override destroyNode = (node: NativeNode): void => {
     if (node.destroyed) return
-    // It is asked before marking: `mounted` means «materialised and alive», so
+    // It is asked before marking: `mounted` means "materialised and alive", so
     // marking first sets it to `false` and the removal would never reach the
     // core. Normally nobody notices —Angular takes things out of the tree before
     // destroying them— but on a hot refresh it destroys first, and then the old

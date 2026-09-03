@@ -135,7 +135,7 @@ export interface NativeHoverEvent {
  * —an `NSCursor`— and not a drawing of ours: `pointer` is macOS's hand, looking
  * however it looks on that version.
  *
- * `null` means «whichever is right», which is not the same as `default`: with
+ * `null` means "whichever is right", which is not the same as `default`: with
  * nothing set, a text field goes on showing the text cursor it puts up by
  * itself, and `default` is asking for the arrow *on top of* whatever the control
  * would do.
@@ -195,9 +195,9 @@ function warnUnknownPlatformProp(where: PlatformKeys, key: string): void {
   if (warnedPlatformProps.has(seen)) return
   warnedPlatformProps.add(seen)
   console.warn(
-    `[angular-native] <${where.primitive}> no tiene "${key}" en [${where.platform}], ` +
-      `así que no hará nada. Acepta: ${[...where.keys].sort().join(', ')}. ` +
-      'Si existe en las dos plataformas es una entrada normal, no va aquí.'
+    `[angular-native] <${where.primitive}> has no "${key}" in [${where.platform}], ` +
+      `so it will do nothing. It accepts: ${[...where.keys].sort().join(', ')}. ` +
+      'If it exists on both platforms it is an ordinary input and does not belong here.'
   )
 }
 
@@ -286,13 +286,13 @@ export abstract class NativeVisual {
       accessibilityHint: this.accessibilityHint,
       accessibilityRole: this.accessibilityRole,
       accessibilityValue: this.accessibilityValue,
-      // El estado es un objeto y el protocolo no lleva objetos, así que viaja
-      // como JSON, igual que las listas de `an-tab-bar`. `null` se queda en
-      // `null` a propósito: mandar `"{}"` sería decir «sin estado», que no es
-      // lo mismo que «no se ha dicho nada del estado».
+      // The state is an object and the protocol carries no objects, so it
+      // travels as JSON, just like the lists of `an-tab-bar`. `null` stays
+      // `null` on purpose: sending `"{}"` would say "no state", which is not the
+      // same thing as "nothing has been said about the state".
       accessibilityState: () => {
-        const estado = this.accessibilityState()
-        return estado === null ? null : JSON.stringify(estado)
+        const state = this.accessibilityState()
+        return state === null ? null : JSON.stringify(state)
       },
       accessible: this.accessible,
       testID: this.testID
@@ -520,7 +520,7 @@ export abstract class NativeVisual {
   /** What it is. See `NativeRole`. */
   readonly accessibilityRole = input<NativeRole | null>(null)
 
-  /** What it is worth right now: «35 %», «three of seven». */
+  /** What it is worth right now: "35 %", "three of seven". */
   readonly accessibilityValue = input<string | null>(null)
 
   /** What state it is in. See `NativeAccessibilityState`. */
@@ -551,7 +551,7 @@ export class View extends NativeVisual {}
  * UIKit, `NSAccessibility` roles in AppKit, `AccessibilityNodeInfo` on Android—
  * and they resemble each other neither in number nor in name. What they do share
  * is this handful, which is also what a screen reader announces differently:
- * «button», «heading», «link», «image», «checkbox», «picker».
+ * "button", "heading", "link", "image", "checkbox", "picker".
  *
  * A role that only one platform had would go in its `[ios]` or `[android]`
  * object, like anything else that exists in one place only.
@@ -574,7 +574,7 @@ export type NativeRole =
  * What state it is in, for somebody who cannot see it.
  *
  * It is kept apart from the role because it changes over time and the role does
- * not: a screen reader announces «selected» again when this changes, without the
+ * not: a screen reader announces "selected" again when this changes, without the
  * view being rebuilt.
  */
 export interface NativeAccessibilityState {
@@ -1063,7 +1063,7 @@ export type AndroidSliderProps = {
    *
    * It is not a common prop because `UISlider` is continuous and has no steps.
    * Rounding the value in the host is possible, but then the finger goes one way
-   * and the value another: Material's snaps to the steps, and promising «steps»
+   * and the value another: Material's snaps to the steps, and promising "steps"
    * while giving two different behaviours is worse than saying only Android has
    * it.
    *
@@ -1647,7 +1647,7 @@ export class Alert extends NativeVisual {
 
   readonly message = input<string | null>('')
 
-  /** The buttons' titles, in order. With none, an «OK» shows up. */
+  /** The buttons' titles, in order. With none, an "OK" shows up. */
   readonly buttons = input<readonly string[] | null>(null)
 
   /** The index of the button that was pressed. */

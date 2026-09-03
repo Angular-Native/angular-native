@@ -21,14 +21,11 @@ check() {
   fi
 }
 
-# The headless runner announces the simulated drag in its own words, and it is a
-# crate translated on another branch, so both wordings are accepted.
-#
 # The dashes are escaped rather than fenced off with a bare `--`: this `check` is
 # a shell function, so a leading `--` is not an end-of-options marker, it is
 # simply taken as the pattern — and a pattern of `--` matched every line of the
 # dump, so this check passed no matter what the runner printed.
-check '\-\- (arrastre simulado|simulated drag)' "the drag recogniser is hooked up"
+check '\-\- simulated drag' "the drag recogniser is hooked up"
 check "translateX=60.00" "the finger's translation reaches the transform"
 check "translateY=25.00" "and on both axes"
 check "let go at 120 pt/s" "the velocity reaches the template on release"

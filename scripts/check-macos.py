@@ -99,11 +99,9 @@ if not missing and not extra and from_core:
 # gets lost. That `match` has to end in two arms: the one for what is knowingly
 # ignored and the one for what nobody knows about.
 prop_body = host[host.index('fn set_prop('):] if 'fn set_prop(' in host else ''
-# The host is a crate translated on its own branch, so the message it prints for
-# an unknown prop is matched in either language.
 if '_ if ignored_reason(key).is_some()' not in prop_body:
     failures.append('  FAIL set_prop does not consult IGNORED: the discarded is indistinguishable from the forgotten')
-elif not re.search(r'prop desconocida|unknown prop', prop_body):
+elif 'unknown prop' not in prop_body:
     failures.append('  FAIL set_prop swallows the props it does not know without saying so')
 elif re.search(r'\n            _ => \{\s*\}\n        \}\n    \}', prop_body):
     failures.append('  FAIL set_prop ends in an empty wildcard')

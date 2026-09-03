@@ -1,21 +1,21 @@
 'use strict'
-// Runtime JS de angular-native.
+// angular-native's JS runtime.
 //
-// Es lo mínimo que el motor embebido necesita para no ser un intérprete pelado:
-// consola, temporizadores, y el escritor de comandos hacia el core en Rust.
-// Encima de esto se monta el `Renderer2` de Angular.
+// It is the least the embedded engine needs in order not to be a bare
+// interpreter: a console, timers, and the command writer that talks to the Rust
+// core. Angular's `Renderer2` is mounted on top of this.
 //
-// Rust inyecta tres funciones antes de evaluar este fichero:
-//   __an.log(level, message)   salida a la consola del sistema
-//   __an.now()                 milisegundos monótonos desde el arranque
-//   __an.flush(bytes, length)  entrega el búfer de comandos al core
+// Rust injects three functions before evaluating this file:
+//   __an.log(level, message)   output to the system console
+//   __an.now()                 monotonic milliseconds since startup
+//   __an.flush(bytes, length)  hands the command buffer to the core
 ;(function (global) {
   const native = global.__an
   if (!native) {
-    throw new Error('runtime.js necesita que Rust haya inyectado __an')
+    throw new Error('runtime.js needs Rust to have injected __an')
   }
 
-  // ------------------------------------------------------------------ consola
+  // ------------------------------------------------------------------ console
 
   function format(args) {
     let out = ''
@@ -25,8 +25,8 @@
       if (typeof value === 'string') {
         out += value
       } else if (value instanceof Error) {
-        // QuickJS pone en `stack` solo los marcos, sin la línea del mensaje:
-        // si se imprime `stack` a secas se pierde qué falló.
+        // QuickJS puts only the frames in `stack`, without the message line:
+        // printing `stack` on its own loses what actually failed.
         out += `${value.name}: ${value.message}`
         if (value.stack) out += `\n${value.stack}`
       } else {
@@ -48,16 +48,17 @@
     }
   }
 
-  // ----------------------------------------------------------- temporizadores
+  // ------------------------------------------------------------------- timers
   //
-  // La cola vive en JS y la vacía el core una vez por frame. Así no hay hilos
-  // ni relojes compitiendo: el único tiempo que existe es el del vsync.
+  // The queue lives in JS and the core drains it once per frame. That way there
+  // are no threads and no clocks competing: the only time that exists is the
+  // vsync's.
 
   let nextTimerId = 1
   const timers = new Map()
-  // Reloj de los temporizadores: el que trae cada frame, no el del sistema.
-  // Así el tiempo de la app avanza en pasos de vsync, es determinista, y un
-  // test puede simular diez segundos sin esperarlos.
+  // The timers' clock: the one each frame brings along, not the system's. That
+  // way the app's time advances in vsync steps, it is deterministic, and a test
+  // can simulate ten seconds without waiting for them.
   let frameNow = native.now()
 
   function schedule(fn, delay, args, repeat) {
@@ -77,9 +78,9 @@
   global.clearInterval = (id) => timers.delete(id)
   global.performance = { now: () => native.now() }
 
-  // requestAnimationFrame es literalmente el frame: el planificador zoneless de
-  // Angular lo usa para agrupar la detección de cambios, y aquí coincide con el
-  // vsync sin aproximaciones.
+  // requestAnimationFrame is literally the frame: Angular's zoneless scheduler
+  // uses it to batch change detection, and here it lines up with the vsync with
+  // nothing approximated.
   let nextFrameId = 1
   let frameCallbacks = new Map()
 
@@ -92,22 +93,22 @@
 
   function runFrameCallbacks(now) {
     if (frameCallbacks.size === 0) return
-    // Se cambia el mapa antes de ejecutar: un callback que vuelve a pedir
-    // frame entra en el siguiente, no en este, o el bucle no termina.
+    // The map is swapped before running: a callback that asks for another frame
+    // goes into the next one and not into this one, or the loop never ends.
     const pending = frameCallbacks
     frameCallbacks = new Map()
     for (const fn of pending.values()) {
       try {
         fn(now)
       } catch (error) {
-        console.error('requestAnimationFrame sin capturar:', error)
+        console.error('uncaught requestAnimationFrame:', error)
       }
     }
   }
 
   function runTimers(now) {
     if (timers.size === 0) return
-    // Se resuelve sobre una copia: un callback puede añadir o quitar timers.
+    // It is resolved over a copy: a callback can add or remove timers.
     const due = []
     for (const [id, timer] of timers) {
       if (timer.at <= now) due.push([id, timer])
@@ -123,19 +124,19 @@
       try {
         timer.fn.apply(null, timer.args)
       } catch (error) {
-        console.error('timer sin capturar:', error)
+        console.error('uncaught timer:', error)
       }
     }
   }
 
-  // ------------------------------------------------- APIs web que sí hacen falta
+  // -------------------------------------------- the web APIs that are needed
   //
-  // El motor es un intérprete de ECMAScript pelado: no trae nada de la
-  // plataforma web. La mayoría de esas APIs no pintan nada aquí, pero unas
-  // pocas están en el camino de código de librerías que sí se usan. El router
-  // de Angular, sin ir más lejos, crea un `AbortController` por navegación, y
-  // como se suscribe tragándose los errores, su ausencia no da ningún fallo:
-  // simplemente no navega nunca.
+  // The engine is a bare ECMAScript interpreter: it brings nothing of the web
+  // platform with it. Most of those APIs have no business here, but a few sit on
+  // the code path of libraries that do get used. Angular's router, to take the
+  // obvious one, creates an `AbortController` per navigation, and since it
+  // subscribes swallowing the errors, its absence produces no failure at all: it
+  // simply never navigates.
 
   global.queueMicrotask =
     global.queueMicrotask ||
@@ -176,7 +177,7 @@
         try {
           typeof listener === 'function' ? listener(event) : listener.handleEvent(event)
         } catch (error) {
-          console.error('listener de abort sin capturar:', error)
+          console.error('uncaught abort listener:', error)
         }
       }
     }
@@ -207,7 +208,7 @@
   global.AbortSignal = AbortSignal
   global.AbortController = AbortController
 
-  // -------------------------------------------------------- búfer de comandos
+  // ------------------------------------------------------- the command buffer
 
   const OP = {
     CREATE_NODE: 0x01,
@@ -224,17 +225,17 @@
     SET_ROOT: 0x0c
   }
 
-  // Nombre de cada primitiva y el código con el que viaja. El código es el
-  // contrato con Rust; el nombre solo lo usa este lado.
+  // The name of each primitive and the code it travels under. The code is the
+  // contract with Rust; the name is only used on this side.
   //
-  // Dos no se llaman aquí como allí: la etiqueta `<an-select>` traduce a
-  // `Select` y `<an-textarea>` a `Textarea`, mientras que el núcleo los sigue
-  // llamando `Picker` y `TextEditor` —nombres que se eligieron cuando la
-  // etiqueta no podía llamarse `Select` ni `TextArea` porque Angular no
-  // auto-cierra lo que se llame como un elemento de HTML, y que ya no se
-  // pueden cambiar sin tocar el enum de Rust y los tres hosts—. Este es el
-  // único sitio donde los dos vocabularios se encuentran, y `check-kinds.sh`
-  // comprueba que no se separen más.
+  // Two of them are not called here what they are called over there: the
+  // `<an-select>` tag maps to `Select` and `<an-textarea>` to `Textarea`, while
+  // the core still calls them `Picker` and `TextEditor` —names that were picked
+  // back when the tag could not be called `Select` or `TextArea` because Angular
+  // does not self-close anything named after an HTML element, and that can no
+  // longer be changed without touching the Rust enum and the three hosts—. This
+  // is the one place where the two vocabularies meet, and `check-kinds.sh`
+  // verifies that they do not drift any further apart.
   const KIND = {
     View: 0,
     Text: 1,
@@ -299,7 +300,7 @@
       this.offset += 8
     }
 
-    // El motor no trae TextEncoder, así que codificamos UTF-8 a mano.
+    // The engine has no TextEncoder, so UTF-8 is encoded by hand.
     str(value) {
       const text = String(value)
       this.reserve(4 + text.length * 3)
@@ -347,19 +348,20 @@
 
   const writer = new CommandWriter(4096)
 
-  // ------------------------------------------------------------- API de nodos
+  // -------------------------------------------------------------- the node API
   //
-  // Los ids los asigna JS: crear un nodo no espera respuesta del core.
+  // The ids are handed out by JS: creating a node waits for no answer from the
+  // core.
 
   let nextNodeId = 1
   const listeners = new Map()
 
   const dom = {
-    /// `kind` es una clave de KIND: 'View', 'Text', 'RawText'...
+    /// `kind` is a key of KIND: 'View', 'Text', 'RawText'...
     createNode(kind) {
       const id = nextNodeId++
       const code = KIND[kind]
-      if (code === undefined) throw new Error(`primitiva desconocida: ${kind}`)
+      if (code === undefined) throw new Error(`unknown primitive: ${kind}`)
       writer.u8(OP.CREATE_NODE)
       writer.u32(id)
       writer.u8(code)
@@ -454,11 +456,11 @@
 
   global.__an_dom = dom
 
-  // ---------------------------------------------------------- módulos nativos
+  // ------------------------------------------------------------ native modules
   //
-  // Una llamada nativa nunca bloquea: se manda, se guarda el resolvedor, y la
-  // respuesta llega en este frame o en uno posterior. Es el mismo trato que el
-  // búfer de comandos, en la otra dirección.
+  // A native call never blocks: it is sent, the resolver is kept, and the answer
+  // arrives in this frame or in a later one. It is the same bargain as the
+  // command buffer, in the other direction.
 
   const pendingCalls = new Map()
 
@@ -485,7 +487,7 @@
     try {
       value = JSON.parse(payload)
     } catch (error) {
-      pending.reject(new Error(`respuesta nativa ilegible: ${payload}`))
+      pending.reject(new Error(`unreadable native answer: ${payload}`))
       return
     }
     if (ok) {
@@ -495,47 +497,48 @@
     }
   }
 
-  // ------------------------------------------------------- estado entre recargas
+  // ------------------------------------------------------- state across reloads
   //
-  // Una recarga tira el motor entero y levanta otro: los componentes son
-  // nuevos y sus señales vuelven a su valor inicial. Lo que sobrevive es lo
-  // que se apunte aquí — la ruta actual, el scroll, lo escrito en un
-  // formulario— que en la práctica es casi todo lo que uno no quiere perder.
+  // A reload throws the whole engine away and stands another one up: the
+  // components are new and their signals are back to their initial value. What
+  // survives is whatever is registered here —the current route, the scroll
+  // position, what has been typed into a form— which in practice is very nearly
+  // everything one does not want to lose.
   //
-  // No es el *fast refresh* de React Native: eso conserva los propios
-  // componentes, y para eso hace falta cargar los módulos por separado y
-  // sustituir la metadata de los que cambiaron.
+  // It is not React Native's *fast refresh*: that one keeps the components
+  // themselves, and doing that takes loading the modules separately and
+  // replacing the metadata of the ones that changed.
 
   let restored = {}
   const hotSources = new Map()
 
   global.__an_hot = {
-    /** Lo que este `key` valía antes de la última recarga, si valía algo. */
+    /** What this `key` was worth before the last reload, if it was worth anything. */
     read(key) {
       return Object.prototype.hasOwnProperty.call(restored, key) ? restored[key] : undefined
     },
 
-    /** Apunta de dónde leer el valor de `key` cuando toque recargar. */
+    /** Registers where to read the value of `key` from when the time to reload comes. */
     register(key, read) {
       hotSources.set(key, read)
       return () => hotSources.delete(key)
     }
   }
 
-  /// La llama el core justo antes de tirar el motor.
+  /// Called by the core right before it throws the engine away.
   global.__an_hot_state = function () {
     const state = {}
     for (const [key, read] of hotSources) {
       try {
         state[key] = read()
       } catch (error) {
-        console.warn(`no se pudo guardar el estado de ${key}:`, error)
+        console.warn(`the state of ${key} could not be saved:`, error)
       }
     }
     return JSON.stringify(state)
   }
 
-  /// La llama el core en el motor nuevo, antes de evaluar el bundle.
+  /// Called by the core on the new engine, before evaluating the bundle.
   global.__an_restore_hot_state = function (json) {
     try {
       restored = JSON.parse(json) || {}
@@ -544,17 +547,17 @@
     }
   }
 
-  // --------------------------------------------------------------- ciclo de frame
+  // ----------------------------------------------------------- the frame cycle
 
-  /// Eventos nativos, antes que los timers: lo que tocó el usuario en este
-  /// frame se ve reflejado en el mismo frame.
+  /// Native events, ahead of the timers: whatever the user touched in this frame
+  /// is reflected in that same frame.
   global.__an_dispatch = function (targetId, name, payload) {
     const handler = listeners.get(targetId) && listeners.get(targetId).get(name)
     if (!handler) return
     try {
       handler(payload || {})
     } catch (error) {
-      console.error(`manejador de ${name} sin capturar:`, error)
+      console.error(`uncaught ${name} handler:`, error)
     }
   }
 
@@ -564,8 +567,8 @@
     runFrameCallbacks(now)
   }
 
-  /// La llama Rust tras vaciar las microtareas: lo que hayan producido las
-  /// promesas entra en este mismo frame, no en el siguiente.
+  /// Called by Rust after draining the microtasks: whatever the promises
+  /// produced goes into this very frame, not into the next one.
   global.__an_drain = function () {
     writer.drain()
   }

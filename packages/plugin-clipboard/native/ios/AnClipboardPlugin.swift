@@ -1,39 +1,40 @@
 import UIKit
 
-/// El portapapeles de iOS.
+/// The iOS clipboard.
 ///
-/// Se compila dentro del `.app` en la misma invocación de `swiftc` que el
-/// shell, así que ve `AnPlugin` y `AnPluginCall` sin importar nada. Quien lo
-/// registra es el fichero que genera `an` a partir del `package.json`.
+/// It is compiled into the `.app` in the same `swiftc` invocation as the shell,
+/// so it sees `AnPlugin` and `AnPluginCall` without importing anything. What
+/// registers it is the file `an` generates out of the `package.json`.
 ///
-/// `UIPasteboard` es del hilo principal, y aquí ya estamos en él: el core
-/// entrega las llamadas dentro del frame. Por eso se puede contestar en el
-/// acto en vez de guardarse el `AnPluginCall` para más tarde.
+/// `UIPasteboard` belongs to the main thread, and we are already on it here: the
+/// core delivers the calls inside the frame. That is why the answer can be given
+/// on the spot instead of holding on to the `AnPluginCall` for later.
 final class AnClipboardPlugin: AnPlugin {
     func call(_ method: String, _ args: [String: Any], _ respond: AnPluginCall) {
         switch method {
         case "write":
             guard let text = args["text"] as? String else {
-                respond.reject("clipboard.write necesita un texto en 'text'")
+                respond.reject("clipboard.write needs a piece of text in 'text'")
                 return
             }
             UIPasteboard.general.string = text
             respond.resolve()
 
         case "read":
-            // Cadena vacía y no nulo: quien pide el portapapeles quiere pintar
-            // algo, y `undefined` obligaría a comprobarlo en cada uso.
+            // An empty string and not null: whoever asks for the clipboard wants
+            // to paint something, and `undefined` would force a check at every
+            // single use.
             respond.resolve(UIPasteboard.general.string ?? "")
 
         case "hasText":
-            // `hasStrings` no lee el contenido, así que no dispara el aviso de
-            // pegado que iOS 16 enseña al leer lo que copió otra app.
+            // `hasStrings` does not read the contents, so it does not trigger the
+            // paste notice iOS 16 shows when reading what another app copied.
             respond.resolve(UIPasteboard.general.hasStrings)
 
         default:
-            // Nunca en silencio: un método que no existe rechaza la promesa
-            // diciendo cuál se pidió.
-            respond.reject("el plugin clipboard no tiene ningún método \(method)")
+            // Never in silence: a method that does not exist rejects the promise
+            // saying which one was asked for.
+            respond.reject("the clipboard plugin has no method \(method)")
         }
     }
 }

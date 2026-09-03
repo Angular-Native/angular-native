@@ -31,12 +31,6 @@ contains() {
   if grep -qF -e "$2" <<<"$1"; then ok "$3"; else ko "$3"; fi
 }
 
-# The same, for a string that comes out of somewhere this branch does not
-# translate: the pattern is a regular expression that accepts either language.
-contains_either() {
-  if grep -qE -e "$2" <<<"$1"; then ok "$3"; else ko "$3"; fi
-}
-
 echo "== plugin permissions"
 
 FIXTURE="$ROOT/build/permissions-fixture"
@@ -164,9 +158,8 @@ PLIST="build/ios/AngularNative.app/Info.plist"
 if [ -f "$PLIST" ]; then
   if VALUE="$(plutil -extract NSFaceIDUsageDescription raw -o - "$PLIST" 2>/dev/null)"; then
     ok "the plugin's key ended up in the .app's Info.plist"
-    # This text is declared in the plugins' own package.json, under packages/,
-    # which is not part of this translation, so both wordings are accepted.
-    contains_either "$VALUE" '(comprobar que eres tú|check that it is you)' \
+    # This text is declared in the plugins' own package.json, under packages/.
+    contains "$VALUE" 'To check it is you before showing what is stored.' \
       'and with the text the plugin declared'
   else
     ko 'NSFaceIDUsageDescription never reached the .app Info.plist'

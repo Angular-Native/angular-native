@@ -164,7 +164,7 @@ pub fn discover(workspace: &Workspace, app: &Path) -> Result<Vec<Plugin>> {
         return Ok(Vec::new());
     };
     let parsed: Value = serde_json::from_str(&text)
-        .with_context(|| format!("{} no es JSON válido", manifest.display()))?;
+        .with_context(|| format!("{} is not valid JSON", manifest.display()))?;
 
     let mut by_module: BTreeMap<String, Plugin> = BTreeMap::new();
     let dependencies = parsed.get("dependencies").and_then(Value::as_object);
@@ -180,8 +180,8 @@ pub fn discover(workspace: &Workspace, app: &Path) -> Result<Vec<Plugin>> {
         if let Some(previous) = by_module.insert(plugin.module.clone(), plugin) {
             let module = previous.module;
             bail!(
-                "dos plugins dicen llamarse {module:?}: {} y otro. \
-                 El nombre de módulo tiene que ser único en la app.",
+                "two plugins claim to be called {module:?}: {} and another one. \
+                 The module name has to be unique within the app.",
                 previous.package
             );
         }
@@ -216,15 +216,15 @@ fn resolve_package(workspace: &Workspace, app_dir: &Path, name: &str) -> Option<
 fn read_manifest(package: &str, dir: &Path) -> Result<Option<Plugin>> {
     let manifest = dir.join("package.json");
     let text = std::fs::read_to_string(&manifest)
-        .with_context(|| format!("no se pudo leer {}", manifest.display()))?;
+        .with_context(|| format!("{} could not be read", manifest.display()))?;
     let parsed: Value = serde_json::from_str(&text)
-        .with_context(|| format!("{} no es JSON válido", manifest.display()))?;
+        .with_context(|| format!("{} is not valid JSON", manifest.display()))?;
     let Some(declared) = parsed.get("angularNative") else {
         return Ok(None);
     };
     let declared = declared.as_object().with_context(|| {
         format!(
-            "{}: angularNative tiene que ser un objeto",
+            "{}: angularNative has to be an object",
             manifest.display()
         )
     })?;
@@ -232,7 +232,7 @@ fn read_manifest(package: &str, dir: &Path) -> Result<Option<Plugin>> {
     let module = declared
         .get("module")
         .and_then(Value::as_str)
-        .with_context(|| format!("{}: falta angularNative.module", manifest.display()))?;
+        .with_context(|| format!("{}: angularNative.module is missing", manifest.display()))?;
     check_module_name(module, &manifest)?;
 
     let entry = match declared.get("entry").and_then(Value::as_str) {
@@ -240,7 +240,7 @@ fn read_manifest(package: &str, dir: &Path) -> Result<Option<Plugin>> {
             let path = dir.join(relative);
             if !path.is_file() {
                 bail!(
-                    "{}: angularNative.entry apunta a {}, que no existe",
+                    "{}: angularNative.entry points at {}, which does not exist",
                     manifest.display(),
                     path.display()
                 );
@@ -273,8 +273,8 @@ fn check_module_name(module: &str, manifest: &Path) -> Result<()> {
             .all(|c| c.is_ascii_alphanumeric() || c == '-');
     if !valid {
         bail!(
-            "{}: angularNative.module es {module:?}; tiene que empezar por minúscula \
-             y llevar solo letras, cifras y guiones",
+            "{}: angularNative.module is {module:?}; it has to start with a lower-case letter \
+             and carry nothing but letters, digits and hyphens",
             manifest.display()
         );
     }
@@ -292,7 +292,7 @@ fn read_native(
     };
     let declared = declared.as_object().with_context(|| {
         format!(
-            "{}: angularNative.{} tiene que ser un objeto",
+            "{}: angularNative.{} has to be an object",
             manifest.display(),
             platform.key()
         )
@@ -302,7 +302,7 @@ fn read_native(
         .and_then(Value::as_str)
         .with_context(|| {
             format!(
-                "{}: falta angularNative.{}.sources",
+                "{}: angularNative.{}.sources is missing",
                 manifest.display(),
                 platform.key()
             )
@@ -312,7 +312,7 @@ fn read_native(
         .and_then(Value::as_str)
         .with_context(|| {
             format!(
-                "{}: falta angularNative.{}.register",
+                "{}: angularNative.{}.register is missing",
                 manifest.display(),
                 platform.key()
             )
@@ -320,7 +320,7 @@ fn read_native(
     let sources = dir.join(sources);
     if !sources.is_dir() {
         bail!(
-            "{}: angularNative.{}.sources apunta a {}, que no es un directorio",
+            "{}: angularNative.{}.sources points at {}, which is not a directory",
             manifest.display(),
             platform.key(),
             sources.display()
@@ -358,28 +358,28 @@ fn read_dict(
     };
     let declared = declared.as_object().with_context(|| {
         format!(
-            "{}: angularNative.ios.{section} tiene que ser un objeto",
+            "{}: angularNative.ios.{section} has to be an object",
             manifest.display()
         )
     })?;
     let mut entries = BTreeMap::new();
     for (key, value) in declared {
         // The key travels on to `plutil -replace`, which treats the dot as a
-        // path separator: `a.b` would not be a key called «a.b» but the «b»
-        // inside the «a». No system key has a dot in it, so it stops here rather
+        // path separator: `a.b` would not be a key called "a.b" but the "b"
+        // inside the "a". No system key has a dot in it, so it stops here rather
         // than writing somewhere nobody asked for.
         if key.is_empty() || key.contains('.') {
             bail!(
-                "{}: angularNative.ios.{section} tiene la clave {key:?}; solo se admiten claves de \
-                 primer nivel y sin puntos",
+                "{}: angularNative.ios.{section} has the key {key:?}; only top-level keys with \
+                 no dots in them are accepted",
                 manifest.display()
             );
         }
         if !plist_value_ok(value) {
             bail!(
-                "{}: angularNative.ios.{section}[{key:?}] es {value}; solo se admiten cadenas, \
-                 booleanos, números y listas de cadenas. Un diccionario anidado todavía no se \
-                 funde. Ver https://angular-native.dev/extending/plugins/.",
+                "{}: angularNative.ios.{section}[{key:?}] is {value}; only strings, booleans, \
+                 numbers and lists of strings are accepted. A nested dictionary is not merged \
+                 yet. See https://angular-native.dev/extending/plugins/.",
                 manifest.display()
             );
         }
@@ -406,7 +406,7 @@ fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<Ma
     };
     let declared = declared.as_object().with_context(|| {
         format!(
-            "{}: angularNative.android.manifest tiene que ser un objeto",
+            "{}: angularNative.android.manifest has to be an object",
             manifest.display()
         )
     })?;
@@ -416,15 +416,15 @@ fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<Ma
             "uses-permission" => {
                 let list = value.as_array().with_context(|| {
                     format!(
-                        "{}: angularNative.android.manifest[\"uses-permission\"] tiene que ser \
-                         una lista de nombres",
+                        "{}: angularNative.android.manifest[\"uses-permission\"] has to be \
+                         a list of names",
                         manifest.display()
                     )
                 })?;
                 for name in list {
                     let name = name.as_str().with_context(|| {
                         format!(
-                            "{}: los permisos son cadenas, y hay un {name}",
+                            "{}: permissions are strings, and there is a {name}",
                             manifest.display()
                         )
                     })?;
@@ -434,16 +434,16 @@ fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<Ma
             "uses-feature" => {
                 let object = value.as_object().with_context(|| {
                     format!(
-                        "{}: angularNative.android.manifest[\"uses-feature\"] tiene que ser un \
-                         objeto de nombre a si es obligatoria",
+                        "{}: angularNative.android.manifest[\"uses-feature\"] has to be an \
+                         object from name to whether it is required",
                         manifest.display()
                     )
                 })?;
                 for (name, required) in object {
                     let required = required.as_bool().with_context(|| {
                         format!(
-                            "{}: uses-feature[{name:?}] tiene que ser true o false, que es lo \
-                             que vale android:required",
+                            "{}: uses-feature[{name:?}] has to be true or false, which is what \
+                             android:required is worth",
                             manifest.display()
                         )
                     })?;
@@ -451,8 +451,8 @@ fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<Ma
                 }
             }
             other => bail!(
-                "{}: angularNative.android.manifest no sabe de {other:?}; de momento solo se \
-                 aportan \"uses-permission\" y \"uses-feature\". Ver https://angular-native.dev/extending/plugins/.",
+                "{}: angularNative.android.manifest knows nothing about {other:?}; for now only \
+                 \"uses-permission\" and \"uses-feature\" are contributed. See https://angular-native.dev/extending/plugins/.",
                 manifest.display()
             ),
         }
@@ -487,22 +487,22 @@ pub fn require(plugins: &[Plugin], platform: Platform) -> Result<()> {
         return Ok(());
     }
     let mut message = format!(
-        "esta app no se puede compilar para {}: {} de sus plugins no lo cubre{}\n",
+        "this app cannot be built for {}: {} of its plugins do{} not cover it\n",
         platform.label(),
         missing.len(),
-        if missing.len() == 1 { "" } else { "n" }
+        if missing.len() == 1 { "es" } else { "" }
     );
     for plugin in &missing {
         message.push_str(&format!(
-            "  · {} (módulo {:?}) solo trae {}\n",
+            "  · {} (module {:?}) only brings {}\n",
             plugin.package,
             plugin.module,
             plugin.coverage()
         ));
     }
     message.push_str(&format!(
-        "\nO el plugin añade su parte de {} —fuentes en angularNative.{} de su package.json—, \
-         o la app deja de depender de él.",
+        "\nEither the plugin adds its {} half —sources in angularNative.{} of its package.json—, \
+         or the app stops depending on it.",
         platform.label(),
         platform.key()
     ));
@@ -511,7 +511,7 @@ pub fn require(plugins: &[Plugin], platform: Platform) -> Result<()> {
 
 /// Merges the `Info.plist` keys all the plugins ask for.
 pub fn plist_entries(plugins: &[Plugin]) -> Result<BTreeMap<String, Contributed>> {
-    merge_dicts(plugins, "el Info.plist", |plist, _| plist)
+    merge_dicts(plugins, "the Info.plist", |plist, _| plist)
 }
 
 /// Merges the entitlements all the plugins ask for.
@@ -522,7 +522,7 @@ pub fn plist_entries(plugins: &[Plugin]) -> Result<BTreeMap<String, Contributed>
 /// the app runs, and by then it looks like a keychain bug and not a signature
 /// that was missing.
 pub fn entitlement_entries(plugins: &[Plugin]) -> Result<BTreeMap<String, Contributed>> {
-    merge_dicts(plugins, "los derechos", |_, entitlements| entitlements)
+    merge_dicts(plugins, "the entitlements", |_, entitlements| entitlements)
 }
 
 /// The merge both of them share.
@@ -548,7 +548,7 @@ fn merge_dicts<'a>(
             if let Some(previous) = merged.get(key) {
                 if &previous.value != value {
                     bail!(clash(
-                        &format!("la clave {key:?} de {what}"),
+                        &format!("the key {key:?} of {what}"),
                         &previous.package,
                         &previous.value.to_string(),
                         &plugin.package,
@@ -591,9 +591,9 @@ pub fn manifest_entries(plugins: &[Plugin]) -> Result<ManifestEntries> {
                     let owner = owners
                         .get(name)
                         .map(String::as_str)
-                        .unwrap_or("otro plugin");
+                        .unwrap_or("another plugin");
                     bail!(clash(
-                        &format!("la característica {name:?} del AndroidManifest.xml"),
+                        &format!("the feature {name:?} of the AndroidManifest.xml"),
                         owner,
                         &format!("android:required=\"{previous}\""),
                         &plugin.package,
@@ -615,14 +615,14 @@ pub fn manifest_entries(plugins: &[Plugin]) -> Result<ManifestEntries> {
 /// can fix it with: whoever reads it wrote neither of the two.
 fn clash(what: &str, one: &str, one_value: &str, other: &str, other_value: &str) -> String {
     format!(
-        "dos plugins piden {what} con valores distintos:\n\
+        "two plugins ask for {what} with different values:\n\
          \x20 · {one}\n\
          \x20     {one_value}\n\
          \x20 · {other}\n\
          \x20     {other_value}\n\n\
-         Solo puede quedar uno, y elegirlo por orden sería decidir en silencio \
-         algo que se ve en pantalla.\n\
-         O los dos plugins se ponen de acuerdo, o la app se queda con uno de los dos."
+         Only one can stay, and picking by order would silently decide something \
+         that shows up on screen.\n\
+         Either the two plugins agree, or the app keeps one of the two."
     )
 }
 
@@ -630,7 +630,7 @@ fn clash(what: &str, one: &str, one_value: &str, other: &str, other_value: &str)
 pub fn sources(plugin: &Plugin, platform: Platform) -> Result<Vec<String>> {
     let native = plugin
         .native(platform)
-        .with_context(|| format!("{} no cubre {}", plugin.package, platform.label()))?;
+        .with_context(|| format!("{} does not cover {}", plugin.package, platform.label()))?;
     let mut found: Vec<PathBuf> = Vec::new();
     let mut kotlin: Vec<PathBuf> = Vec::new();
     for path in walk(&native.sources) {
@@ -646,15 +646,15 @@ pub fn sources(plugin: &Plugin, platform: Platform) -> Result<Vec<String>> {
         // against `android.jar`. Saying so beats building the APK without those
         // files in it.
         bail!(
-            "{}: {} lleva fuentes Kotlin y todavía no se compilan; el lado Android \
-             de un plugin es Java. Ver https://angular-native.dev/extending/plugins/.",
+            "{}: {} carries Kotlin sources and those are not compiled yet; the Android half \
+             of a plugin is Java. See https://angular-native.dev/extending/plugins/.",
             plugin.package,
             native.sources.display()
         );
     }
     if found.is_empty() {
         bail!(
-            "{}: no hay ninguna fuente .{} en {}",
+            "{}: there is no .{} source in {}",
             plugin.package,
             platform.extension(),
             native.sources.display()
@@ -673,14 +673,15 @@ pub fn sources(plugin: &Plugin, platform: Platform) -> Result<Vec<String>> {
 /// unconditionally, and an empty `install()` reads better than an `#if`.
 pub fn generate_ios(plugins: &[Plugin], out: &Path) -> Result<PathBuf> {
     let mut code = String::from(
-        "// Generado por `an` al armar el .app. No editar: se reescribe en cada build.\n\
+        "// Generated by `an` when it puts the .app together. Do not edit: it is\n\
+         // rewritten on every build.\n\
          //\n\
-         // Los nombres salen del angularNative.module del package.json de cada\n\
-         // plugin, que es el único sitio donde se escriben.\n\n\
+         // The names come from the angularNative.module of each plugin\'s\n\
+         // package.json, which is the one place they are written down.\n\n\
          enum AnGeneratedPlugins {\n    static func install() {\n",
     );
     if plugins.is_empty() {
-        code.push_str("        // Esta app no depende de ningún plugin.\n");
+        code.push_str("        // This app depends on no plugin.\n");
     }
     for plugin in plugins {
         let native = plugin
@@ -702,17 +703,18 @@ pub fn generate_ios(plugins: &[Plugin], out: &Path) -> Result<PathBuf> {
 /// The same registry, for the Android shell.
 pub fn generate_android(plugins: &[Plugin], out: &Path) -> Result<PathBuf> {
     let mut code = String::from(
-        "// Generado por `an` al armar el APK. No editar: se reescribe en cada build.\n\
+        "// Generated by `an` when it puts the APK together. Do not edit: it is\n\
+         // rewritten on every build.\n\
          //\n\
-         // Los nombres salen del angularNative.module del package.json de cada\n\
-         // plugin, que es el único sitio donde se escriben.\n\n\
+         // The names come from the angularNative.module of each plugin\'s\n\
+         // package.json, which is the one place they are written down.\n\n\
          package dev.angularnative;\n\n\
          public final class AnGeneratedPlugins {\n\n\
          \x20   private AnGeneratedPlugins() {}\n\n\
          \x20   public static void install() {\n",
     );
     if plugins.is_empty() {
-        code.push_str("        // Esta app no depende de ningún plugin.\n");
+        code.push_str("        // This app depends on no plugin.\n");
     }
     for plugin in plugins {
         let native = plugin
@@ -765,7 +767,7 @@ pub fn aliases(workspace: &Workspace, js_dir: &Path, plugins: &[Plugin]) -> Vec<
 /// wants to know is which of the two got linked.
 pub fn list(workspace: &Workspace, plugins: &[Plugin]) {
     if plugins.is_empty() {
-        println!("esta app no depende de ningún plugin");
+        println!("this app depends on no plugin");
         return;
     }
     let root = workspace.source_root();
