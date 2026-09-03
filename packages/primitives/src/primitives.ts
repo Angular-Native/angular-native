@@ -195,9 +195,9 @@ function warnUnknownPlatformProp(where: PlatformKeys, key: string): void {
   if (warnedPlatformProps.has(seen)) return
   warnedPlatformProps.add(seen)
   console.warn(
-    `[angular-native] <${where.primitive}> no tiene "${key}" en [${where.platform}], ` +
-      `así que no hará nada. Acepta: ${[...where.keys].sort().join(', ')}. ` +
-      'Si existe en las dos plataformas es una entrada normal, no va aquí.'
+    `[angular-native] <${where.primitive}> has no "${key}" in [${where.platform}], ` +
+      `so it will do nothing. It accepts: ${[...where.keys].sort().join(', ')}. ` +
+      'If it exists on both platforms it is an ordinary input and does not belong here.'
   )
 }
 
@@ -286,13 +286,13 @@ export abstract class NativeVisual {
       accessibilityHint: this.accessibilityHint,
       accessibilityRole: this.accessibilityRole,
       accessibilityValue: this.accessibilityValue,
-      // El estado es un objeto y el protocolo no lleva objetos, así que viaja
-      // como JSON, igual que las listas de `an-tab-bar`. `null` se queda en
-      // `null` a propósito: mandar `"{}"` sería decir «sin estado», que no es
-      // lo mismo que «no se ha dicho nada del estado».
+      // The state is an object and the protocol carries no objects, so it
+      // travels as JSON, just like the lists of `an-tab-bar`. `null` stays
+      // `null` on purpose: sending `"{}"` would say "no state", which is not the
+      // same thing as "nothing has been said about the state".
       accessibilityState: () => {
-        const estado = this.accessibilityState()
-        return estado === null ? null : JSON.stringify(estado)
+        const state = this.accessibilityState()
+        return state === null ? null : JSON.stringify(state)
       },
       accessible: this.accessible,
       testID: this.testID

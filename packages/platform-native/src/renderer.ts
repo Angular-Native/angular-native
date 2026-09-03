@@ -72,9 +72,9 @@ function warnUnknownStyle(name: string): void {
   if (KNOWN_STYLES.has(camel) || TEXT_PROPS.has(camel) || warned.has(camel)) return
   warned.add(camel)
   console.warn(
-    `[angular-native] nadie reconoce el estilo "${name}", así que no hará nada. ` +
-      'Si es una propiedad del control —color, título, valor— va como entrada ' +
-      'tipada, no como estilo.'
+    `[angular-native] nobody recognises the style "${name}", so it will do nothing. ` +
+      'If it is a property of the control —colour, title, value— it goes as a typed ' +
+      'input, not as a style.'
   )
 }
 
