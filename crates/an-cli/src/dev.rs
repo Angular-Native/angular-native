@@ -129,6 +129,10 @@ pub fn run(
                     false,
                     Some(&url),
                     &plugins,
+                    // The dev server goes to a simulator, always: a device
+                    // build is signed, and a signature is not something to put
+                    // in a loop that rebuilds on every save.
+                    None,
                 )?;
                 ios::launch(&package, device)?;
             }
@@ -140,6 +144,10 @@ pub fn run(
                     false,
                     Some(&url),
                     &plugins,
+                    // The dev server goes to a simulator, always: a device
+                    // build is signed, and a signature is not something to put
+                    // in a loop that rebuilds on every save.
+                    None,
                 )?;
                 ios::launch(&package, device)?;
             }
@@ -151,6 +159,10 @@ pub fn run(
                     false,
                     Some(&url),
                     &plugins,
+                    // The dev server goes to a simulator, always: a device
+                    // build is signed, and a signature is not something to put
+                    // in a loop that rebuilds on every save.
+                    None,
                 )?;
                 ios::launch(&package, device)?;
             }

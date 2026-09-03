@@ -37,7 +37,8 @@ enum Command {
     /// Compiles, builds the .app and launches it in the iOS simulator.
     Ios {
         app: Option<String>,
-        /// The simulator's name.
+        /// The simulator's name — or, with `--physical`, the device's name or
+        /// UDID.
         #[arg(long, default_value = DEFAULT_PHONE)]
         device: String,
         #[arg(long)]
@@ -46,6 +47,21 @@ enum Command {
         /// and the plugins, which is what can be checked with no simulator.
         #[arg(long)]
         no_launch: bool,
+        /// Builds for a device plugged into this Mac, signs it and installs it
+        /// with `devicectl`.
+        ///
+        /// It needs the signing settings: a development certificate in the
+        /// keychain and a provisioning profile that lists this device. See
+        /// https://angular-native.dev/guide/signing-and-distribution/.
+        #[arg(long)]
+        physical: bool,
+        /// Builds a signed `.xcarchive` and the `.ipa` that comes out of it,
+        /// for TestFlight or the App Store. It implies `--release`.
+        ///
+        /// Which of those the `.ipa` can go to is decided by the certificate
+        /// and the profile it was signed with, not by a flag here.
+        #[arg(long, conflicts_with = "physical")]
+        archive: bool,
     },
     /// Compiles, builds the tvOS .app and launches it in the Apple TV
     /// simulator.
@@ -247,17 +263,64 @@ fn main() -> anyhow::Result<()> {
                 None => Ok(()),
             }
         }
-        Command::Ios { app, device, release, no_launch } => {
+        Command::Ios { app, device, release, no_launch, physical, archive } => {
             let app = workspace.app(app.as_deref())?;
             let found = plugins::discover(&workspace, &app)?;
-            let bundle = build::bundle(&workspace, &app, release, &found)?;
-            let package =
-                ios::assemble(&workspace, ios::Family::Ios, &bundle, release, None, &found)?;
+            if !physical && !archive {
+                let bundle = build::bundle(&workspace, &app, release, &found)?;
+                let package = ios::assemble(
+                    &workspace,
+                    ios::Family::Ios,
+                    &bundle,
+                    release,
+                    None,
+                    &found,
+                    None,
+                )?;
+                if no_launch {
+                    println!("{}", package.dir.display());
+                    return Ok(());
+                }
+                return ios::launch(&package, &device);
+            }
+            // Signing first, and before the bundle: it is the only step here
+            // that can fail for a reason nobody can guess at, and finding out
+            // after two minutes of `cargo` that the profile expired is exactly
+            // the failure this is meant to stop happening.
+            let settings = signing::Settings::read(&workspace)?;
+            let purpose = if archive {
+                signing::Purpose::Distribution
+            } else {
+                signing::Purpose::Development
+            };
+            let apple = signing::apple(&settings, "ios", &workspace.bundle_id(), purpose)?;
+            eprintln!("==> signing as {} (team {})", apple.identity_name, apple.team);
+            // An archive is always a release build: an `.ipa` with ngDevMode on
+            // is twice the size and runs Angular's development checks on
+            // somebody else's phone.
+            let bundle = build::bundle(&workspace, &app, release || archive, &found)?;
+            let package = ios::assemble(
+                &workspace,
+                ios::Family::Ios,
+                &bundle,
+                release || archive,
+                None,
+                &found,
+                Some(&apple),
+            )?;
+            if archive {
+                let (_, ipa) = ios::archive(&package, &apple)?;
+                println!("{}", ipa.display());
+                return Ok(());
+            }
             if no_launch {
                 println!("{}", package.dir.display());
                 return Ok(());
             }
-            ios::launch(&package, &device)
+            // Same rule as `an dev`: if `--device` is still the simulator's
+            // default, nobody chose it, and what is wanted is the only device
+            // plugged in.
+            ios::install_on_device(&package, (device != DEFAULT_PHONE).then_some(device.as_str()))
         }
         Command::Visionos {
             app,
@@ -273,7 +336,7 @@ fn main() -> anyhow::Result<()> {
             let found = plugins::discover(&workspace, &app)?;
             let bundle = build::bundle(&workspace, &app, release, &found)?;
             let package =
-                ios::assemble(&workspace, ios::Family::VisionOs, &bundle, release, None, &found)?;
+                ios::assemble(&workspace, ios::Family::VisionOs, &bundle, release, None, &found, None)?;
             if no_launch {
                 println!("{}", package.dir.display());
                 return Ok(());
@@ -294,7 +357,7 @@ fn main() -> anyhow::Result<()> {
             let found = plugins::discover(&workspace, &app)?;
             let bundle = build::bundle(&workspace, &app, release, &found)?;
             let package =
-                ios::assemble(&workspace, ios::Family::TvOs, &bundle, release, None, &found)?;
+                ios::assemble(&workspace, ios::Family::TvOs, &bundle, release, None, &found, None)?;
             if no_launch {
                 println!("{}", package.dir.display());
                 return Ok(());

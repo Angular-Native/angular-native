@@ -272,9 +272,14 @@ impl Settings {
                      has no project manifest—"
                 .to_owned(),
         };
+        let add_it_to = match &self.source {
+            Some(_) => format!("Add it to {where_from}"),
+            None => "In a project made with `an init`, it goes in its angular-native.json"
+                .to_owned(),
+        };
         anyhow::anyhow!(
             "{intro}, and `{command}` needs one.\n\n\
-             Add it to {where_from}:\n\n{block}\n\n\
+             {add_it_to}:\n\n{block}\n\n\
              Or set it in the environment, which is what CI does and what works in the \
              monorepo:\n{variables}\n\nSee {DOCS}"
         )
