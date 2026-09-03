@@ -1,25 +1,25 @@
-//! Host de watchOS.
+//! The watchOS host.
 //!
-//! No es el host de iOS con otro `cfg`: es otra cosa. En watchOS no existe la
-//! jerarquía de `UIView` sobre la que se apoyan `an-ios` y `an-android`. La
-//! interfaz la dibuja SwiftUI y no hay forma de saltárselo.
+//! This is not the iOS host under another `cfg`: it is a different thing. On
+//! watchOS the `UIView` hierarchy that `an-ios` and `an-android` lean on does
+//! not exist. SwiftUI draws the interface and there is no way around it.
 //!
-//! Eso choca de frente con el modelo de montaje del proyecto, que es
-//! imperativo: crea una vista, métela aquí, cámbiale el marco. SwiftUI no
-//! admite órdenes, solo estado: se le describe qué hay y él decide qué
-//! redibujar. La salida es reflejar el árbol de Rust en un modelo que SwiftUI
-//! observe, y convertir cada `MountOp` en una mutación de ese modelo.
+//! That runs head-on into the project's mounting model, which is imperative:
+//! create a view, put it here, change its frame. SwiftUI takes no orders, only
+//! state: you describe what there is and it decides what to redraw. The way
+//! out is to mirror the Rust tree in a model SwiftUI observes, and to turn
+//! every `MountOp` into a mutation of that model.
 //!
-//! Reparto de trabajo:
+//! Who does what:
 //!
 //! ```text
 //!   Rust                                   Swift
 //!   ────────────────────────────────       ─────────────────────────────
-//!   QuickJS ─▶ ShadowTree ─▶ taffy         TimelineView (un tick por frame)
+//!   QuickJS ─▶ ShadowTree ─▶ taffy         TimelineView (one tick per frame)
 //!                  │ commit                       │ an_watch_runtime_frame
 //!                  ▼                              ▼
-//!            Frame { MountOp[] }            ¿cambió la revisión?
-//!                  │                              │ sí
+//!            Frame { MountOp[] }            did the revision change?
+//!                  │                              │ yes
 //!                  ▼                              ▼
 //!             WatchHost (modelo)  ──JSON──▶  AnTree (@Observable)
 //!                                                  │
@@ -27,9 +27,10 @@
 //!                                            ZStack + .offset
 //! ```
 //!
-//! El layout sigue siendo de taffy. Swift coloca cada nodo por su marco
-//! absoluto y no usa `VStack`/`HStack` para posicionar: si los usara habría dos
-//! motores de layout decidiendo lo mismo, y ganaría el que corriera después.
+//! The layout is still taffy's. Swift places each node by its absolute frame
+//! and does not use `VStack`/`HStack` to position anything: if it did there
+//! would be two layout engines deciding the same thing, and whichever ran last
+//! would win.
 
 pub mod host;
 pub mod measure;
@@ -50,15 +51,15 @@ mod tests {
     use crate::host::WatchHost;
     use crate::measure::WatchMeasurer;
 
-    /// Monta un árbol pequeño y comprueba que la foto que sale es la que el
-    /// shell espera: raíz con fondo, un texto con su cadena ya fundida, y un
-    /// botón que dice que se puede pulsar.
+    /// Mounts a small tree and checks that the snapshot that comes out is the
+    /// one the shell expects: a root with a background, a text with its string
+    /// already fused, and a button that says it can be pressed.
     ///
-    /// Es la prueba que corre en el Mac. El simulador comprueba lo que esta no
-    /// puede —que SwiftUI lo pinte—, pero que el modelo salga bien no hace
-    /// falta un reloj para verlo.
+    /// This is the test that runs on the Mac. The simulator checks what this
+    /// one cannot —that SwiftUI paints it— but seeing that the model comes out
+    /// right does not take a watch.
     #[test]
-    fn la_foto_lleva_lo_que_el_shell_necesita() {
+    fn the_snapshot_carries_what_the_shell_needs() {
         let mut tree = ShadowTree::new();
         tree.create_node(1, NodeKind::View).unwrap();
         tree.set_style(1, "width", "176").unwrap();
@@ -70,15 +71,15 @@ mod tests {
         tree.set_prop(2, "fontSize", PropValue::Number(16.0)).unwrap();
         tree.set_prop(2, "color", PropValue::Str("#ffffff".into())).unwrap();
         tree.create_node(3, NodeKind::RawText).unwrap();
-        tree.set_text(3, "hola ").unwrap();
+        tree.set_text(3, "hello ").unwrap();
         tree.create_node(4, NodeKind::RawText).unwrap();
-        tree.set_text(4, "reloj").unwrap();
+        tree.set_text(4, "watch").unwrap();
         tree.insert_child(2, 3, 0).unwrap();
         tree.insert_child(2, 4, 1).unwrap();
         tree.insert_child(1, 2, 0).unwrap();
 
         tree.create_node(5, NodeKind::Button).unwrap();
-        tree.set_prop(5, "title", PropValue::Str("pulsa".into())).unwrap();
+        tree.set_prop(5, "title", PropValue::Str("press".into())).unwrap();
         tree.set_listener(5, "press", true).unwrap();
         tree.insert_child(1, 5, 1).unwrap();
 
@@ -88,22 +89,22 @@ mod tests {
         mount.apply(&frame);
 
         let snapshot = crate::snapshot::snapshot(mount.host());
-        let root = snapshot.root.expect("tiene que haber raíz");
+        let root = snapshot.root.expect("there has to be a root");
         assert_eq!(root.kind, "View");
         assert_eq!(root.background, Some([11.0 / 255.0, 16.0 / 255.0, 32.0 / 255.0, 1.0]));
-        assert_eq!(root.children.len(), 2, "los RawText no bajan al shell");
+        assert_eq!(root.children.len(), 2, "RawText nodes do not go down to the shell");
 
         let text = &root.children[0];
         assert_eq!(text.kind, "Text");
-        // Los dos `RawText` se funden: SwiftUI quiere la cadena entera.
-        assert_eq!(text.text.as_deref(), Some("hola reloj"));
+        // The two `RawText` nodes are fused: SwiftUI wants the whole string.
+        assert_eq!(text.text.as_deref(), Some("hello watch"));
         assert_eq!(text.font_size, Some(16.0));
         assert!(text.children.is_empty());
 
         let button = &root.children[1];
         assert_eq!(button.kind, "Button");
-        assert_eq!(button.text.as_deref(), Some("pulsa"));
-        assert!(button.listens.iter().any(|e| e == "press"), "la plantilla puso un (press)");
+        assert_eq!(button.text.as_deref(), Some("press"));
+        assert!(button.listens.iter().any(|e| e == "press"), "the template put a (press) on it");
     }
 
     /// The six accessibility props, as the shell receives them.
@@ -121,7 +122,7 @@ mod tests {
     /// and a spoken word belongs to SwiftUI. That is worth having and it is
     /// worth not overselling.
     #[test]
-    fn la_foto_lleva_la_accesibilidad_traducida_a_swiftui() {
+    fn the_snapshot_carries_accessibility_translated_to_swiftui() {
         let mut tree = ShadowTree::new();
         tree.create_node(1, NodeKind::View).unwrap();
         tree.set_style(1, "width", "176").unwrap();
@@ -153,7 +154,7 @@ mod tests {
         mount.apply(&frame);
 
         let snapshot = crate::snapshot::snapshot(mount.host());
-        let root = snapshot.root.expect("tiene que haber raíz");
+        let root = snapshot.root.expect("there has to be a root");
 
         let row = &root.children[0];
         assert_eq!(row.accessibility_label.as_deref(), Some("Night mode"));
@@ -171,10 +172,11 @@ mod tests {
         assert_eq!(gap.accessibility_traits, vec!["isSelected"]);
     }
 
-    /// Un nodo que se va tiene que irse también de la foto, y la revisión tiene
-    /// que subir: si no subiera, SwiftUI seguiría enseñando lo que ya no está.
+    /// A node that goes away has to go from the snapshot too, and the revision
+    /// has to rise: if it did not, SwiftUI would keep showing what is no longer
+    /// there.
     #[test]
-    fn quitar_un_nodo_sube_la_revision_y_lo_saca_de_la_foto() {
+    fn removing_a_node_raises_the_revision_and_takes_it_out_of_the_snapshot() {
         let mut tree = ShadowTree::new();
         tree.create_node(1, NodeKind::View).unwrap();
         tree.set_style(1, "width", "176").unwrap();
@@ -187,22 +189,23 @@ mod tests {
         let measurer = WatchMeasurer::new(Default::default());
         let mut mount = MountSide::new(WatchHost::new(new_event_queue()));
         mount.apply(&tree.commit((176.0, 223.0), &measurer).unwrap());
-        let antes = mount.host().revision();
+        let before = mount.host().revision();
         assert_eq!(crate::snapshot::snapshot(mount.host()).root.unwrap().children.len(), 1);
 
         tree.remove_child(1, 2).unwrap();
         tree.destroy_node(2).unwrap();
         mount.apply(&tree.commit((176.0, 223.0), &measurer).unwrap());
 
-        assert!(mount.host().revision() > antes, "un cambio tiene que subir la revisión");
+        assert!(mount.host().revision() > before, "a change has to raise the revision");
         assert!(crate::snapshot::snapshot(mount.host()).root.unwrap().children.is_empty());
     }
 
-    /// El diálogo y la hoja no viajan dentro del árbol: SwiftUI no los coloca,
-    /// los presenta, y el shell los cuelga de la raíz. Si volvieran a bajar como
-    /// hijos, el shell tendría que buscarlos por dentro en cada frame.
+    /// The dialog and the sheet do not travel inside the tree: SwiftUI does not
+    /// place them, it presents them, and the shell hangs them off the root. Were
+    /// they to come down as children again, the shell would have to go looking
+    /// for them inside it on every frame.
     #[test]
-    fn el_dialogo_y_la_hoja_salen_del_arbol() {
+    fn the_dialog_and_the_sheet_come_out_of_the_tree() {
         let mut tree = ShadowTree::new();
         tree.create_node(1, NodeKind::View).unwrap();
         tree.set_style(1, "width", "208").unwrap();
@@ -211,8 +214,8 @@ mod tests {
 
         tree.create_node(2, NodeKind::Alert).unwrap();
         tree.set_prop(2, "visible", PropValue::Bool(true)).unwrap();
-        tree.set_prop(2, "title", PropValue::Str("batería".into())).unwrap();
-        tree.set_prop(2, "buttons", PropValue::Str(r#"["vale","ahora no"]"#.into())).unwrap();
+        tree.set_prop(2, "title", PropValue::Str("battery".into())).unwrap();
+        tree.set_prop(2, "buttons", PropValue::Str(r#"["ok","not now"]"#.into())).unwrap();
         tree.insert_child(1, 2, 0).unwrap();
 
         tree.create_node(3, NodeKind::Modal).unwrap();
@@ -224,29 +227,30 @@ mod tests {
         let measurer = WatchMeasurer::new(Default::default());
         mount.apply(&tree.commit((208.0, 248.0), &measurer).unwrap());
 
-        let foto = crate::snapshot::snapshot(mount.host());
-        let raiz = foto.root.expect("tiene que haber raíz");
-        assert!(raiz.children.is_empty(), "ni el diálogo ni la hoja son hijos");
-        assert_eq!(foto.overlays.len(), 2);
+        let snapshot = crate::snapshot::snapshot(mount.host());
+        let root = snapshot.root.expect("there has to be a root");
+        assert!(root.children.is_empty(), "neither the dialog nor the sheet is a child");
+        assert_eq!(snapshot.overlays.len(), 2);
 
-        let alerta = &foto.overlays[0];
-        assert_eq!(alerta.kind, "Alert");
-        assert_eq!(alerta.visible, Some(true));
-        assert_eq!(alerta.title.as_deref(), Some("batería"));
-        // La lista viaja como JSON porque el protocolo no lleva listas, y se
-        // deshace en Rust para que Swift no tenga que saberlo.
+        let alert = &snapshot.overlays[0];
+        assert_eq!(alert.kind, "Alert");
+        assert_eq!(alert.visible, Some(true));
+        assert_eq!(alert.title.as_deref(), Some("battery"));
+        // The list travels as JSON because the protocol carries no lists, and it
+        // is taken apart in Rust so that Swift never has to know that.
         assert_eq!(
-            alerta.buttons.as_deref(),
-            Some(["vale".to_owned(), "ahora no".to_owned()].as_slice())
+            alert.buttons.as_deref(),
+            Some(["ok".to_owned(), "not now".to_owned()].as_slice())
         );
-        assert_eq!(foto.overlays[1].kind, "Modal");
-        assert_eq!(foto.overlays[1].presentation.as_deref(), Some("sheet"));
+        assert_eq!(snapshot.overlays[1].kind, "Modal");
+        assert_eq!(snapshot.overlays[1].presentation.as_deref(), Some("sheet"));
     }
 
-    /// Los controles bajan con su estado, no solo con su marco: el shell tiene
-    /// que poder pintar un interruptor encendido en el primer frame.
+    /// Controls come down with their state and not only with their frame: the
+    /// shell has to be able to paint a switch that is on in the very first
+    /// frame.
     #[test]
-    fn los_controles_bajan_con_su_estado() {
+    fn controls_come_down_with_their_state() {
         let mut tree = ShadowTree::new();
         tree.create_node(1, NodeKind::View).unwrap();
         tree.set_style(1, "width", "208").unwrap();
@@ -265,7 +269,7 @@ mod tests {
         tree.insert_child(1, 3, 1).unwrap();
 
         tree.create_node(4, NodeKind::Picker).unwrap();
-        tree.set_prop(4, "items", PropValue::Str(r#"["suave","normal"]"#.into())).unwrap();
+        tree.set_prop(4, "items", PropValue::Str(r#"["gentle","normal"]"#.into())).unwrap();
         tree.set_prop(4, "selectedIndex", PropValue::Number(1.0)).unwrap();
         tree.insert_child(1, 4, 2).unwrap();
 
@@ -276,29 +280,30 @@ mod tests {
         let mut mount = MountSide::new(WatchHost::new(new_event_queue()));
         let measurer = WatchMeasurer::new(Default::default());
         mount.apply(&tree.commit((208.0, 248.0), &measurer).unwrap());
-        let raiz = crate::snapshot::snapshot(mount.host()).root.unwrap();
+        let root = crate::snapshot::snapshot(mount.host()).root.unwrap();
 
-        assert_eq!(raiz.children[0].on, Some(true));
-        assert_eq!(raiz.children[1].value, Some(40.0));
-        assert_eq!(raiz.children[1].maximum, Some(100.0));
-        // `enabled` solo viaja cuando lo apagan: mandarlo siempre engordaría
-        // cada nodo por lo que casi nunca cambia.
-        assert!(raiz.children[1].disabled);
-        assert!(!raiz.children[0].disabled);
-        assert_eq!(raiz.children[2].selected_index, Some(1));
+        assert_eq!(root.children[0].on, Some(true));
+        assert_eq!(root.children[1].value, Some(40.0));
+        assert_eq!(root.children[1].maximum, Some(100.0));
+        // `enabled` only travels when it is switched off: sending it always
+        // would fatten every node for the sake of what almost never changes.
+        assert!(root.children[1].disabled);
+        assert!(!root.children[0].disabled);
+        assert_eq!(root.children[2].selected_index, Some(1));
         assert_eq!(
-            raiz.children[2].items.as_deref(),
-            Some(["suave".to_owned(), "normal".to_owned()].as_slice())
+            root.children[2].items.as_deref(),
+            Some(["gentle".to_owned(), "normal".to_owned()].as_slice())
         );
-        // El nombre común se traduce en Rust, con la tabla del núcleo, para que
-        // Swift no tenga una segunda copia que mantener de acuerdo.
-        assert_eq!(raiz.children[3].symbol.as_deref(), Some("chevron.left"));
+        // The common name is translated in Rust, with the core's table, so that
+        // Swift does not hold a second copy that has to be kept in agreement.
+        assert_eq!(root.children[3].symbol.as_deref(), Some("chevron.left"));
     }
 
-    /// La corona es un oyente más y viaja en la misma lista que el resto: eso es
-    /// lo que permitió añadirla sin tocar el protocolo ni las directivas.
+    /// The crown is one more listener and travels in the same list as the rest:
+    /// that is what made it possible to add it without touching the protocol or
+    /// the directives.
     #[test]
-    fn la_corona_viaja_como_un_oyente_mas() {
+    fn the_crown_travels_as_one_more_listener() {
         let mut tree = ShadowTree::new();
         tree.create_node(1, NodeKind::View).unwrap();
         tree.set_style(1, "width", "208").unwrap();
@@ -311,41 +316,41 @@ mod tests {
         let mut mount = MountSide::new(WatchHost::new(new_event_queue()));
         let measurer = WatchMeasurer::new(Default::default());
         mount.apply(&tree.commit((208.0, 248.0), &measurer).unwrap());
-        let raiz = crate::snapshot::snapshot(mount.host()).root.unwrap();
+        let root = crate::snapshot::snapshot(mount.host()).root.unwrap();
 
-        // Ordenada: la foto entra en un test y en un `diff`, y un `HashSet` la
-        // barajaría en cada frame.
-        assert_eq!(raiz.listens, vec!["crown", "longPress", "swipeLeft"]);
+        // Sorted: the snapshot goes into a test and into a `diff`, and a
+        // `HashSet` would shuffle it on every frame.
+        assert_eq!(root.listens, vec!["crown", "longPress", "swipeLeft"]);
     }
 
-    /// Cada primitiva o la pinta el reloj o dice por qué no. Lo que no puede
-    /// haber es una tercera respuesta: un hueco sin explicación.
+    /// Every primitive is either painted by the watch or says why it is not.
+    /// What there cannot be is a third answer: a gap nobody accounted for.
     #[test]
-    fn cada_primitiva_esta_decidida() {
+    fn every_primitive_is_decided() {
         use an_core::NodeKind::*;
-        let pintadas = [
+        let painted = [
             View, Text, ScrollView, Button, Image, Icon, TextInput, StackView, Switch, Slider,
             Stepper, ProgressBar, ActivityIndicator, Picker, DatePicker, Alert, Modal,
         ];
-        let descartadas = [
+        let ruled_out = [
             TabBar, NavigationBar, SegmentedControl, SearchBar, TextEditor, WebView, MapView,
             VideoView,
         ];
-        for kind in pintadas {
+        for kind in painted {
             assert!(
                 crate::snapshot::unsupported(kind).is_none(),
-                "{kind:?} se pinta, así que no puede tener motivo para no pintarse"
+                "{kind:?} is painted, so it cannot have a reason for not being painted"
             );
         }
-        for kind in descartadas {
+        for kind in ruled_out {
             assert!(
                 crate::snapshot::unsupported(kind).is_some(),
-                "{kind:?} no se pinta y tiene que decir por qué"
+                "{kind:?} is not painted and has to say why"
             );
         }
-        // 25 primitivas y `RawText`, que no es una: lo crea `createText()` y no
-        // se escribe en ninguna plantilla.
-        assert_eq!(pintadas.len() + descartadas.len(), 25);
+        // 25 primitives plus `RawText`, which is not one: `createText()` makes
+        // it and it is written in no template.
+        assert_eq!(painted.len() + ruled_out.len(), 25);
     }
 
 }

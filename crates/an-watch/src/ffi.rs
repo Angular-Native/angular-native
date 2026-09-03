@@ -1,18 +1,18 @@
-//! Superficie C que consume el shell de SwiftUI.
+//! The C surface the SwiftUI shell consumes.
 //!
-//! Es casi la misma que la de iOS —crear, evaluar, un frame, liberar— con dos
-//! diferencias que vienen de que aquí no hay vistas:
+//! It is almost the same as the iOS one —create, evaluate, a frame, free— with
+//! two differences that follow from there being no views here:
 //!
-//! - `an_watch_runtime_new` no recibe ningún contenedor. En iOS se le pasa el
-//!   `UIView` del que colgar; aquí no hay nada de lo que colgar, porque el
-//!   árbol vive en Rust y SwiftUI lo lee.
-//! - Aparece `an_watch_runtime_snapshot`, que es cómo el shell se entera de qué
-//!   pintar. En iOS no hace falta: el host ya ha tocado las vistas cuando
-//!   `an_runtime_frame` vuelve.
+//! - `an_watch_runtime_new` takes no container. On iOS it is handed the
+//!   `UIView` to hang things off; here there is nothing to hang off, because
+//!   the tree lives in Rust and SwiftUI reads it.
+//! - `an_watch_runtime_snapshot` shows up, which is how the shell finds out
+//!   what to paint. On iOS it is not needed: by the time `an_runtime_frame`
+//!   returns, the host has already touched the views.
 //!
-//! El motor JS sigue en su propio hilo y por la misma razón que en iOS: QuickJS
-//! necesita unos 4 MB de pila para que el router de Angular navegue, y el hilo
-//! principal no los tiene.
+//! The JS engine is still on a thread of its own, and for the same reason as
+//! on iOS: QuickJS needs some 4 MB of stack for Angular's router to navigate,
+//! and the main thread does not have them.
 
 use std::ffi::{c_char, CStr, CString};
 use std::time::Duration;
@@ -24,24 +24,24 @@ use an_host::{drain_events, new_event_queue, EventQueue, MountSide, ShadowSide};
 use crate::host::WatchHost;
 use crate::measure::{ControlSizes, WatchMeasurer};
 
-/// 8 MB, como en iOS. Medido allí: el router de Angular necesita algo más de
-/// 3 MB para completar una navegación.
+/// 8 MB, as on iOS. Measured there: Angular's router needs a little over 3 MB
+/// to complete a navigation.
 const RUNTIME_STACK: usize = 8 * 1024 * 1024;
 
-/// Lo que el hilo de UI espera al motor dentro del frame.
+/// How long the UI thread waits for the engine inside the frame.
 ///
-/// En el reloj el frame no son 16,6 ms: watchOS dibuja a 30 Hz mientras la app
-/// está en primer plano, así que hay 33 y se puede ser algo más paciente. Se
-/// dejan 8 ms de margen para que SwiftUI recomponga después.
+/// On a watch the frame is not 16.6 ms: watchOS draws at 30 Hz while the app
+/// is in the foreground, so there are 33 and one can afford to be a little
+/// more patient. 8 ms are left over for SwiftUI to recompose afterwards.
 const FRAME_BUDGET: Duration = Duration::from_millis(25);
 
 pub struct AnWatchRuntime {
     worker: RuntimeWorker,
     mount: MountSide<WatchHost>,
     events: EventQueue,
-    /// La última foto entregada. Se guarda para que el `CString` siga vivo
-    /// mientras Swift lo lee: devolver un puntero a un temporal sería un
-    /// puntero colgante en cuanto la función volviera.
+    /// The last snapshot handed out. It is kept so that the `CString` stays
+    /// alive while Swift reads it: returning a pointer into a temporary would
+    /// be a dangling pointer the moment the function returned.
     last_json: Option<CString>,
 }
 
@@ -54,7 +54,7 @@ impl AnWatchRuntime {
         applied
     }
 
-    /// Un -1 se pega: si algo falló en el frame, el frame falló.
+    /// A -1 is contagious: if anything in the frame failed, the frame failed.
     fn mount_reply(&mut self, reply: an_bridge::Reply, applied: i32) -> i32 {
         let failed = reply.error.is_some();
         if let Some(error) = reply.error {
@@ -68,8 +68,9 @@ impl AnWatchRuntime {
         }
     }
 
-    /// Vacía lo que quede en vuelo. Antes de una operación de control hay que
-    /// dejar el canal limpio, o la respuesta que se recoja será de otra.
+    /// Drains whatever is still in flight. Before a control operation the
+    /// channel has to be left clean, or the reply picked up will belong to
+    /// something else.
     fn settle(&mut self) {
         while let Some(reply) = self.worker.wait_reply() {
             if let Some(error) = reply.error {
@@ -80,15 +81,15 @@ impl AnWatchRuntime {
     }
 }
 
-/// Arranca el runtime.
+/// Starts the runtime.
 ///
-/// `control_json` son los tamaños naturales de los controles, que en el reloj
-/// los mide SwiftUI y no se pueden preguntar desde aquí. Formato:
-/// `{"Button":[80,44]}`. Puede ser nulo: entonces los controles miden cero y
-/// el layout los colapsa, que es visible y por tanto depurable.
+/// `control_json` holds the controls' natural sizes, which on a watch SwiftUI
+/// measures and which cannot be asked about from here. Format:
+/// `{"Button":[80,44]}`. It may be null: then the controls measure zero and
+/// the layout collapses them, which is visible and therefore debuggable.
 ///
 /// # Safety
-/// `control_json`, si no es nulo, debe ser una cadena C válida.
+/// `control_json`, if not null, must be a valid C string.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_watch_runtime_new(
     width: f32,
@@ -106,7 +107,7 @@ pub unsafe extern "C" fn an_watch_runtime_new(
     let worker = match worker {
         Ok(worker) => worker,
         Err(error) => {
-            eprintln!("angular-native: no arrancó el motor JS: {error}");
+            eprintln!("angular-native: the JS engine did not start: {error}");
             return std::ptr::null_mut();
         }
     };
@@ -119,10 +120,10 @@ pub unsafe extern "C" fn an_watch_runtime_new(
     }))
 }
 
-/// Evalúa un script: el bundle de la app.
+/// Evaluates a script: the app's bundle.
 ///
 /// # Safety
-/// `rt` debe venir de `an_watch_runtime_new`; `name` y `code`, cadenas C.
+/// `rt` must come from `an_watch_runtime_new`; `name` and `code`, C strings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_watch_runtime_eval(
     rt: *mut AnWatchRuntime,
@@ -135,14 +136,15 @@ pub unsafe extern "C" fn an_watch_runtime_eval(
     report(rt.worker.request(Request::Eval { name, code }).error)
 }
 
-/// Mete código nuevo en la app que ya está corriendo. Es lo que usa `an dev`.
+/// Puts new code into the app that is already running. It is what `an dev`
+/// uses.
 ///
-/// Igual que en iOS: si el bundle nuevo encaja con lo que hay montado, solo
-/// cambian las definiciones de los componentes y el estado se conserva; si no,
-/// se levanta todo otra vez.
+/// The same as on iOS: if the new bundle fits what is mounted, only the
+/// components' definitions change and the state is kept; if it does not,
+/// everything is stood up again.
 ///
 /// # Safety
-/// `rt` debe venir de `an_watch_runtime_new`; `name` y `code`, cadenas C.
+/// `rt` must come from `an_watch_runtime_new`; `name` and `code`, C strings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_watch_runtime_reload(
     rt: *mut AnWatchRuntime,
@@ -154,9 +156,9 @@ pub unsafe extern "C" fn an_watch_runtime_reload(
     rt.settle();
     drain_events(&rt.events);
     let reply = rt.worker.request(Request::Reload { name, code });
-    // El modelo solo se vacía si hubo reinicio: en caliente el árbol sigue en
-    // pie, y tirarlo dejaría la pantalla vacía esperando unas altas que el
-    // núcleo no tiene por qué volver a mandar.
+    // The model is only emptied if there was a restart: on a hot reload the
+    // tree is still standing, and throwing it away would leave a blank screen
+    // waiting for creations the core has no reason to send again.
     if !reply.hot {
         rt.mount.clear();
     }
@@ -164,7 +166,7 @@ pub unsafe extern "C" fn an_watch_runtime_reload(
 }
 
 /// # Safety
-/// `rt` debe venir de `an_watch_runtime_new` y seguir vivo.
+/// `rt` must come from `an_watch_runtime_new` and still be alive.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_watch_runtime_set_viewport(
     rt: *mut AnWatchRuntime,
@@ -176,21 +178,22 @@ pub unsafe extern "C" fn an_watch_runtime_set_viewport(
     rt.worker.request(Request::SetViewport(width, height));
 }
 
-/// Un frame completo: eventos hacia JS, turno de JS, layout, y las `MountOp`
-/// aplicadas sobre el modelo. No pinta nada: de eso se encarga SwiftUI cuando
-/// lea la foto.
+/// A complete frame: events on to JS, JS's turn, layout, and the `MountOp`s
+/// applied to the model. It paints nothing: SwiftUI takes care of that when it
+/// reads the snapshot.
 ///
-/// Devuelve las operaciones aplicadas, o -1 si algo falló.
+/// Returns the operations applied, or -1 if something failed.
 ///
 /// # Safety
-/// `rt` debe venir de `an_watch_runtime_new` y seguir vivo.
+/// `rt` must come from `an_watch_runtime_new` and still be alive.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_watch_runtime_frame(rt: *mut AnWatchRuntime, now_ms: f64) -> i32 {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return -1 };
 
     let mut applied = rt.pump();
-    // Si el worker sigue ocupado no se le encola otro turno: la cola crecería
-    // sin fin y cada frame montado sería más viejo que el anterior.
+    // If the worker is still busy it is not queued another turn: the queue
+    // would grow without end and every mounted frame would be older than the
+    // one before it.
     if !rt.worker.busy() {
         let events = drain_events(&rt.events);
         rt.worker.post(Request::Tick { now_ms, events });
@@ -201,25 +204,26 @@ pub unsafe extern "C" fn an_watch_runtime_frame(rt: *mut AnWatchRuntime, now_ms:
     applied
 }
 
-/// Número de revisión del modelo. Sube solo cuando un frame trajo cambios.
+/// The model's revision number. It only rises when a frame brought changes.
 ///
-/// El shell lo compara con el que ya tiene y solo pide la foto si difiere: un
-/// frame quieto no serializa nada ni despierta a SwiftUI.
+/// The shell compares it with the one it already has and only asks for the
+/// snapshot when they differ: a frame in which nothing moved serialises
+/// nothing and does not wake SwiftUI.
 ///
 /// # Safety
-/// `rt` debe venir de `an_watch_runtime_new` y seguir vivo.
+/// `rt` must come from `an_watch_runtime_new` and still be alive.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_watch_runtime_revision(rt: *mut AnWatchRuntime) -> u64 {
     let Some(rt) = (unsafe { rt.as_ref() }) else { return 0 };
     rt.mount.host().revision()
 }
 
-/// El árbol entero en JSON. El puntero es válido hasta la siguiente llamada a
-/// esta misma función o hasta `an_watch_runtime_free`: Swift lo copia a un
-/// `String` en el acto y no lo guarda.
+/// The whole tree as JSON. The pointer is valid until the next call to this
+/// same function or until `an_watch_runtime_free`: Swift copies it into a
+/// `String` on the spot and does not keep it.
 ///
 /// # Safety
-/// `rt` debe venir de `an_watch_runtime_new` y seguir vivo.
+/// `rt` must come from `an_watch_runtime_new` and still be alive.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_watch_runtime_snapshot(rt: *mut AnWatchRuntime) -> *const c_char {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return std::ptr::null() };
@@ -228,14 +232,15 @@ pub unsafe extern "C" fn an_watch_runtime_snapshot(rt: *mut AnWatchRuntime) -> *
     let json = match serde_json::to_string(&snapshot) {
         Ok(json) => json,
         Err(error) => {
-            eprintln!("angular-native: no se pudo serializar el árbol: {error}");
+            eprintln!("angular-native: the tree could not be serialised: {error}");
             return std::ptr::null();
         }
     };
-    // Un `\0` dentro del JSON lo haría imposible de pasar como cadena C. No
-    // debería llegar ninguno, pero si llega es mejor no pintar que corromper.
+    // A `\0` inside the JSON would make it impossible to pass as a C string.
+    // None should ever arrive, but if one does, painting nothing beats
+    // corrupting something.
     let Ok(cstring) = CString::new(json) else {
-        eprintln!("angular-native: el árbol traía un cero dentro");
+        eprintln!("angular-native: the tree carried a zero byte inside it");
         return std::ptr::null();
     };
     let pointer = cstring.as_ptr();
@@ -243,22 +248,22 @@ pub unsafe extern "C" fn an_watch_runtime_snapshot(rt: *mut AnWatchRuntime) -> *
     pointer
 }
 
-/// Un evento nativo desde SwiftUI. Solo se encola si la plantilla registró ese
-/// oyente sobre ese nodo.
+/// A native event from SwiftUI. It is only queued if the template registered
+/// that listener on that node.
 ///
-/// `payload_json` es un objeto plano —`{"value":0.4}`, `{"x":12,"y":30}`— o
-/// nulo para los eventos que no llevan nada. Se admite JSON y no un puñado de
-/// parámetros porque cada evento lleva claves distintas: un `pan` lleva seis
-/// números y un `dismiss` ninguno, y una firma que valiera para los dos sería
-/// una firma que no dice nada.
+/// `payload_json` is a flat object —`{"value":0.4}`, `{"x":12,"y":30}`— or
+/// null for the events that carry nothing. JSON is taken rather than a handful
+/// of parameters because each event carries different keys: a `pan` carries
+/// six numbers and a `dismiss` none, and a signature that suited both would be
+/// a signature that says nothing.
 ///
-/// Solo se aceptan valores planos. Un objeto o una lista dentro se rechazan
-/// avisando, porque el otro lado —`PropValue`— no los sabe representar y
-/// tragárselos los convertiría en nulos que nadie podría explicar.
+/// Only flat values are accepted. An object or a list inside is rejected with
+/// a warning, because the other side —`PropValue`— has no way to represent
+/// them, and swallowing them would turn them into nulls nobody could explain.
 ///
 /// # Safety
-/// `rt` debe venir de `an_watch_runtime_new`; `name`, una cadena C válida, y
-/// `payload_json`, una cadena C válida o nulo.
+/// `rt` must come from `an_watch_runtime_new`; `name`, a valid C string, and
+/// `payload_json`, a valid C string or null.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_watch_runtime_event(
     rt: *mut AnWatchRuntime,
@@ -275,19 +280,19 @@ pub unsafe extern "C" fn an_watch_runtime_event(
     rt.mount.host().dispatch(target, name, payload);
 }
 
-/// Deshace el objeto JSON de un evento en los pares que entiende el puente.
+/// Takes an event's JSON object apart into the pairs the bridge understands.
 unsafe fn read_payload(raw: *const c_char) -> Vec<(String, PropValue)> {
     if raw.is_null() {
         return Vec::new();
     }
     let Ok(text) = (unsafe { CStr::from_ptr(raw) }).to_str() else {
-        eprintln!("angular-native: la carga de un evento no era UTF-8");
+        eprintln!("angular-native: an event's payload was not UTF-8");
         return Vec::new();
     };
     let parsed: serde_json::Map<String, serde_json::Value> = match serde_json::from_str(text) {
         Ok(map) => map,
         Err(error) => {
-            eprintln!("angular-native: la carga de un evento no se entiende: {error}");
+            eprintln!("angular-native: an event's payload makes no sense: {error}");
             return Vec::new();
         }
     };
@@ -300,12 +305,12 @@ unsafe fn read_payload(raw: *const c_char) -> Vec<(String, PropValue)> {
             serde_json::Value::Number(n) => match n.as_f64() {
                 Some(number) => PropValue::Number(number),
                 None => {
-                    eprintln!("angular-native: {key} traía un número que no cabe en un f64");
+                    eprintln!("angular-native: {key} carried a number that does not fit in an f64");
                     continue;
                 }
             },
             other => {
-                eprintln!("angular-native: {key} traía {other}, que el puente no sabe llevar");
+                eprintln!("angular-native: {key} carried {other}, which the bridge cannot carry");
                 continue;
             }
         };
@@ -315,7 +320,8 @@ unsafe fn read_payload(raw: *const c_char) -> Vec<(String, PropValue)> {
 }
 
 /// # Safety
-/// `rt` debe venir de `an_watch_runtime_new` y no haberse liberado ya.
+/// `rt` must come from `an_watch_runtime_new` and must not already have been
+/// freed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_watch_runtime_free(rt: *mut AnWatchRuntime) {
     if !rt.is_null() {
@@ -324,7 +330,7 @@ pub unsafe extern "C" fn an_watch_runtime_free(rt: *mut AnWatchRuntime) {
 }
 
 /// # Safety
-/// Ambos punteros tienen que ser cadenas C válidas o nulos.
+/// Both pointers have to be valid C strings or null.
 unsafe fn read_pair(name: *const c_char, code: *const c_char) -> Option<(String, String)> {
     if name.is_null() || code.is_null() {
         return None;
@@ -335,7 +341,7 @@ unsafe fn read_pair(name: *const c_char, code: *const c_char) -> Option<(String,
 }
 
 /// # Safety
-/// `raw`, si no es nulo, tiene que ser una cadena C válida.
+/// `raw`, if not null, has to be a valid C string.
 unsafe fn read_controls(raw: *const c_char) -> ControlSizes {
     if raw.is_null() {
         return ControlSizes::new();
@@ -344,7 +350,7 @@ unsafe fn read_controls(raw: *const c_char) -> ControlSizes {
         return ControlSizes::new();
     };
     serde_json::from_str::<ControlSizes>(text).unwrap_or_else(|error| {
-        eprintln!("angular-native: tamaños de control ilegibles: {error}");
+        eprintln!("angular-native: unreadable control sizes: {error}");
         ControlSizes::new()
     })
 }

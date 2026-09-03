@@ -1,22 +1,23 @@
-//! Medición de texto en el reloj.
+//! Text measurement on the watch.
 //!
-//! watchOS no tiene `UIView`, pero sí tiene `UIFont` y el dibujado de cadenas
-//! de Foundation (`boundingRectWithSize:`), que es exactamente lo que hace
-//! falta: taffy necesita saber cuánto ocupa un `<Text>` antes de colocarlo, y
-//! eso no depende de que exista una jerarquía de vistas.
+//! watchOS has no `UIView`, but it does have `UIFont` and Foundation's string
+//! drawing (`boundingRectWithSize:`), which is exactly what is needed: taffy
+//! has to know how much room a `<Text>` takes before it can place it, and that
+//! does not depend on a view hierarchy existing.
 //!
-//! La caché no es una optimización. El layout pide el tamaño de cada nodo de
-//! texto varias veces por frame —mínimo intrínseco, máximo, y el definitivo—,
-//! y sin caché cada frame cruzaría a Objective-C decenas de veces. La clave
-//! incluye el ancho disponible porque el salto de línea depende de él.
+//! The cache is not an optimisation. The layout asks for each text node's size
+//! several times per frame —intrinsic minimum, maximum, and the final one— and
+//! without a cache every frame would cross into Objective-C dozens of times.
+//! The key includes the available width because where the lines break depends
+//! on it.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 
 use an_layout::{FontSpec, TextMeasurer};
 
-/// Ancho redondeado a 1/8 de punto: anchos que difieren en flotantes
-/// irrelevantes comparten entrada de caché.
+/// Width rounded to 1/8 of a point: widths that differ by floats nobody cares
+/// about share a cache entry.
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct Key {
     text: String,
@@ -28,9 +29,9 @@ struct Key {
     max_width_eighths: Option<i32>,
 }
 
-/// Tamaños naturales de los controles, indexados por nombre. En el reloj los
-/// dibuja SwiftUI, así que a diferencia de iOS no se le pueden preguntar a un
-/// `UISwitch` de verdad: los mide el shell al arrancar y llegan ya resueltos.
+/// The controls' natural sizes, indexed by name. On the watch SwiftUI draws
+/// them, so unlike on iOS there is no real `UISwitch` to ask: the shell
+/// measures them at startup and they arrive already worked out.
 pub type ControlSizes = HashMap<String, (f32, f32)>;
 
 pub struct WatchMeasurer {
@@ -53,12 +54,12 @@ impl TextMeasurer for WatchMeasurer {
         let Some((width, height)) = self.controls.get(name).copied() else {
             return (0.0, 0.0);
         };
-        // En una pantalla de 40 mm un control que no ocupe el ancho entero se
-        // ve mal y es difícil de acertar con el dedo, así que se estira. Es la
-        // convención del propio watchOS: sus filas van de borde a borde.
+        // On a 40 mm screen a control that does not take the full width looks
+        // wrong and is hard to hit with a finger, so it is stretched. It is
+        // watchOS's own convention: its rows run edge to edge.
         //
-        // El `Icon` no está: su tamaño lo fija la plantilla con `[size]`, y
-        // estirarlo daría un símbolo del ancho de la pantalla.
+        // `Icon` is not in the list: the template fixes its size with `[size]`,
+        // and stretching it would give a symbol as wide as the screen.
         let stretches = matches!(
             name,
             "Button"
@@ -118,9 +119,9 @@ mod platform {
         if font.italic {
             return UIFont::italicSystemFontOfSize(size);
         }
-        // Escala CSS 100..900 a la escala de pesos de UIKit, -1.0..1.0. Es la
-        // misma tabla que usa el host de iOS: si divergieran, el mismo texto
-        // se mediría distinto en cada plataforma.
+        // Scales CSS's 100..900 onto UIKit's weight scale, -1.0..1.0. It is
+        // the same table the iOS host uses: were they to diverge, the same text
+        // would measure differently on each platform.
         let weight = match font.weight {
             0..=199 => -0.8,
             200..=299 => -0.6,
@@ -161,8 +162,8 @@ mod platform {
         let mut width = rect.size.width as f32;
         let mut height = rect.size.height as f32;
 
-        // `boundingRect` no conoce `lineHeight` ni `numberOfLines`: se aplican
-        // sobre el número de líneas que devolvió.
+        // `boundingRect` knows nothing of `lineHeight` or `numberOfLines`:
+        // they are applied to the number of lines it came back with.
         let lines = if natural_line > 0.0 { (height / natural_line).round().max(1.0) } else { 1.0 };
         let lines = match font.max_lines {
             Some(max) if max > 0 => lines.min(max as f32),
@@ -174,14 +175,14 @@ mod platform {
         if let Some(limit) = max_width.filter(|w| w.is_finite()) {
             width = width.min(limit);
         }
-        // UIKit devuelve fraccionarios; redondear hacia arriba evita que se
-        // trunque la última letra.
+        // UIKit returns fractional values; rounding up keeps the last letter
+        // from being clipped.
         (width.ceil(), height.ceil())
     }
 }
 
-/// Fuera del reloj no hay UIKit. Se mide con la aproximación del núcleo, que es
-/// suficiente para los tests del modelo y de la serialización.
+/// Off the watch there is no UIKit. Measuring falls back to the core's
+/// approximation, which is enough for the model and serialisation tests.
 #[cfg(not(target_os = "watchos"))]
 mod platform {
     use an_layout::{FontSpec, NaiveMeasurer, TextMeasurer};

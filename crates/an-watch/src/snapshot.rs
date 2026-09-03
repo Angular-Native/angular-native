@@ -1,21 +1,22 @@
-//! El árbol de Rust, en la forma que SwiftUI sabe leer.
+//! The Rust tree, in the shape SwiftUI knows how to read.
 //!
-//! Por qué una foto entera y no una op por llamada: cruzar la frontera una vez
-//! por `MountOp` son cientos de cruces por frame, que es justo lo que el
-//! protocolo binario del puente existe para evitar. Y por qué JSON y no el
-//! protocolo binario: una pantalla de reloj son diez o quince nodos, `Codable`
-//! lo decodifica sin escribir un parser, y el sitio donde esto dejaría de valer
-//! —una lista larga— todavía no existe en watchOS. Cuando exista, lo que hay
-//! que cambiar es este fichero y el `Decodable` de Swift, no el host.
+//! Why a whole snapshot and not one op per call: crossing the boundary once
+//! per `MountOp` is hundreds of crossings per frame, which is exactly what the
+//! bridge's binary protocol exists to avoid. And why JSON rather than that
+//! binary protocol: a watch screen is ten or fifteen nodes, `Codable` decodes
+//! it without anyone writing a parser, and the place where this would stop
+//! paying off —a long list— does not exist on watchOS yet. When it does, what
+//! has to change is this file and Swift's `Decodable`, not the host.
 //!
-//! Los colores salen ya resueltos a canales 0..1. Swift no vuelve a analizar
-//! `#0b1020`: si lo hiciera habría dos analizadores que mantener de acuerdo.
+//! Colours come out already resolved into 0..1 channels. Swift never parses
+//! `#0b1020` again: if it did there would be two parsers to keep in agreement.
 //!
-//! Dos cosas no viajan dentro del árbol y salen aparte, en `overlays`: el
-//! `Alert` y el `Modal`. En SwiftUI no son vistas que se coloquen, son
-//! modificadores —`.alert`, `.sheet`, `.fullScreenCover`— que se cuelgan de la
-//! raíz, y el sistema decide dónde van. Dejarlos dentro obligaría al shell a
-//! buscarlos por el árbol en cada frame.
+//! Two things do not travel inside the tree and come out separately, in
+//! `overlays`: the `Alert` and the `Modal`. In SwiftUI they are not views that
+//! get placed, they are modifiers —`.alert`, `.sheet`, `.fullScreenCover`—
+//! hung off the root, and the system decides where they go. Leaving them
+//! inside would force the shell to hunt for them through the tree on every
+//! frame.
 
 use std::cell::RefCell;
 use std::collections::HashSet;
@@ -29,17 +30,18 @@ use crate::host::WatchHost;
 #[derive(Serialize)]
 pub struct Snapshot {
     pub revision: u64,
-    /// `None` mientras la app todavía no ha montado nada.
+    /// `None` while the app has not mounted anything yet.
     pub root: Option<Node>,
-    /// Lo que el sistema presenta encima: diálogos y hojas. Salen del árbol
-    /// porque en SwiftUI no se colocan, se declaran sobre la raíz.
+    /// What the system presents on top: dialogs and sheets. They come out of
+    /// the tree because in SwiftUI they are not placed, they are declared on
+    /// the root.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub overlays: Vec<Node>,
 }
 
-/// Un nodo tal y como lo pinta el shell. Todo lo que no aplica al tipo del
-/// nodo se omite, para que el JSON de una pantalla quepa en un vistazo cuando
-/// haya que depurarlo.
+/// A node exactly as the shell paints it. Everything that does not apply to
+/// the node's kind is left out, so that one screen's JSON fits in a single
+/// glance when it has to be debugged.
 #[derive(Serialize)]
 pub struct Node {
     pub id: NodeId,
@@ -49,9 +51,9 @@ pub struct Node {
     pub width: f32,
     pub height: f32,
 
-    /// Por qué este nodo no se pinta en el reloj. Lo rellena `unsupported()` y
-    /// es lo que el shell enseña —y lo que el host dice por el registro— en vez
-    /// de dejar un hueco que nadie sabe de dónde salió.
+    /// Why this node is not painted on the watch. `unsupported()` fills it in,
+    /// and it is what the shell shows —and what the host says through the log—
+    /// instead of leaving a gap nobody can account for.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unsupported: Option<&'static str>,
 
@@ -63,8 +65,9 @@ pub struct Node {
     pub border_radius: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub opacity: Option<f32>,
-    /// Solo viaja cuando la plantilla lo apaga: lo normal es que un control
-    /// esté vivo, y mandarlo siempre engordaría cada nodo por nada.
+    /// Only travels when the template switches it off: a control being live
+    /// is the normal case, and sending it always would fatten every node for
+    /// nothing.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub disabled: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -114,15 +117,15 @@ pub struct Node {
     pub text_align: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text_decoration: Option<String>,
-    /// `numberOfLines`. Cero o ausente es «las que hagan falta».
+    /// `numberOfLines`. Zero or absent means "as many as it takes".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_lines: Option<u16>,
 
-    // ------------------------------------------------------------- controles
+    // ------------------------------------------------------------- controls
     /// `Switch`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub on: Option<bool>,
-    /// `Slider` y `Stepper`; en `DatePicker`, milisegundos desde 1970.
+    /// `Slider` and `Stepper`; on a `DatePicker`, milliseconds since 1970.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -131,14 +134,14 @@ pub struct Node {
     pub maximum: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub step: Option<f64>,
-    /// `ProgressBar`, de 0 a 1.
+    /// `ProgressBar`, from 0 to 1.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub progress: Option<f32>,
     /// `ActivityIndicator`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub animating: Option<bool>,
-    /// `TextInput`: el texto que manda la plantilla. No es el mismo campo que
-    /// `text`, que es el rótulo de un `Text` o de un `Button`.
+    /// `TextInput`: the text the template sends. It is not the same field as
+    /// `text`, which is the label of a `Text` or of a `Button`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -147,15 +150,15 @@ pub struct Node {
     pub secure: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keyboard: Option<String>,
-    /// `Picker`: los rótulos, ya deshechos del JSON con el que viajan.
+    /// `Picker`: the labels, already taken out of the JSON they travel in.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub items: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub selected_index: Option<i64>,
-    /// `DatePicker`: `date`, `time` o `dateAndTime`.
+    /// `DatePicker`: `date`, `time` or `dateAndTime`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_mode: Option<String>,
-    /// `Icon`: nombre de SF Symbol, ya traducido de los nombres comunes.
+    /// `Icon`: the SF Symbol name, already translated from the common names.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -168,8 +171,8 @@ pub struct Node {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resize_mode: Option<String>,
 
-    // --------------------------------------------------------- presentaciones
-    /// `Alert` y `Modal`.
+    // -------------------------------------------------------- presentations
+    /// `Alert` and `Modal`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visible: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -180,24 +183,26 @@ pub struct Node {
     pub buttons: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub presentation: Option<String>,
-    /// `StackView`: hacia dónde va la próxima transición. Lo decide quien
-    /// navega, que es el único que sabe si se avanza o se retrocede.
+    /// `StackView`: which way the next transition goes. Whoever navigates
+    /// decides it, being the only one that knows whether this is a step
+    /// forward or a step back.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transition: Option<String>,
 
-    /// Solo en `ScrollView`, y solo cuando el contenido desborda.
+    /// Only on a `ScrollView`, and only when the content overflows.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_width: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_height: Option<f32>,
 
-    /// Qué escucha la plantilla sobre este nodo.
+    /// What the template is listening for on this node.
     ///
-    /// Va como lista y no como un booleano por gesto porque el shell solo
-    /// pregunta si un nombre está: añadir `crown` fue añadir una cadena, no un
-    /// campo en tres sitios. Y sin la lista el shell engancharía reconocedores
-    /// que nadie escucha, que en el reloj se nota —el sistema realza lo que se
-    /// puede tocar— y además se comería los gestos del `ScrollView` de debajo.
+    /// It goes as a list rather than one boolean per gesture because the shell
+    /// only asks whether a name is in it: adding `crown` was adding a string,
+    /// not a field in three places. And without the list the shell would
+    /// attach recognisers nobody is listening to, which shows on a watch —the
+    /// system highlights whatever can be touched— and would on top of that eat
+    /// the gestures of the `ScrollView` underneath.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub listens: Vec<String>,
 
@@ -205,9 +210,9 @@ pub struct Node {
     pub children: Vec<Node>,
 }
 
-/// Nombre estable del tipo de nodo. No se usa `Debug`: el shell de Swift hace
-/// `switch` sobre estas cadenas, y renombrar una variante en Rust no puede
-/// romper el reloj en silencio.
+/// A stable name for the node's kind. `Debug` is not used: the Swift shell
+/// switches over these strings, and renaming a variant in Rust must not be
+/// able to break the watch in silence.
 fn kind_name(kind: NodeKind) -> &'static str {
     match kind {
         NodeKind::View => "View",
@@ -239,44 +244,43 @@ fn kind_name(kind: NodeKind) -> &'static str {
     }
 }
 
-/// Lo que el reloj no puede dibujar, y por qué.
+/// What the watch cannot draw, and why.
 ///
-/// La razón no es una opinión: casi todas son lo que dice el SDK de watchOS, y
-/// están escritas aquí para que el hueco se explique solo. Es la misma decisión
-/// que tomó tvOS en `an-ios/src/family.rs`: una lista a mano, porque desde Rust
-/// no se puede leer la anotación de disponibilidad de Swift.
+/// The reason is not an opinion: nearly all of them are what the watchOS SDK
+/// says, and they are written here so that the gap explains itself. It is the
+/// same decision tvOS took in `an-ios/src/family.rs`: a hand-written list,
+/// because Swift's availability annotation cannot be read from Rust.
 pub fn unsupported(kind: NodeKind) -> Option<&'static str> {
     Some(match kind {
         NodeKind::TabBar => {
-            "una barra de pestañas no cabe en 205 puntos: en el reloj las secciones \
-             se pasan con el dedo a pantalla completa, que es un contenedor y no una \
-             barra con marco"
+            "a tab bar does not fit in 205 points: on a watch sections are swiped \
+             through full screen, which is a container and not a bar with a frame"
         }
         NodeKind::NavigationBar => {
-            "la franja de arriba del reloj ya es del sistema —la hora y el título de \
-             la app—, y una barra propia se pintaría debajo o encima de ella"
+            "the strip at the top of a watch already belongs to the system —the time \
+             and the app's title— and a bar of our own would paint below it or over it"
         }
         NodeKind::SegmentedControl => {
-            "SegmentedPickerStyle está marcado @available(watchOS, unavailable) en \
-             SwiftUI; lo que el reloj usa en su lugar es an-select"
+            "SegmentedPickerStyle is marked @available(watchOS, unavailable) in \
+             SwiftUI; what the watch uses in its place is an-select"
         }
         NodeKind::SearchBar => {
-            "en el reloj buscar es una pantalla del sistema y no un campo con lupa: \
-             .searchable existe, pero es un modificador de navegación, no una vista \
-             con marco"
+            "on a watch, searching is a screen of the system's and not a field with a \
+             magnifying glass: .searchable does exist, but it is a navigation \
+             modifier, not a view with a frame"
         }
         NodeKind::TextEditor => {
-            "TextEditor está marcado @available(watchOS, unavailable) en SwiftUI; el \
-             texto largo se dicta o se garabatea, y eso ya lo da an-text-input"
+            "TextEditor is marked @available(watchOS, unavailable) in SwiftUI; long \
+             text is dictated or scribbled, and an-text-input already gives that"
         }
-        NodeKind::WebView => "WebKit no está en el SDK de watchOS",
+        NodeKind::WebView => "WebKit is not in the watchOS SDK",
         NodeKind::VideoView => {
-            "AVKit en watchOS no trae AVPlayerViewController ni VideoPlayer: sus \
-             cabeceras solo declaran tipos, ninguna vista de reproducción"
+            "AVKit on watchOS ships neither AVPlayerViewController nor VideoPlayer: \
+             its headers only declare types, no playback view at all"
         }
         NodeKind::MapView => {
-            "el Map de SwiftUI existe en watchOS, pero no acepta ni centro ni zoom \
-             desde la app: enseñaría un sitio que la plantilla no eligió"
+            "SwiftUI's Map does exist on watchOS, but it takes neither a centre nor a \
+             zoom from the app: it would show a place the template did not choose"
         }
         _ => return None,
     })
@@ -286,7 +290,7 @@ fn color_of(host: &WatchHost, id: NodeId, key: &str) -> Option<[f32; 4]> {
     let value = host.node(id)?.props.get(key)?;
     let (r, g, b, a) = match value {
         PropValue::Str(raw) => an_core::color::parse(raw)?,
-        // RGBA empaquetado, 8 bits por canal, como lo manda el protocolo.
+        // Packed RGBA, 8 bits per channel, the way the protocol sends it.
         PropValue::Color(packed) => {
             let byte = |shift: u32| ((packed >> shift) & 0xff) as f64 / 255.0;
             (byte(24), byte(16), byte(8), byte(0))
@@ -325,15 +329,15 @@ fn bool_of(host: &WatchHost, id: NodeId, key: &str) -> Option<bool> {
     }
 }
 
-/// Las listas de rótulos viajan como JSON porque el protocolo del puente no
-/// lleva listas. Se deshacen aquí y no en Swift: si se deshicieran allí habría
-/// dos sitios que tendrían que saber que esto era JSON.
+/// Lists of labels travel as JSON because the bridge's protocol carries no
+/// lists. They are taken apart here and not in Swift: were they taken apart
+/// there, two places would have to know this was JSON.
 fn strings_of(host: &WatchHost, id: NodeId, key: &str) -> Option<Vec<String>> {
     let raw = string_of(host, id, key)?;
     match serde_json::from_str::<Vec<String>>(&raw) {
         Ok(items) => Some(items),
         Err(error) => {
-            eprintln!("angular-native: [{key}] no es una lista de rótulos: {error}");
+            eprintln!("angular-native: [{key}] is not a list of labels: {error}");
             None
         }
     }
@@ -355,12 +359,12 @@ fn node(host: &WatchHost, id: NodeId, overlays: &mut Vec<Node>) -> Option<Node> 
     let name = kind_name(kind);
     let unsupported = unsupported(kind);
     if let Some(reason) = unsupported {
-        warn_once(name, "", &format!("{name} no se pinta en watchOS: {reason}"));
+        warn_once(name, "", &format!("{name} is not painted on watchOS: {reason}"));
     }
 
-    // El texto de un `<Text>` es la concatenación de sus hijos `RawText`, que
-    // no bajan al shell: SwiftUI quiere la cadena entera. Un `Button` lleva su
-    // rótulo en una prop, igual que en iOS.
+    // A `<Text>`'s text is its `RawText` children concatenated; those do not
+    // go down to the shell, because SwiftUI wants the whole string. A `Button`
+    // carries its label in a prop, just as on iOS.
     let text = match kind {
         NodeKind::Text => Some(host.text_of(id)),
         NodeKind::Button => string_of(host, id, "title"),
@@ -368,7 +372,7 @@ fn node(host: &WatchHost, id: NodeId, overlays: &mut Vec<Node>) -> Option<Node> 
     };
 
     let children = if kind == NodeKind::Text {
-        // Los hijos de un `<Text>` ya se han fundido en `text`.
+        // A `<Text>`'s children have already been fused into `text`.
         Vec::new()
     } else {
         crate::host::mountable_children(host, id)
@@ -379,8 +383,8 @@ fn node(host: &WatchHost, id: NodeId, overlays: &mut Vec<Node>) -> Option<Node> 
 
     let content = source.content_size.filter(|_| kind.is_scrollable());
     let mut listens: Vec<String> = source.listeners.iter().cloned().collect();
-    // Orden estable: la foto entra en un test y en un `diff`, y un `HashSet` la
-    // barajaría en cada frame.
+    // A stable order: the snapshot goes into a test and into a `diff`, and a
+    // `HashSet` would shuffle it on every frame.
     listens.sort();
     warn_unheard(name, &listens);
 
@@ -396,7 +400,8 @@ fn node(host: &WatchHost, id: NodeId, overlays: &mut Vec<Node>) -> Option<Node> 
         color: color_of(host, id, "color"),
         border_radius: number_of(host, id, "borderRadius"),
         opacity: number_of(host, id, "opacity"),
-        // Un control apagado es la excepción, no la norma: solo viaja el `false`.
+        // A switched-off control is the exception, not the rule: only the
+        // `false` travels.
         disabled: bool_of(host, id, "enabled") == Some(false)
             || bool_of(host, id, "editable") == Some(false),
         test_id: string_of(host, id, "testID"),
@@ -446,8 +451,9 @@ fn node(host: &WatchHost, id: NodeId, overlays: &mut Vec<Node>) -> Option<Node> 
     };
     warn_unread(host, id, kind);
 
-    // `Alert` y `Modal` no se colocan: los presenta el sistema. Salen del árbol
-    // y se cuelgan de la raíz, que es donde SwiftUI espera el modificador.
+    // `Alert` and `Modal` are not placed: the system presents them. They come
+    // out of the tree and are hung off the root, which is where SwiftUI expects
+    // the modifier.
     if kind.is_overlay() {
         overlays.push(built);
         return None;
@@ -455,11 +461,11 @@ fn node(host: &WatchHost, id: NodeId, overlays: &mut Vec<Node>) -> Option<Node> 
     Some(built)
 }
 
-/// El valor con el que arranca un control numérico.
+/// The value a numeric control starts at.
 ///
-/// `DatePicker` lo manda en milisegundos desde 1970 —lo que da y toma `Date`—
-/// y así viaja hasta Swift: convertirlo aquí obligaría a convertirlo de vuelta
-/// al mandar el `change`.
+/// `DatePicker` sends it in milliseconds since 1970 —what `Date` gives and
+/// takes— and that is how it travels to Swift: converting it here would force
+/// converting it back when the `change` is sent.
 fn value_of(host: &WatchHost, id: NodeId, kind: NodeKind) -> Option<f64> {
     match kind {
         NodeKind::Slider | NodeKind::Stepper | NodeKind::DatePicker => f64_of(host, id, "value"),
@@ -467,8 +473,8 @@ fn value_of(host: &WatchHost, id: NodeId, kind: NodeKind) -> Option<f64> {
     }
 }
 
-/// `fontWeight` llega como número (`700`) o como nombre (`bold`), igual que en
-/// CSS. Se normaliza aquí para que el shell solo vea números.
+/// `fontWeight` arrives either as a number (`700`) or as a name (`bold`), just
+/// as in CSS. It is normalised here so the shell only ever sees numbers.
 fn font_weight_of(host: &WatchHost, id: NodeId) -> Option<u16> {
     let value = host.node(id)?.props.get("fontWeight")?;
     match value {
@@ -622,58 +628,58 @@ fn accessibility_value_of(host: &WatchHost, id: NodeId, kind: &'static str) -> O
     }
 }
 
-/// Gestos que la plantilla pide y que en el reloj no llegan nunca.
+/// Gestures the template asks for that never arrive on the watch.
 ///
-/// Callarse aquí sería lo peor de los dos mundos: la plantilla escribe un
-/// `(pinch)`, no falla nada, y el gesto sencillamente no responde jamás. La
-/// razón viaja con el aviso porque casi siempre es del SDK, no una decisión de
-/// este proyecto.
+/// Keeping quiet here would be the worst of both worlds: the template writes a
+/// `(pinch)`, nothing fails, and the gesture simply never responds. The reason
+/// travels with the warning because nearly always it is the SDK's, not a
+/// decision of this project's.
 fn warn_unheard(kind: &'static str, listens: &[String]) {
     for event in listens {
         let Some(reason) = unheard(event) else { continue };
-        warn_once(kind, event, &format!("({event}) no llega en watchOS: {reason}"));
+        warn_once(kind, event, &format!("({event}) does not arrive on watchOS: {reason}"));
     }
 }
 
 fn unheard(event: &str) -> Option<&'static str> {
     Some(match event {
         "pinch" => {
-            "MagnifyGesture está marcado @available(watchOS, unavailable), y en una \
-             pantalla de 40 mm no caben dos dedos"
+            "MagnifyGesture is marked @available(watchOS, unavailable), and two \
+             fingers do not fit on a 40 mm screen"
         }
-        "rotate" => "RotateGesture está marcado @available(watchOS, unavailable)",
+        "rotate" => "RotateGesture is marked @available(watchOS, unavailable)",
         "back" => {
-            "fuera de un NavigationStack el reloj no da el arrastre desde el borde, y \
-             montar uno metería el layout de SwiftUI dentro del de taffy"
+            "outside a NavigationStack the watch gives no drag from the edge, and \
+             putting one up would nest SwiftUI's layout inside taffy's"
         }
         "refresh" => {
-            "en el reloj no se tira de una lista para recargar: eso se hace con la \
-             corona, que ya llega como (crown)"
+            "on a watch you do not pull a list down to reload it: that is done with \
+             the crown, which already arrives as (crown)"
         }
         "scroll" => {
-            "el ScrollView de SwiftUI no publica su desplazamiento en watchOS 11, que \
-             es el mínimo de este shell"
+            "SwiftUI's ScrollView does not publish its offset on watchOS 11, which is \
+             this shell's minimum"
         }
         "safeArea" => {
-            "la app del reloj ocupa la pantalla entera y el sistema no reserva \
-             márgenes que se puedan preguntar"
+            "a watch app takes the whole screen and the system reserves no margins \
+             that could be asked about"
         }
         "focus" | "blur" => {
-            "todavía no: en el reloj el foco es el mismo que decide quién tiene la \
-             corona, y darle dos dueños haría que la corona saltase de sitio al \
-             escribir"
+            "not yet: on a watch the focus is the same one that decides who holds the \
+             crown, and giving it two owners would make the crown jump elsewhere \
+             while typing"
         }
         _ => return None,
     })
 }
 
-/// Props que llegan al reloj y que nadie mira.
+/// Props that reach the watch and that nobody looks at.
 ///
-/// Una prop que viaja, no la reconoce nadie y no da error es un fallo que se ve
-/// meses después, cuando alguien se pregunta por qué su `[borderWidth]` no
-/// pinta nada. Se dice una vez por tipo y clave —no una vez por frame, que a
-/// 30 Hz sería un registro ilegible— y se dice desde aquí, que es el único
-/// sitio que sabe qué acabó usándose de verdad.
+/// A prop that travels, that nobody recognises and that raises no error is a
+/// bug found months later, when somebody wonders why their `[borderWidth]`
+/// paints nothing. It is said once per kind and key —not once per frame, which
+/// at 30 Hz would be an unreadable log— and it is said from here, the only
+/// place that knows what actually ended up being used.
 fn warn_unread(host: &WatchHost, id: NodeId, kind: NodeKind) {
     let Some(node) = host.node(id) else { return };
     let name = kind_name(kind);
@@ -681,13 +687,13 @@ fn warn_unread(host: &WatchHost, id: NodeId, kind: NodeKind) {
         if reads(kind, key) {
             continue;
         }
-        warn_once(name, key, &format!("<{name}> recibió [{key}], y el host de watchOS no la mira"));
+        warn_once(name, key, &format!("<{name}> got [{key}], and the watchOS host does not look at it"));
     }
 }
 
-/// Si el reloj hace algo con esa prop sobre ese tipo de nodo.
+/// Whether the watch does anything with that prop on that kind of node.
 fn reads(kind: NodeKind, key: &str) -> bool {
-    // Comunes a todo lo que se pinta.
+    // Common to everything that gets painted.
     if matches!(key, "backgroundColor" | "borderRadius" | "opacity" | "testID" | "enabled") {
         return true;
     }
@@ -706,14 +712,15 @@ fn reads(kind: NodeKind, key: &str) -> bool {
     ) {
         return true;
     }
-    // Lo que solo mira el otro host nunca es un descuido: viene del `[ios]` o
-    // del `[android]` de la plantilla, que ya dicen a quién van dirigidas.
+    // What only the other host looks at is never an oversight: it comes from
+    // the template's `[ios]` or `[android]`, which already say who they are
+    // addressed to.
     if key.starts_with("ios:") || key.starts_with("android:") {
         return true;
     }
-    // La marca que Angular le pone a la raíz. No sale de ninguna plantilla y no
-    // la mira ningún host, así que avisar de ella sería avisar en todas las
-    // apps de algo que nadie escribió.
+    // The mark Angular puts on the root. It comes out of no template and no
+    // host looks at it, so warning about it would be warning, in every app,
+    // about something nobody wrote.
     if key == "ng-version" {
         return true;
     }
@@ -758,22 +765,22 @@ fn reads(kind: NodeKind, key: &str) -> bool {
         NodeKind::Modal => matches!(key, "visible" | "presentation"),
         NodeKind::ScrollView => matches!(key, "scrollEnabled" | "showsScrollIndicator"),
         NodeKind::StackView => key == "transition",
-        // Lo que el reloj no pinta ya se avisó entero por su tipo: repetir sus
-        // props sería decir dos veces lo mismo.
+        // What the watch does not paint was already warned about wholesale by
+        // its kind: repeating its props would be saying the same thing twice.
         other => unsupported(other).is_some(),
     }
 }
 
 thread_local! {
-    /// Lo ya dicho, para no repetirlo treinta veces por segundo. Es
-    /// `thread_local` porque la foto se construye siempre en el hilo de UI: un
-    /// `Mutex` aquí sería un candado que nadie disputa.
-    static DICHO: RefCell<HashSet<(&'static str, String)>> = RefCell::new(HashSet::new());
+    /// What has already been said, so as not to repeat it thirty times a
+    /// second. It is `thread_local` because the snapshot is always built on the
+    /// UI thread: a `Mutex` here would be a lock nobody contends for.
+    static SAID: RefCell<HashSet<(&'static str, String)>> = RefCell::new(HashSet::new());
 }
 
 fn warn_once(kind: &'static str, key: &str, message: &str) {
-    DICHO.with(|dicho| {
-        if dicho.borrow_mut().insert((kind, key.to_owned())) {
+    SAID.with(|said| {
+        if said.borrow_mut().insert((kind, key.to_owned())) {
             eprintln!("angular-native: {message}");
         }
     });
