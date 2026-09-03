@@ -364,6 +364,12 @@ enum Screenshot {
             }
             guard frames >= Screenshot.graceFrames else { return }
             let written = Screenshot.write(view, to: path)
+            // The strings, at the same instant as the picture. It is what a PNG
+            // cannot say: whether the counter on screen carried on or went back
+            // to zero. See `TextDump.swift`.
+            if TextDump.wanted {
+                TextDump.write(view)
+            }
             Screenshot.restorePointer()
             exit(written ? 0 : 1)
         }
