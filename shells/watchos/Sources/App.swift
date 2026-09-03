@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Todo el shell del reloj cabe aquí: una escena, una vista raíz, y el runtime
-/// arrancado con el tamaño de la pantalla.
+/// The whole watch shell fits in here: one scene, one root view, and the runtime
+/// started with the size of the screen.
 @main
 struct AngularNativeWatchApp: App {
     var body: some Scene {
@@ -13,18 +13,18 @@ struct AngularNativeWatchApp: App {
 
 struct RootView: View {
     @State private var runtime = AnRuntime()
-    /// Quién tiene la corona.
+    /// Who has the crown.
     ///
-    /// El foco de watchOS es uno solo y la corona va con él, así que se lleva
-    /// en la raíz y se pasa hacia abajo: si cada nodo tuviera el suyo, cada uno
-    /// creería tenerla y ninguno la tendría. Quien lo reclama es el propio nodo
-    /// al aparecer, en `AnCrown`.
+    /// watchOS has a single focus and the crown goes with it, so it is kept at
+    /// the root and passed down: if every node had its own, each would believe it
+    /// had the crown and none would. What claims it is the node itself when it
+    /// appears, in `AnCrown`.
     @FocusState private var crownTarget: UInt32?
 
     var body: some View {
-        // `GeometryReader` da el tamaño real de la pantalla del modelo que sea
-        // —de 41 a 49 mm hay bastante diferencia— y ese es el viewport que se
-        // le pasa a taffy. Fijar un tamaño aquí sería fijar el modelo de reloj.
+        // `GeometryReader` gives the real screen size of whichever model it is
+        // —from 41 to 49 mm there is quite a difference— and that is the viewport
+        // handed to taffy. Fixing a size here would mean fixing the watch model.
         GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 if let root = runtime.tree.root {
@@ -50,8 +50,8 @@ struct RootView: View {
                 runtime.setViewport(width: size.width, height: size.height)
             }
         }
-        // El reloj no tiene barras que respetar como el iPhone: la app ocupa la
-        // pantalla entera y el layout de taffy ya cuenta con ello.
+        // The watch has no bars to respect the way the iPhone does: the app takes
+        // up the whole screen and taffy's layout already accounts for it.
         .ignoresSafeArea()
         .background(.black)
     }

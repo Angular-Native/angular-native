@@ -22,7 +22,7 @@
     <true/>
     <key>MinimumOSVersion</key>
     <string>17.0</string>
-    <!-- El servidor de desarrollo habla HTTP plano contra localhost. -->
+    <!-- The development server speaks plain HTTP to localhost. -->
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>
@@ -31,10 +31,10 @@
     <key>UILaunchScreen</key>
     <dict/>
     <!--
-      Sin esto la app se declara solo para iPhone, y un iPad la corre en una
-      ventana de compatibilidad de 320x480 escalada: todo se ve gigante, y al
-      presentar cualquier controlador del sistema —un diálogo— iOS quita el
-      escalado y el contenido aparece diminuto en una esquina.
+      Without this the app declares itself for iPhone only, and an iPad runs it
+      in a scaled 320x480 compatibility window: everything looks enormous, and on
+      presenting any system controller —a dialog— iOS drops the scaling and the
+      content appears tiny in a corner.
     -->
     <key>UIDeviceFamily</key>
     <array>

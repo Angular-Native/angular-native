@@ -1,72 +1,76 @@
 import SwiftUI
 
-/// La corona digital como fuente de eventos.
+/// The digital crown as a source of events.
 ///
-/// Es el gesto propio del reloj y el único que no tiene equivalente en el
-/// teléfono: un mando analógico, con inercia y con háptico, que se usa sin
-/// tapar la pantalla con el dedo. Hasta ahora solo movía el `ScrollView`, que
-/// es lo que hace SwiftUI sola; con esto una plantilla puede pedirla:
+/// It is the watch's own gesture and the only one with no equivalent on the
+/// phone: an analogue dial, with inertia and haptics, used without covering the
+/// screen with a finger. Until now it only moved the `ScrollView`, which is what
+/// SwiftUI does on its own; with this a template can ask for it:
 ///
 /// ```html
-/// <an-view (crown)="giro($event)"> … </an-view>
+/// <an-view (crown)="turn($event)"> … </an-view>
 /// ```
 ///
-/// El evento lleva lo que da `DigitalCrownEvent` más el acumulado:
+/// The event carries what `DigitalCrownEvent` gives plus the running total:
 ///
-/// | clave | qué es |
+/// | key | what it is |
 /// |---|---|
-/// | `delta` | cuánto ha girado desde el aviso anterior |
-/// | `offset` | el acumulado desde que la vista tomó la corona |
-/// | `velocity` | vueltas por segundo, con signo |
+/// | `delta` | how far it has turned since the previous event |
+/// | `offset` | the total since the view took the crown |
+/// | `velocity` | revolutions per second, signed |
 ///
-/// `delta` no lo da SwiftUI: se calcula aquí restando, porque lo que casi
-/// siempre se quiere es «súbeme el valor lo que ha girado», y hacer esa resta
-/// en cada plantilla sería repetirla en cada plantilla.
+/// `delta` is not given by SwiftUI: it is worked out here by subtracting,
+/// because what is almost always wanted is "raise the value by however far it
+/// turned", and doing that subtraction in each template would mean repeating it
+/// in each template.
 ///
-/// **Solo una vista puede tener la corona a la vez.** No es una limitación del
-/// shell: en watchOS la corona va a lo que tenga el foco, y el foco es uno.
-/// Cuando hay varias vistas con `(crown)`, se la queda la primera en orden de
-/// pintado; tocar un `Slider`, un `Stepper` o un `Picker` le pasa el foco a
-/// ese control, que es lo que espera cualquiera que use un reloj, y al volver
-/// hay que tocar la vista para recuperarla.
+/// **Only one view can hold the crown at a time.** It is not a limitation of the
+/// shell: on watchOS the crown goes to whatever has the focus, and there is one
+/// focus. When there are several views with `(crown)`, the first in drawing
+/// order keeps it; touching a `Slider`, a `Stepper` or a `Picker` hands the
+/// focus to that control, which is what anybody using a watch expects, and on
+/// coming back the view has to be touched to get it again.
 struct AnCrown: ViewModifier {
     let node: AnNode
     let controls: AnControls
     let dispatch: (UInt32, String, [String: Any]) -> Void
     let focus: FocusState<UInt32?>.Binding
 
-    /// Lo que se había girado la vez anterior, para poder mandar el paso.
-    @State private var anterior: Double = 0
+    /// How far it had turned the previous time, so the step can be sent.
+    @State private var previous: Double = 0
 
     func body(content: Content) -> some View {
         if node.listens(to: "crown") {
             content
-                // Sin `focusable` la corona no llega: watchOS la manda a lo que
-                // tenga el foco, y una vista normal no lo puede tomar.
+                // Without `focusable` the crown does not arrive: watchOS sends
+                // it to whatever has the focus, and an ordinary view cannot take
+                // it.
                 .focusable(true)
                 .focused(focus, equals: node.id)
-                // El foco de salida. En el reloj la corona va con el foco, y
-                // una vista que la pide sin tenerlo no recibe absolutamente
-                // nada; `defaultFocus` es la forma de decir «si nadie lo tiene,
-                // que sea esta» sin quitárselo a quien lo tenga. Asignar el
-                // `FocusState` a mano no vale: SwiftUI se lo traga sin avisar si
-                // la vista todavía no está en pantalla.
+                // The starting focus. On the watch the crown goes with the
+                // focus, and a view that asks for it without holding the focus
+                // receives absolutely nothing; `defaultFocus` is the way of
+                // saying "if nobody has it, let it be this one" without taking it
+                // from whoever does. Assigning the `FocusState` by hand will not
+                // do: SwiftUI swallows it silently if the view is not on screen
+                // yet.
                 .defaultFocus(focus, node.id)
                 .digitalCrownRotation(
                     controls.crown(node.id),
-                    onChange: { evento in
-                        let delta = evento.offset - anterior
-                        anterior = evento.offset
+                    onChange: { event in
+                        let delta = event.offset - previous
+                        previous = event.offset
                         dispatch(
                             node.id,
                             "crown",
-                            ["delta": delta, "offset": evento.offset, "velocity": evento.velocity]
+                            ["delta": delta, "offset": event.offset, "velocity": event.velocity]
                         )
                     },
                     onIdle: {
-                        // Se paró. Va como su propio evento y no como un `crown`
-                        // con delta cero, porque «ha dejado de girar» es una
-                        // cosa distinta de «ha girado nada».
+                        // It stopped. It goes as its own event and not as a
+                        // `crown` with a zero delta, because "it has stopped
+                        // turning" is a different thing from "it has turned
+                        // nothing".
                         dispatch(node.id, "crownIdle", [:])
                     }
                 )

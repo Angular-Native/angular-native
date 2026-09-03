@@ -1,17 +1,17 @@
 import SwiftUI
 
-/// Lo que el sistema presenta encima: `an-alert` y `an-modal`.
+/// What the system presents on top: `an-alert` and `an-modal`.
 ///
-/// No son vistas que se coloquen. En SwiftUI son modificadores sobre la raíz
-/// —`.alert`, `.sheet`, `.fullScreenCover`— y quien decide dónde van y cómo
-/// entran es el sistema, no taffy. Por eso Rust los saca del árbol y los manda
-/// aparte, en `overlays`, y por eso este modificador se cuelga de la vista raíz
-/// y no de un nodo.
+/// They are not views to be placed. In SwiftUI they are modifiers on the root
+/// —`.alert`, `.sheet`, `.fullScreenCover`— and what decides where they go and
+/// how they come in is the system, not taffy. That is why Rust takes them out of
+/// the tree and sends them apart, in `overlays`, and why this modifier hangs off
+/// the root view and not off a node.
 ///
-/// Es lo mismo que hace iOS presentando un `UIAlertController` de verdad en vez
-/// de dibujar una capa parecida: el sistema sabe que hay algo modal delante,
-/// así que VoiceOver deja de leer lo de detrás y no compite en orden de dibujo
-/// con los diálogos del propio reloj.
+/// It is the same thing iOS does by presenting a real `UIAlertController`
+/// instead of drawing a lookalike layer: the system knows there is something
+/// modal in front, so VoiceOver stops reading what is behind and it does not
+/// compete in draw order with the watch's own dialogs.
 struct AnOverlays: ViewModifier {
     let overlays: [AnNode]
     let controls: AnControls
@@ -19,19 +19,19 @@ struct AnOverlays: ViewModifier {
     let crownFocus: FocusState<UInt32?>.Binding
 
     func body(content: Content) -> some View {
-        // Uno a uno y en el orden en que aparecen en el árbol: apilar varios
-        // `.alert` sobre la misma vista es legal y el sistema los encola.
-        overlays.reduce(AnyView(content)) { vista, overlay in
+        // One at a time and in the order they appear in the tree: stacking
+        // several `.alert`s on the same view is legal and the system queues them.
+        overlays.reduce(AnyView(content)) { view, overlay in
             switch overlay.kind {
             case "Alert":
                 AnyView(
-                    vista.modifier(
+                    view.modifier(
                         AnAlert(node: overlay, controls: controls, dispatch: dispatch)
                     )
                 )
             case "Modal":
                 AnyView(
-                    vista.modifier(
+                    view.modifier(
                         AnModal(
                             node: overlay,
                             controls: controls,
@@ -40,18 +40,18 @@ struct AnOverlays: ViewModifier {
                         )
                     )
                 )
-            default: vista
+            default: view
             }
         }
     }
 }
 
-/// El diálogo del sistema.
+/// The system dialog.
 ///
-/// El `Binding` de `isPresented` se escribe también cuando lo cierra el
-/// usuario —tocando fuera, o el botón de atrás del reloj—: si no se avisara,
-/// la señal que lo abrió seguiría diciendo `true` y volver a ponerla no haría
-/// nada. Es el mismo motivo por el que `an-modal` tiene `(dismiss)`.
+/// The `isPresented` `Binding` is also written when the user closes it —by
+/// tapping outside, or with the watch's back button—: were that not reported,
+/// the signal that opened it would go on saying `true` and setting it again
+/// would do nothing. It is the same reason `an-modal` has `(dismiss)`.
 private struct AnAlert: ViewModifier {
     let node: AnNode
     let controls: AnControls
@@ -62,28 +62,29 @@ private struct AnAlert: ViewModifier {
             node.title ?? "",
             isPresented: controls.presented(node),
             actions: {
-                // Sin botones sale un «OK», como en iOS: un diálogo del que no
-                // se puede salir no es un diálogo.
-                let rótulos = node.buttons?.isEmpty == false ? node.buttons! : ["OK"]
-                ForEach(Array(rótulos.enumerated()), id: \.offset) { posicion, rótulo in
-                    Button(rótulo) { dispatch(node.id, "select", ["index": posicion]) }
+                // With no buttons an "OK" comes out, as on iOS: a dialog there
+                // is no way out of is not a dialog.
+                let labels = node.buttons?.isEmpty == false ? node.buttons! : ["OK"]
+                ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
+                    Button(label) { dispatch(node.id, "select", ["index": index]) }
                 }
             },
             message: {
-                if let mensaje = node.message, !mensaje.isEmpty {
-                    Text(mensaje)
+                if let message = node.message, !message.isEmpty {
+                    Text(message)
                 }
             }
         )
     }
 }
 
-/// Contenido presentado encima de todo.
+/// Content presented on top of everything.
 ///
-/// En el reloj no hay diferencia visible entre `sheet` y `fullScreen` —una hoja
-/// ocupa la pantalla igual—, pero sí en cómo se cierra: la hoja se puede bajar
-/// con el dedo y la de pantalla completa no. Se respeta lo que diga
-/// `[presentation]` en vez de elegir una por las dos.
+/// On the watch there is no visible difference between `sheet` and `fullScreen`
+/// —a sheet takes up the screen just the same—, but there is in how it is
+/// closed: the sheet can be pulled down with a finger and the full-screen one
+/// cannot. Whatever `[presentation]` says is honoured rather than picking one
+/// for both.
 private struct AnModal: ViewModifier {
     let node: AnNode
     let controls: AnControls
@@ -92,19 +93,19 @@ private struct AnModal: ViewModifier {
 
     func body(content: Content) -> some View {
         if node.presentation == "fullScreen" {
-            content.fullScreenCover(isPresented: presentado) { dentro }
+            content.fullScreenCover(isPresented: isPresented) { inside }
         } else {
-            content.sheet(isPresented: presentado) { dentro }
+            content.sheet(isPresented: isPresented) { inside }
         }
     }
 
-    private var presentado: Binding<Bool> {
+    private var isPresented: Binding<Bool> {
         controls.presented(node)
     }
 
-    /// Dentro sigue mandando taffy: los hijos del `an-modal` llevan su marco
-    /// relativo a él, así que se colocan igual que en cualquier contenedor.
-    private var dentro: some View {
+    /// Inside, taffy is still in charge: the `an-modal`'s children carry their
+    /// frame relative to it, so they are placed as in any other container.
+    private var inside: some View {
         ZStack(alignment: .topLeading) {
             ForEach(node.children ?? []) { child in
                 AnNodeView(

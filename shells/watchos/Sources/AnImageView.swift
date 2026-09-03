@@ -1,60 +1,61 @@
 import SwiftUI
 import UIKit
 
-/// Una imagen del bundle o de la red, y su tamaño natural de vuelta.
+/// An image from the bundle or from the network, and its natural size back.
 ///
-/// El tamaño no es un adorno: el layout no puede colocar algo cuyo tamaño no
-/// conoce, y solo la imagen lo sabe. Por eso la directiva de `an-image`
-/// registra el oyente `load` siempre, aunque la plantilla no lo escuche, y por
-/// eso este host lo manda en cuanto tiene la imagen. Sin ese aviso una imagen
-/// sin medidas se queda en cero, que es lo que pasaba antes en el reloj.
+/// The size is not decoration: the layout cannot place something whose size it
+/// does not know, and only the image knows it. That is why the `an-image`
+/// directive always registers the `load` listener, even when the template does
+/// not listen for it, and why this host sends it as soon as it has the image.
+/// Without that notice an image with no measurements stays at zero, which is what
+/// used to happen on the watch.
 ///
-/// No se usa `AsyncImage`: solo sabe de URLs, y aquí la mitad de los casos son
-/// recursos del bundle. Y hace falta el `UIImage` de todas formas, porque el
-/// tamaño en puntos sale de él.
+/// `AsyncImage` is not used: it only knows about URLs, and here half the cases
+/// are bundle resources. And the `UIImage` is needed anyway, because the size in
+/// points comes out of it.
 struct AnImageView: View {
     let node: AnNode
     let dispatch: (UInt32, String, [String: Any]) -> Void
 
-    @State private var imagen: UIImage?
+    @State private var image: UIImage?
 
     var body: some View {
-        contenido
-            // `task(id:)` se rehace cuando cambia la ruta y se cancela sola al
-            // desaparecer la vista: una descarga que ya no le importa a nadie
-            // no se queda corriendo.
+        content
+            // `task(id:)` is redone when the path changes and cancels itself when
+            // the view goes away: a download nobody cares about any more is not
+            // left running.
             .task(id: node.source) {
-                imagen = await AnImageStore.shared.load(node.source)
-                guard let imagen else { return }
-                let tamaño = imagen.size
-                dispatch(node.id, "load", ["width": tamaño.width, "height": tamaño.height])
+                image = await AnImageStore.shared.load(node.source)
+                guard let image else { return }
+                let size = image.size
+                dispatch(node.id, "load", ["width": size.width, "height": size.height])
             }
     }
 
     @ViewBuilder
-    private var contenido: some View {
-        if let imagen {
-            Image(uiImage: imagen)
+    private var content: some View {
+        if let image {
+            Image(uiImage: image)
                 .resizable()
-                .aspectRatio(contentMode: modo)
+                .aspectRatio(contentMode: mode)
                 .frame(width: node.width, height: node.height, alignment: .center)
                 .clipped()
         } else {
-            // Mientras no hay imagen no se pinta nada. Un marcador gris sería
-            // una imagen que la plantilla no pidió.
+            // While there is no image, nothing is painted. A grey placeholder
+            // would be an image the template did not ask for.
             Color.clear
         }
     }
 
-    /// `contain` por defecto, como en iOS. `stretch` y `center` no son modos de
-    /// relación de aspecto y se resuelven abajo, en `body`, con el marco.
-    private var modo: ContentMode {
+    /// `contain` by default, as on iOS. `stretch` and `center` are not aspect
+    /// ratio modes and are resolved below, in `body`, with the frame.
+    private var mode: ContentMode {
         node.resizeMode == "cover" ? .fill : .fit
     }
 }
 
-/// Las imágenes ya cargadas, para no volver a leerlas ni a bajarlas en cada
-/// foto. El árbol se rehace treinta veces por segundo; las imágenes, no.
+/// The images already loaded, so they are not read or downloaded again on every
+/// snapshot. The tree is rebuilt thirty times a second; the images are not.
 actor AnImageStore {
     static let shared = AnImageStore()
 
@@ -65,36 +66,36 @@ actor AnImageStore {
         if let hit = cache[source] {
             return hit
         }
-        let imagen: UIImage?
+        let image: UIImage?
         if source.hasPrefix("http://") || source.hasPrefix("https://") {
-            imagen = await descarga(source)
+            image = await download(source)
         } else {
-            // Sin esquema es un recurso del bundle de la app, igual que en iOS.
-            imagen = UIImage(named: source)
-            if imagen == nil {
-                NSLog("angular-native: no hay ninguna imagen llamada \(source) en el bundle")
+            // With no scheme it is a resource in the app bundle, as on iOS.
+            image = UIImage(named: source)
+            if image == nil {
+                NSLog("angular-native: there is no image called \(source) in the bundle")
             }
         }
-        if let imagen {
-            cache[source] = imagen
+        if let image {
+            cache[source] = image
         }
-        return imagen
+        return image
     }
 
-    private func descarga(_ source: String) async -> UIImage? {
+    private func download(_ source: String) async -> UIImage? {
         guard let url = URL(string: source) else {
-            NSLog("angular-native: \(source) no es una URL")
+            NSLog("angular-native: \(source) is not a URL")
             return nil
         }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            guard let imagen = UIImage(data: data) else {
-                NSLog("angular-native: lo que llegó de \(source) no es una imagen")
+            guard let image = UIImage(data: data) else {
+                NSLog("angular-native: what arrived from \(source) is not an image")
                 return nil
             }
-            return imagen
+            return image
         } catch {
-            NSLog("angular-native: no se pudo bajar \(source): \(error.localizedDescription)")
+            NSLog("angular-native: \(source) could not be downloaded: \(error.localizedDescription)")
             return nil
         }
     }

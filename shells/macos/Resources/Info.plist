@@ -21,24 +21,25 @@
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <!--
-      Sin esto la app arranca sin icono en el Dock y sin poder hacerse frontal:
-      se ve como una ventana que no coge el foco y un menú que no aparece.
+      Without this the app starts with no icon in the Dock and unable to bring
+      itself to the front: it looks like a window that will not take the focus
+      and a menu that never appears.
     -->
     <key>LSUIElement</key>
     <false/>
     <key>NSHighResolutionCapable</key>
     <true/>
     <!--
-      El texto que enseña el sistema al pedir la ubicación. Sin esta clave,
-      `<an-map-view [showsUser]="true">` no falla ni avisa: el permiso se
-      deniega solo y el punto azul no sale nunca. Con ella sale el diálogo del
-      sistema, que es lo que haría cualquier app de Mac.
+      The text the system shows when asking for the location. Without this key,
+      `<an-map-view [showsUser]="true">` neither fails nor warns: the permission
+      is denied on its own and the blue dot never appears. With it, the system
+      dialog comes up, which is what any Mac app would do.
     -->
     <key>NSLocationUsageDescription</key>
-    <string>Para enseñar dónde estás en el mapa.</string>
+    <string>To show where you are on the map.</string>
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Para enseñar dónde estás en el mapa.</string>
-    <!-- El servidor de desarrollo habla HTTP plano contra localhost. -->
+    <string>To show where you are on the map.</string>
+    <!-- The development server speaks plain HTTP to localhost. -->
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>

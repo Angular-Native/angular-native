@@ -9,19 +9,19 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         #if os(visionOS)
-            // La ventana la crea `SceneDelegate`, y no aquí.
+            // The window is created by `SceneDelegate`, and not here.
             //
-            // En visionOS no hay pantalla: `UIScreen` está marcado
-            // `API_UNAVAILABLE(visionos)`, así que `UIScreen.main.bounds` ni
-            // siquiera compila. Una app no ocupa una pantalla, ocupa una
-            // ventana que el usuario cuelga en la habitación y redimensiona
-            // cuando quiere, y de esa ventana solo se sabe a través de su
-            // `UIWindowScene`. Por eso aquí la familia va por escenas y las
-            // otras dos no.
+            // On visionOS there is no screen: `UIScreen` is marked
+            // `API_UNAVAILABLE(visionos)`, so `UIScreen.main.bounds` does not
+            // even compile. An app does not take up a screen, it takes up a
+            // window the user hangs in the room and resizes whenever they like,
+            // and that window can only be known about through its
+            // `UIWindowScene`. That is why this family goes through scenes and
+            // the other two do not.
             return true
         #else
-            // iOS y tvOS: una ventana del tamaño de la pantalla, que existe y
-            // no cambia mientras la app corre.
+            // iOS and tvOS: a window the size of the screen, which exists and
+            // does not change while the app runs.
             let window = UIWindow(frame: UIScreen.main.bounds)
             window.rootViewController = RootViewController()
             window.makeKeyAndVisible()
