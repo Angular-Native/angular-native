@@ -153,7 +153,7 @@ pub fn assemble(
 
 pub fn launch(package: &Package, device: &str) -> Result<()> {
     let udid = find_device(device)?;
-    eprintln!("==> simulador: {device}");
+    eprintln!("==> simulator: {device}");
     let _ = Command::new("xcrun").args(["simctl", "boot", &udid]).output();
     let _ = Command::new("open")
         .args(["-a", "Simulator", "--args", "-CurrentDeviceUDID", &udid])

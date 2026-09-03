@@ -29,6 +29,21 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 TARGET = ROOT / "vendor" / "android"
 EXTRACTED = TARGET / "extracted"
 BUILD = TARGET / "build"
+TOOLS = TARGET / "tools"
+
+# `bundletool`, which is what turns the module `an` assembles into the `.aab`
+# Google Play takes. It is not part of the Android SDK — Gradle pulls it in as a
+# dependency, and there is no Gradle here — and the runnable build is the shaded
+# `-all` jar published on GitHub, not the thin one on Maven Central.
+#
+# It goes in `tools/` and not next to the libraries because the loop at the end
+# of `main` deletes every jar in there that this resolution did not produce, and
+# bundletool is not an artefact of any POM.
+BUNDLETOOL = "1.18.1"
+BUNDLETOOL_URL = (
+    "https://github.com/google/bundletool/releases/download/"
+    f"{BUNDLETOOL}/bundletool-all-{BUNDLETOOL}.jar"
+)
 NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 
 # What is asked for. The rest comes out of this.
@@ -178,8 +193,29 @@ def resolve() -> dict[str, tuple[str, str, str, str]]:
     return one_pass(management)
 
 
+def fetch_bundletool() -> None:
+    """Leaves `vendor/android/tools/bundletool.jar` in place, once."""
+    TOOLS.mkdir(parents=True, exist_ok=True)
+    jar = TOOLS / "bundletool.jar"
+    if jar.exists():
+        return
+    print(f"==> bundletool {BUNDLETOOL}")
+    data = download(BUNDLETOOL_URL)
+    if data is None:
+        print(
+            f"  warning: {BUNDLETOOL_URL} could not be downloaded.\n"
+            "  `an android --aab` will say so when it needs it; everything else "
+            "works without it.",
+            file=sys.stderr,
+        )
+        return
+    jar.write_bytes(data)
+    print(f"  {jar.name} ({len(data) // 1024} KB)")
+
+
 def main() -> int:
     TARGET.mkdir(parents=True, exist_ok=True)
+    fetch_bundletool()
     artefacts = resolve()
     print(f"==> {len(artefacts)} artefacts")
     expected: set[str] = set()

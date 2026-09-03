@@ -33,6 +33,7 @@ use anyhow::{bail, Context, Result};
 
 use crate::build::{run, run_in};
 use crate::plugins::{self, Platform, Plugin};
+use crate::signing::{self, Apple};
 use crate::workspace::Workspace;
 
 /// The families built on `UIView` with absolute frames.
@@ -41,6 +42,19 @@ pub enum Family {
     Ios,
     TvOs,
     VisionOs,
+}
+
+/// A simulator or a device plugged into this Mac. It changes the Rust target,
+/// the SDK, swiftc's triple and —the part that is not a flag— whether the app
+/// has to be signed at all.
+///
+/// On the simulator it does not: the entitlements go inside the binary and
+/// nobody checks a signature. On a device every one of those is the opposite,
+/// and getting it wrong produces an app that installs and is killed on launch.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Destination {
+    Simulator,
+    Device,
 }
 
 impl Family {
@@ -77,31 +91,45 @@ impl Family {
         }
     }
 
-    fn target(self) -> &'static str {
-        match self {
-            Family::Ios => "aarch64-apple-ios-sim",
-            Family::TvOs => "aarch64-apple-tvos-sim",
-            Family::VisionOs => "aarch64-apple-visionos-sim",
+    fn target(self, to: Destination) -> &'static str {
+        match (self, to) {
+            (Family::Ios, Destination::Simulator) => "aarch64-apple-ios-sim",
+            (Family::Ios, Destination::Device) => "aarch64-apple-ios",
+            (Family::TvOs, Destination::Simulator) => "aarch64-apple-tvos-sim",
+            (Family::TvOs, Destination::Device) => "aarch64-apple-tvos",
+            (Family::VisionOs, Destination::Simulator) => "aarch64-apple-visionos-sim",
+            (Family::VisionOs, Destination::Device) => "aarch64-apple-visionos",
         }
     }
 
     /// The SDK it asks `xcrun` for.
-    fn sdk(self) -> &'static str {
-        match self {
-            Family::Ios => "iphonesimulator",
-            Family::TvOs => "appletvsimulator",
-            Family::VisionOs => "xrsimulator",
+    fn sdk(self, to: Destination) -> &'static str {
+        match (self, to) {
+            (Family::Ios, Destination::Simulator) => "iphonesimulator",
+            (Family::Ios, Destination::Device) => "iphoneos",
+            (Family::TvOs, Destination::Simulator) => "appletvsimulator",
+            (Family::TvOs, Destination::Device) => "appletvos",
+            (Family::VisionOs, Destination::Simulator) => "xrsimulator",
+            (Family::VisionOs, Destination::Device) => "xros",
         }
     }
 
     /// `swiftc`'s triple, which is not Rust's. visionOS is still called `xros`
     /// here: the marketing name changed and the compiler's did not.
-    fn swift_target(self) -> String {
+    fn swift_target(self, to: Destination) -> String {
         let version = self.deployment();
+        // A device triple is the simulator's without the suffix. Leaving the
+        // `-simulator` on while linking against the device SDK produces a
+        // binary the device refuses with "mach-o file, but is an incompatible
+        // architecture", which names neither the SDK nor the triple.
+        let suffix = match to {
+            Destination::Simulator => "-simulator",
+            Destination::Device => "",
+        };
         match self {
-            Family::Ios => format!("arm64-apple-ios{version}-simulator"),
-            Family::TvOs => format!("arm64-apple-tvos{version}-simulator"),
-            Family::VisionOs => format!("arm64-apple-xros{version}-simulator"),
+            Family::Ios => format!("arm64-apple-ios{version}{suffix}"),
+            Family::TvOs => format!("arm64-apple-tvos{version}{suffix}"),
+            Family::VisionOs => format!("arm64-apple-xros{version}{suffix}"),
         }
     }
 
@@ -174,12 +202,24 @@ pub struct Package {
     /// from the project: two different apps cannot share it or each would
     /// uninstall the other.
     pub bundle_id: String,
+    /// The app's name without the `.app`, which is also the executable's. The
+    /// archive and the `.ipa` are named after it.
+    pub app_name: String,
+    /// The platform's build directory, `build/ios` and friends. The archive,
+    /// the `.ipa` and the generated entitlements go next to the `.app`.
+    pub out: PathBuf,
     family: Family,
 }
 
 /// `dev_server` is the dev server's URL, if there is one. It is written inside
 /// the `.app`: the app reads it on startup and, if it is there, subscribes to
 /// reloads.
+///
+/// `signing` decides everything else. `None` is the simulator: the device
+/// target is not used, nothing is signed, and the entitlements —if any plugin
+/// asks for one— go inside the binary. `Some` is a real device: the device
+/// SDK, the device triple, the profile embedded in the bundle and a real
+/// signature over the lot.
 pub fn assemble(
     workspace: &Workspace,
     family: Family,
@@ -187,7 +227,12 @@ pub fn assemble(
     release: bool,
     dev_server: Option<&str>,
     plugins: &[Plugin],
+    signing: Option<&Apple>,
 ) -> Result<Package> {
+    let to = match signing {
+        Some(_) => Destination::Device,
+        None => Destination::Simulator,
+    };
     // Before compiling anything: if some plugin does not bring its iOS half,
     // the build stops here and says which one.
     //
@@ -222,7 +267,7 @@ pub fn assemble(
         .unwrap_or_else(|| root.join(family.resources()).join("Info.plist"));
     check_plist(&plist, &app_name, &bundle_id, family, workspace)?;
 
-    eprintln!("==> core Rust ({profile}, {})", family.target());
+    eprintln!("==> core Rust ({profile}, {})", family.target(to));
     let mut cargo_args: Vec<&str> = Vec::new();
     if family.needs_build_std() {
         // See `needs_build_std`. If this fails because the component is
@@ -232,7 +277,7 @@ pub fn assemble(
     } else {
         cargo_args.push("build");
     }
-    cargo_args.extend(["--target", family.target(), "-p", "an-ios"]);
+    cargo_args.extend(["--target", family.target(to), "-p", "an-ios"]);
     if release {
         cargo_args.push("--release");
     }
@@ -257,7 +302,7 @@ pub fn assemble(
     }
 
     eprintln!("==> shell Swift ({})", family.label());
-    let sdk = capture("xcrun", &["--sdk", family.sdk(), "--show-sdk-path"]).with_context(|| {
+    let sdk = capture("xcrun", &["--sdk", family.sdk(to), "--show-sdk-path"]).with_context(|| {
         format!(
             "the {} SDK is not there. Xcode installs it with: {}",
             family.label(),
@@ -293,13 +338,13 @@ pub fn assemble(
             .into_owned(),
     );
 
-    let lib_dir = workspace.target_dir().join(family.target()).join(profile);
+    let lib_dir = workspace.target_dir().join(family.target(to)).join(profile);
     let mut args: Vec<String> = vec![
         "swiftc".into(),
         "-sdk".into(),
         sdk.clone(),
         "-target".into(),
-        family.swift_target(),
+        family.swift_target(to),
         "-import-objc-header".into(),
         root.join("shells/ios/Sources/Bridging-Header.h").to_string_lossy().into_owned(),
         "-I".into(),
@@ -314,7 +359,14 @@ pub fn assemble(
         "-o".into(),
         app_dir.join(&app_name).to_string_lossy().into_owned(),
     ];
-    if let Some(entitlements) = write_entitlements(plugins, &bundle_id, &out)? {
+    // On a device the entitlements go in the signature and not in the binary,
+    // so this section is only written for the simulator. See
+    // `write_entitlements`.
+    let simulator_entitlements = match to {
+        Destination::Simulator => write_entitlements(plugins, &bundle_id, &out)?,
+        Destination::Device => None,
+    };
+    if let Some(entitlements) = simulator_entitlements {
         // The way to get a section into the binary from `swiftc`: four
         // `-Xlinker`s in a row, one per argument `ld` is to receive.
         for flag in ["-sectcreate", "__TEXT", "__entitlements"] {
@@ -340,7 +392,112 @@ pub fn assemble(
         }
     }
 
-    Ok(Package { dir: app_dir, bundle_id, family })
+    if let Some(apple) = signing {
+        sign(&app_dir, &bundle_id, apple, plugins, &out)?;
+    }
+
+    Ok(Package { dir: app_dir, bundle_id, app_name, out, family })
+}
+
+/// Signs the `.app` for a real device: the profile goes in the bundle, the
+/// entitlements go in the signature.
+///
+/// Both halves have to be there and both have to agree. The profile alone gives
+/// an app that installs and is killed on launch; the entitlements alone give one
+/// `installd` refuses with `ApplicationVerificationFailed`, and neither message
+/// reaches the terminal this was typed in.
+fn sign(
+    app_dir: &Path,
+    bundle_id: &str,
+    apple: &Apple,
+    plugins: &[Plugin],
+    out: &Path,
+) -> Result<()> {
+    eprintln!("==> embedded.mobileprovision ({})", apple.profile_name);
+    std::fs::copy(&apple.profile, app_dir.join("embedded.mobileprovision")).with_context(|| {
+        format!("{} could not be copied into the .app", apple.profile.display())
+    })?;
+
+    let entitlements = device_entitlements(apple, bundle_id, plugins, out)?;
+    eprintln!("==> codesign ({})", apple.identity_name);
+    let signed = Command::new("codesign")
+        .args(["--force", "--sign", &apple.identity, "--entitlements"])
+        .arg(&entitlements)
+        // Xcode's own flag for an iOS bundle. It is what puts the DER form of
+        // the entitlements in beside the plist form, which iOS 15 and later
+        // want; without it the app installs on some devices and is refused on
+        // others, and the ones that refuse say only "invalid entitlements".
+        .arg("--generate-entitlement-der")
+        .arg(app_dir)
+        .output()
+        .context("codesign could not be run")?;
+    if !signed.status.success() {
+        // A raw `codesign` exit code is the failure this whole module exists to
+        // prevent, so what it said is repeated with the two things it never
+        // mentions: which identity was used and which file it was signing.
+        bail!(
+            "codesign refused to sign {} with {:?}.\n{}\n\
+             The usual causes, in order: the certificate's private key is not in \
+             this keychain (the .cer alone is not enough — the .p12 that carries the \
+             key is), the keychain is locked, or an entitlement in \
+             {} is one the profile {} does not grant.\nSee {}",
+            app_dir.display(),
+            apple.identity_name,
+            String::from_utf8_lossy(&signed.stderr).trim(),
+            entitlements.display(),
+            apple.profile_name,
+            signing::DOCS
+        );
+    }
+    Ok(())
+}
+
+/// The entitlements that get signed into a device build.
+///
+/// The base is **the profile's own dictionary**, and that is not a shortcut: the
+/// system grants nothing the profile does not carry, so anything added on top of
+/// it produces an app that installs and dies on launch. The plugins' keys are
+/// merged in, and the profile wins every collision — it is the authority, and a
+/// plugin cannot know which team it was signed for.
+fn device_entitlements(
+    apple: &Apple,
+    bundle_id: &str,
+    plugins: &[Plugin],
+    out: &Path,
+) -> Result<PathBuf> {
+    let mut entitlements = apple.profile_entitlements.clone();
+    for (key, contributed) in &plugins::entitlement_entries(plugins)? {
+        if entitlements.contains_key(key) {
+            continue;
+        }
+        eprintln!("==> entitlements: {key} (from {})", contributed.package);
+        entitlements.insert(key.clone(), substitute(&contributed.value, bundle_id));
+    }
+    // A keychain group on a device is `TEAMID.group`, and on the simulator it is
+    // just `group`. A plugin writes the one it can know about, so the team is
+    // put in front here — and only when it is not already there, so a plugin
+    // that spells it out in full is not given it twice.
+    if let Some(serde_json::Value::Array(groups)) = entitlements.get_mut("keychain-access-groups") {
+        for group in groups.iter_mut() {
+            if let serde_json::Value::String(name) = group {
+                if !name.starts_with(&format!("{}.", apple.team)) {
+                    *name = format!("{}.{name}", apple.team);
+                }
+            }
+        }
+    }
+
+    std::fs::create_dir_all(out)?;
+    let json = out.join("device-entitlements.json");
+    let plist = out.join("device.entitlements");
+    std::fs::write(&json, serde_json::Value::Object(entitlements).to_string())?;
+    run_in(
+        out,
+        "plutil",
+        &["-convert", "xml1", "-o", &plist.to_string_lossy(), &json.to_string_lossy()],
+        "the entitlements file could not be written",
+    )?;
+    Ok(plist)
 }
 
 /// Writes the entitlements file the link step asks for, if any plugin asks for
@@ -549,7 +706,7 @@ pub fn swift_sources(dir: &Path) -> Result<Vec<String>> {
 pub fn launch(package: &Package, device: &str) -> Result<()> {
     let family = package.family;
     let udid = find_device(family, device)?;
-    eprintln!("==> simulador: {device}");
+    eprintln!("==> simulator: {device}");
     let _ = Command::new("xcrun").args(["simctl", "boot", &udid]).output();
     let _ = Command::new("open")
         .args(["-a", "Simulator", "--args", "-CurrentDeviceUDID", &udid])
@@ -667,4 +824,351 @@ fn capture(program: &str, args: &[&str]) -> Result<String> {
         bail!("{program} {args:?} failed");
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+// ---------------------------------------------------------------------------
+// A real device
+// ---------------------------------------------------------------------------
+
+/// Installs the signed `.app` on a device plugged into this Mac, and launches
+/// it.
+///
+/// `devicectl` and not `ios-deploy`: since Xcode 15 it is the only tool Apple
+/// ships that talks to a modern device, and it is already on the machine of
+/// anybody who can build this at all.
+pub fn install_on_device(package: &Package, wanted: Option<&str>) -> Result<()> {
+    require_devicectl()?;
+    let (udid, name) = find_connected(wanted)?;
+    eprintln!("==> device: {name}");
+
+    let install = Command::new("xcrun")
+        .args(["devicectl", "device", "install", "app", "--device", &udid])
+        .arg(&package.dir)
+        .output()
+        .context("devicectl could not be run")?;
+    if !install.status.success() {
+        let said = String::from_utf8_lossy(&install.stderr);
+        // The three refusals that mean something specific, translated back into
+        // what has to be done. Everything else is passed through: devicectl's
+        // own message is better than a guess at what it meant.
+        let hint = if said.contains("developer mode") || said.contains("DeveloperMode") {
+            "\nDeveloper Mode is off on that device. Settings ▸ Privacy & Security ▸ \
+             Developer Mode, switch it on, and the device restarts."
+        } else if said.contains("not paired") || said.contains("Unable to connect") {
+            "\nThe device is not trusted by this Mac: unlock it, and answer Trust to \
+             the prompt that appears when it is plugged in."
+        } else if said.contains("ApplicationVerificationFailed") || said.contains("valid provisioning") {
+            "\nThe device is not in the provisioning profile. Add its UDID at \
+             https://developer.apple.com/account/resources/devices/list, regenerate \
+             the profile and download it again."
+        } else {
+            ""
+        };
+        bail!(
+            "devicectl could not install {} on {name}.\n{}{hint}\nSee {}",
+            package.dir.display(),
+            said.trim(),
+            signing::DOCS
+        );
+    }
+
+    let launch = Command::new("xcrun")
+        .args([
+            "devicectl",
+            "device",
+            "process",
+            "launch",
+            "--device",
+            &udid,
+            &package.bundle_id,
+        ])
+        .status()
+        .context("devicectl could not be run")?;
+    if !launch.success() {
+        bail!(
+            "{} is installed on {name} but would not launch. Open it from the home \
+             screen: if it bounces and closes, the entitlements and the profile \
+             disagree.\nSee {}",
+            package.bundle_id,
+            signing::DOCS
+        );
+    }
+    Ok(())
+}
+
+/// That this Xcode has `devicectl` at all.
+///
+/// Xcode 14 and earlier had `instruments -s devices` and nothing that installs.
+/// Saying "xcrun: devicectl: command not found" would send somebody looking for
+/// a tool to install, and there is none: the answer is a newer Xcode.
+fn require_devicectl() -> Result<()> {
+    let found = Command::new("xcrun")
+        .args(["devicectl", "--version"])
+        .output()
+        .context("xcrun could not be run")?;
+    if found.status.success() {
+        return Ok(());
+    }
+    bail!(
+        "this Xcode has no `devicectl`, and that is what installs on a device.\n\
+         It arrived with Xcode 15; `xcodebuild -version` says which one this is. \
+         There is nothing to install separately — it comes with Xcode.\n\
+         The `.app` is built and signed either way: `an ios --physical --no-launch` \
+         leaves it where you can drag it onto a device from Xcode's Devices window.\n\
+         See {}",
+        signing::DOCS
+    )
+}
+
+/// The device to install on, by name or UDID, or the only one there is.
+///
+/// Same rule as `an android`: with one connected device it is used, with several
+/// you are asked which, and what there is gets listed. A wrong guess here
+/// installs a build on somebody's phone without saying so.
+fn find_connected(wanted: Option<&str>) -> Result<(String, String)> {
+    let listing = std::env::temp_dir().join("an-devicectl.json");
+    let listed = Command::new("xcrun")
+        .args(["devicectl", "list", "devices", "--json-output"])
+        .arg(&listing)
+        .output()
+        .context("devicectl could not be run")?;
+    if !listed.status.success() {
+        bail!(
+            "devicectl could not list the devices.\n{}",
+            String::from_utf8_lossy(&listed.stderr).trim()
+        );
+    }
+    let text = std::fs::read_to_string(&listing)
+        .with_context(|| format!("{} could not be read", listing.display()))?;
+    let _ = std::fs::remove_file(&listing);
+    let found = parse_devices(&text)?;
+
+    if let Some(wanted) = wanted {
+        return found
+            .iter()
+            .find(|(udid, name)| udid == wanted || name == wanted)
+            .cloned()
+            .with_context(|| {
+                format!(
+                    "there is no connected device called {wanted:?}. What there is:\n{}",
+                    describe(&found)
+                )
+            });
+    }
+    match found.as_slice() {
+        [one] => Ok(one.clone()),
+        [] => bail!(
+            "there is no device connected. Plug an iPhone or iPad in over USB, unlock \
+             it, and switch Developer Mode on in Settings ▸ Privacy & Security.\n\
+             `an ios` with no --physical goes to the simulator and needs none of \
+             that.\nSee {}",
+            signing::DOCS
+        ),
+        several => bail!(
+            "there are {} devices connected:\n{}\nPick one with --device.",
+            several.len(),
+            describe(several)
+        ),
+    }
+}
+
+fn describe(devices: &[(String, String)]) -> String {
+    devices
+        .iter()
+        .map(|(udid, name)| format!("\x20   {name}  ({udid})"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The `(udid, name)` pairs out of what `devicectl list devices --json-output`
+/// wrote.
+///
+/// The UDID that matters is `hardwareProperties.udid` and not the `identifier`
+/// next to it: the second one is devicectl's own record of the pairing, it
+/// changes when a device is unpaired, and `devicectl device install` takes
+/// either — which is what makes picking the wrong one a bug that works on the
+/// machine it was written on.
+pub fn parse_devices(json: &str) -> Result<Vec<(String, String)>> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(json).context("devicectl returned a JSON nobody can make sense of")?;
+    let mut found = Vec::new();
+    let devices = parsed
+        .get("result")
+        .and_then(|result| result.get("devices"))
+        .and_then(serde_json::Value::as_array);
+    for device in devices.into_iter().flatten() {
+        let hardware = device.get("hardwareProperties");
+        let Some(udid) = hardware
+            .and_then(|hardware| hardware.get("udid"))
+            .and_then(serde_json::Value::as_str)
+        else {
+            continue;
+        };
+        let name = device
+            .get("deviceProperties")
+            .and_then(|properties| properties.get("name"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("unnamed");
+        found.push((udid.to_owned(), name.to_owned()));
+    }
+    Ok(found)
+}
+
+// ---------------------------------------------------------------------------
+// The archive and the .ipa
+// ---------------------------------------------------------------------------
+
+/// Turns a signed `.app` into an `.xcarchive` and an `.ipa`.
+///
+/// Both are directories with a shape and nothing more: an archive is the app
+/// under `Products/Applications` with an `Info.plist` describing it, and an
+/// `.ipa` is a zip with the app under `Payload/`. Neither format needs Xcode to
+/// produce — Xcode is needed to *sign*, and that has already happened by the
+/// time this runs.
+///
+/// Which store the `.ipa` can go to is decided entirely by what it was signed
+/// with. An App Store upload wants an Apple Distribution certificate and an App
+/// Store profile; TestFlight wants the same; an ad-hoc build wants an ad-hoc
+/// profile listing the devices. There is no `--method` flag here because there
+/// is nothing for it to do: the profile already said which of those this is.
+pub fn archive(package: &Package, apple: &Apple) -> Result<(PathBuf, PathBuf)> {
+    let archive = package.out.join(format!("{}.xcarchive", package.app_name));
+    let _ = std::fs::remove_dir_all(&archive);
+    let applications = archive.join("Products/Applications");
+    std::fs::create_dir_all(&applications)?;
+    std::fs::create_dir_all(archive.join("dSYMs"))?;
+    copy_tree(&package.dir, &applications.join(format!("{}.app", package.app_name)))?;
+
+    // The debug symbols. Without them a crash report from TestFlight is a list
+    // of addresses, and there is no second chance to produce them: they only
+    // exist next to the binary they came out of.
+    let symbols = archive.join(format!("dSYMs/{}.app.dSYM", package.app_name));
+    let extracted = Command::new("dsymutil")
+        .arg(package.dir.join(&package.app_name))
+        .arg("-o")
+        .arg(&symbols)
+        .output()
+        .context("dsymutil could not be run")?;
+    if !extracted.status.success() {
+        // Not fatal, and said out loud rather than swallowed: the archive is
+        // still a valid archive, it just cannot symbolicate anything.
+        eprintln!(
+            "==> warning: dsymutil left no symbols, so crash reports from this build \
+             will not symbolicate.\n    {}",
+            String::from_utf8_lossy(&extracted.stderr).trim()
+        );
+    }
+
+    let version = plist_value(&package.dir.join("Info.plist"), "CFBundleShortVersionString")
+        .unwrap_or_else(|| "1.0".to_owned());
+    let build = plist_value(&package.dir.join("Info.plist"), "CFBundleVersion")
+        .unwrap_or_else(|| "1".to_owned());
+    std::fs::write(
+        archive.join("Info.plist"),
+        archive_plist(package, apple, &version, &build),
+    )?;
+    eprintln!("==> {}", archive.display());
+
+    // And the `.ipa`. `ditto -c -k` and not `zip`, because it is the only
+    // zipper on this machine that keeps a bundle's symlinks and resource forks
+    // intact; a `.app` that went through plain `zip` is refused by App Store
+    // Connect for a reason that mentions neither.
+    let payload = package.out.join("Payload");
+    let _ = std::fs::remove_dir_all(&payload);
+    std::fs::create_dir_all(&payload)?;
+    copy_tree(&package.dir, &payload.join(format!("{}.app", package.app_name)))?;
+    let ipa = package.out.join(format!("{}.ipa", package.app_name));
+    let _ = std::fs::remove_file(&ipa);
+    run_in(
+        &package.out,
+        "ditto",
+        // `--keepParent`, so the zip carries `Payload/<Name>.app` and not the
+        // app at its root; and no `--sequesterRsrc`, which would add a
+        // `__MACOSX` directory that App Store Connect rejects.
+        &["-c", "-k", "--keepParent", "Payload", &ipa.to_string_lossy()],
+        "the .ipa could not be packed",
+    )?;
+    let _ = std::fs::remove_dir_all(&payload);
+    let size = std::fs::metadata(&ipa)?.len();
+    eprintln!("==> {} MB in {}", size / (1024 * 1024), ipa.display());
+    Ok((archive, ipa))
+}
+
+/// An archive's `Info.plist`.
+///
+/// Written by hand and not through `plutil` because `CreationDate` is a
+/// `<date>`, and a plist holding a date is one `plutil -convert json` refuses
+/// to read or write. Xcode reads this file to list the archive in the Organizer;
+/// the keys are the ones it looks at.
+fn archive_plist(package: &Package, apple: &Apple, version: &str, build: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ApplicationProperties</key>
+	<dict>
+		<key>ApplicationPath</key>
+		<string>Applications/{name}.app</string>
+		<key>CFBundleIdentifier</key>
+		<string>{bundle_id}</string>
+		<key>CFBundleShortVersionString</key>
+		<string>{version}</string>
+		<key>CFBundleVersion</key>
+		<string>{build}</string>
+		<key>SigningIdentity</key>
+		<string>{identity}</string>
+		<key>Team</key>
+		<string>{team}</string>
+	</dict>
+	<key>ArchiveVersion</key>
+	<integer>2</integer>
+	<key>CreationDate</key>
+	<date>{now}</date>
+	<key>Name</key>
+	<string>{name}</string>
+	<key>SchemeName</key>
+	<string>{name}</string>
+</dict>
+</plist>
+"#,
+        name = package.app_name,
+        bundle_id = package.bundle_id,
+        identity = apple.identity_name,
+        team = apple.team,
+        now = signing::now_iso8601()
+    )
+}
+
+/// One key out of a plist, or nothing if it is not there. Nothing is a fine
+/// answer: the archive falls back to 1.0 rather than refusing to be written
+/// because a version is missing.
+fn plist_value(plist: &Path, key: &str) -> Option<String> {
+    let output = Command::new("plutil")
+        .args(["-extract", key, "raw", "-o", "-"])
+        .arg(plist)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+/// Copies a bundle. `ditto` and not a recursive `std::fs::copy` loop: a signed
+/// `.app` carries a `_CodeSignature` directory and symlinks, and a copy that
+/// resolves the symlinks produces a bundle whose signature no longer verifies.
+fn copy_tree(from: &Path, to: &Path) -> Result<()> {
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let copied = Command::new("ditto")
+        .arg(from)
+        .arg(to)
+        .status()
+        .context("ditto could not be run")?;
+    if !copied.success() {
+        bail!("{} could not be copied to {}", from.display(), to.display());
+    }
+    Ok(())
 }

@@ -64,16 +64,20 @@ impl Project {
             .with_context(|| format!("{} could not be read", path.display()))?;
         let parsed: Value = serde_json::from_str(&text)
             .with_context(|| format!("{} is not valid JSON", path.display()))?;
+        // Before anything is read out of it: a password written into this file
+        // stops every command, not only the ones that sign. See
+        // `signing::check_manifest_secrets`.
+        crate::signing::check_manifest_secrets(&path, &parsed)?;
         let app = parsed.get("app").and_then(Value::as_object);
         let read = |key: &str| -> Option<String> {
             app.and_then(|app| app.get(key)).and_then(Value::as_str).map(str::to_owned)
         };
 
         let name = read("name").with_context(|| {
-            format!("{}: falta app.name; vuelve a ejecutar `an init`", path.display())
+            format!("{}: app.name is missing; run `an init` again", path.display())
         })?;
         let bundle_id = read("bundleId").with_context(|| {
-            format!("{}: falta app.bundleId; vuelve a ejecutar `an init`", path.display())
+            format!("{}: app.bundleId is missing; run `an init` again", path.display())
         })?;
         let entry = read("entry").unwrap_or_else(|| "src/main.native.ts".to_owned());
         let platforms = parsed
@@ -304,7 +308,7 @@ pub fn sdk_root() -> Result<PathBuf> {
 fn validate_sdk(dir: &Path) -> Result<PathBuf> {
     for needed in ["packages/runtime/runtime.js", "scripts/bundle.mjs", "shells", "crates"] {
         if !dir.join(needed).exists() {
-            bail!("falta {needed}");
+            bail!("{needed} is missing");
         }
     }
     Ok(dir.to_owned())

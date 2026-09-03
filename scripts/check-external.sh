@@ -153,7 +153,14 @@ contains "$(cat "$APP/package.json")" 'file:\.angular-native/vendor/angular-nati
   'an init: the dependency points at the vendored tarball, not at a path on disk'
 contains "$(ls "$APP/.angular-native/vendor")" '\.tgz' 'an init: the tarballs stay in the project'
 contains "$(cat "$APP/.gitignore")" '^/\.angular-native/build/$' \
-  'an init: only the artefact directory goes into the .gitignore'
+  'an init: the artefact directory goes into the .gitignore'
+# And the credential patterns. Not tidiness: a release keystore in a repository
+# is the app's whole identity on Google Play, and the only moment adding a line
+# to the .gitignore costs nothing is before there is anything to catch.
+for pattern in keystore jks p12 mobileprovision; do
+  contains "$(cat "$APP/.gitignore")" "^[*]\\.$pattern\$" \
+    "an init: *.$pattern is ignored, so that credential cannot be committed by accident"
+done
 contains "$(tar -tzf "$APP/.angular-native/vendor/"*platform*.tgz)" \
   'package/dist/public-api\.js' 'an init: the tarball carries the compiled package, not the sources'
 
@@ -239,6 +246,25 @@ contains "$output" 'Text#[0-9]+ .*"MyApp"' "the app's title reached a native Tex
 # count, which is what proves the tap arrived: before it, the title carries a
 # zero.
 contains "$output" 'Button#[0-9]+ .*title=Taps: 1' 'a tap made it all the way to the component signal'
+
+# ---------------------------------------------------------------------------
+# A password written into the manifest
+# ---------------------------------------------------------------------------
+#
+# It is checked here, in a real project, and not only in `check-signing.sh`:
+# what has to be true is that **every** command inside a project refuses, not
+# only the ones that sign. `an build` is the one that would otherwise let a
+# committed password go unnoticed for months.
+edit_manifest() { # $1 python expression over `m`, the parsed manifest
+  python3 -c 'import json,sys; p=sys.argv[1]; m=json.load(open(p)); exec(sys.argv[2]); json.dump(m,open(p,"w"),indent=2)' \
+    "$APP/angular-native.json" "$1"
+}
+edit_manifest 'm["signing"]={"android":{"keystore":"release.keystore","storePassword":"hunter2"}}'
+output="$(cd "$APP" && must_fail "$AN" build)"
+contains "$output" 'signing[.]android[.]storePassword' \
+  'a password in the manifest stops `an build`, not only the signing commands'
+contains "$output" 'storePasswordEnv' 'and it says to name a variable instead'
+edit_manifest 'm.pop("signing",None)'
 
 # ---------------------------------------------------------------------------
 # The plist and the manifest, out of step

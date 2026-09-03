@@ -25,6 +25,7 @@ use anyhow::{bail, Context, Result};
 use crate::build::run;
 use crate::ios::swift_sources;
 use crate::plugins::Plugin;
+use crate::signing::{self, Macos};
 use crate::workspace::Workspace;
 
 const APP_NAME: &str = "AngularNativeMac";
@@ -60,11 +61,16 @@ pub fn reject_plugins(plugins: &[Plugin]) -> Result<()> {
     )
 }
 
+/// `signing` decides how the `.app` is signed at the end. `None` is ad hoc,
+/// which is enough to run on the machine that built it and needs nobody's
+/// account; `Some` is a Developer ID signature with the hardened runtime, which
+/// is what another Mac will open.
 pub fn assemble(
     workspace: &Workspace,
     bundle: &Path,
     release: bool,
     dev_server: Option<&str>,
+    signing: Option<&Macos>,
 ) -> Result<Package> {
     let root = &workspace.root;
     let profile = if release { "release" } else { "debug" };
@@ -161,19 +167,281 @@ pub fn assemble(
         }
     }
 
-    // Unsigned, macOS kills the app on the first `mmap` of generated code
-    // —which is what QuickJS does— with a `Killed: 9` and no explanation. An
-    // ad-hoc signature is enough for development and needs nobody's account.
-    let signed = Command::new("codesign")
-        .args(["--force", "--sign", "-"])
-        .arg(&app_dir)
-        .status()
-        .context("codesign could not be run")?;
-    if !signed.success() {
-        bail!("the ad-hoc signing of the .app failed");
+    match signing {
+        // Unsigned, macOS kills the app on the first `mmap` of generated code
+        // —which is what QuickJS does— with a `Killed: 9` and no explanation.
+        // An ad-hoc signature is enough for development and needs nobody's
+        // account.
+        None => {
+            let signed = Command::new("codesign")
+                .args(["--force", "--sign", "-"])
+                .arg(&app_dir)
+                .status()
+                .context("codesign could not be run")?;
+            if !signed.success() {
+                bail!("the ad-hoc signing of the .app failed");
+            }
+        }
+        Some(macos) => sign(&app_dir, macos)?,
     }
 
     Ok(Package { dir: app_dir })
+}
+
+/// Signs the `.app` with a Developer ID certificate and the hardened runtime.
+///
+/// Both are required by notarisation, and the hardened runtime is what makes
+/// this more than a flag change: it turns off the ability to map writable,
+/// executable memory, and the app dies on startup without a single word about
+/// entitlements. Which is why one is written here — see [`hardened_entitlements`].
+fn sign(app_dir: &Path, macos: &Macos) -> Result<()> {
+    let entitlements = hardened_entitlements(app_dir)?;
+    eprintln!("==> codesign ({})", macos.identity_name);
+    let signed = Command::new("codesign")
+        .args([
+            "--force",
+            // The hardened runtime. Notarisation refuses anything without it,
+            // and it is the reason the entitlements above exist.
+            "--options",
+            "runtime",
+            // A secure timestamp, from Apple's server. Without one the
+            // signature stops being valid the day the certificate expires,
+            // rather than staying valid for what was signed while it was.
+            // Notarisation refuses that too.
+            "--timestamp",
+            "--sign",
+            &macos.identity,
+            "--entitlements",
+        ])
+        .arg(&entitlements)
+        .arg(app_dir)
+        .output()
+        .context("codesign could not be run")?;
+    if !signed.status.success() {
+        let said = String::from_utf8_lossy(&signed.stderr);
+        let hint = if said.contains("Timestamp service") || said.contains("timestamp") {
+            "\nThe timestamp comes from Apple over the network: this needs to be online."
+        } else if said.contains("no identity found") || said.contains("ambiguous") {
+            "\n`security find-identity -v -p codesigning` lists what this keychain has."
+        } else {
+            ""
+        };
+        bail!(
+            "codesign refused to sign {} with {:?}.\n{}{hint}\nSee {}",
+            app_dir.display(),
+            macos.identity_name,
+            said.trim(),
+            signing::DOCS
+        );
+    }
+    Ok(())
+}
+
+/// The entitlements a hardened-runtime build needs, and why each one is there.
+///
+/// The hardened runtime forbids by default the two things a JavaScript engine
+/// does. QuickJS is an interpreter and does not compile machine code, but it
+/// does map its bytecode and its stacks the way a JIT would, and the runtime
+/// does not tell the two apart: without `allow-jit` the app is killed on the
+/// first allocation, with a `Killed: 9` in the console and nothing about
+/// entitlements anywhere. It is the same failure the ad-hoc signature exists to
+/// prevent, wearing the one face nobody recognises.
+///
+/// Notarisation allows both of these. They are declared here and not left to the
+/// project because getting them wrong produces an app that opens on the machine
+/// that built it —where the hardened runtime is not enforced the same way— and
+/// dies on everybody else's.
+fn hardened_entitlements(app_dir: &Path) -> Result<PathBuf> {
+    let path = app_dir
+        .parent()
+        .unwrap_or(app_dir)
+        .join("hardened.entitlements");
+    std::fs::write(
+        &path,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+	<true/>
+</dict>
+</plist>
+"#,
+    )
+    .with_context(|| format!("{} could not be written", path.display()))?;
+    Ok(path)
+}
+
+// ---------------------------------------------------------------------------
+// Notarising, stapling, and the .dmg
+// ---------------------------------------------------------------------------
+
+/// Sends the `.app` to Apple, waits for the answer, and staples it.
+///
+/// Stapling is the step that is easy to skip and expensive to skip: without it
+/// the app is notarised but the ticket lives on Apple's servers, so the first
+/// person to open it offline gets Gatekeeper's "cannot be opened" and no way to
+/// tell that from an app that was never notarised at all.
+pub fn notarize(package: &Package, macos: &Macos) -> Result<()> {
+    let profile = macos
+        .notary_profile
+        .as_ref()
+        .expect("--notarize resolves a notarytool profile before building");
+    // notarytool takes a zip, a dmg or a pkg — never a bare `.app`. `ditto` is
+    // the only zipper here that keeps a bundle intact.
+    let archive = package.dir.with_extension("zip");
+    let _ = std::fs::remove_file(&archive);
+    let zipped = Command::new("ditto")
+        // Exactly the invocation Apple's notarisation documentation gives.
+        .args(["-c", "-k", "--keepParent"])
+        .arg(&package.dir)
+        .arg(&archive)
+        .status()
+        .context("ditto could not be run")?;
+    if !zipped.success() {
+        bail!("{} could not be zipped for notarisation", package.dir.display());
+    }
+
+    eprintln!("==> notarytool submit (this waits on Apple, usually a minute or two)");
+    let submitted = Command::new("xcrun")
+        .args(["notarytool", "submit", "--keychain-profile", profile, "--wait"])
+        .arg(&archive)
+        .output()
+        .context("notarytool could not be run")?;
+    let said = format!(
+        "{}{}",
+        String::from_utf8_lossy(&submitted.stdout),
+        String::from_utf8_lossy(&submitted.stderr)
+    );
+    let _ = std::fs::remove_file(&archive);
+    // notarytool exits zero when the *submission* worked, which is not the same
+    // as the app being accepted. The status in its output is the answer, and
+    // reading only the exit code is how an unnotarised app gets stapled and
+    // shipped.
+    if !submitted.status.success() || !said.contains("status: Accepted") {
+        let hint = if said.contains("keychain profile") || said.contains("No Keychain profile") {
+            format!(
+                "\nThere is no notarytool profile called {profile:?} in this keychain. \
+                 Create it with `xcrun notarytool store-credentials {profile}`."
+            )
+        } else if said.contains("Invalid") {
+            "\nApple rejected the app. `xcrun notarytool log <submission-id> \
+             --keychain-profile <profile>` prints exactly which binary and which \
+             requirement — nearly always a missing hardened runtime or a missing \
+             secure timestamp on something nested."
+                .to_owned()
+        } else {
+            String::new()
+        };
+        bail!(
+            "notarisation did not come back accepted.\n{}{hint}\nSee {}",
+            said.trim(),
+            signing::DOCS
+        );
+    }
+
+    staple(&package.dir)
+}
+
+/// Attaches the notarisation ticket to a bundle or a `.dmg`, so it opens with no
+/// network.
+pub fn staple(what: &Path) -> Result<()> {
+    eprintln!("==> stapler staple {}", what.display());
+    let stapled = Command::new("xcrun")
+        .args(["stapler", "staple"])
+        .arg(what)
+        .output()
+        .context("stapler could not be run")?;
+    if !stapled.status.success() {
+        bail!(
+            "the notarisation ticket could not be stapled to {}.\n{}\n\
+             Without it the app is notarised but the ticket only lives on Apple's \
+             servers, and the first person to open it offline is told it cannot be \
+             opened.\nSee {}",
+            what.display(),
+            String::from_utf8_lossy(&stapled.stderr).trim(),
+            signing::DOCS
+        );
+    }
+    Ok(())
+}
+
+/// Puts the `.app` in a `.dmg`, signs it, and —when asked— notarises and staples
+/// that too.
+///
+/// The disk image is signed and notarised in its own right, and not only because
+/// it can be: it is the file that gets downloaded, so it is the one Gatekeeper
+/// looks at first. A `.dmg` carrying a perfectly notarised app is still an
+/// unsigned download.
+pub fn dmg(package: &Package, macos: Option<&Macos>, notarising: bool) -> Result<PathBuf> {
+    let name = package
+        .dir
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .unwrap_or_else(|| APP_NAME.to_owned());
+    let dmg = package.dir.with_extension("dmg");
+    let _ = std::fs::remove_file(&dmg);
+    eprintln!("==> hdiutil create {}", dmg.display());
+    let created = Command::new("hdiutil")
+        .args(["create", "-volname", &name, "-srcfolder"])
+        .arg(&package.dir)
+        .args(["-ov", "-format", "UDZO"])
+        .arg(&dmg)
+        .output()
+        .context("hdiutil could not be run")?;
+    if !created.status.success() {
+        bail!(
+            "the .dmg could not be created.\n{}",
+            String::from_utf8_lossy(&created.stderr).trim()
+        );
+    }
+
+    if let Some(macos) = macos {
+        let signed = Command::new("codesign")
+            .args(["--force", "--timestamp", "--sign", &macos.identity])
+            .arg(&dmg)
+            .output()
+            .context("codesign could not be run")?;
+        if !signed.status.success() {
+            bail!(
+                "the .dmg could not be signed with {:?}.\n{}\nSee {}",
+                macos.identity_name,
+                String::from_utf8_lossy(&signed.stderr).trim(),
+                signing::DOCS
+            );
+        }
+        if notarising {
+            let profile = macos
+                .notary_profile
+                .as_ref()
+                .expect("--notarize resolves a notarytool profile before building");
+            eprintln!("==> notarytool submit (the .dmg)");
+            let submitted = Command::new("xcrun")
+                .args(["notarytool", "submit", "--keychain-profile", profile, "--wait"])
+                .arg(&dmg)
+                .output()
+                .context("notarytool could not be run")?;
+            let said = format!(
+                "{}{}",
+                String::from_utf8_lossy(&submitted.stdout),
+                String::from_utf8_lossy(&submitted.stderr)
+            );
+            if !submitted.status.success() || !said.contains("status: Accepted") {
+                bail!(
+                    "the .dmg did not come back accepted.\n{}\nSee {}",
+                    said.trim(),
+                    signing::DOCS
+                );
+            }
+            staple(&dmg)?;
+        }
+    }
+
+    let size = std::fs::metadata(&dmg)?.len();
+    eprintln!("==> {} MB in {}", size / (1024 * 1024), dmg.display());
+    Ok(dmg)
 }
 
 pub fn launch(package: &Package) -> Result<()> {
@@ -181,7 +449,7 @@ pub fn launch(package: &Package) -> Result<()> {
     // front and the change would look as though it had never landed.
     let _ = Command::new("killall").args(["-9", APP_NAME]).output();
 
-    eprintln!("==> lanzando {}", package.dir.display());
+    eprintln!("==> launching {}", package.dir.display());
     let launched = Command::new("open")
         .arg("-n")
         .arg(&package.dir)
