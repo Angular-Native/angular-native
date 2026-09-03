@@ -142,7 +142,7 @@ impl QuickJsRuntime {
                 let text = match reason.as_exception() {
                     Some(exception) => {
                         let message =
-                            exception.message().unwrap_or_else(|| "sin mensaje".to_owned());
+                            exception.message().unwrap_or_else(|| "no message".to_owned());
                         match exception.stack() {
                             Some(stack) => format!("{message}\n{stack}"),
                             None => message,
@@ -212,7 +212,7 @@ impl QuickJsRuntime {
                             Some(exception) => {
                                 let msg = exception
                                     .message()
-                                    .unwrap_or_else(|| "sin mensaje".to_owned());
+                                    .unwrap_or_else(|| "no message".to_owned());
                                 match exception.stack() {
                                     Some(stack) => format!("{msg}\n{stack}"),
                                     None => msg,
@@ -222,7 +222,7 @@ impl QuickJsRuntime {
                         }
                     });
                     return Err(JsError::Exception(format!(
-                        "microtarea sin capturar: {message}"
+                        "uncaught microtask: {message}"
                     )));
                 }
             }
@@ -237,7 +237,7 @@ fn exception_message(ctx: &Ctx, error: rquickjs::Error) -> JsError {
     let value = ctx.catch();
     let text = match value.as_exception() {
         Some(exception) => {
-            let message = exception.message().unwrap_or_else(|| "sin mensaje".to_owned());
+            let message = exception.message().unwrap_or_else(|| "no message".to_owned());
             match exception.stack() {
                 Some(stack) => format!("{message}\n{stack}"),
                 None => message,
@@ -311,7 +311,7 @@ impl JsRuntime for QuickJsRuntime {
                 collect.call::<_, String>(()).map_err(|e| exception_message(&ctx, e))
             })
             .unwrap_or_else(|error| {
-                eprintln!("angular-native: no se pudo guardar el estado: {error}");
+                eprintln!("angular-native: the state could not be saved: {error}");
                 "{}".to_owned()
             })
     }
@@ -349,7 +349,7 @@ impl JsRuntime for QuickJsRuntime {
         })?;
 
         for rejection in self.pending_rejections.borrow_mut().drain(..) {
-            self.log.log(3, &format!("promesa rechazada sin capturar: {rejection}"));
+            self.log.log(3, &format!("uncaught rejected promise: {rejection}"));
         }
 
         Ok(std::mem::take(&mut *self.commands.borrow_mut()))

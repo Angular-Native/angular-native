@@ -14,8 +14,8 @@ pub enum JsError {
 impl std::fmt::Display for JsError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            JsError::Exception(m) => write!(f, "excepción de JS: {m}"),
-            JsError::Engine(m) => write!(f, "fallo del motor: {m}"),
+            JsError::Exception(m) => write!(f, "JS exception: {m}"),
+            JsError::Engine(m) => write!(f, "engine failure: {m}"),
         }
     }
 }

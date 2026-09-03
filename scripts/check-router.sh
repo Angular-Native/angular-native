@@ -22,13 +22,11 @@ check() {
 
 echo "== router"
 check 'StackView#[0-9]+' 'the native stack was mounted'
-# The headless runner announces the simulated gesture in its own words, and it
-# is a crate translated on another branch, so both wordings are accepted.
-check '\-\- (atrás simulado|simulated back)' 'the back gesture has someone listening for it'
+check '\-\- simulated back' 'the back gesture has someone listening for it'
 check '"Ships"' 'after going back the list is on screen again'
 # Had the screen been rebuilt, the core would have created its views all over.
-check '(volver atrás costó 0 vistas creadas|going back cost 0 views created)' 'the previous screen was reattached, not rebuilt'
-if grep -qE -- '(búfer inválido|invalid buffer|promesa rechazada|rejected promise|bootstrap failed)' <<<"$OUTPUT"; then
+check 'going back cost 0 views created' 'the previous screen was reattached, not rebuilt'
+if grep -qE -- '(invalid buffer|uncaught rejected promise|bootstrap failed)' <<<"$OUTPUT"; then
   echo "  FAIL there were errors during navigation"
   fail=1
 else

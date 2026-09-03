@@ -53,7 +53,7 @@ impl Drop for Responder {
         // for ever is worse: at least this one can be seen.
         self.outbox.lock().expect("the mailbox is poisoned").push((
             self.id,
-            Err("el módulo nativo no contestó".to_owned()),
+            Err("the native module never answered".to_owned()),
         ));
     }
 }
@@ -94,7 +94,7 @@ impl ModuleRegistry {
 
         match self.modules.iter_mut().find(|m| m.name() == module) {
             Some(target) => target.call(method, args, respond),
-            None => respond.reject(format!("no hay ningún módulo nativo llamado {module:?}")),
+            None => respond.reject(format!("there is no native module called {module:?}")),
         }
         id
     }
@@ -153,7 +153,7 @@ macro_rules! native_module {
                                 Ok(parsed) => parsed,
                                 Err(error) => {
                                     respond.reject(format!(
-                                        concat!($name, ".", stringify!($method), ": argumentos inválidos: {}"),
+                                        concat!($name, ".", stringify!($method), ": invalid arguments: {}"),
                                         error
                                     ));
                                     return;
@@ -169,7 +169,7 @@ macro_rules! native_module {
                         }
                     )*
                     other => respond.reject(format!(
-                        concat!("el módulo ", $name, " no tiene ningún método {:?}")
+                        concat!("the ", $name, " module has no method {:?}")
                         , other
                     )),
                 }

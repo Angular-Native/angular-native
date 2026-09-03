@@ -113,9 +113,7 @@ fi
 #    uses props AppKit cannot honour, and they have to come out on screen the
 #    first time they arrive.
 #
-# The host is a crate and is being translated on its own branch, so the patterns
-# that read its prose accept either language.
-if grep -qE "no se aplica en macOS|does not apply on macOS" "$RUN_LOG"; then
+if grep -qF "does not apply on macOS" "$RUN_LOG"; then
   echo "  ok   what AppKit does not cover is said on arrival, not swallowed"
 else
   echo "  FAIL not one discarded prop came out on screen: the warning does not work"
@@ -125,9 +123,9 @@ fi
 # 7. And the reverse: nothing nobody has declared. An "unknown prop" is a prop
 #    this host does not look at and that is not in IGNORED either, that is, an
 #    oversight.
-if grep -qE "prop desconocida|unknown prop" "$RUN_LOG"; then
+if grep -qF "unknown prop" "$RUN_LOG"; then
   echo "  FAIL there are props the host does not look at and that are not declared:"
-  grep -E "prop desconocida|unknown prop" "$RUN_LOG" | sed 's/^/       /'
+  grep -F "unknown prop" "$RUN_LOG" | sed 's/^/       /'
   fail=1
 else
   echo "  ok   no prop of the example is left without an owner"
@@ -234,17 +232,17 @@ MEDIA_LOG="$(mktemp)"
 AN_SCREENSHOT="$SHOT_MEDIA" AN_SCREENSHOT_FRAMES=240 \
   AN_SCREENSHOT_PRESS=360,782 "$BIN" >"$MEDIA_LOG" 2>&1 || true
 
-if grep -qE "no se pinta en macOS|is not drawn on macOS" "$MEDIA_LOG"; then
+if grep -qF "is not drawn on macOS" "$MEDIA_LOG"; then
   echo "  FAIL the map or the video still are not painted:"
-  grep -E "no se pinta en macOS|is not drawn on macOS" "$MEDIA_LOG" | sed 's/^/       /'
+  grep -F "is not drawn on macOS" "$MEDIA_LOG" | sed 's/^/       /'
   fail=1
 else
   echo "  ok   the map and the video mount with their system view"
 fi
 
-if grep -qE "no se puede reproducir|cannot be played" "$MEDIA_LOG"; then
+if grep -qF "cannot be played" "$MEDIA_LOG"; then
   echo "  FAIL the player failed:"
-  grep -E "no se puede reproducir|cannot be played" "$MEDIA_LOG" | sed 's/^/       /'
+  grep -F "cannot be played" "$MEDIA_LOG" | sed 's/^/       /'
   fail=1
 else
   echo "  ok   the player did not fail on starting up"

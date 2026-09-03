@@ -40,10 +40,8 @@ contains "$LIST" '^clipboard  \(@angular-native/plugin-clipboard\)' \
 contains "$LIST" 'ios \+ android' 'and it says it covers both platforms'
 contains "$LIST" 'packages/plugin-clipboard' 'and where the package came from'
 
-# The CLI is a crate and is being translated on its own branch, so the patterns
-# that read its prose accept either language.
 NONE="$(cargo an plugins examples/kitchen 2>&1)"
-contains "$NONE" '(no depende de ningún plugin|depends on no plugin|not depend on any plugin)' \
+contains "$NONE" 'depends on no plugin' \
   'an app with no plugins says so and does not invent one'
 
 for platform in ios android; do
@@ -96,7 +94,7 @@ if NEGATIVE="$(cargo an plugins build/plugins-fixture/app --platform android 2>&
 else
   ok 'building for Android with a plugin that only ships iOS fails'
   contains "$NEGATIVE" '@fixture/ios-only' 'and the message says which package it is'
-  contains "$NEGATIVE" '(no se puede compilar para Android|cannot be built for Android)' \
+  contains "$NEGATIVE" 'cannot be built for Android' \
     'and for which platform'
   contains "$NEGATIVE" 'angularNative.android' 'and what has to be done to fix it'
 fi
@@ -111,7 +109,7 @@ ok 'the bundle compiles with the plugin import resolved'
 # here, but the path —registry, call, promise— is the same one.
 WITH="$(AN_PLUGINS='{"clipboard":{"read":"test text","write":null,"hasText":true}}' \
   cargo run -q -p an-bridge --example headless -- build/bundle/clipboard/main.js 6 2>&1)"
-contains "$WITH" '(plugin de mentira|fake plugin|stub plugin): clipboard' \
+contains "$WITH" 'fake plugin: clipboard' \
   'the module is registered under the name from its package.json'
 contains "$WITH" 'on the clipboard: test text' "what the plugin answered reaches the screen"
 contains "$WITH" '"copied"' 'and the tap wrote: write resolved and triggered the re-read'
@@ -122,16 +120,15 @@ contains "$WITH" '"copied"' 'and the tap wrote: write resolved and triggered the
 #
 # The pattern is short because the dump truncates node text at forty characters,
 # and the prefix the example writes eats twenty-nine of them: only eleven of the
-# bridge's own message survive. Those eleven come from a crate translated on
-# another branch, so both openings are accepted.
+# bridge's own message survive, which is why it stops at "there is no".
 WITHOUT="$(cargo run -q -p an-bridge --example headless -- build/bundle/clipboard/main.js 4 2>&1)"
-contains "$WITHOUT" 'the clipboard failed: Error: (no hay ning|no native|there is no)' \
+contains "$WITHOUT" 'the clipboard failed: Error: there is no' \
   'with no plugin the promise is rejected saying the module does not exist'
 
 # A method the plugin does not declare is not swallowed either.
 OTHER="$(AN_PLUGINS='{"clipboard":{"read":"something"}}' \
   cargo run -q -p an-bridge --example headless -- build/bundle/clipboard/main.js 4 2>&1)"
-contains "$OTHER" 'the clipboard failed: Error: (el plugin|the plugin)' \
+contains "$OTHER" 'the clipboard failed: Error: the clipboa' \
   'a method the plugin does not serve rejects the promise'
 
 # ── 4. That it really compiles ──────────────────────────────────────────────

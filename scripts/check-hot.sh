@@ -37,12 +37,12 @@ OUTPUT="$(run "$AFTER")"
 # binary of the example is the good one, and the one left over may predate the
 # change. It is forced to rebuild once; if it stays the same, that is a real
 # failure and dressing it up as a reload that does not work will not do.
-if ! grep -qE 'refresco en caliente|hot reload' <<<"$OUTPUT"; then
+if ! grep -qF 'hot reload' <<<"$OUTPUT"; then
   touch crates/an-bridge/examples/headless.rs
   cargo build -q -p an-bridge --example headless
   OUTPUT="$(run "$AFTER")"
 fi
-if ! grep -qE 'refresco en caliente|hot reload' <<<"$OUTPUT"; then
+if ! grep -qF 'hot reload' <<<"$OUTPUT"; then
   echo "  FAIL the headless runner has no AN_HOT support, not even after a rebuild"
   exit 1
 fi
@@ -58,7 +58,7 @@ check() {
 }
 
 echo "== hot reload"
-check '(refresco en caliente: sí|hot reload: yes)' 'the new bundle was stitched onto the one already running'
+check 'hot reload: yes' 'the new bundle was stitched onto the one already running'
 check 'TEMPLATE CHANGED WHILE HOT' 'the new template is on screen'
 check '"taps: 1 \(last at 40, 20\)"' 'the component state survived'
 check '"seconds running: 5"' 'the timer kept running, it did not go back to zero'
@@ -76,7 +76,7 @@ fi
 # faking the signature.
 sed 's/globalThis.__anVendor !== "/globalThis.__anVendor !== "x/' "$AFTER" >"$AFTER.other"
 OTHER="$(run "$AFTER.other")"
-if grep -qE -- '(refresco en caliente: no|hot reload: no)' <<<"$OTHER"; then
+if grep -qF -- 'hot reload: no' <<<"$OTHER"; then
   echo "  ok   if the framework changes a restart is asked for instead of lying"
 else
   echo "  FAIL changing the framework should force a restart"
@@ -121,7 +121,7 @@ checkw() {
   fi
 }
 
-checkw '(refresco en caliente: sí|hot reload: yes)' 'the watch is stitched hot as well'
+checkw 'hot reload: yes' 'the watch is stitched hot as well'
 checkw 'WATCH CHANGED WHILE HOT' "the watch's new template is on screen"
 # The safe area is a component: its styles are written by its host, not by the
 # template. Without it the scroll view does not grow and stays at 227x0, which is

@@ -118,9 +118,7 @@ in_hello() {
   check $r "$2"
 }
 
-# The word the headless dump uses for the content size comes out of a crate that
-# is being translated on another branch, so both spellings are accepted.
-in_hello 'ScrollView#[0-9]+ .*(contenido|content)' 'the ScrollView declares its contentSize'
+in_hello 'ScrollView#[0-9]+ .*content' 'the ScrollView declares its contentSize'
 in_hello 'Text#[0-9]+ .*"angular-native"' 'the heading was measured and placed'
 in_hello 'Button#[0-9]+' 'the system button is mounted'
 in_hello '"taps: 1"' 'the tap reached JS and the signal was recomputed'

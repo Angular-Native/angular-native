@@ -34,10 +34,7 @@ check 'View#[0-9]+ \[128,0 233x88\]' '@for: second card with flexGrow 2'
 check 'seconds running: 5' 'the signal advanced five frames'
 check 'The @if came in at 3 seconds' '@if mounted its branch once past the threshold'
 check 'taps: 1 \(last at 40, 20\)' 'a native tap made it all the way to the signal'
-# The trailing word of the headless line ("operaciones"/"operations") is left
-# out of the pattern on purpose: the count is what matters and the wording
-# belongs to the Rust runner.
-check '\-\- frame 4 \(t=4000ms\): 1 ' 'a settled frame costs a single operation'
+check '\-\- frame 4 \(t=4000ms\): 1 operation' 'a settled frame costs a single operation'
 
 if [ "$fail" -ne 0 ]; then
   echo

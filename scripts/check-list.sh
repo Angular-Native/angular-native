@@ -30,22 +30,20 @@ check 'TextInput#[0-9]+ .*keyboardType=default .*returnKeyType=search' 'and the 
 check 'TextInput#[0-9]+ .*placeholderColor=#6b7a99' 'the hint text carries a colour of its own'
 check 'TextInput#[0-9]+ .*ios:clearButtonMode=whileEditing' 'the clear cross travels marked as an iOS one'
 check 'TextInput#[0-9]+ .*android:selectAllOnFocus=true' 'and select-on-focus as an Android one'
-check '"headless 0.0 . es-ES"' 'the native module answered and the promise resolved'
+check '"headless 0.0 . en-GB"' 'the native module answered and the promise resolved'
 check 'ScrollView#[0-9]+ \[0,0 393x666\]' 'the ScrollView fills the gap, it does not grow with its content'
-# "contenido"/"content" is printed by the headless runner, which is a crate and
-# translated on its own branch, so both spellings are accepted.
-check '(contenido|content) 393x312000' 'the contentSize adds up row by row: 4000 of 56 and 1000 of 88'
+check 'content 393x312000' 'the contentSize adds up row by row: 4000 of 56 and 1000 of 88'
 check '"row number 6[0-9]"' 'after scrolling, the rows at that height are the ones on screen'
 check 'View#[0-9]+ \[0,3744 393x88\]' 'the tall row measures 88'
 check 'View#[0-9]+ \[0,3832 393x56\]' 'the next one starts right below the tall one'
-check '(desplazarse costó 0 vistas creadas y 0 destruidas|scrolling cost 0 views created and 0 destroyed)' 'scrolling recycles: not one new view'
+check 'scrolling cost 0 views created and 0 destroyed' 'scrolling recycles: not one new view'
 if grep -qE -- '"row number (1|2|300)"' <<<"$OUTPUT"; then
   echo "  FAIL after scrolling nothing from the start or the end should be left"
   fail=1
 else
   echo "  ok   nothing outside the window is mounted"
 fi
-mounted="$(grep -oE '(vistas nativas montadas|native views mounted): [0-9]+' <<<"$OUTPUT" | grep -oE '[0-9]+')"
+mounted="$(grep -oE 'native views mounted: [0-9]+' <<<"$OUTPUT" | grep -oE '[0-9]+')"
 if [ -n "$mounted" ] && [ "$mounted" -lt 120 ]; then
   echo "  ok   $mounted native views for 5000 rows"
 else
