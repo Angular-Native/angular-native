@@ -9,6 +9,12 @@
 //! - `an_watch_runtime_snapshot` shows up, which is how the shell finds out
 //!   what to paint. On iOS it is not needed: by the time `an_runtime_frame`
 //!   returns, the host has already touched the views.
+//! - The device's data comes in from the shell instead of being read here. On
+//!   iOS `UIDevice` and `UIScreen` are one `objc2` call away; the watch's are
+//!   `WKInterfaceDevice`, which is WatchKit, has no Rust binding, and would be
+//!   four trips through Objective-C for what Swift settles in one line. It
+//!   arrives the same way the control sizes do, and for the same reason. See
+//!   `crate::modules`.
 //!
 //! The JS engine is still on a thread of its own, and for the same reason as
 //! on iOS: QuickJS needs some 4 MB of stack for Angular's router to navigate,
@@ -34,6 +40,33 @@ const RUNTIME_STACK: usize = 8 * 1024 * 1024;
 /// is in the foreground, so there are 33 and one can afford to be a little
 /// more patient. 8 ms are left over for SwiftUI to recompose afterwards.
 const FRAME_BUDGET: Duration = Duration::from_millis(25);
+
+/// Gets panics into the system log before they are lost.
+///
+/// It is the same hook `an-ios` and `an-macos` install, and the watch was the
+/// one Apple host without it. A panic inside an `extern "C"` cannot unwind, so
+/// Rust aborts with "panic in a function that cannot unwind" and the real
+/// message —the one that says what happened— never gets out before the process
+/// dies. Here it is written and flushed by hand, which is the difference
+/// between debugging a crash and guessing at it.
+fn report_panics() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            let where_at = info
+                .location()
+                .map(|l| format!("{}:{}", l.file(), l.line()))
+                .unwrap_or_else(|| "an unknown place".to_owned());
+            use std::io::Write;
+            let mut out = std::io::stderr().lock();
+            let _ = writeln!(out, "angular-native: panic at {where_at}: {info}");
+            let _ = out.flush();
+            previous(info);
+        }));
+    });
+}
 
 pub struct AnWatchRuntime {
     worker: RuntimeWorker,
@@ -88,20 +121,34 @@ impl AnWatchRuntime {
 /// `{"Button":[80,44]}`. It may be null: then the controls measure zero and
 /// the layout collapses them, which is visible and therefore debuggable.
 ///
+/// `device_json` is what `Device.info()` answers, minus the platform, which is
+/// this crate's business: `{"systemVersion":…,"model":…,"scale":…,"locale":…}`.
+/// It may be null too, and then the call is rejected saying the shell handed
+/// nothing over — which beats an object with holes in it that reads as real.
+///
 /// # Safety
-/// `control_json`, if not null, must be a valid C string.
+/// `control_json` and `device_json`, if not null, must be valid C strings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_watch_runtime_new(
     width: f32,
     height: f32,
     control_json: *const c_char,
+    device_json: *const c_char,
 ) -> *mut AnWatchRuntime {
+    report_panics();
     let controls = unsafe { read_controls(control_json) };
+    // Read before the worker starts: from there on this pointer belongs to
+    // whoever called, and the module travels to the other thread already built.
+    let device = crate::modules::DeviceModule::from_shell(unsafe { read(device_json) }.as_deref());
     let events = new_event_queue();
     let host = WatchHost::new(events.clone());
 
     let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
-        let js = QuickJsRuntime::new()?;
+        let mut js = QuickJsRuntime::new()?;
+        js.register_module(Box::new(device));
+        // There are no plugins on this host, and a call to one has to be told
+        // why and not only that the name is unknown. See `modules::ABSENT_NOTE`.
+        js.explain_absent_modules(crate::modules::ABSENT_NOTE);
         Ok((js, ShadowSide::new(WatchMeasurer::new(controls), (width, height))))
     });
     let worker = match worker {
@@ -338,6 +385,15 @@ unsafe fn read_pair(name: *const c_char, code: *const c_char) -> Option<(String,
     let name = unsafe { CStr::from_ptr(name) }.to_str().ok()?;
     let code = unsafe { CStr::from_ptr(code) }.to_str().ok()?;
     Some((name.to_owned(), code.to_owned()))
+}
+
+/// # Safety
+/// `text`, if not null, has to be a valid C string.
+unsafe fn read(text: *const c_char) -> Option<String> {
+    if text.is_null() {
+        return None;
+    }
+    unsafe { CStr::from_ptr(text) }.to_str().ok().map(str::to_owned)
 }
 
 /// # Safety

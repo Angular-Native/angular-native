@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import WatchKit
 
 /// The bridge to Rust and the app's clock.
 ///
@@ -44,9 +45,43 @@ final class AnRuntime {
     "Stepper":[120,44],"Picker":[120,88],"DatePicker":[120,44],"Icon":[24,24]}
     """
 
+    /// What the watch can say about itself, for `Device.info()`.
+    ///
+    /// It is read here and not in Rust for the same reason the control sizes
+    /// are: these four belong to `WKInterfaceDevice`, which is WatchKit, and
+    /// there is no binding for it on the Rust side. Android does exactly this
+    /// with `AnHost.deviceInfo()`.
+    ///
+    /// The platform is deliberately **not** sent. That one is the host's to
+    /// decide —it cannot be anything but a watch— and the shell having a say in
+    /// it would only be room to get it wrong. See `crates/an-watch/src/modules.rs`.
+    private static func deviceInfo() -> String {
+        let device = WKInterfaceDevice.current()
+        let info: [String: Any] = [
+            "systemVersion": device.systemVersion,
+            "model": device.model,
+            "scale": Double(device.screenScale),
+            "locale": Locale.current.identifier
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: info),
+              let json = String(data: data, encoding: .utf8)
+        else {
+            // Nothing is invented in its place: the module rejects the call
+            // saying the shell handed nothing over, which is the truth.
+            NSLog("angular-native: the device information could not be serialised")
+            return ""
+        }
+        return json
+    }
+
     func start(width: Double, height: Double) {
         guard runtime == nil else { return }
-        runtime = an_watch_runtime_new(Float(width), Float(height), Self.controlSizes)
+        runtime = an_watch_runtime_new(
+            Float(width),
+            Float(height),
+            Self.controlSizes,
+            Self.deviceInfo()
+        )
         guard let runtime else {
             NSLog("angular-native: an_watch_runtime_new returned nil")
             return
