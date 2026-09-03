@@ -132,6 +132,21 @@ export interface BiometricRequest {
    * payment, it is not.
    */
   allowDeviceCredential?: boolean
+  /**
+   * Let a paired, unlocked Apple Watch stand in for the sensor. **macOS 15 and
+   * later, and nowhere else.**
+   *
+   * It is off by default and has to be asked for, because it answers a different
+   * question: not "this is the enrolled fingerprint" but "the owner is nearby
+   * with an unlocked watch on". For unlocking a screen on a Mac that has no
+   * Touch ID it is the only thing there is; for authorising a payment it is not
+   * the same check.
+   *
+   * On iOS, Android and an older macOS it is ignored — there is no companion
+   * policy to ask for — and `detail` in the answer names the policy that
+   * actually ran.
+   */
+  allowCompanion?: boolean
 }
 
 /**

@@ -12,7 +12,11 @@
 //! is the watch's and it cannot be anything else, and asking somebody else
 //! about it would only be room to get it wrong.
 //!
-//! Like macOS, this host has no plugin registry — see `ABSENT_NOTE`.
+//! Plugins do not live here. They come from outside, they are Swift, and what
+//! carries the call out to them is `crate::plugins` — the same postman `an-ios`
+//! has. What this module still owns is the reason a *missing* module is
+//! missing, and that reason is now built from what the `.app` actually carries:
+//! see `plugins::absent_note`.
 
 use an_bridge::native_module;
 use serde_json::{Map, Value};
@@ -62,15 +66,6 @@ native_module! {
         }
     }
 }
-
-/// Why a name that is not in the registry may still be a name somebody wrote in
-/// good faith.
-///
-/// `an-cli`'s `watchos::reject_plugins` already stops the build of an app that
-/// depends on a plugin. This covers the other route in: a module name reached
-/// at run time without going through a declared dependency.
-pub const ABSENT_NOTE: &str = "the watchOS host does not load plugins yet, so only the modules \
-     compiled into the core exist here. See https://angular-native.dev/extending/plugins/";
 
 #[cfg(test)]
 mod tests {
@@ -144,14 +139,18 @@ mod tests {
 
     /// And a module nobody registered comes back with the name *and* the reason
     /// there is nothing under it, which on this host is not a typo.
+    ///
+    /// The clipboard is the right example and not an arbitrary one: it is the
+    /// plugin that ships in this repo and cannot exist on a watch, so this is
+    /// the exact rejection somebody porting an app from the phone will read.
     #[test]
     fn an_absent_module_comes_back_with_the_reason() {
         let mut registry = ModuleRegistry::new();
-        registry.explain_absent(super::ABSENT_NOTE);
+        registry.explain_absent(crate::plugins::absent_note());
         registry.invoke("clipboard", "read", json!(null));
         let answers = registry.drain();
         let error = answers[0].1.as_ref().expect_err("there is no clipboard here");
         assert!(error.contains("clipboard"), "{error}");
-        assert!(error.contains("does not load plugins yet"), "{error}");
+        assert!(error.contains("watchOS half"), "{error}");
     }
 }

@@ -138,14 +138,23 @@ pub unsafe extern "C" fn an_runtime_new(
     // The system's controls are measured here, on the main thread: creating
     // an `NSSwitch` off it is not allowed.
     let control_sizes = crate::controls::measure_controls(mtm);
+    // The plugins the shell registered before getting here. One per name; what
+    // they do lives in Swift, so these only carry and fetch.
+    let plugins = crate::modules::host_plugins();
+    // Read before the worker starts, because it names the plugins that are
+    // there and after this point the answer can no longer change: the registry
+    // is closed the moment the engine is built.
+    let absent = crate::modules::absent_note();
 
     let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
         let mut js = QuickJsRuntime::new()?;
         js.register_module(Box::new(device));
-        // There are no plugins on this host, and a call to one has to be told
-        // why rather than only that the name is unknown. See
-        // `modules::ABSENT_NOTE`.
-        js.explain_absent_modules(crate::modules::ABSENT_NOTE);
+        for plugin in plugins {
+            js.register_module(Box::new(plugin));
+        }
+        // A call to a module that is not here has to be told why and not only
+        // that the name is unknown. See `modules::absent_note`.
+        js.explain_absent_modules(absent);
         Ok((
             js,
             ShadowSide::new(crate::measure::AppKitMeasurer::new(control_sizes), (width, height)),
@@ -245,6 +254,12 @@ pub unsafe extern "C" fn an_runtime_set_viewport(rt: *mut AnRuntime, width: f32,
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_runtime_frame(rt: *mut AnRuntime, now_ms: f64) -> i32 {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return -1 };
+
+    // The plugin calls the engine left behind are served here, which is the
+    // main thread: it is the only place where a plugin may touch AppKit. It
+    // goes before JS's turn so that an answer arriving on the spot makes it
+    // into this very frame.
+    crate::modules::pump();
 
     // Whatever the worker finished since the previous frame is mounted.
     let mut applied = rt.pump();

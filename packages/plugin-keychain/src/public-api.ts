@@ -60,6 +60,21 @@ export interface KeychainOptions {
    * key store ties authentication to every single use of the key, be it
    * encrypting or decrypting. Whoever does not want that difference should not
    * use this option.
+   *
+   * **On watchOS it is refused, not downgraded.** A watch has no biometric
+   * sensor —`deviceOwnerAuthenticationWithBiometrics` is
+   * `API_UNAVAILABLE(watchos)`— and `set` comes back `unavailable` with
+   * nothing stored. It could have quietly stored the item behind the watch's
+   * passcode instead, and that is exactly what it must not do: an app told the
+   * secret is behind a fingerprint when it is behind a four-digit code has been
+   * lied to about the only thing it asked.
+   *
+   * **On macOS it depends on which keychain the app got.** With the
+   * data-protection keychain it behaves like iOS. Without it —an ad-hoc
+   * signature the system would not grant `keychain-access-groups` to— the file
+   * keychain cannot bind an item to Touch ID, and `set` refuses for the same
+   * reason rather than storing it unprotected. `backing()` says which of the two
+   * is answering before anything is written.
    */
   requireBiometrics?: boolean
   /**
@@ -71,19 +86,28 @@ export interface KeychainOptions {
 
 /** What really stores the secrets on this device. */
 export interface KeychainBacking {
-  platform: 'ios' | 'android'
+  platform: 'ios' | 'android' | 'macos' | 'watchos'
   /**
    * Whether the key lives in hardware the system itself cannot look into: the
-   * Secure Enclave on iOS, the TEE or the StrongBox on Android.
+   * Secure Enclave on iOS, watchOS and Apple silicon, the TEE or the StrongBox
+   * on Android.
    *
    * On Android there are devices that do not have it and the key store is
    * software. There is still encryption there and the key still never leaves the
    * system, but an attacker with root can walk off with it. That is why this is
    * a question and not a constant: the answer depends on which phone is in
    * front of you.
+   *
+   * **On macOS the answer depends on the signature, not on the machine.** A Mac
+   * has two keychains: the data-protection one, which is the iPhone's and is
+   * sealed to the Secure Enclave, and the old file keychain, which the login
+   * password opens. Reaching the first needs the `keychain-access-groups`
+   * entitlement to be granted, and an ad-hoc signature may not get it. The
+   * plugin finds out by writing a throwaway item at startup and reports what it
+   * found here; `detail` names the error the system gave when it fell back.
    */
   hardwareBacked: boolean
-  /** When it can be read: `kSecAttrAccessible…` on iOS, the equivalent on Android. */
+  /** When it can be read: `kSecAttrAccessible…` on Apple, the equivalent on Android. */
   accessible: string
   detail: string
 }

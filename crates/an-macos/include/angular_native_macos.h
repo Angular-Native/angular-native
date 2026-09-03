@@ -1,8 +1,9 @@
 // The C surface of the macOS host. Written by hand, just like the iOS one.
 //
-// It is the same as the phone's minus the plugins: this host does not load
-// them yet, and `an macos` stops the build before compiling if the app depends
-// on any, rather than leaving a module that swallows the calls.
+// It is the same as the phone's, plugins included: the four `an_plugin_*`
+// functions at the bottom are the same quartet `angular_native.h` declares, so
+// the Mac's `AnPluginRegistry` is the phone's with `NSViewController` where it
+// said `UIViewController`.
 #ifndef ANGULAR_NATIVE_MACOS_H
 #define ANGULAR_NATIVE_MACOS_H
 
@@ -32,5 +33,27 @@ void an_runtime_set_viewport(AnRuntime *rt, float width, float height);
 int32_t an_runtime_frame(AnRuntime *rt, double now_ms);
 
 void an_runtime_free(AnRuntime *rt);
+
+// --- Plugins ---------------------------------------------------------------
+//
+// Registration happens **before** an_runtime_new: the core builds one module
+// per registered name when the engine starts, and a name arriving afterwards
+// would never get in.
+
+/// Registers a plugin under the name JS calls it by.
+void an_plugin_register(const char *name);
+
+/// Installs the callback the core hands the queued calls to, once per frame
+/// and on the main thread. NULL takes it away.
+void an_plugin_set_dispatch(void (*dispatch)(uint64_t id, const char *module,
+                                             const char *method,
+                                             const char *args));
+
+/// Answers a call with its return value, already serialised; "null" for a
+/// method that returns nothing. 0 if the call was waiting, -1 if it was not.
+int32_t an_plugin_resolve(uint64_t id, const char *json);
+
+/// Rejects a call. 0 if the call was waiting, -1 if it was not.
+int32_t an_plugin_reject(uint64_t id, const char *message);
 
 #endif

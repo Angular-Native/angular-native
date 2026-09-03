@@ -333,7 +333,7 @@ pub fn assemble(
         sources.extend(contributed);
     }
     sources.push(
-        plugins::generate_ios(plugins, &out.join("generated"))?
+        plugins::generate_swift(plugins, Platform::Ios, &out.join("generated"))?
             .to_string_lossy()
             .into_owned(),
     );
@@ -466,7 +466,7 @@ fn device_entitlements(
     out: &Path,
 ) -> Result<PathBuf> {
     let mut entitlements = apple.profile_entitlements.clone();
-    for (key, contributed) in &plugins::entitlement_entries(plugins)? {
+    for (key, contributed) in &plugins::entitlement_entries(plugins, Platform::Ios)? {
         if entitlements.contains_key(key) {
             continue;
         }
@@ -527,7 +527,7 @@ fn write_entitlements(
     bundle_id: &str,
     out: &Path,
 ) -> Result<Option<PathBuf>> {
-    let requested = plugins::entitlement_entries(plugins)?;
+    let requested = plugins::entitlement_entries(plugins, Platform::Ios)?;
     if requested.is_empty() {
         return Ok(None);
     }
@@ -590,7 +590,7 @@ fn substitute(value: &serde_json::Value, bundle_id: &str) -> serde_json::Value {
 /// it and from then on it is untouched—, so if it already declares the key, its
 /// own stays; but not silently: it says which one was ignored and whose it was.
 fn write_plist(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result<()> {
-    let contributed_keys = plugins::plist_entries(plugins)?;
+    let contributed_keys = plugins::plist_entries(plugins, Platform::Ios)?;
     std::fs::copy(base, destination)?;
     if contributed_keys.is_empty() {
         return Ok(());
@@ -697,10 +697,26 @@ pub fn swift_sources(dir: &Path) -> Result<Vec<String>> {
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
         .filter(|path| path.extension().is_some_and(|e| e == "swift"))
+        .filter(|path| !is_generated_placeholder(path))
         .map(|path| path.to_string_lossy().into_owned())
         .collect();
     found.sort();
     Ok(found)
+}
+
+/// The file name of the plugin registry `an` writes per build.
+pub const GENERATED_PLUGINS: &str = "AnGeneratedPlugins.swift";
+
+/// Whether this is the empty stand-in a shell keeps so it compiles on its own.
+///
+/// The macOS and watchOS shells carry one, because their registries call
+/// `AnGeneratedPlugins.install()` unconditionally and `swiftc -typecheck` over
+/// the shell's sources alone would otherwise fail on a symbol that only exists
+/// at build time — which `scripts/check-accessibility.sh` does, and should keep
+/// being able to do. In a real build the generated file is added instead, and
+/// the two together would be a redeclaration, so the stand-in is dropped here.
+fn is_generated_placeholder(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == GENERATED_PLUGINS)
 }
 
 pub fn launch(package: &Package, device: &str) -> Result<()> {

@@ -251,6 +251,8 @@ enum Command {
 enum PlatformArg {
     Ios,
     Android,
+    Macos,
+    Watchos,
 }
 
 impl From<PlatformArg> for plugins::Platform {
@@ -258,6 +260,8 @@ impl From<PlatformArg> for plugins::Platform {
         match value {
             PlatformArg::Ios => plugins::Platform::Ios,
             PlatformArg::Android => plugins::Platform::Android,
+            PlatformArg::Macos => plugins::Platform::Macos,
+            PlatformArg::Watchos => plugins::Platform::Watchos,
         }
     }
 }
@@ -407,7 +411,7 @@ fn main() -> anyhow::Result<()> {
             // what to look at to know what this host draws.
             let app = workspace.app(Some(app.as_deref().unwrap_or("examples/controls")))?;
             let found = plugins::discover(&workspace, &app)?;
-            macos::reject_plugins(&found)?;
+            macos::require_plugins(&found)?;
             // Before the bundle, before cargo: notarising asks for a keychain
             // profile that either exists or does not, and it is not going to
             // start existing because a compilation ran first.
@@ -421,7 +425,7 @@ fn main() -> anyhow::Result<()> {
             };
             let bundle = build::bundle(&workspace, &app, release, &found)?;
             let package =
-                macos::assemble(&workspace, &bundle, release, None, identity.as_ref())?;
+                macos::assemble(&workspace, &bundle, release, None, &found, identity.as_ref())?;
             if notarize {
                 macos::notarize(&package, identity.as_ref().expect("--notarize implies --sign"))?;
             }
@@ -453,9 +457,9 @@ fn main() -> anyhow::Result<()> {
             // points wide.
             let app = workspace.app(Some(app.as_deref().unwrap_or("examples/hello-watch")))?;
             let found = plugins::discover(&workspace, &app)?;
-            watchos::reject_plugins(&found)?;
+            watchos::require_plugins(&found)?;
             let bundle = build::bundle(&workspace, &app, release, &found)?;
-            let package = watchos::assemble(&workspace, &bundle, release, None)?;
+            let package = watchos::assemble(&workspace, &bundle, release, None, &found)?;
             watchos::launch(&package, &device)
         }
         Command::Android { app, release, no_launch, sign, aab, device } => {
@@ -575,10 +579,10 @@ fn main() -> anyhow::Result<()> {
             // plugin call would be turned down at runtime is not an app worth
             // building.
             if matches!(target, dev::Target::WatchOs { .. }) {
-                watchos::reject_plugins(&found)?;
+                watchos::require_plugins(&found)?;
             }
             if matches!(target, dev::Target::MacOs) {
-                macos::reject_plugins(&found)?;
+                macos::require_plugins(&found)?;
             }
             dev::run(workspace, app, target, port, no_launch, found)
         }

@@ -38,6 +38,10 @@ pub mod measure;
 // the shell. That is what lets `cargo test` exercise it on the Mac, with no
 // watch and no nightly.
 pub mod modules;
+// The plugin postman touches no platform either: it is std, a mailbox and a
+// function pointer the shell installs. Keeping it out of the `cfg` is what lets
+// `cargo test` walk a call all the way out and back with no watch in sight.
+pub mod plugins;
 pub mod snapshot;
 
 #[cfg(target_os = "watchos")]

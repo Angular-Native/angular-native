@@ -62,6 +62,13 @@ echo
 "$ROOT/scripts/check-plugins.sh"
 
 echo
+# The same system on the two hosts that used to refuse it outright. It goes
+# after the one above because it leans on the same example and the same build
+# directory, and it ends by driving a real Mac window: a press on the copy
+# button, `NSPasteboard` written and read back, the answer on screen.
+"$ROOT/scripts/check-plugins-hosts.sh"
+
+echo
 # What is not a plugin: the module every host is supposed to have compiled in.
 "$ROOT/scripts/check-modules.sh"
 

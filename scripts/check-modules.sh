@@ -92,11 +92,21 @@ for platform in $PLATFORMS; do
 done
 echo "  ok   $covered of the $(wc -w <<<"$PLATFORMS" | tr -d ' ') values of NativePlatform are answered by a host"
 
-# 2. And that neither of the two hosts without plugins rejects a module with
-#    nothing but its name.
+# 2. And that no host rejects a module with nothing but its name.
+#
+#    It used to be a constant on the two hosts that loaded no plugins, saying so.
+#    Both load them now, so the note is built per `.app` —it names the plugins
+#    that are in it, which is what tells a typo from a missing dependency— and
+#    what is checked is that the engine is still given one. A rejection that says
+#    only "there is no module called clipboard" sends whoever reads it looking
+#    for a spelling mistake that is not there.
 for crate in an-macos an-watch; do
-  grep -q 'ABSENT_NOTE' "crates/$crate/src/ffi.rs" && r=0 || r=1
+  grep -q 'explain_absent_modules' "crates/$crate/src/ffi.rs" && r=0 || r=1
   check $r "$crate says why a module it does not have is not there"
+  # And that the reason is not the old one. Leaving "does not load plugins yet"
+  # behind in a host that does would be worse than saying nothing.
+  grep -rq 'does not load plugins yet' "crates/$crate/src" && r=1 || r=0
+  check $r "$crate no longer claims it loads no plugins"
 done
 
 # 3. The watch's module, over the real registry: registered under `device`,

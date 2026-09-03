@@ -167,7 +167,8 @@ pub fn run(
                 ios::launch(&package, device)?;
             }
             Target::WatchOs { device } => {
-                let package = watchos::assemble(&workspace, &bundle_path, false, Some(&url))?;
+                let package =
+                    watchos::assemble(&workspace, &bundle_path, false, Some(&url), &plugins)?;
                 watchos::launch(&package, device)?;
             }
             // No `simctl` and no device: `launch` kills whatever instance was
@@ -176,7 +177,7 @@ pub fn run(
             // the new one. See `macos.rs`.
             Target::MacOs => {
                 let package =
-                    macos::assemble(&workspace, &bundle_path, false, Some(&url), None)?;
+                    macos::assemble(&workspace, &bundle_path, false, Some(&url), &plugins, None)?;
                 macos::launch(&package)?;
             }
             Target::Android | Target::Wear { .. } => {

@@ -21,11 +21,20 @@
       "sources": "native/android",
       "register": "dev.angularnative.plugins.BiometricsPlugin",
       "manifest": {
-        "uses-permission": ["android.permission.USE_BIOMETRIC"],
+        "uses-permission": [
+          "android.permission.USE_BIOMETRIC"
+        ],
         "uses-feature": {
           "android.hardware.fingerprint": false
         }
       }
+    },
+    "macos": {
+      "sources": "native/macos",
+      "register": "AnBiometricsPlugin"
+    },
+    "watchos": {
+      "unsupported": "a watch has no biometric sensor, and LocalAuthentication says so in the header: LAPolicyDeviceOwnerAuthenticationWithBiometrics is API_UNAVAILABLE(watchos), and so are biometryNotAvailable, biometryNotEnrolled and biometryLockout. What watchOS does have is the passcode and, from watchOS 9, LAPolicyDeviceOwnerAuthenticationWithWristDetection, which answers 'this watch is on the wrist it was unlocked on' -- a real check, but not a biometric one, and returning success from it under a method called authenticate would be a lie about what was verified. To protect a secret on a watch, use @angular-native/plugin-keychain: its watchOS half stores through the same Keychain Services and can bind an item to the device passcode."
     }
   }
 }
