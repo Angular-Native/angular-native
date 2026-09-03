@@ -62,6 +62,7 @@ public final class AnBuiltinModules {
         INSTANCE.register("files", new AnFiles());
         INSTANCE.register("share", new AnShare());
         INSTANCE.register("network", new AnNetwork());
+        INSTANCE.register("haptics", new AnHaptics());
     }
 
     private void register(String name, AnBuiltinModule module) {

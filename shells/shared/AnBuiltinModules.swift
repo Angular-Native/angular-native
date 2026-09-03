@@ -147,6 +147,7 @@ enum AnBuiltinModules {
         register("files", AnBuiltinFiles())
         register("share", AnBuiltinShare())
         register("network", AnBuiltinNetwork())
+        register("haptics", AnBuiltinHaptics())
     }
 
     private static func register(_ name: String, _ module: AnBuiltinModule) {

@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core'
-import { Files, Network, Share } from '@angular-native/platform'
+import { Files, Haptics, Network, Share } from '@angular-native/platform'
 import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
 
 /**
@@ -59,6 +59,16 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
           (press)="share()">
           <an-text [fontSize]="15" [fontWeight]="'600'" [color]="'#9fb0d4'">share something</an-text>
         </an-view>
+
+        <an-view
+          [style.height]="'44'"
+          [style.alignItems]="'center'"
+          [style.justifyContent]="'center'"
+          [backgroundColor]="'#1e2a4a'"
+          [borderRadius]="10"
+          (press)="tap()">
+          <an-text [fontSize]="15" [fontWeight]="'600'" [color]="'#9fb0d4'">feel a tap</an-text>
+        </an-view>
       </an-view>
     </an-view>
   `
@@ -67,6 +77,7 @@ export class AppComponent {
   private readonly files = inject(Files)
   private readonly sharing = inject(Share)
   private readonly network = inject(Network)
+  private readonly haptics = inject(Haptics)
 
   readonly lines = signal<string[]>([])
 
@@ -95,6 +106,7 @@ export class AppComponent {
     await this.exerciseFiles()
     await this.exerciseShare()
     await this.exerciseNetwork()
+    await this.exerciseHaptics()
   }
 
   /** The picker is not run on startup: it puts something on the screen. */
@@ -195,6 +207,32 @@ export class AppComponent {
     } catch (error) {
       this.say(`network.status: no ${error}`)
     }
+  }
+
+  /**
+   * Nothing is played on startup: a tap somebody did not ask for is rude, and on
+   * a watch it is worse. What is asked is what the device can do, which is the
+   * one question with an interesting answer on four of the seven platforms.
+   */
+  private async exerciseHaptics(): Promise<void> {
+    try {
+      const support = await this.haptics.support()
+      this.say(
+        `haptics.support: ok ${support.available ? 'yes' : 'no'}` +
+          `${support.notification ? ', with notifications' : ', no notifications'}` +
+          `${support.caveat === '' ? '' : ` — ${support.caveat}`}`
+      )
+    } catch (error) {
+      this.say(`haptics.support: no ${error}`)
+    }
+  }
+
+  /** A real tap on the hardware, or the reason there is none. */
+  tap(): void {
+    this.haptics
+      .impact('medium')
+      .then(() => this.say('haptics.impact: ok played'))
+      .catch((error: unknown) => this.say(`haptics.impact: no ${error}`))
   }
 
   /** Opens the system sheet. Cancelling is not a failure and does not throw. */

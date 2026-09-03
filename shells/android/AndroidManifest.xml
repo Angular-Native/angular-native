@@ -31,6 +31,13 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!--
+      What the `haptics` built-in module needs. Install-time as well, and the
+      same arrangement: the module checks for it and answers with this line
+      rather than throwing SecurityException at the first tap.
+    -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!--
       Package visibility. Since Android 11 an app cannot see which other apps
       are installed unless it says what it is looking for, and `resolveActivity`
       answers `null` for everything it cannot see. Without this the `files` and

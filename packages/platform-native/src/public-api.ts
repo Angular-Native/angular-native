@@ -12,6 +12,13 @@ export type {
   FilePickerPlatform,
   PickOptions
 } from './modules/files'
+export { Haptics } from './modules/haptics'
+export type {
+  HapticImpact,
+  HapticNotification,
+  HapticsPlatform,
+  HapticSupport
+} from './modules/haptics'
 export { Network } from './modules/network'
 export type {
   NetworkConnection,
