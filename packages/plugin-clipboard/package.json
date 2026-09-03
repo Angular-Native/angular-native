@@ -17,6 +17,13 @@
     "android": {
       "sources": "native/android",
       "register": "dev.angularnative.plugins.ClipboardPlugin"
+    },
+    "macos": {
+      "sources": "native/macos",
+      "register": "AnClipboardPlugin"
+    },
+    "watchos": {
+      "unsupported": "watchOS has no system pasteboard: UIPasteboard is API_UNAVAILABLE(watchos) and there is nothing standing in for it. A watch shares text by handing it to the paired phone, which is a different feature with a different API, not a clipboard."
     }
   }
 }

@@ -53,9 +53,11 @@ enum Screenshot {
     ///
     /// There are states of an app that do not exist at startup and that are
     /// exactly the ones worth photographing: a video playing, for instance,
-    /// starts when somebody hits play. This presses the system control under the
-    /// point, through its own path —`performClick:`—, not by simulating the
-    /// mouse.
+    /// starts when somebody hits play, and what a clipboard plugin does only
+    /// happens once somebody presses copy. This presses whatever is under the
+    /// point through its own path —`performClick:` for a system control, the
+    /// click recogniser's own action for an `<an-view>` with `(press)`— and not
+    /// by simulating the mouse.
     static var press: CGPoint? {
         guard let raw = ProcessInfo.processInfo.environment["AN_SCREENSHOT_PRESS"] else {
             return nil
@@ -222,24 +224,63 @@ enum Screenshot {
         CGAssociateMouseAndMouseCursorPosition(1)
     }
 
-    /// Presses the system control under the point.
+    /// Presses whatever is under the point.
     ///
-    /// It walks up the parents until it finds an `NSControl` because what sits
-    /// right under the point is usually the cell or the label inside the button,
-    /// not the button. An `<an-view>` with `(press)` does not come through here:
-    /// that one goes through a gesture recogniser, and this only knows about
-    /// controls.
+    /// Two kinds of thing can be pressed and they come in through different
+    /// doors. A system control —an `NSButton`, an `NSSwitch`— is clicked with
+    /// `performClick:`. An `<an-view>` with `(press)` is not a control at all:
+    /// the host hangs an `NSClickGestureRecognizer` on it, and what fires the
+    /// event is that recogniser's action being sent to its target. So the
+    /// recogniser is asked for its own `target` and `action` and they are sent,
+    /// which is the same message AppKit would send after a real click.
+    ///
+    /// Building a synthetic `NSEvent` and posting it would be closer to a real
+    /// mouse and worse in every way that matters here: posting events needs the
+    /// accessibility permission, which is granted by hand and per application,
+    /// and a check that needs somebody to click a box in System Settings is a
+    /// check that does not run.
+    ///
+    /// The parents are walked because what sits right under the point is usually
+    /// the label inside the button and not the button. Both kinds are looked for
+    /// on the way up and the first one found wins, with one exclusion that is
+    /// not a special case so much as the whole reason this used to find nothing:
+    /// **an `NSTextField` does not count as a control here.** The host draws
+    /// every `<an-text>` as one, so the label inside a button is a control that
+    /// sits directly under the point, and `performClick:` on a label does
+    /// nothing at all — silently. That is what made a press on a perfectly good
+    /// `(press)` button look like a press that arrived and changed nothing.
     static func pressControl(in view: NSView) {
         guard let point = press else { return }
         var target = view.hitTest(view.convert(point, to: view.superview))
-        while let current = target, !(current is NSControl) {
+        while let current = target {
+            if let recognizer = clickRecognizer(on: current), let action = recognizer.action {
+                // `NSApp.sendAction` and not `perform(_:with:)`: the action is a
+                // selector on an object this shell knows nothing about —it lives
+                // in the Rust host— and `sendAction` is the supported way to send
+                // one without having the type to cast to.
+                let sent = NSApp.sendAction(action, to: recognizer.target, from: recognizer)
+                if !sent {
+                    NSLog("angular-native: the (press) at %@ had a recogniser nobody answered",
+                          "\(point)")
+                }
+                return
+            }
+            if let control = current as? NSControl, !(control is NSTextField) {
+                control.performClick(nil)
+                return
+            }
             target = current.superview
         }
-        guard let control = target as? NSControl else {
-            NSLog("angular-native: there is no system control at %@", "\(point)")
-            return
-        }
-        control.performClick(nil)
+        NSLog("angular-native: there is nothing pressable at %@", "\(point)")
+    }
+
+    /// The click recogniser hanging off a view, if it has one.
+    ///
+    /// `NSPressGestureRecognizer` —a long press— is a subclass of nothing that
+    /// gets caught here by accident: only the click one is asked for, so a view
+    /// that has both is pressed and not long-pressed.
+    private static func clickRecognizer(on view: NSView) -> NSGestureRecognizer? {
+        view.gestureRecognizers.first { $0 is NSClickGestureRecognizer }
     }
 
     /// Sends a swipe to the view under the point.

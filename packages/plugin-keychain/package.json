@@ -17,17 +17,39 @@
         "NSFaceIDUsageDescription": "To check it is you before showing what is stored."
       },
       "entitlements": {
-        "keychain-access-groups": ["$(BUNDLE_ID)"]
+        "keychain-access-groups": [
+          "$(BUNDLE_ID)"
+        ]
       }
     },
     "android": {
       "sources": "native/android",
       "register": "dev.angularnative.plugins.KeychainPlugin",
       "manifest": {
-        "uses-permission": ["android.permission.USE_BIOMETRIC"],
+        "uses-permission": [
+          "android.permission.USE_BIOMETRIC"
+        ],
         "uses-feature": {
           "android.hardware.fingerprint": false
         }
+      }
+    },
+    "macos": {
+      "sources": "native/macos",
+      "register": "AnKeychainPlugin",
+      "entitlements": {
+        "keychain-access-groups": [
+          "$(BUNDLE_ID)"
+        ]
+      }
+    },
+    "watchos": {
+      "sources": "native/watchos",
+      "register": "AnKeychainPlugin",
+      "entitlements": {
+        "keychain-access-groups": [
+          "$(BUNDLE_ID)"
+        ]
       }
     }
   }
