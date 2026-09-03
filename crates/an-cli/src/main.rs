@@ -11,6 +11,7 @@ mod init;
 mod ios;
 mod macos;
 mod plugins;
+mod signing;
 mod watchos;
 mod workspace;
 
