@@ -1,44 +1,44 @@
 #!/usr/bin/env bash
-# El mando del Apple TV, desde la línea de órdenes.
+# The Apple TV remote, from the command line.
 #
 #   ./scripts/tv-remote.sh down down select
 #
-# `xcrun simctl` no tiene ningún verbo para el mando: tiene `io ... screenshot`,
-# `io ... recordVideo`, `ui`, `spawn` y `push`, y ninguno manda una pulsación;
-# el binario tampoco esconde nada parecido. Lo que sí hay es la entrada de
-# teclado del propio Simulator, que el simulador de tvOS traduce a movimientos
-# del foco y al botón central. Así que esto es `osascript` mandando códigos de
-# tecla, y no pretende ser otra cosa.
+# `xcrun simctl` has no verb for the remote: it has `io ... screenshot`,
+# `io ... recordVideo`, `ui`, `spawn` and `push`, and none of them sends a press;
+# the binary hides nothing like it either. What there is is Simulator's own
+# keyboard input, which the tvOS simulator translates into focus movements and
+# the centre button. So this is `osascript` sending key codes, and it does not
+# pretend to be anything else.
 #
-# Tres condiciones que no se pueden esquivar, y por eso se comprueban antes de
-# mandar nada: si fallan, la pulsación se iría a otro sitio y aquí no se
-# enteraría nadie.
+# Three conditions that cannot be dodged, and that is why they are checked before
+# sending anything: if they fail, the press would go somewhere else and nobody
+# here would find out.
 #
-#   1. La pantalla del Mac no puede estar bloqueada. Con la sesión bloqueada
-#      ninguna aplicación se puede traer al frente.
-#   2. Simulator tiene que acabar en primer plano. Mientras esto corre, el
-#      teclado es suyo.
-#   3. La ventana del Apple TV tiene que ser la que tiene el foco *dentro* de
-#      Simulator. Con un iPhone abierto a la vez, las teclas se las lleva la
-#      ventana que estuviera delante, que es un simulador distinto, y en el del
-#      Apple TV no pasa nada de nada.
+#   1. The Mac's screen cannot be locked. With the session locked no application
+#      can be brought to the front.
+#   2. Simulator has to end up in the foreground. While this runs, the keyboard
+#      is its.
+#   3. The Apple TV window has to be the one with the focus *inside* Simulator.
+#      With an iPhone open at the same time, the keys are taken by whichever
+#      window was in front, which is a different simulator, and in the Apple TV's
+#      nothing at all happens.
 #
-# `AN_TV_WINDOW` cambia con qué se busca esa ventana; por defecto, "tvOS", que
-# es lo que Simulator pone en el título de todas las de esa familia.
+# `AN_TV_WINDOW` changes what that window is searched for by; by default, "tvOS",
+# which is what Simulator puts in the title of every window of that family.
 set -euo pipefail
 
-VENTANA="${AN_TV_WINDOW:-tvOS}"
+WINDOW="${AN_TV_WINDOW:-tvOS}"
 
 if [ "$#" -eq 0 ]; then
-  echo "uso: $0 <tecla>..." >&2
-  echo "     teclas: up down left right select menu" >&2
+  echo "usage: $0 <key>..." >&2
+  echo "       keys: up down left right select menu" >&2
   exit 2
 fi
 
-# Códigos de tecla de macOS. Los de dirección son los que el simulador de tvOS
-# convierte en movimientos del foco; el retorno es el botón central y el escape
-# es el botón de menú, que es el «atrás» del mando.
-tecla() {
+# macOS key codes. The arrow ones are what the tvOS simulator turns into focus
+# movements; return is the centre button and escape is the menu button, which is
+# the remote's "back".
+key() {
   case "$1" in
     up) echo 126 ;;
     down) echo 125 ;;
@@ -47,64 +47,64 @@ tecla() {
     select | ok | enter) echo 36 ;;
     menu | back) echo 53 ;;
     *)
-      echo "no conozco la tecla \"$1\"; hay up, down, left, right, select y menu" >&2
+      echo "I do not know the key \"$1\"; there are up, down, left, right, select and menu" >&2
       exit 2
       ;;
   esac
 }
 
-# Se validan todas antes de mandar ninguna: media secuencia mandada y luego un
-# error deja el foco a mitad de camino y la captura siguiente miente.
-for nombre in "$@"; do
-  tecla "$nombre" >/dev/null
+# They are all validated before any of them is sent: half a sequence sent and
+# then an error leaves the focus halfway and the next screenshot lies.
+for name in "$@"; do
+  key "$name" >/dev/null
 done
 
 if ioreg -n Root -d1 -a 2>/dev/null | grep -q "CGSSessionScreenIsLocked"; then
-  echo "la pantalla del Mac está bloqueada: ninguna tecla llegaría al simulador." >&2
-  echo "Desbloquéala y vuelve a intentarlo." >&2
+  echo "the Mac's screen is locked: no key would reach the simulator." >&2
+  echo "Unlock it and try again." >&2
   exit 1
 fi
 
 if ! xcrun simctl list devices booted 2>/dev/null | grep -q "tvOS" ; then
-  echo "no hay ningún simulador de tvOS arrancado." >&2
-  echo "Arranca la app con: cargo an tvos" >&2
+  echo "there is no tvOS simulator running." >&2
+  echo "Start the app with: cargo an tvos" >&2
   exit 1
 fi
 
 osascript -e 'tell application "Simulator" to activate' >/dev/null
-frente=""
+front=""
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-  frente="$(osascript -e 'tell application "System Events" to return name of first application process whose frontmost is true')"
-  [ "$frente" = "Simulator" ] && break
+  front="$(osascript -e 'tell application "System Events" to return name of first application process whose frontmost is true')"
+  [ "$front" = "Simulator" ] && break
   sleep 0.3
 done
-if [ "$frente" != "Simulator" ]; then
-  echo "Simulator no llegó a primer plano (delante está \"$frente\")." >&2
-  echo "Sin eso las teclas irían a esa otra aplicación, así que no se manda ninguna." >&2
+if [ "$front" != "Simulator" ]; then
+  echo "Simulator did not reach the foreground (\"$front\" is in front)." >&2
+  echo "Without that the keys would go to that other application, so none is sent." >&2
   exit 1
 fi
 
-# La ventana del Apple TV, delante de las demás ventanas de Simulator.
+# The Apple TV window, in front of Simulator's other windows.
 if ! osascript -e "tell application \"System Events\" to tell application process \"Simulator\" \
-    to tell (first window whose title contains \"$VENTANA\") to perform action \"AXRaise\"" \
+    to tell (first window whose title contains \"$WINDOW\") to perform action \"AXRaise\"" \
     >/dev/null 2>&1; then
-  echo "Simulator no tiene ninguna ventana cuyo título contenga \"$VENTANA\"." >&2
+  echo "Simulator has no window whose title contains \"$WINDOW\"." >&2
   exit 1
 fi
 sleep 0.5
-enfocada="$(osascript -e 'tell application "System Events" to tell application process "Simulator" to return title of (first window whose focused is true)' 2>/dev/null || echo '')"
-case "$enfocada" in
-  *"$VENTANA"*) ;;
+focused="$(osascript -e 'tell application "System Events" to tell application process "Simulator" to return title of (first window whose focused is true)' 2>/dev/null || echo '')"
+case "$focused" in
+  *"$WINDOW"*) ;;
   *)
-    echo "la ventana con el foco dentro de Simulator es \"$enfocada\", no una de $VENTANA." >&2
-    echo "Las teclas se las llevaría ese otro simulador, así que no se manda ninguna." >&2
+    echo "the focused window inside Simulator is \"$focused\", not one of $WINDOW." >&2
+    echo "The keys would be taken by that other simulator, so none is sent." >&2
     exit 1
     ;;
 esac
 
-for nombre in "$@"; do
-  codigo="$(tecla "$nombre")"
-  osascript -e "tell application \"System Events\" to key code $codigo" >/dev/null
-  # El motor de foco anima el salto; encadenar sin esperar se come pulsaciones.
+for name in "$@"; do
+  code="$(key "$name")"
+  osascript -e "tell application \"System Events\" to key code $code" >/dev/null
+  # The focus engine animates the jump; chaining without waiting swallows presses.
   sleep 0.6
 done

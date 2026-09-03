@@ -3,8 +3,8 @@
     "target": "es2022",
     "module": "esnext",
     "moduleResolution": "bundler",
-    // `dom` entra solo por los tipos: los .d.ts de Angular referencian Document,
-    // Element y Event. En tiempo de ejecución no existe ninguno de los tres.
+    // `dom` is in for the types alone: Angular's .d.ts files reference Document,
+    // Element and Event. At runtime none of the three exists.
     "lib": ["es2022", "dom"],
     "strict": true,
     "skipLibCheck": true,
