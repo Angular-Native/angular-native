@@ -2,16 +2,17 @@ import { ChangeDetectionStrategy, Component, computed, signal } from '@angular/c
 import { NATIVE_PRIMITIVES, type NativeCrownEvent } from '@angular-native/primitives'
 
 /**
- * Lo que el reloj sabe pintar, en tres pantallas.
+ * What the watch knows how to paint, across three screens.
  *
- * Van en un `<an-stack-view>` y no una debajo de otra porque en 208 puntos de
- * ancho no cabe todo, y porque así se ve además la pila: solo se pinta la
- * pantalla de arriba, y entra y sale deslizándose.
+ * They go inside an `<an-stack-view>` rather than one below the other because
+ * everything does not fit in 208 points of width, and because that way the stack
+ * itself can be seen too: only the top screen is painted, and it slides in and
+ * out.
  *
- * Todos los controles son los del sistema. Un `<an-switch>` es un `Toggle`, un
- * `<an-select>` es la rueda que gira con la corona, y un `<an-date-picker>` abre
- * el selector de esferas del propio watchOS: no hay ni un dibujo que se les
- * parezca.
+ * Every control is a system one. An `<an-switch>` is a `Toggle`, an
+ * `<an-select>` is the wheel that turns with the crown, and an
+ * `<an-date-picker>` opens watchOS's own dial picker: there is not one drawing
+ * that merely looks like them.
  */
 @Component({
   selector: 'app-root',
@@ -22,9 +23,9 @@ import { NATIVE_PRIMITIVES, type NativeCrownEvent } from '@angular-native/primit
       [style.width]="'100%'"
       [style.flexGrow]="'1'"
       [backgroundColor]="'#0b1020'"
-      [transition]="sentido()">
+      [transition]="direction()">
 
-      @if (pagina() === 0) {
+      @if (page() === 0) {
         <an-view [style.width]="'100%'" [style.height]="'100%'">
           <an-scroll-view [style.width]="'100%'" [style.flexGrow]="'1'">
             <an-view
@@ -34,35 +35,35 @@ import { NATIVE_PRIMITIVES, type NativeCrownEvent } from '@angular-native/primit
               [style.gap]="'10'"
               [style.width]="'100%'">
 
-              <an-text [fontSize]="17" [fontWeight]="'bold'" [color]="'#f4f7ff'">controles</an-text>
+              <an-text [fontSize]="17" [fontWeight]="'bold'" [color]="'#f4f7ff'">controls</an-text>
 
               <!--
-                El rótulo y el control son dos nodos, no uno: quien reparte el
-                ancho es taffy, y un control con rótulo dentro sería SwiftUI
-                decidiendo el layout por su cuenta.
+                The label and the control are two nodes, not one: what shares out
+                the width is taffy, and a control with a label inside it would be
+                SwiftUI deciding the layout on its own.
               -->
               <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.width]="'100%'">
-                <an-text [style.flexGrow]="'1'" [fontSize]="14" [color]="'#9fb0d4'">aviso</an-text>
-                <an-switch [style.width]="'60'" [(on)]="aviso" [color]="'#6ee7b7'"></an-switch>
+                <an-text [style.flexGrow]="'1'" [fontSize]="14" [color]="'#9fb0d4'">alerts</an-text>
+                <an-switch [style.width]="'60'" [(on)]="alerts" [color]="'#6ee7b7'"></an-switch>
               </an-view>
 
-              <an-text [fontSize]="14" [color]="'#9fb0d4'">brillo {{ brillo().toFixed(0) }}%</an-text>
+              <an-text [fontSize]="14" [color]="'#9fb0d4'">brightness {{ brightness().toFixed(0) }}%</an-text>
               <an-slider
                 [style.width]="'100%'"
-                [(value)]="brillo"
+                [(value)]="brightness"
                 [minimumValue]="0"
                 [maximumValue]="100"
                 [color]="'#6ee7b7'"></an-slider>
-              <an-progress-bar [style.width]="'100%'" [progress]="brillo() / 100" [color]="'#6ee7b7'"></an-progress-bar>
+              <an-progress-bar [style.width]="'100%'" [progress]="brightness() / 100" [color]="'#6ee7b7'"></an-progress-bar>
 
-              <an-text [fontSize]="14" [color]="'#9fb0d4'">tandas {{ tandas() }}</an-text>
+              <an-text [fontSize]="14" [color]="'#9fb0d4'">sets {{ sets() }}</an-text>
               <an-stepper
                 [style.width]="'100%'"
-                [value]="tandas()"
+                [value]="sets()"
                 [minimumValue]="0"
                 [maximumValue]="12"
                 [step]="1"
-                (change)="tandas.set($event.value)"></an-stepper>
+                (change)="sets.set($event.value)"></an-stepper>
 
               <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'10'" [style.width]="'100%'">
                 <an-activity-indicator [color]="'#f59e0b'"></an-activity-indicator>
@@ -72,17 +73,17 @@ import { NATIVE_PRIMITIVES, type NativeCrownEvent } from '@angular-native/primit
               </an-view>
 
               <an-button
-                [title]="'entrada →'"
+                [title]="'input →'"
                 [color]="'#0b1020'"
                 [backgroundColor]="'#6ee7b7'"
                 [borderRadius]="10"
-                (press)="ir(1)"></an-button>
+                (press)="go(1)"></an-button>
             </an-view>
           </an-scroll-view>
         </an-view>
       }
 
-      @if (pagina() === 1) {
+      @if (page() === 1) {
         <an-view [style.width]="'100%'" [style.height]="'100%'">
           <an-scroll-view [style.width]="'100%'" [style.flexGrow]="'1'">
             <an-view
@@ -92,59 +93,59 @@ import { NATIVE_PRIMITIVES, type NativeCrownEvent } from '@angular-native/primit
               [style.gap]="'10'"
               [style.width]="'100%'">
 
-              <an-text [fontSize]="17" [fontWeight]="'bold'" [color]="'#f4f7ff'">entrada</an-text>
+              <an-text [fontSize]="17" [fontWeight]="'bold'" [color]="'#f4f7ff'">input</an-text>
 
               <!--
-                En el reloj un campo de texto no se escribe en su sitio: al
-                tocarlo el sistema abre su pantalla —dictado, garabateo o
-                teclado— y devuelve el resultado.
+                On the watch a text field is not typed into where it sits: on
+                being tapped the system opens its own screen —dictation,
+                scribble or keyboard— and hands the result back.
               -->
               <!--
-                El alto va a mano y no lo pone el texto: en el reloj el campo
-                trae su propio contenedor, más alto que una línea, y sin esto
-                se solaparía con lo de debajo. El host lo dice por el registro
-                si se olvida.
+                The height is set by hand and not by the text: on the watch the
+                field brings a container of its own, taller than one line, and
+                without this it would overlap what is below. The host says so in
+                the log if it is forgotten.
               -->
               <an-text-input
                 [style.width]="'100%'"
                 [style.height]="'44'"
-                [placeholder]="'nombre'"
-                [(value)]="nombre"
+                [placeholder]="'name'"
+                [(value)]="name"
                 [color]="'#f4f7ff'"
                 [fontSize]="15"></an-text-input>
-              <an-text [fontSize]="12" [color]="'#64748b'">hola, {{ nombre() || 'nadie' }}</an-text>
+              <an-text [fontSize]="12" [color]="'#64748b'">hello, {{ name() || 'nobody' }}</an-text>
 
-              <an-text [fontSize]="14" [color]="'#9fb0d4'">ritmo: {{ ritmos[ritmo()] }}</an-text>
+              <an-text [fontSize]="14" [color]="'#9fb0d4'">pace: {{ paces[pace()] }}</an-text>
               <an-select
                 [style.width]="'100%'"
-                [items]="ritmos"
-                [selectedIndex]="ritmo()"
-                (change)="ritmo.set($event.index)"></an-select>
+                [items]="paces"
+                [selectedIndex]="pace()"
+                (change)="pace.set($event.index)"></an-select>
 
-              <an-text [fontSize]="14" [color]="'#9fb0d4'">a las</an-text>
+              <an-text [fontSize]="14" [color]="'#9fb0d4'">at</an-text>
               <an-date-picker
                 [style.width]="'100%'"
                 [mode]="'time'"
-                [value]="hora()"
-                (change)="hora.set($event.value)"></an-date-picker>
+                [value]="time()"
+                (change)="time.set($event.value)"></an-date-picker>
 
               <an-button
-                [title]="'corona →'"
+                [title]="'crown →'"
                 [color]="'#0b1020'"
                 [backgroundColor]="'#60a5fa'"
                 [borderRadius]="10"
-                (press)="ir(2)"></an-button>
+                (press)="go(2)"></an-button>
             </an-view>
           </an-scroll-view>
         </an-view>
       }
 
-      @if (pagina() === 2) {
+      @if (page() === 2) {
         <!--
-          Esta pantalla no lleva an-scroll-view a propósito. En el reloj la
-          corona la tiene quien tiene el foco, y un ScrollView se la queda hasta
-          que se toca otra cosa: sin él, la caja de abajo la coge sola al
-          aparecer.
+          This screen carries no an-scroll-view on purpose. On the watch the
+          crown belongs to whoever has the focus, and a ScrollView keeps it until
+          something else is touched: without one, the box below takes it on its
+          own as soon as it appears.
         -->
         <an-view [style.width]="'100%'" [style.height]="'100%'">
             <an-view
@@ -153,12 +154,13 @@ import { NATIVE_PRIMITIVES, type NativeCrownEvent } from '@angular-native/primit
               [style.gap]="'8'"
               [style.width]="'100%'">
 
-              <an-text [fontSize]="17" [fontWeight]="'bold'" [color]="'#f4f7ff'">corona</an-text>
+              <an-text [fontSize]="17" [fontWeight]="'bold'" [color]="'#f4f7ff'">crown</an-text>
 
               <!--
-                El (swipeLeft) y el (longPress) van sobre la misma caja que la
-                corona para que se vea que conviven: la corona va a la vista
-                que tiene el foco y los gestos al dedo, y no se estorban.
+                The (swipeLeft) and the (longPress) go on the same box as the
+                crown so it can be seen that they coexist: the crown goes to the
+                view that has the focus and the gestures to the finger, and they
+                do not get in each other's way.
               -->
               <an-view
                 [style.width]="'100%'"
@@ -167,63 +169,63 @@ import { NATIVE_PRIMITIVES, type NativeCrownEvent } from '@angular-native/primit
                 [style.justifyContent]="'center'"
                 [borderRadius]="12"
                 [backgroundColor]="'#152036'"
-                (crown)="gira($event)"
-                (longPress)="aCero()"
-                (swipeLeft)="ir(1)">
-                <an-text [fontSize]="26" [fontWeight]="'bold'" [color]="'#f59e0b'">{{ pasos() }}</an-text>
-                <an-text [fontSize]="11" [color]="'#64748b'">gira la corona</an-text>
+                (crown)="turn($event)"
+                (longPress)="reset()"
+                (swipeLeft)="go(1)">
+                <an-text [fontSize]="26" [fontWeight]="'bold'" [color]="'#f59e0b'">{{ steps() }}</an-text>
+                <an-text [fontSize]="11" [color]="'#64748b'">turn the crown</an-text>
               </an-view>
               <an-text [fontSize]="11" [color]="'#64748b'">
-                velocidad {{ velocidad().toFixed(2) }} · mantén pulsado para poner a cero
+                speed {{ speed().toFixed(2) }} · long press to reset
               </an-text>
 
               <an-button
-                [title]="'avisar'"
+                [title]="'alert'"
                 [color]="'#0b1020'"
                 [backgroundColor]="'#f59e0b'"
                 [borderRadius]="10"
-                (press)="dialogo.set(true)"></an-button>
+                (press)="dialog.set(true)"></an-button>
 
               <an-button
-                [title]="'detalle'"
+                [title]="'detail'"
                 [color]="'#f4f7ff'"
                 [backgroundColor]="'#2b1e4a'"
                 [borderRadius]="10"
-                (press)="hoja.set(true)"></an-button>
+                (press)="sheet.set(true)"></an-button>
 
               <an-button
-                [title]="'← controles'"
+                [title]="'← controls'"
                 [color]="'#9fb0d4'"
                 [backgroundColor]="'#152036'"
                 [borderRadius]="10"
-                (press)="ir(0)"></an-button>
+                (press)="go(0)"></an-button>
             </an-view>
         </an-view>
       }
     </an-stack-view>
 
     <!--
-      El diálogo y la hoja no ocupan sitio: los presenta el sistema encima de
-      todo. Por eso pueden estar aquí, fuera de la pila, y da igual qué página
-      se esté viendo.
+      The dialog and the sheet take up no room: the system presents them over
+      everything. That is why they can live here, outside the stack, and it does
+      not matter which page is being looked at.
     -->
     <an-alert
-      [visible]="dialogo()"
-      [title]="'batería'"
-      [message]="'quedan ' + brillo().toFixed(0) + ' por ciento'"
-      [buttons]="respuestas"
-      (select)="responde($event)"></an-alert>
+      [visible]="dialog()"
+      [title]="'battery'"
+      [message]="brightness().toFixed(0) + ' per cent left'"
+      [buttons]="answers"
+      (select)="answer($event)"></an-alert>
 
     <!--
-      Absoluto y a pantalla completa. Un an-modal es un nodo normal de cara al
-      layout, así que si se deja en el flujo se come su trozo de la columna
-      —en un reloj, la mitad de la pantalla— aunque no esté visible. El marco
-      que se le dé aquí es además el tamaño con el que taffy coloca lo de
-      dentro, y una hoja del reloj ocupa la pantalla entera.
+      Absolute and full screen. An an-modal is an ordinary node as far as the
+      layout is concerned, so if it is left in the flow it eats its share of the
+      column —on a watch, half the screen— even while it is not visible. The
+      frame given to it here is also the size taffy lays its contents out with,
+      and a watch sheet takes up the whole screen.
     -->
     <!--
-      El paddingTop de dentro es 56 y no 40: el botón de cerrar de una hoja lo
-      pinta el sistema arriba a la izquierda, y hay que dejarle su sitio.
+      The paddingTop inside is 56 and not 40: the close button of a sheet is
+      painted by the system at the top left, and room has to be left for it.
     -->
     <an-modal
       [style.position]="'absolute'"
@@ -231,9 +233,9 @@ import { NATIVE_PRIMITIVES, type NativeCrownEvent } from '@angular-native/primit
       [style.left]="'0'"
       [style.width]="'100%'"
       [style.height]="'100%'"
-      [visible]="hoja()"
+      [visible]="sheet()"
       [presentation]="'sheet'"
-      (dismiss)="hoja.set(false)">
+      (dismiss)="sheet.set(false)">
       <an-view
         [style.width]="'100%'"
         [style.height]="'100%'"
@@ -241,80 +243,80 @@ import { NATIVE_PRIMITIVES, type NativeCrownEvent } from '@angular-native/primit
         [style.paddingHorizontal]="'12'"
         [style.gap]="'8'"
         [backgroundColor]="'#101827'">
-        <an-text [fontSize]="16" [fontWeight]="'bold'" [color]="'#f4f7ff'">detalle</an-text>
+        <an-text [fontSize]="16" [fontWeight]="'bold'" [color]="'#f4f7ff'">detail</an-text>
         <an-text [fontSize]="13" [color]="'#9fb0d4'">
-          Esto es una hoja del sistema, no una capa dibujada encima: se baja con el dedo.
+          This is a system sheet, not a layer drawn on top: it is pulled down with a finger.
         </an-text>
-        <an-text [fontSize]="12" [color]="'#64748b'">última respuesta: {{ respuesta() }}</an-text>
+        <an-text [fontSize]="12" [color]="'#64748b'">last answer: {{ lastAnswer() }}</an-text>
         <an-button
-          [title]="'cerrar'"
+          [title]="'close'"
           [color]="'#0b1020'"
           [backgroundColor]="'#6ee7b7'"
           [borderRadius]="10"
-          (press)="hoja.set(false)"></an-button>
+          (press)="sheet.set(false)"></an-button>
       </an-view>
     </an-modal>
   `
 })
 export class AppComponent {
-  readonly pagina = signal(0)
-  readonly sentido = signal<'push' | 'pop'>('push')
+  readonly page = signal(0)
+  readonly direction = signal<'push' | 'pop'>('push')
 
-  readonly aviso = signal(true)
-  readonly brillo = signal(40)
-  readonly tandas = signal(3)
+  readonly alerts = signal(true)
+  readonly brightness = signal(40)
+  readonly sets = signal(3)
 
-  readonly nombre = signal('')
-  readonly ritmos = ['suave', 'normal', 'fuerte']
-  readonly ritmo = signal(1)
-  readonly hora = signal(Date.now())
+  readonly name = signal('')
+  readonly paces = ['easy', 'normal', 'hard']
+  readonly pace = signal(1)
+  readonly time = signal(Date.now())
 
   /**
-   * Pasos que lleva la corona.
+   * How many steps the crown has turned.
    *
-   * El acumulado se guarda con decimales y solo se redondea al enseñarlo: si se
-   * redondeara al sumar, media muesca se perdería en cada aviso y girar despacio
-   * no movería el número nunca.
+   * The running total is kept with decimals and only rounded when shown: if it
+   * were rounded on adding, half a detent would be lost on every event and
+   * turning slowly would never move the number.
    */
-  private giro = 0
-  readonly pasos = signal(0)
-  readonly velocidad = signal(0)
+  private turned = 0
+  readonly steps = signal(0)
+  readonly speed = signal(0)
 
-  readonly dialogo = signal(false)
-  readonly hoja = signal(false)
-  readonly respuestas = ['vale', 'ahora no']
-  /** Posición del botón pulsado en el diálogo; -1 mientras no se ha pulsado. */
-  readonly elegido = signal(-1)
-  readonly respuesta = computed(() =>
-    this.elegido() < 0 ? 'ninguna' : this.respuestas[this.elegido()]
+  readonly dialog = signal(false)
+  readonly sheet = signal(false)
+  readonly answers = ['ok', 'not now']
+  /** Index of the button pressed in the dialog; -1 while none has been. */
+  readonly chosen = signal(-1)
+  readonly lastAnswer = computed(() =>
+    this.chosen() < 0 ? 'none' : this.answers[this.chosen()]
   )
 
   /**
-   * Un aviso de la corona.
+   * One crown event.
    *
-   * Llega `delta` —cuánto ha girado desde el aviso anterior— y no solo el
-   * acumulado, que es lo que casi siempre se quiere: sumar el paso a lo que ya
-   * había sin tener que acordarse de dónde estaba.
+   * It carries `delta` —how far it has turned since the previous event— and not
+   * only the running total, which is what is almost always wanted: adding the
+   * step to what was already there without having to remember where it was.
    */
-  gira(evento: NativeCrownEvent): void {
-    this.giro = Math.max(0, this.giro + evento.delta)
-    this.pasos.set(Math.round(this.giro))
-    this.velocidad.set(evento.velocity)
+  turn(event: NativeCrownEvent): void {
+    this.turned = Math.max(0, this.turned + event.delta)
+    this.steps.set(Math.round(this.turned))
+    this.speed.set(event.velocity)
   }
 
-  aCero(): void {
-    this.giro = 0
-    this.pasos.set(0)
+  reset(): void {
+    this.turned = 0
+    this.steps.set(0)
   }
 
-  /** El botón de un `<an-alert>` llega como su posición en la lista. */
-  responde(posicion: number): void {
-    this.elegido.set(posicion)
-    this.dialogo.set(false)
+  /** The button of an `<an-alert>` arrives as its index in the list. */
+  answer(index: number): void {
+    this.chosen.set(index)
+    this.dialog.set(false)
   }
 
-  ir(destino: number): void {
-    this.sentido.set(destino > this.pagina() ? 'push' : 'pop')
-    this.pagina.set(destino)
+  go(target: number): void {
+    this.direction.set(target > this.page() ? 'push' : 'pop')
+    this.page.set(target)
   }
 }

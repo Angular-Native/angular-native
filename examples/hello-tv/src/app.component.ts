@@ -2,29 +2,30 @@ import { ChangeDetectionStrategy, Component, signal } from '@angular/core'
 import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
 
 /**
- * La misma clase de componente que corre en el teléfono, con las medidas y el
- * modelo de interacción de una tele.
+ * The same kind of component that runs on the phone, with the measurements and
+ * the interaction model of a television.
  *
- * Tres cosas que no son cosméticas y que esta pantalla enseña a propósito:
+ * Three things that are not cosmetic and that this screen shows on purpose:
  *
- * 1. **No hay toques.** Nada de lo que hay aquí se toca: el mando mueve el
- *    foco de una vista a otra y el botón central pulsa la que esté enfocada.
- *    Una vista que no puede recibir el foco no se puede pulsar, así que un
- *    `(press)` sobre algo que no sea `an-view` o un control del sistema no se
- *    dispara nunca. Ver `docs/tvos.md`.
+ * 1. **There are no taps.** Nothing here is touched: the remote moves the focus
+ *    from one view to another and the centre button presses whichever is
+ *    focused. A view that cannot take the focus cannot be pressed, so a
+ *    `(press)` on anything that is not an `an-view` or a system control never
+ *    fires. See `docs/tvos.md`.
  *
- * 2. **Los márgenes son de tele.** Los bordes de un televisor se recortan
- *    —overscan—, y Apple pide dejar 90 puntos a los lados y 60 arriba y abajo.
- *    El viewport son 1920x1080 puntos, no los 393 de un iPhone: un `fontSize`
- *    de 28 aquí no se lee desde el sofá.
+ * 2. **The margins are television ones.** The edges of a TV set are cropped
+ *    —overscan—, and Apple asks for 90 points left and right and 60 top and
+ *    bottom. The viewport is 1920x1080 points, not an iPhone's 393: a `fontSize`
+ *    of 28 here cannot be read from the sofa.
  *
- * 3. **El resalte del foco lo pinta cada control, no el sistema.** Los dos
- *    `an-button` son `UIButton` y se levantan y se ponen blancos solos al
- *    enfocarse, porque eso lo dibuja UIKit: por eso hay dos, y no uno. Mover
- *    el foco entre ellos se ve. El `an-view` de abajo es enfocable —el host lo
- *    crea como `AnFocusableView`— y pulsable, pero no se resalta: tvOS no
- *    tiene `UIFocusEffect`, y aquí no se dibuja ninguno a mano. Que el foco
- *    llegó se ve en su contador al pulsar el botón central.
+ * 3. **The focus highlight is painted by each control, not by the system.** The
+ *    two `an-button`s are `UIButton`s and lift and turn white on their own when
+ *    focused, because UIKit draws that: which is why there are two and not one.
+ *    Moving the focus between them is visible. The `an-view` below is focusable
+ *    —the host creates it as `AnFocusableView`— and pressable, but it is not
+ *    highlighted: tvOS has no `UIFocusEffect`, and none is drawn here by hand.
+ *    That the focus got there shows in its counter when the centre button is
+ *    pressed.
  */
 @Component({
   selector: 'app-root',
@@ -42,75 +43,76 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
       <an-text [fontSize]="76" [fontWeight]="'bold'" [color]="'#f4f7ff'">angular-native</an-text>
 
       <an-text [fontSize]="30" [color]="'#9fb0d4'">
-        Angular con señales, en QuickJS, con el layout de taffy, sobre UIView de
-        verdad. El mismo host que el teléfono; lo que cambia es que aquí se
-        navega con el mando.
+        Angular with signals, on QuickJS, with taffy's layout, over real UIViews.
+        The same host as the phone; what changes is that here you navigate with
+        the remote.
       </an-text>
 
       <!--
-        Dos botones del sistema, uno debajo del otro. Son UIButton, así que
-        tvOS ya sabe enfocarlos y es él quien los levanta y los pone blancos al
-        llegarles el foco. Están para que mover el foco con el mando se vea en
-        una captura sin dibujar nada.
+        Two system buttons, one below the other. They are UIButtons, so tvOS
+        already knows how to focus them and it is tvOS that lifts them and turns
+        them white when the focus arrives. They are here so that moving the focus
+        with the remote shows in a screenshot without drawing anything.
       -->
       <an-button
-        [title]="'arriba — pulsado ' + arriba() + ' veces'"
+        [title]="'top — pressed ' + top() + ' times'"
         [fontSize]="34"
         [color]="'#0b1020'"
         [backgroundColor]="'#6ee7b7'"
         [borderRadius]="16"
         [style.width]="'760'"
         [style.height]="'88'"
-        (press)="arriba.set(arriba() + 1)"></an-button>
+        (press)="top.set(top() + 1)"></an-button>
 
       <an-button
-        [title]="'abajo — pulsado ' + abajo() + ' veces'"
+        [title]="'bottom — pressed ' + bottom() + ' times'"
         [fontSize]="34"
         [color]="'#0b1020'"
         [backgroundColor]="'#fca5a5'"
         [borderRadius]="16"
         [style.width]="'760'"
         [style.height]="'88'"
-        (press)="abajo.set(abajo() + 1)"></an-button>
+        (press)="bottom.set(bottom() + 1)"></an-button>
 
       <!--
-        Una vista pelada con (press). En iOS esto es un UIView con un
-        UITapGestureRecognizer y ya está. En tvOS haría falta que además
-        respondiera que sí a canBecomeFocused, y una UIView responde que no:
-        el host la crea como AnFocusableView para que el mando pueda pararse
-        aquí. Sin eso, este rectángulo sería inalcanzable.
+        A bare view with (press). On iOS this is a UIView with a
+        UITapGestureRecognizer and that is that. On tvOS it would also have to
+        answer yes to canBecomeFocused, and a UIView answers no: the host creates
+        it as AnFocusableView so the remote can stop here. Without that, this
+        rectangle would be unreachable.
       -->
       <an-view
         [style.width]="'760'"
         [style.height]="'88'"
         [borderRadius]="16"
         [backgroundColor]="'#1e2a4a'"
-        (press)="vista.set(vista() + 1)">
+        (press)="view.set(view() + 1)">
         <an-text
           [style.width]="'760'"
           [style.height]="'88'"
           [fontSize]="30"
           [textAlign]="'center'"
-          [color]="'#f4f7ff'">an-view, no un botón — pulsada {{ vista() }} veces</an-text>
+          [color]="'#f4f7ff'">an-view, not a button — pressed {{ view() }} times</an-text>
       </an-view>
 
       <an-text [fontSize]="26" [color]="'#5f7099'">
-        llevas {{ segundos() }} segundos aquí
+        you have been here {{ seconds() }} seconds
       </an-text>
     </an-view>
   `
 })
 export class AppComponent {
-  readonly arriba = signal(0)
-  readonly abajo = signal(0)
-  /** El `an-view`. Su contador aparte es lo que demuestra que el foco llegó a
-   *  una vista que no es un control: si se pulsara el botón, subiría el otro. */
-  readonly vista = signal(0)
-  readonly segundos = signal(0)
+  readonly top = signal(0)
+  readonly bottom = signal(0)
+  /** The `an-view`. Its separate counter is what proves the focus reached a view
+   *  that is not a control: had the button been pressed, the other one would go
+   *  up. */
+  readonly view = signal(0)
+  readonly seconds = signal(0)
 
   constructor() {
-    // El reloj de JS lo marca el frame, no un hilo aparte: esto avanza con el
-    // CADisplayLink del shell, igual que en el teléfono.
-    setInterval(() => this.segundos.update((valor) => valor + 1), 1000)
+    // The JS clock is driven by the frame, not by a separate thread: this
+    // advances with the shell's CADisplayLink, just as on the phone.
+    setInterval(() => this.seconds.update((value) => value + 1), 1000)
   }
 }

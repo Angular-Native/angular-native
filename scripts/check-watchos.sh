@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# El host del reloj: que cruza-compile, que el modelo que ve SwiftUI sea el que
-# el layout calculó, y que las tres listas que tienen que decir lo mismo lo
-# digan.
+# The watch host: that it cross-compiles, that the model SwiftUI sees is the one
+# the layout computed, and that the three lists that have to say the same thing
+# do say it.
 #
-# La compilación cruzada va aparte de lo demás porque necesita nightly:
-# `aarch64-apple-watchos-sim` es un target de nivel 3 y no trae `std`
-# precompilada, así que hay que construirla en el momento con `-Z build-std`.
-# Si no está nightly, esto avisa y no falla: el resto de las comprobaciones no
-# tienen por qué caerse porque a alguien le falte un toolchain.
+# The cross-compilation is kept apart from the rest because it needs nightly:
+# `aarch64-apple-watchos-sim` is a tier 3 target and does not ship a precompiled
+# `std`, so it has to be built on the spot with `-Z build-std`. If nightly is
+# missing, this reports it and does not fail: the rest of the checks have no
+# reason to fall over because somebody is short a toolchain.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -17,155 +17,161 @@ fail=0
 
 echo "== watchOS"
 
-# El resultado se pasa ya evaluado y con `&& r=0 || r=1` delante, no con `$?` a
-# secas: `set -e` mata el script en cuanto una comprobación devuelve 1, y lo que
-# se quiere es que las diga todas y falle al final.
-check() { # <0 si bien, 1 si mal> <qué se comprobaba>
+# The result is passed in already evaluated and with `&& r=0 || r=1` in front,
+# not as a bare `$?`: `set -e` kills the script as soon as a check returns 1, and
+# what is wanted is that it reports them all and fails at the end.
+check() { # <0 if good, 1 if bad> <what was being checked>
   if [ "$1" -eq 0 ]; then
     echo "  ok   $2"
   else
-    echo "  FALLO $2"
+    echo "  FAIL $2"
     fail=1
   fi
 }
 
-# 1. El modelo. Corre en el Mac y no necesita ni simulador ni nightly: el host
-#    aplica MountOp sobre una estructura de datos, y eso se comprueba aquí.
+# 1. The model. It runs on the Mac and needs neither a simulator nor nightly: the
+#    host applies MountOp to a data structure, and that is what is checked here.
 if cargo test --quiet -p an-watch >/dev/null 2>&1; then
-  echo "  ok   el modelo que ve SwiftUI se construye como debe"
+  echo "  ok   the model SwiftUI sees is built as it should be"
 else
-  echo "  FALLO los tests de an-watch no pasan"
+  echo "  FAIL the an-watch tests do not pass"
   cargo test -p an-watch 2>&1 | tail -20
   fail=1
 fi
 
-# 2. Las tres listas de primitivas.
+# 2. The three lists of primitives.
 #
-#    El vocabulario está en `an-core`, lo que el reloj no pinta está en
-#    `an-watch/src/snapshot.rs`, y lo que sí pinta está en Swift. Nada obliga a
-#    las tres a decir lo mismo salvo esto: sin ello, añadir una primitiva al
-#    núcleo la dejaría en el reloj como un hueco que nadie decidió.
-TODAS="$(grep -oE '=> NodeKind::[A-Za-z]+' crates/an-core/src/props.rs \
+#    The vocabulary is in `an-core`, what the watch does not paint is in
+#    `an-watch/src/snapshot.rs`, and what it does paint is in Swift. Nothing
+#    forces the three to say the same thing except this: without it, adding a
+#    primitive to the core would leave it on the watch as a hole nobody decided
+#    on.
+ALL="$(grep -oE '=> NodeKind::[A-Za-z]+' crates/an-core/src/props.rs \
   | sed 's/.*NodeKind:://' | sort -u)"
-SIN_PINTAR="$(awk '/^pub fn unsupported/,/^\}/' crates/an-watch/src/snapshot.rs \
+UNPAINTED="$(awk '/^pub fn unsupported/,/^\}/' crates/an-watch/src/snapshot.rs \
   | grep -oE 'NodeKind::[A-Za-z]+' | sed 's/NodeKind:://' | sort -u)"
-# Lo que el shell dibuja: los `case` del `switch` de `AnNodeView`, más `View`,
-# que es la rama por defecto, más los dos que presenta el sistema y por eso
-# viven en `AnOverlays`.
-PINTADAS="$( { awk '/private var content: some View/,/^    \}/' shells/watchos/Sources/AnNodeView.swift \
+# What the shell draws: the `case` arms of the `switch` in `AnNodeView`, plus
+# `View`, which is the default branch, plus the two the system presents and that
+# therefore live in `AnOverlays`.
+PAINTED="$( { awk '/private var content: some View/,/^    \}/' shells/watchos/Sources/AnNodeView.swift \
     | sed -n 's/.*case "\([A-Za-z]*\)".*/\1/p'
   sed -n 's/.*case "\([A-Za-z]*\)".*/\1/p' shells/watchos/Sources/AnOverlays.swift
   echo View; } | sort -u)"
 
-SOLAPE="$(comm -12 <(echo "$SIN_PINTAR") <(echo "$PINTADAS"))"
-[ -z "$SOLAPE" ] && r=0 || r=1
-check $r "ninguna primitiva se pinta y se descarta a la vez"
-if [ -n "$SOLAPE" ]; then echo "       en las dos listas: $(echo "$SOLAPE" | tr '\n' ' ')"; fi
+OVERLAP="$(comm -12 <(echo "$UNPAINTED") <(echo "$PAINTED"))"
+[ -z "$OVERLAP" ] && r=0 || r=1
+check $r "no primitive is both painted and discarded"
+if [ -n "$OVERLAP" ]; then echo "       in both lists: $(echo "$OVERLAP" | tr '\n' ' ')"; fi
 
-SIN_DECIDIR="$(comm -23 <(echo "$TODAS") <(cat <(echo "$SIN_PINTAR") <(echo "$PINTADAS") | sort -u))"
-[ -z "$SIN_DECIDIR" ] && r=0 || r=1
-check $r "toda primitiva del núcleo o la pinta el reloj o dice por qué no"
-if [ -n "$SIN_DECIDIR" ]; then echo "       sin decidir: $(echo "$SIN_DECIDIR" | tr '\n' ' ')"; fi
+UNDECIDED="$(comm -23 <(echo "$ALL") <(cat <(echo "$UNPAINTED") <(echo "$PAINTED") | sort -u))"
+[ -z "$UNDECIDED" ] && r=0 || r=1
+check $r "every core primitive is either painted by the watch or says why not"
+if [ -n "$UNDECIDED" ]; then echo "       undecided: $(echo "$UNDECIDED" | tr '\n' ' ')"; fi
 
-# 3. Los gestos. Lo que el shell engancha y lo que el host dice que no llega no
-#    pueden solaparse: un gesto que se engancha y encima avisa de que no
-#    funciona es peor que cualquiera de las dos cosas por separado.
-ENGANCHADOS="$(grep -oE 'listens\(to: "[a-zA-Z]+"\)' shells/watchos/Sources/*.swift \
+# 3. The gestures. What the shell hooks up and what the host says never arrives
+#    cannot overlap: a gesture that is hooked up and on top of that warns that it
+#    does not work is worse than either of the two on its own.
+HOOKED="$(grep -oE 'listens\(to: "[a-zA-Z]+"\)' shells/watchos/Sources/*.swift \
   | sed 's/.*"\(.*\)".*/\1/' | sort -u)"
-NO_LLEGAN="$(awk '/^fn unheard/,/^\}/' crates/an-watch/src/snapshot.rs \
+NEVER_ARRIVE="$(awk '/^fn unheard/,/^\}/' crates/an-watch/src/snapshot.rs \
   | grep -oE '^\s+"[a-zA-Z]+"( \| "[a-zA-Z]+")* =>' \
   | grep -oE '"[a-zA-Z]+"' | tr -d '"' | sort -u)"
-SOLAPE_GESTOS="$(comm -12 <(echo "$ENGANCHADOS") <(echo "$NO_LLEGAN"))"
-[ -z "$SOLAPE_GESTOS" ] && r=0 || r=1
-check $r "ningún gesto se engancha y se declara imposible a la vez"
-if [ -n "$SOLAPE_GESTOS" ]; then echo "       en las dos listas: $(echo "$SOLAPE_GESTOS" | tr '\n' ' ')"; fi
+GESTURE_OVERLAP="$(comm -12 <(echo "$HOOKED") <(echo "$NEVER_ARRIVE"))"
+[ -z "$GESTURE_OVERLAP" ] && r=0 || r=1
+check $r "no gesture is both hooked up and declared impossible"
+if [ -n "$GESTURE_OVERLAP" ]; then echo "       in both lists: $(echo "$GESTURE_OVERLAP" | tr '\n' ' ')"; fi
 
 grep -q '"crown"' shells/watchos/Sources/AnCrown.swift && r=0 || r=1
-check $r "la corona se engancha desde el shell"
+check $r "the crown is hooked up from the shell"
 grep -q 'digitalCrownRotation' shells/watchos/Sources/AnCrown.swift && r=0 || r=1
-check $r "y con la API de la corona de SwiftUI, no con un gesto imitado"
+check $r "and with SwiftUI's crown API, not with an imitated gesture"
 
-# 4. La tabla de iconos, que vive en dos sitios mientras `an-ios` siga con la
-#    suya. Copiada está permitido; divergida, no: `back` tiene que ser el mismo
-#    dibujo en el teléfono y en el reloj.
-tabla() {
+# 4. The icon table, which lives in two places while `an-ios` keeps its own.
+#    Copied is allowed; drifted is not: `back` has to be the same drawing on the
+#    phone and on the watch.
+table() {
   awk '/fn translate/,/^\}/' "$1" | grep -oE '"[^"]+"( \| "[^"]+")* => "[^"]+"' | sort
 }
-diff <(tabla crates/an-core/src/icons.rs) <(tabla crates/an-ios/src/icons.rs) >/dev/null 2>&1 && r=0 || r=1
-check $r "la tabla de iconos del núcleo dice lo mismo que la de an-ios"
+diff <(table crates/an-core/src/icons.rs) <(table crates/an-ios/src/icons.rs) >/dev/null 2>&1 && r=0 || r=1
+check $r "the core's icon table says the same as an-ios's"
 
-# 5. El shell no puede colocar nada por su cuenta. Todo el layout es de taffy, y
-#    un `VStack` o un `padding` metido sin querer sería un segundo motor
-#    decidiendo lo mismo; ganaría el que corriese después y nadie sabría por qué.
-#    Se miran solo las fuentes que pintan el árbol.
-# Sin los comentarios: este fichero explica por qué no los usa, y explicarlo no
-# puede contar como usarlo.
-COLOCAN="$(grep -vE '^\s*(//|\*)' shells/watchos/Sources/AnNodeView.swift shells/watchos/Sources/AnOverlays.swift \
+# 5. The shell cannot lay anything out on its own. All the layout belongs to
+#    taffy, and a `VStack` or a `padding` slipped in would be a second engine
+#    deciding the same thing; whichever ran later would win and nobody would know
+#    why. Only the sources that paint the tree are looked at.
+# Without the comments: this file explains why it does not use them, and
+# explaining it cannot count as using it.
+LAY_OUT="$(grep -vE '^\s*(//|\*)' shells/watchos/Sources/AnNodeView.swift shells/watchos/Sources/AnOverlays.swift \
   | grep -nE '\b(VStack|HStack|LazyVStack|LazyHStack|Spacer\(\)|\.padding\()' || true)"
-[ -z "$COLOCAN" ] && r=0 || r=1
-check $r "el shell no coloca nada: ni VStack, ni HStack, ni padding"
-if [ -n "$COLOCAN" ]; then echo "$COLOCAN" | sed 's/^/       /'; fi
+[ -z "$LAY_OUT" ] && r=0 || r=1
+check $r "the shell lays nothing out: no VStack, no HStack, no padding"
+if [ -n "$LAY_OUT" ]; then echo "$LAY_OUT" | sed 's/^/       /'; fi
 
-# 6. Los ejemplos, montados con el viewport de un Series 11 de 46 mm. Sin esto,
-#    un cambio en las primitivas podría dejar la app del reloj sin pintar y
-#    nadie se enteraría hasta abrir el simulador.
+# 6. The examples, mounted with the viewport of a 46 mm Series 11. Without this, a
+#    change in the primitives could leave the watch app unpainted and nobody
+#    would find out until opening the simulator.
 cargo an build examples/hello-watch >/dev/null
-HOLA="$(cargo run -q -p an-bridge --example headless -- build/bundle/hello-watch/main.js 4 2>&1)"
+HELLO="$(cargo run -q -p an-bridge --example headless -- build/bundle/hello-watch/main.js 4 2>&1)"
 
-en_hola() {
-  grep -qE -- "$1" <<<"$HOLA" && r=0 || r=1
+in_hello() {
+  grep -qE -- "$1" <<<"$HELLO" && r=0 || r=1
   check $r "$2"
 }
 
-en_hola 'ScrollView#[0-9]+ .*contenido' 'el ScrollView declara su contentSize'
-en_hola 'Text#[0-9]+ .*"angular-native"' 'la cabecera se midió y se colocó'
-en_hola 'Button#[0-9]+' 'el botón del sistema está montado'
-en_hola '"toques: 1"' 'el toque llegó a JS y la señal se recomputó'
+# The word the headless dump uses for the content size comes out of a crate that
+# is being translated on another branch, so both spellings are accepted.
+in_hello 'ScrollView#[0-9]+ .*(contenido|content)' 'the ScrollView declares its contentSize'
+in_hello 'Text#[0-9]+ .*"angular-native"' 'the heading was measured and placed'
+in_hello 'Button#[0-9]+' 'the system button is mounted'
+in_hello '"taps: 1"' 'the tap reached JS and the signal was recomputed'
 
 cargo an build examples/watch-controls >/dev/null
-CONTROLES="$(cargo run -q -p an-bridge --example headless -- build/bundle/watch-controls/main.js 4 2>&1)"
+CONTROLS="$(cargo run -q -p an-bridge --example headless -- build/bundle/watch-controls/main.js 4 2>&1)"
 
-en_controles() {
-  grep -qE -- "$1" <<<"$CONTROLES" && r=0 || r=1
+in_controls() {
+  grep -qE -- "$1" <<<"$CONTROLS" && r=0 || r=1
   check $r "$2"
 }
 
-# Que cada control llegue montado y con su estado. Un control que se monta sin
-# props se ve igual que uno que no se monta: en las dos el layout deja un hueco.
-en_controles 'Switch#[0-9]+ .*on=true' 'el interruptor baja encendido'
-en_controles 'Slider#[0-9]+ .*maximumValue=100' 'el deslizador baja con su recorrido'
-en_controles 'Stepper#[0-9]+ .*stepValue=1' 'el paso a paso baja con su salto'
-en_controles 'ProgressBar#[0-9]+ .*progress=0\.4' 'la barra baja con el progreso que calculó la señal'
-en_controles 'ActivityIndicator#[0-9]+ .*animating=true' 'la ruedecilla baja andando'
-en_controles 'Icon#[0-9]+ .*name=favorite' 'el icono baja con su nombre'
-en_controles 'Alert#[0-9]+ .*buttons=' 'el diálogo baja con sus botones'
-en_controles 'Modal#[0-9]+ .*presentation=sheet' 'la hoja baja diciendo cómo se presenta'
-en_controles 'StackView#[0-9]+ .*transition=' 'la pila baja con el sentido de la transición'
+# That each control arrives mounted and with its state. A control that mounts
+# with no props looks the same as one that does not mount: in both cases the
+# layout leaves a gap.
+in_controls 'Switch#[0-9]+ .*on=true' 'the switch comes down switched on'
+in_controls 'Slider#[0-9]+ .*maximumValue=100' 'the slider comes down with its range'
+in_controls 'Stepper#[0-9]+ .*stepValue=1' 'the stepper comes down with its step'
+in_controls 'ProgressBar#[0-9]+ .*progress=0\.4' 'the bar comes down with the progress the signal computed'
+in_controls 'ActivityIndicator#[0-9]+ .*animating=true' 'the spinner comes down spinning'
+in_controls 'Icon#[0-9]+ .*name=favorite' 'the icon comes down with its name'
+in_controls 'Alert#[0-9]+ .*buttons=' 'the dialog comes down with its buttons'
+in_controls 'Modal#[0-9]+ .*presentation=sheet' 'the sheet comes down saying how it is presented'
+in_controls 'StackView#[0-9]+ .*transition=' 'the stack comes down with the direction of the transition'
 
-# El diálogo no ocupa sitio: lo presenta el sistema. Si algún día lo ocupara, en
-# 248 puntos de alto se comería media pantalla y no se vería por qué.
-en_controles 'Alert#[0-9]+ \[0,0 0x0\]' 'el diálogo no ocupa sitio en el layout'
+# The dialog takes up no room: the system presents it. If it ever did take room,
+# in 248 points of height it would eat half the screen and it would not be
+# obvious why.
+in_controls 'Alert#[0-9]+ \[0,0 0x0\]' 'the dialog takes up no room in the layout'
 
-# 7. La compilación cruzada, que es la que cuesta y la que puede no estar.
+# 7. The cross-compilation, which is the expensive one and the one that may not
+#    be available.
 if ! rustup toolchain list 2>/dev/null | grep -q '^nightly'; then
-  echo "  --   compilación cruzada omitida: falta el toolchain nightly"
+  echo "  --   cross-compilation skipped: the nightly toolchain is missing"
   echo "       rustup toolchain install nightly"
   echo "       rustup component add rust-src --toolchain nightly"
 elif ! rustup component list --toolchain nightly 2>/dev/null | grep -q 'rust-src (installed)'; then
-  echo "  --   compilación cruzada omitida: falta rust-src en nightly"
+  echo "  --   cross-compilation skipped: rust-src is missing from nightly"
   echo "       rustup component add rust-src --toolchain nightly"
 else
   if cargo +nightly build --quiet -Z build-std=std,panic_abort \
       -p an-watch --target aarch64-apple-watchos-sim 2>/dev/null; then
-    echo "  ok   an-watch para aarch64-apple-watchos-sim"
+    echo "  ok   an-watch for aarch64-apple-watchos-sim"
   else
-    echo "  FALLO an-watch no cruza-compila para aarch64-apple-watchos-sim"
+    echo "  FAIL an-watch does not cross-compile for aarch64-apple-watchos-sim"
     fail=1
   fi
 fi
 
 if [ "$fail" -ne 0 ]; then
   echo
-  echo "$CONTROLES"
+  echo "$CONTROLS"
   exit 1
 fi
