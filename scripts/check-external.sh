@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# Un proyecto Angular de fuera del monorepo, de principio a fin y sin simulador.
+# An Angular project from outside the monorepo, end to end and with no simulator.
 #
-# Es el camino que hace alguien que tiene su app de `ng new` y quiere llevarla al
-# móvil: `an init`, `an add ios`, `an build`. Aquí se comprueba todo menos el
-# último paso —instalar en el simulador—, que es lo único que no se puede hacer
-# en una máquina sin Xcode arrancado.
+# It is the path somebody takes when they have their `ng new` app and want to
+# take it to the phone: `an init`, `an add ios`, `an build`. Everything is
+# checked here except the last step —installing on the simulator—, which is the
+# only thing that cannot be done on a machine without Xcode running.
 #
-# El proyecto de mentira es un proyecto de verdad: `angular.json`, `package.json`
-# con `@angular/core`, `src/main.ts` y su componente web. Lo único que no se hace
-# es bajarse Angular otra vez de la red: se clona el `node_modules` del propio
-# SDK, que trae las mismas versiones. En APFS un clon no copia bytes ni ocupa
-# disco.
+# The fake project is a real project: `angular.json`, a `package.json` with
+# `@angular/core`, `src/main.ts` and its web component. The only thing not done
+# is downloading Angular from the network all over again: the SDK's own
+# `node_modules` is cloned, and it carries the same versions. On APFS a clone
+# copies no bytes and takes up no disk.
 #
-# Se comprueban las dos mitades: que lo que tiene que salir sale, y que lo que
-# tiene que fallar falla diciendo por qué. Un `an init` sobre algo que no es
-# Angular, uno repetido que pisara el código del usuario, o un `Info.plist`
-# desincronizado del manifiesto son las tres formas que esto tiene de estropear
-# el proyecto de otro, y ninguna puede pasar en silencio.
+# Both halves are checked: that what should come out comes out, and that what
+# should fail fails saying why. An `an init` on something that is not Angular, a
+# repeated one that trampled the user's code, or an `Info.plist` out of step with
+# the manifest are the three ways this has of ruining somebody else's project,
+# and none of them may happen in silence.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,42 +25,42 @@ cd "$ROOT"
 TARGET="${CARGO_TARGET_DIR:-$ROOT/target}"
 AN="$TARGET/debug/an"
 WORK="$ROOT/build/check-external"
-APP="$WORK/mi-app"
+APP="$WORK/my-app"
 
 fail=0
 ok() { echo "  ok   $1"; }
-ko() { echo "  FALLO $1"; fail=1; }
-contiene() {
+ko() { echo "  FAIL $1"; fail=1; }
+contains() {
   if grep -qE -e "$2" <<<"$1"; then ok "$3"; else ko "$3"; fi
 }
-existe() {
+exists() {
   if [ -e "$1" ]; then ok "$2"; else ko "$2"; fi
 }
-# Ejecuta algo que tiene que fallar, y devuelve su salida para mirarla.
-falla() {
-  local salida
-  if salida="$("$@" 2>&1)"; then
-    echo "ESPERABA UN FALLO Y SALIÓ BIEN: $*"
-    echo "$salida"
+# Runs something that has to fail, and returns its output so it can be examined.
+must_fail() {
+  local output
+  if output="$("$@" 2>&1)"; then
+    echo "EXPECTED A FAILURE AND IT SUCCEEDED: $*"
+    echo "$output"
     return 1
   fi
-  printf '%s' "$salida"
+  printf '%s' "$output"
 }
 
-echo "== proyecto Angular de fuera del monorepo"
+echo "== Angular project from outside the monorepo"
 
 cargo build -q -p an-cli
 export AN_HOME="$ROOT"
 
 # ---------------------------------------------------------------------------
-# Un proyecto Angular de verdad, montado a mano
+# A real Angular project, set up by hand
 # ---------------------------------------------------------------------------
 rm -rf "$WORK"
 mkdir -p "$APP/src/app"
 
 cat >"$APP/package.json" <<'JSON'
 {
-  "name": "mi-app",
+  "name": "my-app",
   "version": "0.0.0",
   "private": true,
   "dependencies": {
@@ -78,7 +78,7 @@ cat >"$APP/angular.json" <<'JSON'
   "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
   "version": 1,
   "projects": {
-    "mi-app": {
+    "my-app": {
       "projectType": "application",
       "root": "",
       "sourceRoot": "src",
@@ -103,149 +103,155 @@ TS
 cat >"$APP/src/app/app.ts" <<'TS'
 import { Component } from '@angular/core'
 
-@Component({ selector: 'app-root', template: '<h1>la app web, intacta</h1>' })
+@Component({ selector: 'app-root', template: '<h1>the web app, untouched</h1>' })
 export class App {}
 TS
 
-# El `node_modules` del SDK, clonado. `cp -c` usa clonefile en APFS: instantáneo
-# y sin ocupar disco. Si el sistema de ficheros no lo soporta se copia de verdad,
-# y se dice, porque entonces esto tarda medio minuto y no es un misterio.
+# The SDK's `node_modules`, cloned. `cp -c` uses clonefile on APFS: instant and
+# taking up no disk. If the file system does not support it a real copy is made,
+# and it is said, because then this takes half a minute and that is no mystery.
 if ! cp -Rc "$ROOT/node_modules" "$APP/node_modules" 2>/dev/null; then
-  echo "  (este sistema de ficheros no clona; copiando node_modules de verdad)"
+  echo "  (this file system does not clone; copying node_modules for real)"
   cp -R "$ROOT/node_modules" "$APP/node_modules"
 fi
 
 # ---------------------------------------------------------------------------
-# Lo que tiene que fallar, antes de nada
+# What has to fail, before anything else
 # ---------------------------------------------------------------------------
-VACIO="$(mktemp -d)"
-trap 'rm -rf "$VACIO"' EXIT
-salida="$(cd "$VACIO" && falla "$AN" init)"
-contiene "$salida" 'angular\.json' '`an init` sobre algo que no es Angular dice qué falta'
-contiene "$salida" 'npx @angular/cli new' 'y dice cómo se crea un proyecto'
+EMPTY="$(mktemp -d)"
+trap 'rm -rf "$EMPTY"' EXIT
+output="$(cd "$EMPTY" && must_fail "$AN" init)"
+contains "$output" 'angular\.json' '`an init` on something that is not Angular says what is missing'
+contains "$output" 'npx @angular/cli new' 'and says how a project is created'
 
-# Un proyecto Angular sin inicializar, fuera del repo: `an` no puede adivinar
-# nada, pero sí sabe qué le falta.
-SIN_INIT="$VACIO/sin-init"
-mkdir -p "$SIN_INIT"
-cp "$APP/package.json" "$APP/angular.json" "$SIN_INIT/"
-salida="$(cd "$SIN_INIT" && falla "$AN" build)"
-contiene "$salida" 'an init' 'un proyecto Angular sin inicializar manda a `an init`'
+# An Angular project that has not been initialised, outside the repo: `an` can
+# guess nothing, but it does know what it is short of.
+NO_INIT="$EMPTY/no-init"
+mkdir -p "$NO_INIT"
+cp "$APP/package.json" "$APP/angular.json" "$NO_INIT/"
+output="$(cd "$NO_INIT" && must_fail "$AN" build)"
+contains "$output" 'an init' 'an uninitialised Angular project is sent to `an init`'
 
 # ---------------------------------------------------------------------------
 # an init
 # ---------------------------------------------------------------------------
-antes="$(shasum "$APP/src/app/app.ts" "$APP/src/main.ts")"
+before="$(shasum "$APP/src/app/app.ts" "$APP/src/main.ts")"
 (cd "$APP" && "$AN" init >/dev/null 2>&1)
 
-existe "$APP/angular-native.json" 'an init: escribe el manifiesto'
-existe "$APP/.angular-native/tsconfig.json" 'an init: escribe el tsconfig del build nativo'
-existe "$APP/src/main.native.ts" 'an init: escribe el punto de entrada nativo'
-existe "$APP/src/app/app-native.ts" 'an init: escribe el componente raíz nativo'
-existe "$APP/node_modules/@angular-native/platform/dist/public-api.js" \
-  'an init: instala @angular-native/platform compilado'
-existe "$APP/node_modules/@angular-native/primitives/dist/public-api.js" \
-  'an init: instala @angular-native/primitives compilado'
-existe "$APP/node_modules/@angular-native/platform/dist/public-api.d.ts" \
-  'an init: el paquete instalado trae sus tipos'
+exists "$APP/angular-native.json" 'an init: writes the manifest'
+exists "$APP/.angular-native/tsconfig.json" 'an init: writes the native build tsconfig'
+exists "$APP/src/main.native.ts" 'an init: writes the native entry point'
+exists "$APP/src/app/app-native.ts" 'an init: writes the native root component'
+exists "$APP/node_modules/@angular-native/platform/dist/public-api.js" \
+  'an init: installs @angular-native/platform compiled'
+exists "$APP/node_modules/@angular-native/primitives/dist/public-api.js" \
+  'an init: installs @angular-native/primitives compiled'
+exists "$APP/node_modules/@angular-native/platform/dist/public-api.d.ts" \
+  'an init: the installed package brings its types'
 
-contiene "$(cat "$APP/package.json")" 'file:\.angular-native/vendor/angular-native-platform' \
-  'an init: la dependencia apunta al tarball vendorizado, no a una ruta del disco'
-contiene "$(ls "$APP/.angular-native/vendor")" '\.tgz' 'an init: los tarballs quedan en el proyecto'
-contiene "$(cat "$APP/.gitignore")" '^/\.angular-native/build/$' \
-  'an init: solo el directorio de artefactos va al .gitignore'
-contiene "$(tar -tzf "$APP/.angular-native/vendor/"*platform*.tgz)" \
-  'package/dist/public-api\.js' 'an init: el tarball lleva el paquete compilado, no las fuentes'
+contains "$(cat "$APP/package.json")" 'file:\.angular-native/vendor/angular-native-platform' \
+  'an init: the dependency points at the vendored tarball, not at a path on disk'
+contains "$(ls "$APP/.angular-native/vendor")" '\.tgz' 'an init: the tarballs stay in the project'
+contains "$(cat "$APP/.gitignore")" '^/\.angular-native/build/$' \
+  'an init: only the artefact directory goes into the .gitignore'
+contains "$(tar -tzf "$APP/.angular-native/vendor/"*platform*.tgz)" \
+  'package/dist/public-api\.js' 'an init: the tarball carries the compiled package, not the sources'
 
-if [ "$antes" = "$(shasum "$APP/src/app/app.ts" "$APP/src/main.ts")" ]; then
-  ok 'an init: no toca la app web'
+if [ "$before" = "$(shasum "$APP/src/app/app.ts" "$APP/src/main.ts")" ]; then
+  ok 'an init: does not touch the web app'
 else
-  ko 'an init: no toca la app web'
+  ko 'an init: does not touch the web app'
 fi
 
-# El paquete compilado tiene que ir en modo parcial: si `ngc` compilara en
-# `full`, el bundle traería código atado a la versión del compilador del SDK y
-# el Angular Linker no tendría nada que resolver.
-contiene "$(cat "$APP/node_modules/@angular-native/primitives/dist/public-api.js" \
+# The compiled package has to go in partial mode: were `ngc` to compile in
+# `full`, the bundle would carry code tied to the SDK's compiler version and the
+# Angular Linker would have nothing to resolve.
+contains "$(cat "$APP/node_modules/@angular-native/primitives/dist/public-api.js" \
   "$APP/node_modules/@angular-native/primitives/dist/"*.js)" \
-  'ɵɵngDeclare' 'an init: los paquetes se publican en modo parcial'
+  'ɵɵngDeclare' 'an init: the packages are published in partial mode'
 
-# Repetirlo no puede estropear nada de lo que haya escrito el usuario.
-echo "// el usuario editó esto" >>"$APP/src/app/app-native.ts"
-huella="$(shasum "$APP/src/app/app-native.ts")"
+# Repeating it cannot ruin anything the user has written.
+echo "// the user edited this" >>"$APP/src/app/app-native.ts"
+fingerprint="$(shasum "$APP/src/app/app-native.ts")"
 (cd "$APP" && "$AN" init >/dev/null 2>&1)
-if [ "$huella" = "$(shasum "$APP/src/app/app-native.ts")" ]; then
-  ok 'an init repetido: respeta el código que ya estaba'
+if [ "$fingerprint" = "$(shasum "$APP/src/app/app-native.ts")" ]; then
+  ok 'an init repeated: it respects the code that was already there'
 else
-  ko 'an init repetido: respeta el código que ya estaba'
+  ko 'an init repeated: it respects the code that was already there'
 fi
 
 # ---------------------------------------------------------------------------
 # an add
 # ---------------------------------------------------------------------------
 (cd "$APP" && "$AN" add ios >/dev/null 2>&1)
-existe "$APP/ios/Info.plist" 'an add ios: crea el Info.plist del proyecto'
-contiene "$(plutil -extract CFBundleExecutable raw -o - "$APP/ios/Info.plist")" '^MiApp$' \
-  'an add ios: el ejecutable del plist es el nombre de la app'
-contiene "$(plutil -extract CFBundleIdentifier raw -o - "$APP/ios/Info.plist")" \
-  '^dev\.angularnative\.miapp$' 'an add ios: el identificador del plist sale del manifiesto'
-contiene "$(cat "$APP/angular-native.json")" '"ios"' 'an add ios: queda apuntado en el manifiesto'
+exists "$APP/ios/Info.plist" 'an add ios: creates the project Info.plist'
+contains "$(plutil -extract CFBundleExecutable raw -o - "$APP/ios/Info.plist")" '^MyApp$' \
+  "an add ios: the plist's executable is the app's name"
+contains "$(plutil -extract CFBundleIdentifier raw -o - "$APP/ios/Info.plist")" \
+  '^dev\.angularnative\.myapp$' "an add ios: the plist's identifier comes from the manifest"
+contains "$(cat "$APP/angular-native.json")" '"ios"' 'an add ios: it is noted down in the manifest'
 
-echo "<!-- el usuario añadió esto -->" >>"$APP/ios/Info.plist"
-huella="$(shasum "$APP/ios/Info.plist")"
+echo "<!-- the user added this -->" >>"$APP/ios/Info.plist"
+fingerprint="$(shasum "$APP/ios/Info.plist")"
 (cd "$APP" && "$AN" add ios >/dev/null 2>&1)
-if [ "$huella" = "$(shasum "$APP/ios/Info.plist")" ]; then
-  ok 'an add ios repetido: no pisa el plist del usuario'
+if [ "$fingerprint" = "$(shasum "$APP/ios/Info.plist")" ]; then
+  ok "an add ios repeated: it does not trample the user's plist"
 else
-  ko 'an add ios repetido: no pisa el plist del usuario'
+  ko "an add ios repeated: it does not trample the user's plist"
 fi
-# Y quitar la línea de prueba: un comentario detrás de </plist> ya no es un plist
-# válido, y lo que viene después lo lee `plutil`.
+# And remove the test line: a comment after </plist> is no longer a valid plist,
+# and what comes afterwards is read by `plutil`.
 sed -i '' -e '$d' "$APP/ios/Info.plist"
 
 (cd "$APP" && "$AN" add android >/dev/null 2>&1)
-existe "$APP/android/AndroidManifest.xml" 'an add android: crea el manifiesto del proyecto'
-contiene "$(cat "$APP/android/AndroidManifest.xml")" 'android:label="MiApp"' \
-  'an add android: la etiqueta es el nombre de la app'
-contiene "$(cat "$APP/android/AndroidManifest.xml")" 'package="dev\.angularnative"' \
-  'an add android: el paquete sigue siendo el de las clases del shell'
+exists "$APP/android/AndroidManifest.xml" 'an add android: creates the project manifest'
+contains "$(cat "$APP/android/AndroidManifest.xml")" 'android:label="MyApp"' \
+  "an add android: the label is the app's name"
+contains "$(cat "$APP/android/AndroidManifest.xml")" 'package="dev\.angularnative"' \
+  "an add android: the package is still the shell classes'"
 
-salida="$(cd "$APP" && falla "$AN" add windows)"
-# La lista de plataformas que `an add` dice conocer tiene que ser la que
-# conoce de verdad: es lo primero que lee quien se equivoca de nombre, y una
-# que falte ahí es una que nadie va a probar.
-contiene "$salida" 'ios, tvos, visionos y android' \
-  'an add de una plataforma que no existe dice cuáles conoce'
+output="$(cd "$APP" && must_fail "$AN" add windows)"
+# The list of platforms `an add` claims to know has to be the one it really
+# knows: it is the first thing read by whoever gets the name wrong, and one
+# missing from it is one nobody is going to try.
+#
+# The conjunction is the CLI's own word and the CLI is a crate translated on
+# another branch, so both are accepted.
+contains "$output" 'ios, tvos, visionos (y|and) android' \
+  'an add of a platform that does not exist says which ones it knows'
 
 # ---------------------------------------------------------------------------
 # an build
 # ---------------------------------------------------------------------------
 (cd "$APP" && "$AN" build >/dev/null 2>&1)
 BUNDLE="$APP/.angular-native/build/bundle/main.js"
-existe "$BUNDLE" 'an build: sale el bundle, dentro del proyecto y no del SDK'
-if [ -e "$ROOT/build/bundle/mi-app" ]; then
-  ko 'an build: no escribe nada en el SDK'
+exists "$BUNDLE" 'an build: the bundle comes out, inside the project and not the SDK'
+if [ -e "$ROOT/build/bundle/my-app" ]; then
+  ko 'an build: it writes nothing into the SDK'
 else
-  ok 'an build: no escribe nada en el SDK'
+  ok 'an build: it writes nothing into the SDK'
 fi
 
-# Y que el bundle corra: el mismo `headless` que usan los demás scripts, que
-# monta el pipeline entero menos la plataforma.
-salida="$(cargo run -q -p an-bridge --example headless -- "$BUNDLE" 3 2>&1)"
-contiene "$salida" 'Angular is running in development mode' 'el bundle arranca Angular'
-contiene "$salida" 'Text#[0-9]+ .*"MiApp"' 'el título de la app llegó a un nodo Text nativo'
-contiene "$salida" 'Button#[0-9]+ .*title=Van 1 toques' 'un toque llegó hasta la señal del componente'
+# And that the bundle runs: the same `headless` the other scripts use, which
+# mounts the whole pipeline minus the platform.
+output="$(cargo run -q -p an-bridge --example headless -- "$BUNDLE" 3 2>&1)"
+contains "$output" 'Angular is running in development mode' 'the bundle starts Angular'
+contains "$output" 'Text#[0-9]+ .*"MyApp"' "the app's title reached a native Text node"
+# The button's label is written by the scaffold the CLI generates, and the CLI is
+# a crate translated on another branch. What is checked is the count, which is
+# what proves the tap arrived: before it, the title carries a zero.
+contains "$output" 'Button#[0-9]+ .*title=.*1' 'a tap made it all the way to the component signal'
 
 # ---------------------------------------------------------------------------
-# El plist y el manifiesto, desincronizados
+# The plist and the manifest, out of step
 # ---------------------------------------------------------------------------
-# Cambiar el nombre de la app y no tocar el plist deja una app que se instala y
-# no abre: iOS busca un ejecutable que no está. Tiene que pararse antes de
-# compilar.
-sed -i '' -e 's/"name": "MiApp"/"name": "OtroNombre"/' "$APP/angular-native.json"
-salida="$(cd "$APP" && falla "$AN" ios --no-launch)"
-contiene "$salida" 'CFBundleExecutable' 'un plist que no cuadra con el manifiesto para el build'
-sed -i '' -e 's/"name": "OtroNombre"/"name": "MiApp"/' "$APP/angular-native.json"
+# Changing the app's name and not touching the plist leaves an app that installs
+# and does not open: iOS looks for an executable that is not there. It has to
+# stop before compiling.
+sed -i '' -e 's/"name": "MyApp"/"name": "AnotherName"/' "$APP/angular-native.json"
+output="$(cd "$APP" && must_fail "$AN" ios --no-launch)"
+contains "$output" 'CFBundleExecutable' 'a plist that does not match the manifest stops the build'
+sed -i '' -e 's/"name": "AnotherName"/"name": "MyApp"/' "$APP/angular-native.json"
 
 if [ "$fail" -ne 0 ]; then
   exit 1

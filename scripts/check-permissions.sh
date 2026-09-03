@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
-# Permisos de los plugins: que se fundan, que un choque pare el build, y que
-# lo fundido acabe dentro del `.app` y del APK.
+# Plugin permissions: that they merge, that a clash stops the build, and that
+# what was merged ends up inside the `.app` and the APK.
 #
-# Cubre lo que se puede comprobar sin ningún aparato:
+# It covers what can be checked without any device:
 #
-#   1. Un plugin declara una clave del `Info.plist` y acaba en el plist del
-#      `.app`. Es la mitad que evita que Face ID mate la app al primer intento.
-#   2. Dos plugins que piden la misma clave con el **mismo** valor no chocan:
-#      dicen lo mismo y se escribe una vez. Es lo que pasa de verdad entre
-#      biometrics y keychain.
-#   3. Dos plugins que la piden con valores **distintos** paran el build, y el
-#      mensaje dice los dos paquetes y los dos valores.
-#   4. Lo mismo en Android con `uses-feature`, donde el choque es el
-#      `android:required`. Los permisos no pueden chocar y también se comprueba.
-#   5. Un valor que no se sabe fundir —un diccionario anidado— se rechaza en
-#      vez de colarse a medias.
-#   6. Los derechos acaban dentro del binario, en `__TEXT,__entitlements`, que
-#      es lo que le permite al llavero guardar algo.
+#   1. A plugin declares an `Info.plist` key and it ends up in the `.app`'s
+#      plist. It is the half that keeps Face ID from killing the app on the very
+#      first attempt.
+#   2. Two plugins asking for the same key with the **same** value do not clash:
+#      they say the same thing and it is written once. It is what really happens
+#      between biometrics and keychain.
+#   3. Two plugins asking for it with **different** values stop the build, and
+#      the message names both packages and both values.
+#   4. The same on Android with `uses-feature`, where the clash is
+#      `android:required`. Permissions cannot clash and that is checked too.
+#   5. A value that cannot be merged —a nested dictionary— is rejected rather
+#      than half slipping through.
+#   6. The entitlements end up inside the binary, in `__TEXT,__entitlements`,
+#      which is what lets the keychain store anything.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,53 +25,58 @@ cd "$ROOT"
 
 fail=0
 ok() { echo "  ok   $1"; }
-ko() { echo "  FALLO $1"; fail=1; }
+ko() { echo "  FAIL $1"; fail=1; }
 
-contiene() {
+contains() {
   if grep -qF -e "$2" <<<"$1"; then ok "$3"; else ko "$3"; fi
 }
 
-echo "== permisos de los plugins"
+# The same, for a string that comes out of somewhere this branch does not
+# translate: the pattern is a regular expression that accepts either language.
+contains_either() {
+  if grep -qE -e "$2" <<<"$1"; then ok "$3"; else ko "$3"; fi
+}
 
-FIXTURE="$ROOT/build/permisos-fixture"
+echo "== plugin permissions"
+
+FIXTURE="$ROOT/build/permissions-fixture"
 rm -rf "$FIXTURE"
 
-# Monta una app de mentira con dos plugins de mentira. Se hace en `build/` y no
-# en los workspaces del repo: lo que se prueba es la resolución de
-# dependencias, y `node_modules` dentro de la app es por donde `an` mira
-# primero, igual que Node.
+# Sets up a fake app with two fake plugins. It is done under `build/` and not in
+# the repo's workspaces: what is being tested is dependency resolution, and
+# `node_modules` inside the app is where `an` looks first, just like Node.
 #
-#   $1 directorio de la app   $2 JSON de angularNative del primero
-#   $3 JSON de angularNative del segundo (vacío: solo hay uno)
-monta() {
+#   $1 the app's directory   $2 the first one's angularNative JSON
+#   $3 the second one's angularNative JSON (empty: there is only one)
+setup() {
   local app="$FIXTURE/$1"
-  mkdir -p "$app/node_modules/@fixture/uno/native/ios" \
-           "$app/node_modules/@fixture/uno/native/android" \
-           "$app/node_modules/@fixture/dos/native/ios" \
-           "$app/node_modules/@fixture/dos/native/android"
-  echo '// una fuente, para que el directorio no esté vacío' \
-    | tee "$app/node_modules/@fixture/uno/native/ios/Uno.swift" \
-          "$app/node_modules/@fixture/uno/native/android/Uno.java" \
-          "$app/node_modules/@fixture/dos/native/ios/Dos.swift" \
-          "$app/node_modules/@fixture/dos/native/android/Dos.java" >/dev/null
+  mkdir -p "$app/node_modules/@fixture/one/native/ios" \
+           "$app/node_modules/@fixture/one/native/android" \
+           "$app/node_modules/@fixture/two/native/ios" \
+           "$app/node_modules/@fixture/two/native/android"
+  echo '// one source, so the directory is not empty' \
+    | tee "$app/node_modules/@fixture/one/native/ios/One.swift" \
+          "$app/node_modules/@fixture/one/native/android/One.java" \
+          "$app/node_modules/@fixture/two/native/ios/Two.swift" \
+          "$app/node_modules/@fixture/two/native/android/Two.java" >/dev/null
   echo '{}' >"$app/tsconfig.json"
-  printf '%s' "$2" >"$app/node_modules/@fixture/uno/package.json"
+  printf '%s' "$2" >"$app/node_modules/@fixture/one/package.json"
   if [ -n "${3:-}" ]; then
-    printf '%s' "$3" >"$app/node_modules/@fixture/dos/package.json"
+    printf '%s' "$3" >"$app/node_modules/@fixture/two/package.json"
     cat >"$app/package.json" <<'JSON'
 { "name": "@fixture/app", "private": true,
-  "dependencies": { "@fixture/uno": "0.0.1", "@fixture/dos": "0.0.1" } }
+  "dependencies": { "@fixture/one": "0.0.1", "@fixture/two": "0.0.1" } }
 JSON
   else
-    rm -rf "$app/node_modules/@fixture/dos"
+    rm -rf "$app/node_modules/@fixture/two"
     cat >"$app/package.json" <<'JSON'
 { "name": "@fixture/app", "private": true,
-  "dependencies": { "@fixture/uno": "0.0.1" } }
+  "dependencies": { "@fixture/one": "0.0.1" } }
 JSON
   fi
 }
 
-manifiesto() { # $1 nombre de módulo  $2 texto del plist  $3 required del uses-feature
+manifest() { # $1 module name  $2 plist text  $3 the uses-feature required flag
   cat <<JSON
 { "name": "@fixture/$1", "version": "0.0.1",
   "angularNative": {
@@ -84,115 +90,119 @@ manifiesto() { # $1 nombre de módulo  $2 texto del plist  $3 required del uses-
 JSON
 }
 
-# ── 1 y 2. Misma clave, mismo valor: no es un choque ────────────────────────
-monta acuerdo "$(manifiesto uno 'Para entrar.' false)" "$(manifiesto dos 'Para entrar.' false)"
-if ACUERDO="$(cargo an plugins build/permisos-fixture/acuerdo --platform ios 2>&1)"; then
-  ok 'dos plugins que piden la misma clave con el mismo valor no chocan'
+# ── 1 and 2. Same key, same value: not a clash ──────────────────────────────
+setup agree "$(manifest one 'To get in.' false)" "$(manifest two 'To get in.' false)"
+if AGREE="$(cargo an plugins build/permissions-fixture/agree --platform ios 2>&1)"; then
+  ok 'two plugins asking for the same key with the same value do not clash'
 else
-  ko 'dos plugins que dicen lo mismo no deberían parar el build'
-  echo "$ACUERDO" | tail -5
+  ko 'two plugins saying the same thing should not stop the build'
+  echo "$AGREE" | tail -5
 fi
-if cargo an plugins build/permisos-fixture/acuerdo --platform android >/dev/null 2>&1; then
-  ok 'y lo mismo con el manifiesto de Android'
+if cargo an plugins build/permissions-fixture/agree --platform android >/dev/null 2>&1; then
+  ok 'and the same with the Android manifest'
 else
-  ko 'el manifiesto de Android tampoco debería chocar'
-fi
-
-# ── 3. Misma clave, valores distintos: se para ──────────────────────────────
-monta choque "$(manifiesto uno 'Para entrar.' false)" "$(manifiesto dos 'Otra cosa.' false)"
-if CHOQUE="$(cargo an plugins build/permisos-fixture/choque --platform ios 2>&1)"; then
-  ko 'dos plugins que piden la misma clave con valores distintos tendrían que parar el build'
-else
-  ok 'dos plugins que piden la misma clave con valores distintos paran el build'
-  contiene "$CHOQUE" 'NSFaceIDUsageDescription' 'y el mensaje dice qué clave es'
-  contiene "$CHOQUE" '@fixture/uno' 'y cuál es el primer paquete'
-  contiene "$CHOQUE" '@fixture/dos' 'y cuál es el segundo'
-  contiene "$CHOQUE" 'Para entrar.' 'y qué pedía cada uno'
-  contiene "$CHOQUE" 'Otra cosa.' 'y qué pedía el otro'
+  ko 'the Android manifest should not clash either'
 fi
 
-# ── 4. El choque de Android es el `android:required` ────────────────────────
-monta feature "$(manifiesto uno 'Igual.' true)" "$(manifiesto dos 'Igual.' false)"
-if FEATURE="$(cargo an plugins build/permisos-fixture/feature --platform android 2>&1)"; then
-  ko 'una característica pedida como obligatoria y como opcional tendría que parar el build'
+# ── 3. Same key, different values: it stops ─────────────────────────────────
+setup clash "$(manifest one 'To get in.' false)" "$(manifest two 'Something else.' false)"
+if CLASH="$(cargo an plugins build/permissions-fixture/clash --platform ios 2>&1)"; then
+  ko 'two plugins asking for the same key with different values should stop the build'
 else
-  ok 'una característica pedida como obligatoria y como opcional para el build'
-  contiene "$FEATURE" 'android.hardware.fingerprint' 'y el mensaje dice cuál es'
-  contiene "$FEATURE" 'android:required' 'y en qué no se ponen de acuerdo'
-fi
-# El mismo par no choca en iOS: ahí piden lo mismo. Que un choque de Android no
-# se cuele en el build de iOS es la otra mitad de la comprobación.
-if cargo an plugins build/permisos-fixture/feature --platform ios >/dev/null 2>&1; then
-  ok 'y ese mismo par no molesta al build de iOS, donde piden lo mismo'
-else
-  ko 'un choque de Android no tiene por qué parar el build de iOS'
+  ok 'two plugins asking for the same key with different values stop the build'
+  contains "$CLASH" 'NSFaceIDUsageDescription' 'and the message says which key it is'
+  contains "$CLASH" '@fixture/one' 'and which the first package is'
+  contains "$CLASH" '@fixture/two' 'and which the second is'
+  contains "$CLASH" 'To get in.' 'and what each one asked for'
+  contains "$CLASH" 'Something else.' 'and what the other one asked for'
 fi
 
-# ── 5. Un valor que no se sabe fundir ───────────────────────────────────────
-monta anidado '{ "name": "@fixture/uno", "version": "0.0.1",
-  "angularNative": { "module": "uno",
-    "ios": { "sources": "native/ios", "register": "Puno",
+# ── 4. The Android clash is `android:required` ──────────────────────────────
+setup feature "$(manifest one 'Same.' true)" "$(manifest two 'Same.' false)"
+if FEATURE="$(cargo an plugins build/permissions-fixture/feature --platform android 2>&1)"; then
+  ko 'a feature asked for as required and as optional should stop the build'
+else
+  ok 'a feature asked for as required and as optional stops the build'
+  contains "$FEATURE" 'android.hardware.fingerprint' 'and the message says which one it is'
+  contains "$FEATURE" 'android:required' 'and what they cannot agree on'
+fi
+# The same pair does not clash on iOS: there they ask for the same thing. That an
+# Android clash does not leak into the iOS build is the other half of the check.
+if cargo an plugins build/permissions-fixture/feature --platform ios >/dev/null 2>&1; then
+  ok 'and that same pair does not bother the iOS build, where they ask for the same thing'
+else
+  ko 'an Android clash has no business stopping the iOS build'
+fi
+
+# ── 5. A value that cannot be merged ────────────────────────────────────────
+setup nested '{ "name": "@fixture/one", "version": "0.0.1",
+  "angularNative": { "module": "one",
+    "ios": { "sources": "native/ios", "register": "Pone",
              "plist": { "NSAppTransportSecurity": { "NSAllowsLocalNetworking": true } } } } }'
-if ANIDADO="$(cargo an plugins build/permisos-fixture/anidado --platform ios 2>&1)"; then
-  ko 'un diccionario anidado en el plist tendría que rechazarse'
+if NESTED="$(cargo an plugins build/permissions-fixture/nested --platform ios 2>&1)"; then
+  ko 'a nested dictionary in the plist should be rejected'
 else
-  ok 'un diccionario anidado en el plist se rechaza en vez de colarse a medias'
-  contiene "$ANIDADO" 'NSAppTransportSecurity' 'y el mensaje dice qué clave es'
+  ok 'a nested dictionary in the plist is rejected rather than half slipping through'
+  contains "$NESTED" 'NSAppTransportSecurity' 'and the message says which key it is'
 fi
 
 rm -rf "$FIXTURE"
 
-# ── 6. Y que lo fundido llegue de verdad al .app ────────────────────────────
+# ── 6. And that what was merged really reaches the .app ─────────────────────
 #
-# Esto sí compila: arma el `.app` del ejemplo, que depende de los dos plugins
-# de verdad. Los dos piden `NSFaceIDUsageDescription` con el mismo texto, que
-# es justo el caso que tiene que pasar sin decir nada.
+# This one does compile: it builds the example's `.app`, which depends on both
+# real plugins. Both ask for `NSFaceIDUsageDescription` with the same text, which
+# is exactly the case that has to go through without a word.
 if cargo an ios examples/secrets --no-launch >/dev/null 2>&1; then
-  ok 'el .app del ejemplo se arma con los dos plugins dentro'
+  ok 'the example .app is built with both plugins inside'
 else
-  ko 'el .app del ejemplo no llegó a armarse'
+  ko 'the example .app never got built'
   cargo an ios examples/secrets --no-launch 2>&1 | tail -20
 fi
 
 PLIST="build/ios/AngularNative.app/Info.plist"
 if [ -f "$PLIST" ]; then
-  if VALOR="$(plutil -extract NSFaceIDUsageDescription raw -o - "$PLIST" 2>/dev/null)"; then
-    ok "la clave del plugin acabó en el Info.plist del .app"
-    contiene "$VALOR" 'comprobar que eres tú' 'y con el texto que declaró el plugin'
+  if VALUE="$(plutil -extract NSFaceIDUsageDescription raw -o - "$PLIST" 2>/dev/null)"; then
+    ok "the plugin's key ended up in the .app's Info.plist"
+    # This text is declared in the plugins' own package.json, under packages/,
+    # which is not part of this translation, so both wordings are accepted.
+    contains_either "$VALUE" '(comprobar que eres tú|check that it is you)' \
+      'and with the text the plugin declared'
   else
-    ko 'NSFaceIDUsageDescription no llegó al Info.plist del .app'
+    ko 'NSFaceIDUsageDescription never reached the .app Info.plist'
   fi
-  # Y la del shell sigue donde estaba: fundir no es reemplazar.
+  # And the shell's own is still where it was: merging is not replacing.
   if plutil -extract CFBundleExecutable raw -o - "$PLIST" >/dev/null 2>&1; then
-    ok 'y lo que ya traía el plist del proyecto sigue ahí'
+    ok "and what the project's plist already carried is still there"
   else
-    ko 'fundir el plist se llevó por delante lo que ya había'
+    ko 'merging the plist ran over what was already there'
   fi
 else
-  ko 'no se armó el .app'
+  ko 'the .app was not built'
 fi
 
-# Los derechos van dentro del binario, no en la firma: `codesign -d` no los ve,
-# pero la sección `__TEXT,__entitlements` está y lleva el grupo del llavero.
+# The entitlements go inside the binary, not in the signature: `codesign -d` does
+# not see them, but the `__TEXT,__entitlements` section is there and carries the
+# keychain group.
 BIN="build/ios/AngularNative.app/AngularNative"
 if [ -f "$BIN" ]; then
   if otool -s __TEXT __entitlements "$BIN" 2>/dev/null | grep -q "__entitlements"; then
-    ok 'el binario lleva la sección __TEXT,__entitlements'
-    # El volcado de `otool` viene en palabras de cuatro bytes y del revés, así
-    # que se busca el texto en el binario tal cual en vez de recomponerlo.
-    for aguja in keychain-access-groups dev.angularnative.playground; do
+    ok 'the binary carries the __TEXT,__entitlements section'
+    # `otool`'s dump comes in four-byte words and byte-swapped, so the text is
+    # looked for in the binary as it stands rather than reassembled.
+    for needle in keychain-access-groups dev.angularnative.playground; do
       if python3 -c 'import sys; sys.exit(0 if sys.argv[2].encode() in open(sys.argv[1],"rb").read() else 1)' \
-           "$BIN" "$aguja"; then
-        ok "y el binario lleva dentro $aguja"
+           "$BIN" "$needle"; then
+        ok "and the binary carries $needle inside it"
       else
-        ko "el binario no lleva $aguja"
+        ko "the binary does not carry $needle"
       fi
     done
   else
-    ko 'el binario no lleva los derechos, y sin ellos el llavero contesta -34018'
+    ko 'the binary does not carry the entitlements, and without them the keychain answers -34018'
   fi
 else
-  ko 'no hay binario que mirar'
+  ko 'there is no binary to look at'
 fi
 
 exit "$fail"
