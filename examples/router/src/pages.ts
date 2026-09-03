@@ -15,7 +15,7 @@ const SHIPS = [
   template: `
     <an-view [style.gap]="'12'" [style.padding]="'16'" [backgroundColor]="'#0b1020'"
           [style.width]="'100%'" [style.height]="'100%'">
-      <an-text [fontSize]="24" [fontWeight]="'bold'" [color]="'#f4f7ff'">Barcos</an-text>
+      <an-text [fontSize]="24" [fontWeight]="'bold'" [color]="'#f4f7ff'">Ships</an-text>
       @for (ship of ships; track ship.id) {
         <an-view
           [style.padding]="'16'"
@@ -33,7 +33,7 @@ export class HomePage {
   readonly ships = SHIPS
 
   open(id: number): void {
-    void this.router.navigate(['/barco', id])
+    void this.router.navigate(['/ship', id])
   }
 }
 
@@ -45,17 +45,17 @@ export class HomePage {
     <an-view [style.gap]="'12'" [style.padding]="'16'" [backgroundColor]="'#141c33'"
           [style.width]="'100%'" [style.height]="'100%'">
       <an-view [style.padding]="'12'" [backgroundColor]="'#2b1e4a'" [borderRadius]="8" (press)="back()">
-        <an-text [fontSize]="15" [color]="'#c4b5fd'">‹ Volver</an-text>
+        <an-text [fontSize]="15" [color]="'#c4b5fd'">‹ Back</an-text>
       </an-view>
       <an-text [fontSize]="28" [fontWeight]="'bold'" [color]="'#f4f7ff'">{{ ship()?.name }}</an-text>
-      <an-text [fontSize]="16" [color]="'#9fb0d4'">Puerto base: {{ ship()?.port }}</an-text>
+      <an-text [fontSize]="16" [color]="'#9fb0d4'">Home port: {{ ship()?.port }}</an-text>
     </an-view>
   `
 })
 export class DetailPage {
   private readonly router = inject(Router)
 
-  /** Llega de la ruta gracias a `withComponentInputBinding()`. */
+  /** Arrives from the route thanks to `withComponentInputBinding()`. */
   readonly id = input(0, { transform: numberAttribute })
 
   ship = () => SHIPS.find((ship) => ship.id === this.id())

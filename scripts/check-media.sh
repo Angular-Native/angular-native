@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mapa y vídeo: que se monten como su clase de nodo y se repartan el hueco.
+# Map and video: that they mount as their own node kind and take their share.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -12,13 +12,13 @@ check() {
   if grep -qE -- "$1" <<<"$OUTPUT"; then
     echo "  ok   $2"
   else
-    echo "  FALLO $2"
+    echo "  FAIL $2"
     fail=1
   fi
 }
 
-check 'MapView#[0-9]+ \[[0-9]+,[0-9]+ 361x[0-9]+\]' 'el mapa se monta y se reparte el hueco'
-check 'VideoView#[0-9]+ \[[0-9]+,[0-9]+ 361x200\]' 'el vídeo se monta con su alto'
+check 'MapView#[0-9]+ \[[0-9]+,[0-9]+ 361x[0-9]+\]' 'the map mounts and takes its share of the gap'
+check 'VideoView#[0-9]+ \[[0-9]+,[0-9]+ 361x200\]' 'the video mounts with its own height'
 
 if [ "$fail" -ne 0 ]; then
   echo

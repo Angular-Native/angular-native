@@ -2,12 +2,11 @@ import { ChangeDetectionStrategy, Component, signal } from '@angular/core'
 import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
 
 /**
- * Mapa y vídeo.
+ * Map and video.
  *
- * El mapa es `MKMapView` en iOS. En Android no hay ninguno en la plataforma,
- * así que se dibujan teselas de OpenStreetMap sobre un `Canvas`: nativo, pero
- * no el mapa del sistema. El vídeo sí es de los dos: `AVPlayerLayer` y
- * `VideoView`.
+ * The map is `MKMapView` on iOS. Android has none in the platform, so
+ * OpenStreetMap tiles are drawn onto a `Canvas`: native, but not the system
+ * map. The video does belong to both: `AVPlayerLayer` and `VideoView`.
  */
 @Component({
   selector: 'app-root',
@@ -16,7 +15,7 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
   template: `
     <an-view [style.width]="'100%'" [style.height]="'100%'" [backgroundColor]="'#0b1020'">
       <an-safe-area [style.flex]="1" [padding]="16" [style.gap]="'12'">
-        <an-text [fontSize]="26" [fontWeight]="700" [color]="'#f8fafc'">mapa y vídeo</an-text>
+        <an-text [fontSize]="26" [fontWeight]="700" [color]="'#f8fafc'">map and video</an-text>
 
         <an-map-view
           [style.flex]="1"
@@ -31,10 +30,10 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
             [title]="'Mallorca'"
             [variant]="'tonal'"
             [color]="'#6ee7b7'"
-            (press)="ir(39.5696, 2.6502, 11)"></an-button>
+            (press)="go(39.5696, 2.6502, 11)"></an-button>
           <an-button
             [style.flexGrow]="'1'"
-            [title]="'Acercar'"
+            [title]="'Zoom in'"
             [variant]="'tonal'"
             [color]="'#6ee7b7'"
             (press)="zoom.set(zoom() + 1)"></an-button>
@@ -45,28 +44,28 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
           [borderRadius]="14"
           [backgroundColor]="'#000000'"
           [url]="video"
-          [playing]="reproduciendo()"
+          [playing]="playing()"
           [muted]="true" />
 
         <an-button
           [style.height]="44"
-          [title]="reproduciendo() ? 'Pausa' : 'Reproducir'"
+          [title]="playing() ? 'Pause' : 'Play'"
           [variant]="'filled'"
           [color]="'#6ee7b7'"
-          (press)="reproduciendo.set(!reproduciendo())"></an-button>
+          (press)="playing.set(!playing())"></an-button>
       </an-safe-area>
     </an-view>
   `
 })
 export class AppComponent {
   /**
-   * El flujo de prueba de Apple.
+   * Apple's test stream.
    *
-   * Es HLS y no un MP4 porque el simulador de iOS no decodifica los MP4 de
-   * ejemplo que se suelen usar: el reproductor los da por listos y luego
-   * enseña el icono de "esto no se puede ver". El emulador de Android no
-   * decodifica ninguna de las dos cosas —no trae códecs—, así que el vídeo
-   * está probado en iOS y no en Android.
+   * It is HLS and not an MP4 because the iOS simulator does not decode the
+   * sample MP4s people usually reach for: the player reports them as ready and
+   * then shows the "this cannot be played" icon. The Android emulator decodes
+   * neither of the two —it ships no codecs—, so the video is tested on iOS and
+   * not on Android.
    */
   readonly video =
     'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_ts/master.m3u8'
@@ -74,9 +73,9 @@ export class AppComponent {
   readonly lat = signal(40.4168)
   readonly lon = signal(-3.7038)
   readonly zoom = signal(11)
-  readonly reproduciendo = signal(false)
+  readonly playing = signal(false)
 
-  ir(lat: number, lon: number, zoom: number): void {
+  go(lat: number, lon: number, zoom: number): void {
     this.lat.set(lat)
     this.lon.set(lon)
     this.zoom.set(zoom)

@@ -3,9 +3,9 @@ import { NativeStack } from '@angular-native/platform'
 import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
 
 /**
- * `NativeStack` va donde iría un `<router-outlet>`: la pantalla nueva entra
- * deslizándose, la anterior se queda viva por debajo, y el gesto de borde de
- * iOS y el botón de atrás de Android navegan hacia atrás.
+ * `NativeStack` goes where a `<router-outlet>` would go: the new screen slides
+ * in, the previous one stays alive underneath, and the iOS edge gesture and the
+ * Android back button navigate back.
  */
 @Component({
   selector: 'app-root',

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Router de Angular sobre una pila de navegación en memoria.
+# The Angular router on top of an in-memory navigation stack.
 #
-# El toque simulado en la primera tarjeta tiene que llevar a la ficha, con el
-# parámetro de ruta ya enlazado al `input()` del componente.
+# The simulated tap on the first card has to lead to the detail page, with the
+# route parameter already bound to the component's `input()`.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,22 +15,24 @@ check() {
   if grep -qE -- "$1" <<<"$OUTPUT"; then
     echo "  ok   $2"
   else
-    echo "  FALLO $2"
+    echo "  FAIL $2"
     fail=1
   fi
 }
 
 echo "== router"
-check 'StackView#[0-9]+' 'la pila nativa se montó'
-check '\-\- atrás simulado' 'el gesto de volver atrás tiene quien lo escuche'
-check '"Barcos"' 'tras volver atrás se ve otra vez la lista'
-# Si la pantalla se hubiera rehecho, el core habría creado sus vistas otra vez.
-check 'volver atrás costó 0 vistas creadas' 'la pantalla anterior se reatachó, no se rehizo'
-if grep -qE -- 'búfer inválido|promesa rechazada|el arranque falló' <<<"$OUTPUT"; then
-  echo "  FALLO hubo errores durante la navegación"
+check 'StackView#[0-9]+' 'the native stack was mounted'
+# The headless runner announces the simulated gesture in its own words, and it
+# is a crate translated on another branch, so both wordings are accepted.
+check '\-\- (atrás simulado|simulated back)' 'the back gesture has someone listening for it'
+check '"Ships"' 'after going back the list is on screen again'
+# Had the screen been rebuilt, the core would have created its views all over.
+check '(volver atrás costó 0 vistas creadas|going back cost 0 views created)' 'the previous screen was reattached, not rebuilt'
+if grep -qE -- '(búfer inválido|invalid buffer|promesa rechazada|rejected promise|bootstrap failed)' <<<"$OUTPUT"; then
+  echo "  FAIL there were errors during navigation"
   fail=1
 else
-  echo "  ok   ni errores de protocolo ni promesas colgando"
+  echo "  ok   no protocol errors and no promises left hanging"
 fi
 
 if [ "$fail" -ne 0 ]; then

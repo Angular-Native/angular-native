@@ -8,9 +8,9 @@ interface Row {
 }
 
 /**
- * Lista de cinco mil filas con búsqueda. Sirve para ver dos cosas: que el
- * campo de texto escribe en una señal, y que la lista solo monta las filas
- * visibles por muchas que haya.
+ * A five thousand row list with a search field. It is there to show two things:
+ * that the text field writes into a signal, and that the list only mounts the
+ * visible rows however many there are.
  */
 @Component({
   selector: 'app-root',
@@ -25,14 +25,14 @@ interface Row {
 
       <an-view [style.paddingHorizontal]="'16'" [style.gap]="'12'" [style.paddingBottom]="'12'">
         <an-text [fontSize]="24" [fontWeight]="'bold'" [color]="'#f4f7ff'">
-          {{ visible().length }} de {{ rows.length }}
+          {{ visible().length }} of {{ rows.length }}
         </an-text>
 
         <an-text [fontSize]="13" [color]="'#6ee7b7'">{{ deviceLabel() }}</an-text>
 
         <an-text-input
           [style.height]="'40'"
-          [placeholder]="'filtrar…'"
+          [placeholder]="'filter…'"
           [placeholderColor]="'#6b7a99'"
           [value]="query()"
           [color]="'#f4f7ff'"
@@ -72,30 +72,30 @@ interface Row {
 export class AppComponent {
   readonly rows: Row[] = Array.from({ length: 5000 }, (_, id) => ({
     id,
-    name: `fila número ${id}`
+    name: `row number ${id}`
   }))
 
   /**
-   * Una de cada cinco filas es más alta. La lista no necesita que midan todas
-   * lo mismo: le basta con saber cuánto mide cada una.
+   * One row in five is taller. The list does not need them all to measure the
+   * same: it is enough for it to know how tall each one is.
    */
   readonly rowHeight = (row: Row): number => (row.id % 5 === 0 ? 88 : 56)
 
   readonly query = signal('')
   readonly reloading = signal(false)
 
-  /** Viene de un módulo nativo: la llamada no bloquea y llega en otro frame. */
+  /** Comes from a native module: the call does not block and lands in another frame. */
   private readonly device = signal<string | null>(null)
-  readonly deviceLabel = computed(() => this.device() ?? 'consultando el dispositivo…')
+  readonly deviceLabel = computed(() => this.device() ?? 'asking the device…')
 
   constructor() {
     inject(Device)
       .info()
       .then((info) => this.device.set(`${info.platform} ${info.systemVersion} · ${info.locale}`))
-      .catch((error: unknown) => this.device.set(`sin datos del dispositivo: ${error}`))
+      .catch((error: unknown) => this.device.set(`no device data: ${error}`))
   }
 
-  /** Tirar para recargar: se finge un ida y vuelta al servidor. */
+  /** Pull to refresh: a round trip to the server is faked. */
   reload(): void {
     this.reloading.set(true)
     setTimeout(() => this.reloading.set(false), 1200)
