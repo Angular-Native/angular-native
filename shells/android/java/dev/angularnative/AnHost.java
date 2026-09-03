@@ -3339,7 +3339,12 @@ public final class AnHost {
      * as an object so as not to have to build a Java map from Rust over JNI.
      */
     public String deviceInfo() {
-        return "{\"platform\":\"android\""
+        // The platform is the device's and not the APK's: `watch` comes from
+        // FEATURE_WATCH, which the system answers, while the manifest only says
+        // what the package intended. The phone APK installs on a watch without
+        // complaint, and there the manifest would say phone while the wearer is
+        // looking at a watch.
+        return "{\"platform\":\"" + (watch ? "wearos" : "android") + "\""
                 + ",\"systemVersion\":\"" + android.os.Build.VERSION.RELEASE + "\""
                 + ",\"model\":\"" + android.os.Build.MODEL + "\""
                 + ",\"scale\":" + density

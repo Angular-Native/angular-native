@@ -66,7 +66,7 @@ ANDROID_INFO="$(awk '/public String deviceInfo\(\)/,/^    \}/' "$ANDROID_HOST")"
 # hard-codes the platform, so an app on a watch cannot tell it is on one. It is a
 # real hole and it is named here rather than quietly left out of the loop; take
 # the word off this line and the check below turns it into a failure.
-KNOWN_MISSING="wearos"
+KNOWN_MISSING=""
 
 produced_by() {
   case "$1" in

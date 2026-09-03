@@ -200,6 +200,28 @@ else:
                     'not to the chosen one'
                 )
 
+# 8. The platform an app reads is the device's and not the APK's.
+#
+#    `deviceInfo()` is what `Device.info()` answers, and `NativePlatform`
+#    declares 'wearos'. A hard-coded "android" there means an app on a watch is
+#    told it is on a phone, which is the one thing that value exists to prevent.
+#    And it has to come from `watch` —the field the constructor fills from
+#    FEATURE_WATCH— and not from the manifest: the phone APK installs on a
+#    watch, and then the manifest says phone while the system says watch.
+device_info = re.search(r'public String deviceInfo\(\) \{(.*?)\n    \}', host, re.S)
+if not device_info:
+    failures.append('  FAIL AnHost.deviceInfo not found')
+else:
+    body = device_info.group(1)
+    if '"wearos"' not in body:
+        failures.append(
+            '  FAIL deviceInfo never answers "wearos": on a watch an app is told it is on a phone'
+        )
+    elif not re.search(r'\bwatch\b\s*\?', body):
+        failures.append(
+            '  FAIL deviceInfo picks the platform without asking the FEATURE_WATCH flag'
+        )
+
 for line in failures:
     print(line)
 if failures:
@@ -215,3 +237,4 @@ print('  ok   the crown arrives through onGenericMotionEvent and only on the wat
 print('  ok   (crown) and (crownIdle) are delivered by the host, and off the watch they say so')
 print('  ok   the APK goes to the watch-shaped device, and every adb carries its -s')
 print('  ok   the inset of the round screen is the inscribed square')
+print('  ok   deviceInfo answers wearos on a watch and android on a phone')
