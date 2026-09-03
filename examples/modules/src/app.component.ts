@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core'
-import { Files } from '@angular-native/platform'
+import { Files, Share } from '@angular-native/platform'
 import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
 
 /**
@@ -37,39 +37,68 @@ import { NATIVE_PRIMITIVES } from '@angular-native/primitives'
         <an-text [fontSize]="14" [color]="'#c7d5f5'">{{ line }}</an-text>
       }
 
-      <an-view
-        [style.height]="'44'"
-        [style.alignItems]="'center'"
-        [style.justifyContent]="'center'"
-        [backgroundColor]="'#2f6fed'"
-        [borderRadius]="10"
-        (press)="pick()">
-        <an-text [fontSize]="15" [fontWeight]="'600'" [color]="'#ffffff'">pick a file</an-text>
+      <an-view [style.gap]="'10'">
+        <an-view
+          [style.height]="'44'"
+          [style.alignItems]="'center'"
+          [style.justifyContent]="'center'"
+          [backgroundColor]="'#2f6fed'"
+          [borderRadius]="10"
+          (press)="pick()">
+          <an-text [fontSize]="15" [fontWeight]="'600'" [color]="'#ffffff'">pick a file</an-text>
+        </an-view>
+
+        <an-view
+          [style.height]="'44'"
+          [style.alignItems]="'center'"
+          [style.justifyContent]="'center'"
+          [backgroundColor]="'#1e2a4a'"
+          [borderRadius]="10"
+          (press)="share()">
+          <an-text [fontSize]="15" [fontWeight]="'600'" [color]="'#9fb0d4'">share something</an-text>
+        </an-view>
       </an-view>
     </an-view>
   `
 })
 export class AppComponent {
   private readonly files = inject(Files)
+  private readonly sharing = inject(Share)
 
   readonly lines = signal<string[]>([])
 
   constructor() {
-    void this.exerciseFiles()
+    void this.exercise()
+  }
+
+  private async exercise(): Promise<void> {
+    await this.exerciseFiles()
+    await this.exerciseShare()
   }
 
   /** The picker is not run on startup: it puts something on the screen. */
   pick(): void {
-    this.files
-      .pick({ multiple: false })
-      .then((picked) => {
-        this.say(
-          picked.length === 0
-            ? 'files.pick: nothing was chosen'
-            : `files.pick: ok ${picked[0].name} (${picked[0].size} bytes)`
-        )
-      })
-      .catch((error: unknown) => this.say(`files.pick: no ${error}`))
+    void this.pickAndRead()
+  }
+
+  /**
+   * Pick, then read what was picked. The second half is the interesting one: a
+   * picked file is outside the app's directories, so reading it is the one thing
+   * the module allows there, and only because it came back from `pick()`.
+   */
+  private async pickAndRead(): Promise<void> {
+    try {
+      const picked = await this.files.pick({ multiple: false })
+      if (picked.length === 0) {
+        // Somebody closed the picker. Not a failure, and not a rejection.
+        this.say('files.pick: nothing was chosen')
+        return
+      }
+      const contents = await this.files.read(picked[0].path)
+      this.say(`files.pick: ok ${picked[0].name}, read ${contents.length} bytes back`)
+    } catch (error) {
+      this.say(`files.pick: no ${error}`)
+    }
   }
 
   /**
@@ -116,6 +145,28 @@ export class AppComponent {
    * sees; the log is what a check reads, and on Android it is the only one it
    * can read without a working `uiautomator`.
    */
+  /**
+   * The sheet is not opened on startup either. What is checked without anybody
+   * present is the one thing that can be: whether this platform has a sheet at
+   * all, which is a question three of the seven answer `false`.
+   */
+  private async exerciseShare(): Promise<void> {
+    try {
+      const can = await this.sharing.canShare()
+      this.say(`share.canShare: ok ${can ? 'yes' : 'no, not on this platform'}`)
+    } catch (error) {
+      this.say(`share.canShare: no ${error}`)
+    }
+  }
+
+  /** Opens the system sheet. Cancelling is not a failure and does not throw. */
+  share(): void {
+    this.sharing
+      .share({ title: 'angular-native', text: 'shared from a built-in module' })
+      .then((done) => this.say(`share.share: ok ${done ? 'shared' : 'cancelled'}`))
+      .catch((error: unknown) => this.say(`share.share: no ${error}`))
+  }
+
   private say(line: string): void {
     this.lines.update((lines) => [...lines, line])
     console.log(`[modules] ${line}`)

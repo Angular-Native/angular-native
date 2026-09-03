@@ -60,6 +60,7 @@ public final class AnBuiltinModules {
             return;
         }
         INSTANCE.register("files", new AnFiles());
+        INSTANCE.register("share", new AnShare());
     }
 
     private void register(String name, AnBuiltinModule module) {

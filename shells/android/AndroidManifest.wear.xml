@@ -21,6 +21,31 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
+      Package visibility. Since Android 11 an app cannot see which other apps
+      are installed unless it says what it is looking for, and `resolveActivity`
+      answers `null` for everything it cannot see. Without this the `files` and
+      `share` modules would conclude that a device with a perfectly good
+      document picker has none, and say so — which is worse than not asking, as
+      it is a confident wrong answer.
+
+      Only these two, and only because the two built-in modules ask them.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND_MULTIPLE" />
+            <data android:mimeType="*/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.OPEN_DOCUMENT" />
+            <data android:mimeType="*/*" />
+        </intent>
+    </queries>
+
+    <!--
       Without this the APK is the phone's and the watch treats it as such: the
       Play Store does not offer it for the watch and the system applies none of
       its form-factor rules. It is the declaration that turns an Android APK
@@ -53,6 +78,29 @@
         <meta-data
             android:name="com.google.android.wearable.standalone"
             android:value="true" />
+
+
+        <!--
+          How a file leaves the app.
+
+          Since Android 7 handing another app a `file://` path throws
+          `FileUriExposedException`, so the `share` module wraps what it sends in
+          a `content://` URI from this provider. It is not exported and it grants
+          permission per URI and per share: what crosses is the one file, to the
+          one app the person picked, for as long as that app needs it.
+
+          `@xml/an_file_paths` says which directories may be handed over, and it
+          is only the two the `files` module owns.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="dev.angularnative.anfiles"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/an_file_paths" />
+        </provider>
 
         <activity
             android:name=".MainActivity"

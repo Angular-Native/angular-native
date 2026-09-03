@@ -348,6 +348,13 @@ public final class AnFiles implements AnBuiltinModule {
         picking = respond;
         try {
             host.startActivityForResult(intent, requestCode);
+        } catch (android.content.ActivityNotFoundException error) {
+            // The backstop to the check above. `resolveActivity` only sees what
+            // the manifest's `<queries>` lets it see, so a device where it saw
+            // something and there is nothing still has to end in a message and
+            // not in a crash.
+            picking = null;
+            respond.reject("no app on this device can open a document: " + error);
         } catch (RuntimeException error) {
             picking = null;
             respond.reject("files.pick could not open the picker: " + error);

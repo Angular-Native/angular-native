@@ -145,6 +145,7 @@ enum AnBuiltinModules {
                 args: AnBuiltinModules.text(args))
         }
         register("files", AnBuiltinFiles())
+        register("share", AnBuiltinShare())
     }
 
     private static func register(_ name: String, _ module: AnBuiltinModule) {
