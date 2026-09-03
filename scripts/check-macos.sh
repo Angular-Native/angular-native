@@ -110,7 +110,7 @@ fi
 # 6. El camino ruidoso, que es el que sostiene la regla de la casa. El ejemplo
 #    de los controles usa props que AppKit no puede honrar, y tienen que salir
 #    por pantalla la primera vez que llegan.
-if grep -q "no se aplica en macOS" "$RUN_LOG"; then
+if grep -qE "(no se aplica en macOS|does not apply on macOS)" "$RUN_LOG"; then
   echo "  ok   lo que AppKit no cubre se dice al llegar, no se traga"
 else
   echo "  FALLO ninguna prop descartada salió por pantalla: el aviso no funciona"
@@ -119,9 +119,9 @@ fi
 
 # 7. Y el reverso: nada que nadie haya declarado. Una «prop desconocida» es una
 #    prop que este host no mira y que tampoco está en IGNORED, o sea, un olvido.
-if grep -q "prop desconocida" "$RUN_LOG"; then
+if grep -qE "(prop desconocida|unknown prop)" "$RUN_LOG"; then
   echo "  FALLO hay props que el host no mira y que no están declaradas:"
-  grep "prop desconocida" "$RUN_LOG" | sed 's/^/       /'
+  grep -E "(prop desconocida|unknown prop)" "$RUN_LOG" | sed 's/^/       /'
   fail=1
 else
   echo "  ok   ninguna prop del ejemplo se queda sin dueño"

@@ -100,7 +100,7 @@ if not faltan and not sobran and del_nucleo:
 cuerpo_prop = host[host.index('fn set_prop('):] if 'fn set_prop(' in host else ''
 if '_ if ignored_reason(key).is_some()' not in cuerpo_prop:
     fallos.append('  FALLO set_prop no consulta IGNORED: lo descartado no se distingue del olvido')
-elif 'prop desconocida' not in cuerpo_prop:
+elif 'prop desconocida' not in cuerpo_prop and 'unknown prop' not in cuerpo_prop:
     fallos.append('  FALLO set_prop se traga las props que no conoce sin decirlo')
 elif re.search(r'\n            _ => \{\s*\}\n        \}\n    \}', cuerpo_prop):
     fallos.append('  FALLO set_prop termina en un comodín vacío')
