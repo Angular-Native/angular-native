@@ -51,7 +51,7 @@ SOLO_PUNTERO = {
 }
 
 # Props que sí deberían llegar y todavía no llegan. Cada una con su motivo en
-# docs/wrapper-nativo.md. La lista solo puede encoger.
+# la guía «Props and the native wrapper» del sitio. La lista solo puede encoger.
 PENDIENTES: dict[str, str] = {}
 
 # Las props comunes son las claves de los `push({...})` de cada directiva, más
@@ -116,7 +116,7 @@ if objetos != empujones:
 for linea in fallos:
     print(linea)
 if fallos:
-    print('  (el inventario y los motivos están en docs/wrapper-nativo.md)')
+    print('  (el inventario y los motivos están en docs-site, en guide/native-wrapper)')
     sys.exit(1)
 
 print(f'  ok   las {len(comunes) - len(SOLO_NUCLEO) - len(SOLO_PUNTERO) - len(pendientes_vistas)} '
