@@ -117,9 +117,11 @@ an dev --tvos       # simulador de Apple TV
 an dev --visionos   # simulador de Vision Pro
 an dev --watchos    # simulador de Apple Watch
 an dev --wearos     # emulador de Wear OS
+an dev --macos      # una ventana en este mismo Mac
 ```
 
-Todavía no hay `an dev --macos`: de momento se recompila con `an macos`.
+`--macos` es el distinto: no hay simulador, así que la app se abre en la máquina
+que la está compilando y el servidor con el que habla está en esa misma máquina.
 
 Al guardar un componente, su definición se cambia en la app que está corriendo.
 Te quedas en la misma pantalla, con lo que hubieras escrito y los temporizadores

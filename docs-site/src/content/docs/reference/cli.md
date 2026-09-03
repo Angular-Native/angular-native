@@ -204,7 +204,8 @@ platform is a hard error.
 
 ```bash
 an dev [APP] [--port <N>] [--device <NAME>]
-       [--android] [--wearos] [--watchos] [--tvos] [--visionos] [--no-launch]
+       [--android] [--wearos] [--watchos] [--tvos] [--visionos] [--macos]
+       [--no-launch]
 ```
 
 Serves the bundle on `127.0.0.1:8420` — `--port` changes it — and watches for
@@ -212,19 +213,32 @@ changes. The port is bound *before* anything is built, so a second `an dev`
 fails immediately instead of after a two-minute build.
 
 The app is given the server's URL at build time: `127.0.0.1` for everything
-Apple, including the watch, which shares the Mac's network; `10.0.2.2` for the
-Android and Wear emulators.
+Apple, including the watch, which shares the Mac's network, and including macOS,
+where the app is not inside anything at all — it runs on the machine serving the
+bundle; `10.0.2.2` for the Android and Wear emulators.
 
 `--android` wins over `--wearos`, which wins over `--watchos`, `--tvos`,
-`--visionos`, and iOS is what you get with none of them. They are not declared
-as mutually exclusive, so `an dev --android --tvos` quietly builds Android.
+`--visionos`, `--macos`, and iOS is what you get with none of them. They are not
+declared as mutually exclusive, so `an dev --android --tvos` quietly builds
+Android.
 
-**There is no `an dev --macos`** and no `an dev --ios` — iOS is the default.
-Rebuild with `an macos` in the meantime.
+There is no `an dev --ios` — iOS is the default.
+
+`--macos` has no simulator to launch into: `an dev --macos` kills the window
+that was already open and opens a new one, the same as `an macos`. It refuses
+before building anything if the app depends on a plugin, because the desktop
+host has no plugin registry.
 
 `--device` behaves as "if you did not change it, use this platform's default":
 `--watchos` gets the watch, `--tvos` the Apple TV, `--visionos` the headset.
-`--android` ignores it entirely. `an dev --wearos` treats it as an `adb` serial.
+`--android` and `--macos` ignore it entirely — the Mac has no device to name.
+`an dev --wearos` treats it as an `adb` serial.
+
+`[APP]` defaults to `examples/hello-angular`, except with `--wearos`
+(`examples/hello-wear`) and `--macos` (`examples/controls`), which is the same
+default each platform's own subcommand uses and for the same reason: a phone
+screen is not readable on a round 227-point face, and on the desktop `controls`
+is what shows at a glance what AppKit draws.
 
 It watches `<app>/src` always, and `packages/` as well when run inside the
 monorepo. Only `.ts`, `.js`, `.html` and `.json` count, debounced 250 ms. A
