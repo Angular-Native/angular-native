@@ -1,6 +1,8 @@
 ---
 title: Biometrics and keychain
 description: Two plugins that go together — the system's biometric check, and secrets stored where the system stores its own.
+sidebar:
+  order: 3
 ---
 
 Two plugins, written outside the core, that are the reason the

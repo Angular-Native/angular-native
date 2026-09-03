@@ -1,6 +1,8 @@
 ---
 title: Components
 description: The 25 primitives, what each one becomes on every platform, and where it is not available.
+sidebar:
+  order: 1
 ---
 
 Every primitive maps to a control the system already has. Where a platform has
@@ -32,13 +34,18 @@ fill in for a missing control.
 | `an-tab-bar` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
 | `an-navigation-bar` | ✅ | ✅ | title bar | ✅ | ✅ | — | — |
 | `an-stack-view` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `an-safe-area` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `an-modal` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `an-alert` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `an-web-view` | ✅ | ✅ | ✅ | — | ✅ | — | — |
 | `an-map-view` | ✅ | tiles | ✅ | ✅ | ✅ | — | ✅ |
 | `an-video-view` | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ |
 | | **25** | **25** | **25** | **20** | **25** | **17** | **18** |
+
+`an-safe-area` is not in the table because it is not a primitive: it is a
+component built on top of `an-view` that turns the insets the host reports into
+padding. It mounts everywhere, but on watchOS the insets are always zero — the
+app owns the whole screen and the system reserves no queryable margin — so there
+it does nothing. On Wear OS it is how the round screen's margin arrives.
 
 Two entries are neither a yes nor a no, and both are explained where they
 happen: on macOS `an-navigation-bar` puts its title in the **window's title

@@ -2,17 +2,17 @@
 import starlight from '@astrojs/starlight'
 import { defineConfig } from 'astro/config'
 
-// La documentación del proyecto.
+// The project's documentation.
 //
-// El contenido son ficheros Markdown y nada más: Astro los sirve, no los
-// posee. Quien escribe una página no tiene que saber nada de Astro, y el día
-// que este sitio se cambie por otro, lo escrito sigue valiendo.
+// The content is Markdown files and nothing else: Astro serves them, it does
+// not own them. Whoever writes a page has to know nothing about Astro, and the
+// day this site is swapped for another one, what was written still stands.
 //
-// El inglés es el idioma por defecto y la fuente: es lo que ve quien llega sin
-// pedir idioma, y es contra lo que se traduce. Starlight recae en él cuando una
-// página no está traducida todavía, así que una traducción a medias enseña la
-// página en inglés en vez de un 404 — que es justo lo que hace falta mientras
-// una traducción se pone al día.
+// English is the default language and the source: it is what somebody who
+// arrives without asking for a language sees, and it is what translations are
+// made against. Starlight falls back to it when a page has not been translated
+// yet, so a half-finished translation shows the English page instead of a 404 —
+// which is exactly what is wanted while a translation catches up.
 export default defineConfig({
   site: 'https://angular-native.dev',
   integrations: [
@@ -30,10 +30,15 @@ export default defineConfig({
           href: 'https://github.com/nesgarbo/angular-native'
         }
       ],
-      // Tres grupos y no diez: alguien que llega quiere aprender, alguien que
-      // ya está quiere consultar, y quien porta a una plataforma quiere saber
-      // qué le falta ahí. Un sidebar que refleje la estructura de ficheros
-      // obliga al lector a deducir esa diferencia.
+      // Five groups and not ten: somebody arriving wants to learn, somebody
+      // already here wants to look something up, somebody porting to a platform
+      // wants to know what is missing there, and accessibility and extending it
+      // are each a subject of their own. A sidebar mirroring the file tree would
+      // make the reader work that difference out.
+      //
+      // Order inside each group comes from `sidebar.order` in every page's
+      // frontmatter: alphabetical would put the quick start after the guide it
+      // is the entrance to.
       sidebar: [
         {
           label: 'Guide',

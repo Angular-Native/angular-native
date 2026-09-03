@@ -1,0 +1,72 @@
+---
+title: angular-native
+description: Apps de Angular que pintan vistas nativas de verdad en ocho plataformas. Sin WebView por ninguna parte.
+template: splash
+hero:
+  tagline: |
+    Escribe Angular. Obtienes un UIView, un android.view.View, un NSView o una
+    vista de SwiftUI — el control de verdad, del sistema de verdad, en ocho
+    plataformas.
+  actions:
+    - text: Empezar
+      link: /es/guide/quick-start/
+      icon: right-arrow
+      variant: primary
+    - text: Por qué no un WebView
+      link: /es/guide/how-it-works/
+      icon: open-book
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components'
+
+<CardGrid>
+  <Card title="Controles de verdad, no imitaciones" icon="approve-check">
+    Un `<an-switch>` **es** un `UISwitch` en iOS y un `MaterialSwitch` en
+    Android. Se ve y se comporta como ese control se vea y se comporte en esa
+    versión del sistema, y envejece con la plataforma en vez de con este
+    repositorio.
+  </Card>
+  <Card title="El layout no es de la plataforma" icon="puzzle">
+    El flexbox corre en un núcleo de Rust sobre taffy, una vez, y a cada host se
+    le dan marcos absolutos. La misma plantilla se coloca igual en un teléfono,
+    en una tele y en un reloj — lo que cambia es qué control se monta.
+  </Card>
+  <Card title="Angular tal cual" icon="seti:angular">
+    Señales, `@if`, `@for`, el router, plantillas AOT, inyección de
+    dependencias. Sin zonas, porque el bucle de frames es lo que dispara la
+    detección de cambios. Ni dialecto ni subconjunto.
+  </Card>
+  <Card title="Un hueco nunca es silencioso" icon="warning">
+    Una prop que ningún host mira, un estilo que nadie reconoce, un plugin al
+    que le falta una plataforma: cada uno avisa o para el build. Hay
+    comprobaciones que lo exigen — una primitiva que no va en algún sitio tiene
+    que decirlo por escrito.
+  </Card>
+</CardGrid>
+
+## Ocho plataformas, un bundle
+
+| | Pinta con | Estado |
+|---|---|---|
+| **iOS · iPadOS** | UIKit | Las 25 primitivas |
+| **Android** | android.view + Material 3 | Las 25 primitivas |
+| **macOS** | AppKit | Las 25 primitivas |
+| **tvOS** | UIKit + motor de foco | 20 de 25 — una tele no tiene interruptor ni deslizador |
+| **visionOS** | UIKit en una escena con ventana | Las 25 primitivas |
+| **watchOS** | SwiftUI | 17 de 25 |
+| **Wear OS** | android.view | 18 de 25 |
+| **HarmonyOS · Windows** | — | Sin empezar |
+
+## En un minuto
+
+```bash
+npx @angular/cli@latest new mi-app && cd mi-app
+an init
+an add ios
+an ios
+```
+
+Eso es un proyecto de Angular creado por el CLI de Angular, sin tocar, corriendo
+sobre vistas nativas. No se mueve nada a este repositorio y `ng build` sigue
+funcionando.

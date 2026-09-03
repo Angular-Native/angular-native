@@ -1,0 +1,181 @@
+---
+title: Empezar
+description: De un directorio vacío a una app de Angular corriendo sobre vistas nativas, en la plataforma que elijas.
+sidebar:
+  order: 1
+---
+
+import { Steps, Tabs, TabItem, Aside, CardGrid, LinkCard } from '@astrojs/starlight/components'
+
+## Qué hace falta
+
+<Tabs syncKey="platform">
+  <TabItem label="iOS · tvOS · visionOS">
+    Xcode con el runtime de simulador de la plataforma que quieras. tvOS y
+    visionOS traen el suyo aparte: `xcodebuild -downloadPlatform tvOS`.
+
+    tvOS, visionOS y watchOS piden además un toolchain nightly de Rust: sus
+    targets son de nivel 3 y no traen `std` precompilada.
+
+    ```bash
+    rustup toolchain install nightly
+    rustup component add rust-src --toolchain nightly
+    ```
+  </TabItem>
+  <TabItem label="Android · Wear OS">
+    El SDK de Android, que se encuentra por `ANDROID_HOME` o donde suele estar,
+    y el NDK. Aquí no hay Gradle: `an` llama él mismo a `aapt2`, `javac`, `d8`
+    y `apksigner`.
+
+    Las dependencias de Material 3 se resuelven una vez:
+
+    ```bash
+    python3 scripts/fetch-android-deps.py
+    python3 scripts/prepare-android-deps.py
+    ```
+  </TabItem>
+  <TabItem label="macOS">
+    Las herramientas de línea de comandos de Xcode y nada más. No hay
+    simulador: la app corre en la máquina donde la compilas.
+  </TabItem>
+</Tabs>
+
+## Instalar el CLI
+
+<Steps>
+
+1. Clona este repositorio y deja `an` en el PATH:
+
+   ```bash
+   git clone https://github.com/nesgarbo/angular-native
+   cd angular-native
+   cargo install --path crates/an-cli
+   ```
+
+   <Aside type="note">
+   `cargo install` deja apuntado desde dónde se compiló, así que `an` sabe
+   encontrar después las fuentes del framework desde cualquier directorio.
+   `AN_HOME` lo cambia.
+   </Aside>
+
+2. Crea un proyecto de Angular, o usa uno que ya tengas:
+
+   ```bash
+   npx @angular/cli@latest new mi-app
+   cd mi-app
+   ```
+
+3. Prepáralo:
+
+   ```bash
+   an init
+   ```
+
+   Añade un manifiesto, un tsconfig para el build nativo, los dos paquetes del
+   framework y un punto de entrada nativo. No toca ni `src/main.ts` ni
+   `angular.json`, así que `ng build` y `ng serve` siguen funcionando
+   exactamente igual que antes.
+
+4. Añade una plataforma y arráncala:
+
+   <Tabs syncKey="platform">
+     <TabItem label="iOS · tvOS · visionOS">
+       ```bash
+       an add ios && an ios
+       an add tvos && an tvos .
+       an add visionos && an visionos .
+       ```
+     </TabItem>
+     <TabItem label="Android · Wear OS">
+       ```bash
+       an add android && an android
+       an wearos .
+       ```
+     </TabItem>
+     <TabItem label="macOS">
+       ```bash
+       an macos .
+       ```
+     </TabItem>
+   </Tabs>
+
+   <Aside type="tip" title="Por qué el punto al final">
+   `an ios` y `an android` recaen en el proyecto donde estás. Los otros cinco
+   llevan de serie un ejemplo de este repositorio, y fuera del monorepo nombrar
+   cualquier directorio que no sea la raíz del proyecto es un error — así que
+   con `.` compilan el tuyo.
+   </Aside>
+
+</Steps>
+
+## Desarrollar con refresco en caliente
+
+```bash
+an dev              # simulador de iPhone
+an dev --android    # emulador de Android
+an dev --tvos       # simulador de Apple TV
+an dev --visionos   # simulador de Vision Pro
+an dev --watchos    # simulador de Apple Watch
+an dev --wearos     # emulador de Wear OS
+```
+
+Todavía no hay `an dev --macos`: de momento se recompila con `an macos`.
+
+Al guardar un componente, su definición se cambia en la app que está corriendo.
+Te quedas en la misma pantalla, con lo que hubieras escrito y los temporizadores
+en marcha.
+
+<Aside type="caution" title="Lo que un guardado no puede cambiar">
+Tocar el propio framework —cualquier cosa bajo `packages/`— o una dependencia
+obliga a reiniciar entero. En el intérprete solo cabe una copia de Angular, así
+que la que está corriendo no se puede sustituir. La app lo dice y reinicia en
+vez de enseñarte código viejo.
+</Aside>
+
+## Tu primera plantilla
+
+```html
+<an-view [style.padding]="'16'" [style.gap]="'12'">
+  <an-text [fontSize]="28" [fontWeight]="'bold'">Ajustes</an-text>
+
+  <an-view [style.flexDirection]="'row'" [style.justifyContent]="'space-between'">
+    <an-text>Notificaciones</an-text>
+    <an-switch [on]="avisar()" (onChange)="avisar.set($event)" />
+  </an-view>
+
+  <an-button
+    [title]="'Guardar'"
+    [variant]="'filled'"
+    [accessibilityHint]="'guarda sin salir de la pantalla'"
+    (press)="guardar()" />
+</an-view>
+```
+
+Ese `an-switch` es un `UISwitch` en iOS y un `MaterialSwitch` en Android. El
+layout es flexbox, calculado una vez en el núcleo y entregado a cada plataforma
+como marcos absolutos.
+
+## Y ahora
+
+<CardGrid>
+  <LinkCard
+    title="Cómo funciona"
+    href="/es/guide/how-it-works/"
+    description="El núcleo, los hosts, y por qué el layout no es de la plataforma."
+  />
+  <LinkCard
+    title="Componentes"
+    href="/es/reference/components/"
+    description="Las 25 primitivas y qué hace cada plataforma con ellas."
+  />
+  <LinkCard
+    title="Estilos y layout"
+    href="/es/reference/styles/"
+    description="El subconjunto de flexbox que resuelve el núcleo, y qué hace un estilo que no conoce."
+  />
+  <LinkCard
+    title="Plugins"
+    href="/es/extending/plugins/"
+    description="Métodos nativos escritos fuera de este repositorio."
+  />
+</CardGrid>

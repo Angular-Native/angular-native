@@ -1,0 +1,170 @@
+---
+title: Cómo funciona
+description: Por qué no hay WebView, qué hace de verdad el núcleo de Rust, y cómo un tick de Angular acaba siendo vistas nativas en pantalla.
+sidebar:
+  order: 2
+---
+
+Una plantilla de Angular compilada con AOT emite instrucciones. En un navegador
+esas instrucciones llegan a un `Renderer2` que crea `div`s. Aquí llegan a un
+`Renderer2` que crea un `UIView`, un `android.view.View`, un `NSView` o una
+vista de SwiftUI. Ese es todo el truco, y lo de abajo es la maquinaria que hace
+que se sostenga.
+
+## Por qué no un WebView
+
+Un WebView pinta una página. A una página se le puede dar el *aspecto* de la
+plataforma, y lo tendrá el día en que se escribió. Lo que no va a hacer es
+envejecer con la plataforma: un interruptor imitado no cambia cuando cambia el
+del sistema, no se trae el háptico nuevo, no contesta a la API de accesibilidad
+como contesta el de verdad, y no sabe qué puso el usuario en Ajustes.
+
+Así que `<an-switch>` **es** un `UISwitch` y un `MaterialSwitch`. Nada se dibuja
+a mano para parecerse a un control, y donde una plataforma no tiene equivalente
+la primitiva no se crea y se dice — ver [Componentes](/es/reference/components/).
+
+De ahí sale lo interesante: si las vistas son de la plataforma, el **layout** no
+puede serlo. UIKit, AppKit y Android colocan de formas distintas, y SwiftUI
+directamente no te deja colocar. Así que el layout se va de la plataforma
+entera.
+
+## Las cuatro capas
+
+```text
+  ┌──────────────────────────────────────────────────────┐
+  │  Angular, compilado con AOT, sin zonas               │  JS
+  │  NativeRenderer (Renderer2) → búfer de comandos      │
+  └──────────────────────────────────────────────────────┘
+                          │ un búfer por tick
+  ┌──────────────────────────────────────────────────────┐
+  │  an-bridge   QuickJS, el protocolo, módulos nativos  │
+  │  an-core     el árbol en la sombra, props, colores   │  Rust
+  │  an-layout   flexbox sobre taffy, y la medición      │
+  │  an-host     HostRenderer + TextMeasurer, dos traits │
+  └──────────────────────────────────────────────────────┘
+                          │ Frame { MountOp[] }
+  ┌──────────────────────────────────────────────────────┐
+  │  an-ios · an-android · an-macos · an-watch           │  los hosts
+  │  + los shells de Swift y de Java                     │
+  └──────────────────────────────────────────────────────┘
+```
+
+El núcleo no sabe nada de UIKit ni de Android. Todo lo que una plataforma tiene
+que traer está en **dos traits**: `HostRenderer`, que monta vistas, y
+`TextMeasurer`, que mide texto con la tipografía de verdad del sistema. Una
+plataforma nueva son esos dos traits y un shell.
+
+## Un búfer, no mil cruces
+
+JS no llama a Rust una vez por mutación. Escribe los comandos en un búfer y
+entrega el búfer entero al final del tick.
+
+Un `@for` sobre 200 filas son unas 1.200 mutaciones. Una llamada por cada una
+son 1.200 cruces de frontera; un búfer es uno. El protocolo son trece códigos de
+operación —crear, destruir, insertar, quitar, poner estilo, poner una prop de
+texto, número, booleano o nula, poner texto, poner un oyente, fijar la raíz—,
+little-endian, con las cadenas llevando su longitud y bytes UTF-8 sin
+alineación, así que el decodificador lee byte a byte y no necesita ninguna.
+
+Un comando que el núcleo rechaza no falla callando: el error lleva **cuál** fue
+la operación que falló y en qué desplazamiento, no solo que falló una.
+
+## Dos hilos, y por qué
+
+El motor de JS no corre en el hilo de la interfaz, y no es por paralelismo: es
+por la pila. QuickJS necesita unos 4 MB para que el router de Angular termine una
+navegación, con diecisiete operadores de RxJS encadenados, y el hilo principal de
+iOS tiene 1 MB que no se puede cambiar. Un hilo propio se lleva la pila que se le
+pida.
+
+El trabajo se parte en dos mitades que pueden vivir en hilos distintos:
+
+- **El lado en sombra** lleva el árbol, el layout y la medición. Produce frames.
+- **El lado del montaje** lleva las vistas nativas. Los consume.
+
+Lo único que viaja entre los dos es un `Frame`, que es `Send`.
+
+## Qué hace un frame
+
+El reloj es el de la plataforma: `CADisplayLink` en Apple, `Choreographer` en
+Android, un temporizador a 30 Hz en el reloj, porque watchOS no tiene display
+link. En cada latido:
+
+1. El hilo de la interfaz manda al worker un tick con la hora y los eventos
+   nativos que se hayan acumulado, **y espera, con un plazo**.
+2. En el hilo del motor, JS corre sus temporizadores y sus callbacks de frame.
+   `requestAnimationFrame` aquí es literalmente el frame, así que el planificador
+   sin zonas de Angular agrupa la detección de cambios contra el vsync de verdad
+   y no contra una aproximación.
+3. Las respuestas de los módulos nativos se resuelven **antes** de vaciar las
+   microtareas, así que un módulo que contestó en el acto resuelve su promesa
+   dentro de este frame.
+4. Lo que hayan producido las promesas se escribe en el mismo búfer, no en el
+   siguiente.
+5. El búfer se aplica al árbol en sombra, taffy lo coloca, y la diferencia
+   vuelve como un `Frame` de operaciones de montaje.
+6. El hilo de la interfaz las aplica en orden —estructura, props y el layout al
+   final— y llama a `flush` una vez.
+
+Ese plazo del paso 1 es todo el diseño. Bloquear siempre congela la interfaz
+cada vez que Angular se toma su tiempo; no esperar nunca añade un frame de
+latencia a cada toque aunque el turno haya durado dos milisegundos. Así que: si
+el turno de JS cabe en lo que queda de frame —el caso normal— se monta en ese
+mismo frame sin añadir latencia. Si se pasa, el hilo de la interfaz sigue y monta
+ese frame cuando llegue, sin congelarse. Las operaciones de control —evaluar,
+recargar, cambiar el viewport— sí esperan: son raras y el orden importa.
+
+Nunca se encola un tick encima de uno que no ha terminado. Con JS lento la cola
+crecería sin fin y cada frame montado sería más viejo que el anterior.
+
+## El layout no es de la plataforma
+
+El flexbox corre una vez, en el núcleo, sobre
+[taffy](https://github.com/DioxusLabs/taffy), y a cada host se le dan marcos
+absolutos en puntos lógicos. La misma plantilla se coloca igual en un teléfono,
+en una tele y en un reloj — lo que cambia es qué control se monta.
+
+Dos valores por defecto son de React Native y no de CSS, y los dos importan: los
+hijos se apilan **hacia abajo** salvo que se diga otra cosa, y nada encoge por
+debajo de su tamaño salvo que se pida. El conjunto entero de estilos aceptados, y
+qué hace uno que no se reconoce, está en
+[Estilos y layout](/es/reference/styles/).
+
+Una hoja sin tamaño explícito se mide preguntándole a la plataforma por
+`TextMeasurer`: el texto con la tipografía de verdad del sistema, los controles
+con un control de muestra medido una vez al arrancar, las imágenes por su tamaño
+natural. Por eso un `UISwitch` ocupa exactamente lo que ocupa un `UISwitch` en
+esta versión de este sistema y con los ajustes de accesibilidad de este usuario,
+en vez de lo que una tabla de este repositorio dijo una vez que ocupaba.
+
+## Angular, sin tocar
+
+Señales, `@if`, `@for`, el router, plantillas AOT, inyección de dependencias. Ni
+dialecto ni subconjunto.
+
+**Sin zonas**, porque el bucle de frames es lo que dispara la detección de
+cambios: zone.js existe para saber cuándo puede haber cambiado algo, y aquí la
+respuesta es «en el frame». No hay `document`, así que uno falso contenta a las
+partes de Angular que preguntan; no hay barra de direcciones, así que el router
+corre sobre una pila de historial en memoria — ver
+[Módulos nativos](/es/reference/native-modules/).
+
+Hay un solo renderer para toda la app y no uno por componente: sin encapsulación
+de estilos no hay nada que aislar, así que crear uno por vista solo gastaría
+memoria.
+
+## Lo que esto cuesta
+
+- **Un hueco tiene que verse.** Una prop que ningún host mira, un estilo que
+  nadie reconoce, un evento que una plataforma no puede entregar: cada uno avisa
+  una vez, y varios los exigen scripts que tumban el build. El bug caro en un
+  sistema así no es una caída: es una función que viaja, que nadie lee, que no
+  levanta nada, y que se ve exactamente igual que «esto no funciona».
+- **Todas las listas están duplicadas en algún sitio.** Los nombres de estilo
+  viven en Rust y en TypeScript; los de las primitivas, en tres sitios más un
+  código de protocolo. Cada duplicado tiene un script que compara las copias,
+  porque la forma de fallar de una divergencia es el silencio.
+- **El vocabulario está cerrado.** Un plugin puede añadir un método; todavía no
+  puede añadir una vista. Abrir los tipos de nodo del núcleo a nombres que no
+  conoce en tiempo de compilación es la pieza gorda que queda — ver
+  [Plugins](/es/extending/plugins/).

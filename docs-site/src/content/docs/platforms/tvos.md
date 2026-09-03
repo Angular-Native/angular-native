@@ -1,6 +1,8 @@
 ---
 title: tvOS
 description: Angular on the Apple TV — the same host as iOS, and a platform where nothing is touched.
+sidebar:
+  order: 4
 ---
 
 Angular on the Apple TV: same core, same layout, same bundle and — this is what
