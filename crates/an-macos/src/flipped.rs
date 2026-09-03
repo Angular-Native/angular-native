@@ -1,47 +1,51 @@
-//! La vista contenedora de este host: una `NSView` con el origen arriba.
+//! This host's container view: an `NSView` whose origin is at the top.
 //!
-//! Es la diferencia más grande entre AppKit y UIKit, y no es cosmética. En
-//! UIKit el origen de una vista está arriba a la izquierda y la `y` crece hacia
-//! abajo; en AppKit está **abajo** a la izquierda y la `y` crece hacia arriba.
-//! El núcleo calcula el layout con taffy, que es CSS, y CSS es como UIKit.
+//! It is the biggest difference between AppKit and UIKit, and it is not
+//! cosmetic. In UIKit a view's origin is at the top left and `y` grows
+//! downwards; in AppKit it is at the **bottom** left and `y` grows upwards.
+//! The core works the layout out with taffy, which is CSS, and CSS is like
+//! UIKit.
 //!
-//! Hay dos formas de arreglarlo:
+//! There are two ways to fix it:
 //!
-//! 1. Dar la vuelta a cada marco en `set_layout`, restando de la altura del
-//!    padre. Exige que el host sepa el alto del padre de cada nodo en el
-//!    momento de colocarlo, y ese alto puede llegar *después* que el del hijo:
-//!    el core manda los marcos en el orden del árbol, no de fuera adentro. El
-//!    resultado sería una vista bien colocada y otra descolocada según el
-//!    orden, que es la clase de fallo que no se ve hasta que se ve.
-//! 2. Decirle a AppKit que estas vistas van al revés. `isFlipped` es
-//!    exactamente eso, y es una propiedad de la vista *padre*: quien decide
-//!    cómo se interpretan los marcos de los hijos es el contenedor.
+//! 1. Turn every frame upside down in `set_layout`, subtracting from the
+//!    parent's height. That requires the host to know each node's parent's
+//!    height at the moment it places it, and that height may arrive *after*
+//!    the child's: the core sends the frames in tree order, not outside in.
+//!    The result would be one view placed right and another one out of place
+//!    depending on the order, which is the kind of bug that is invisible until
+//!    it is not.
+//! 2. Tell AppKit that these views run the other way round. `isFlipped` is
+//!    exactly that, and it is a property of the *parent* view: it is the
+//!    container that decides how its children's frames are read.
 //!
-//! Se hace lo segundo. Como cada contenedor que monta este host es de esta
-//! clase —vista, pila, contenido del scroll, capa del modal— cualquier hijo,
-//! sea un `NSButton` del sistema o no, recibe su marco en coordenadas de arriba
-//! abajo sin que haya que convertir nada en ningún sitio.
+//! The second is what is done. Since every container this host mounts is of
+//! this class —view, stack, scroll content, the modal's layer— any child,
+//! whether a system `NSButton` or not, gets its frame in top-down coordinates
+//! with nothing to convert anywhere.
 //!
-//! El recorte va aparte, con `clipsToBounds`: en UIKit es una propiedad de la
-//! vista y en AppKit hay que pedir capa y decírselo a ella.
+//! Clipping goes separately, through `clipsToBounds`: in UIKit it is a
+//! property of the view, and in AppKit a layer has to be asked for and told
+//! about it.
 //!
-//! ## Y aquí vive el deslizamiento
+//! ## And the swipe lives here
 //!
-//! AppKit no tiene `NSSwipeGestureRecognizer`, y eso llevó mucho tiempo a que
-//! `(swipeLeft)` y sus tres hermanos avisaran de que no iban a llegar nunca.
-//! Pero el gesto **sí existe**: no es un reconocedor que se le cuelgue a una
-//! vista, es un evento —`NSEventTypeSwipe`— que el sistema manda por la cadena
-//! de responder con `swipeWithEvent:`. Lo produce el mismo trackpad y con el
-//! mismo criterio que usa cualquier app de Mac para pasar de página, así que el
-//! umbral, el número de dedos y si el gesto cuenta o no los decide el sistema,
-//! que es la regla de la casa.
+//! AppKit has no `NSSwipeGestureRecognizer`, and for a long time that had
+//! `(swipeLeft)` and its three siblings warning that they were never going to
+//! arrive. But the gesture **does exist**: it is not a recogniser hung off a
+//! view, it is an event —`NSEventTypeSwipe`— that the system sends down the
+//! responder chain with `swipeWithEvent:`. The same trackpad produces it, by
+//! the same criteria any Mac app uses to turn a page, so the threshold, the
+//! number of fingers and whether the gesture counts at all are the system's to
+//! decide, which is the rule of the house.
 //!
-//! Lo que hace falta para recogerlo es que el método esté en la clase, y eso
-//! solo se puede hacer con una clase nuestra. Por eso está aquí y no en
-//! `events.rs` con los reconocedores: los demás gestos se enganchan a cualquier
-//! vista, este solo a las de este fichero. Un control del sistema no lo recoge,
-//! pero tampoco lo pierde: al no atenderlo, el evento sube al siguiente de la
-//! cadena, que es su vista padre. Ver `support::catches_swipe`.
+//! What it takes to catch it is for the method to be on the class, and that
+//! can only be done with a class of our own. Hence it being here and not in
+//! `events.rs` with the recognisers: every other gesture attaches to any view,
+//! this one only to the ones in this file. A system control does not catch it,
+//! but neither does it lose it: by not handling it, the event goes up to the
+//! next responder in the chain, which is its parent view. See
+//! `support::catches_swipe`.
 
 use std::cell::{Cell, RefCell};
 
@@ -55,18 +59,18 @@ use objc2_foundation::NSObjectProtocol;
 use crate::support::swipe_direction;
 
 pub struct FlippedIvars {
-    /// A quién avisar, cuando alguien ha pedido algún deslizamiento.
+    /// Who to tell, once somebody has asked for a swipe.
     swipe: RefCell<Option<(NodeId, EventQueue)>>,
-    /// Direcciones suscritas. Cero es «nadie escucha», y entonces el evento se
-    /// pasa a la cadena de responder tal cual llegó.
+    /// The directions subscribed to. Zero means "nobody is listening", and
+    /// then the event is passed on down the responder chain as it arrived.
     swipe_mask: Cell<u8>,
 }
 
 define_class!(
     // SAFETY:
-    // - `NSView` no impone requisitos a sus subclases más allá de vivir en el
-    //   hilo principal, que el `MainThreadOnly` garantiza.
-    // - `AnFlippedView` no implementa `Drop`.
+    // - `NSView` places no requirements on its subclasses beyond living on the
+    //   main thread, which `MainThreadOnly` guarantees.
+    // - `AnFlippedView` does not implement `Drop`.
     #[unsafe(super(NSView))]
     #[thread_kind = MainThreadOnly]
     #[name = "AnFlippedView"]
@@ -81,32 +85,33 @@ define_class!(
             true
         }
 
-        /// El deslizamiento del trackpad.
+        /// The trackpad's swipe.
         ///
-        /// Qué dirección es cada signo lo dice `support::swipe_direction`, que
-        /// está fuera de la plataforma justo para poder probarlo sin trackpad.
+        /// Which direction each sign means is `support::swipe_direction`'s to
+        /// say; it sits outside the platform precisely so it can be tested
+        /// without a trackpad.
         #[unsafe(method(swipeWithEvent:))]
         fn swipe_with_event(&self, event: &NSEvent) {
             let ivars = self.ivars();
             let deltas = (unsafe { event.deltaX() }, unsafe { event.deltaY() });
             let Some((bit, name)) = swipe_direction(deltas.0, deltas.1) else {
-                // Un deslizamiento sin dirección no es de nadie. Se pasa, que
-                // es lo que haría la vista si no tuviera este método.
+                // A swipe with no direction belongs to nobody. It is passed
+                // on, which is what the view would do without this method.
                 return unsafe { msg_send![super(self), swipeWithEvent: event] };
             };
 
             if ivars.swipe_mask.get() & bit == 0 {
-                // Esta vista no escucha esa dirección. Dejarlo aquí sería
-                // tragárselo: el `<an-view>` de fuera dejaría de recibirlo solo
-                // porque el de dentro existe.
+                // This view is not listening for that direction. Stopping it
+                // here would be swallowing it: the `<an-view>` outside would
+                // stop receiving it just because the one inside exists.
                 return unsafe { msg_send![super(self), swipeWithEvent: event] };
             }
 
             let Some((node, queue)) = ivars.swipe.borrow().clone() else {
                 return unsafe { msg_send![super(self), swipeWithEvent: event] };
             };
-            // Dónde estaba el puntero, en coordenadas de esta vista, igual que
-            // en un `press`. La ventana da el punto en las suyas.
+            // Where the pointer was, in this view's coordinates, just as in a
+            // `press`. The window gives the point in its own.
             let point = self.convertPoint_fromView(unsafe { event.locationInWindow() }, None);
             push_event(
                 &queue,
@@ -130,8 +135,8 @@ impl FlippedView {
         unsafe { msg_send![super(this), init] }
     }
 
-    /// Recorta a los hijos que se salgan. En UIKit es `clipsToBounds`; aquí hay
-    /// que darle capa a la vista y decírselo a la capa.
+    /// Clips whichever children spill out. In UIKit it is `clipsToBounds`;
+    /// here the view has to be given a layer and the layer has to be told.
     pub fn clip_to_bounds(&self) {
         self.setWantsLayer(true);
         if let Some(layer) = unsafe { self.layer() } {
@@ -139,15 +144,15 @@ impl FlippedView {
         }
     }
 
-    /// Empieza a entregar una dirección de deslizamiento.
+    /// Starts delivering one swipe direction.
     pub fn listen_swipe(&self, node: NodeId, queue: EventQueue, bit: u8) {
         let ivars = self.ivars();
         *ivars.swipe.borrow_mut() = Some((node, queue));
         ivars.swipe_mask.set(ivars.swipe_mask.get() | bit);
     }
 
-    /// Deja de entregarla. Cuando no queda ninguna, se suelta también la cola:
-    /// una vista que ya no escucha no tiene por qué retener nada.
+    /// Stops delivering it. When none is left, the queue is released too: a
+    /// view that is no longer listening has no business retaining anything.
     pub fn unlisten_swipe(&self, bit: u8) {
         let ivars = self.ivars();
         let mask = ivars.swipe_mask.get() & !bit;

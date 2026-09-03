@@ -1,8 +1,9 @@
-//! Carga de imágenes.
+//! Image loading.
 //!
-//! Lo mismo que en iOS: una ruta sin esquema es un recurso del bundle y con
-//! `http`/`https` se baja por red. En los dos casos el tamaño real vuelve como
-//! evento `load`, porque el layout no puede colocar algo cuyo tamaño no conoce.
+//! The same as on iOS: a path with no scheme is a bundle resource, and one
+//! with `http`/`https` is fetched over the network. Either way the real size
+//! comes back as a `load` event, because the layout cannot place something
+//! whose size it does not know.
 
 use an_core::{NodeId, PropValue};
 use an_host::{push_event, EventQueue, HostEvent};
@@ -13,8 +14,8 @@ use objc2_foundation::{
     NSData, NSError, NSOperationQueue, NSString, NSURL, NSURLResponse, NSURLSession,
 };
 
-/// Empieza a cargar `source` en la vista. Vuelve en el acto: si hay red de por
-/// medio, la imagen aparece cuando llegue.
+/// Starts loading `source` into the view. It returns immediately: if there is
+/// a network in the way, the image shows up when it arrives.
 pub fn load(
     _mtm: MainThreadMarker,
     view: &NSImageView,
@@ -27,7 +28,7 @@ pub fn load(
         return;
     }
     if !source.starts_with("http://") && !source.starts_with("https://") {
-        // Recurso del bundle. `imageNamed:` ya lo cachea.
+        // A bundle resource. `imageNamed:` already caches it.
         let name = NSString::from_str(source);
         if let Some(image) = NSImage::imageNamed(&name) {
             apply(view, &image, node, &queue);
@@ -41,8 +42,8 @@ pub fn load(
     let view = view.retain();
     let queue = queue.clone();
 
-    // El bloque corre en un hilo de red. Construir la `NSImage` ahí vale, pero
-    // colgarla de la vista no: eso se salta a la cola principal.
+    // The block runs on a networking thread. Building the `NSImage` there is
+    // fine, hanging it on the view is not: that hops to the main queue.
     let completion = RcBlock::new(
         move |data: *mut NSData, _response: *mut NSURLResponse, _error: *mut NSError| {
             let Some(data) = (unsafe { data.as_ref() }) else { return };
@@ -59,7 +60,7 @@ pub fn load(
     unsafe { task.resume() };
 }
 
-/// Cuelga la imagen y avisa de su tamaño real.
+/// Hangs the image up and announces its real size.
 fn apply(view: &NSImageView, image: &NSImage, node: NodeId, queue: &EventQueue) {
     unsafe { view.setImage(Some(image)) };
     let size = unsafe { image.size() };
@@ -76,12 +77,12 @@ fn apply(view: &NSImageView, image: &NSImage, node: NodeId, queue: &EventQueue) 
     );
 }
 
-/// Traduce `resizeMode` al escalado de AppKit.
+/// Translates `resizeMode` into AppKit's scaling.
 ///
-/// AppKit tiene cuatro modos y no los diez de UIKit, así que `cover` y
-/// `center` caen en el más parecido y se dice aquí en vez de fingir que hay una
-/// correspondencia exacta: `cover` recorta en iOS y aquí encaja dentro, porque
-/// `NSImageView` no sabe recortar sin salirse.
+/// AppKit has four modes and not UIKit's ten, so `cover` and `center` fall
+/// onto the nearest one — said here rather than pretending the mapping is
+/// exact: `cover` crops on iOS and fits inside here, because `NSImageView`
+/// cannot crop without spilling out.
 pub fn image_scaling(mode: &str) -> NSImageScaling {
     match mode {
         "stretch" => NSImageScaling::ScaleAxesIndependently,

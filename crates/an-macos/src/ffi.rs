@@ -1,20 +1,20 @@
-//! Superficie C que consume el shell de Swift.
+//! The C surface the Swift shell consumes.
 //!
-//! El reparto es el mismo que en iOS: el hilo principal se queda con lo único
-//! que no puede salir de él —las vistas— y el motor JS, el árbol y el layout
-//! viven en un hilo aparte con pila grande. En macOS el hilo principal no tiene
-//! el tope de 1 MB de iOS, pero el hilo propio se mantiene igual: no es solo
-//! por la pila, es que el turno de JS y el montaje de vistas son dos trabajos
-//! distintos y separarlos deja que el de UI siga respondiendo cuando el otro se
-//! alarga.
+//! The split is the same as on iOS: the main thread keeps the one thing that
+//! cannot leave it —the views— and the JS engine, the tree and the layout live
+//! on a separate thread with a large stack. On macOS the main thread does not
+//! have iOS's 1 MB ceiling, but the thread of its own stays all the same: it
+//! is not only about the stack, it is that JS's turn and mounting views are
+//! two different jobs, and separating them lets the UI one keep answering when
+//! the other runs long.
 //!
-//! **Lo que sí cambia en escritorio: el viewport.** En un teléfono cambia al
-//! rotar, y eso pasa una vez cada mucho. Aquí cambia mientras alguien arrastra
-//! la esquina de la ventana, sesenta veces por segundo, y cada cambio es una
-//! ida y vuelta al worker que además espera a que se vacíe lo que hubiera en
-//! vuelo. Por eso `an_runtime_set_viewport` recuerda el último tamaño y
-//! descarta los repetidos: el shell puede llamarla en cada `layout()` sin
-//! pensárselo, que es lo que hace.
+//! **What does change on the desktop: the viewport.** On a phone it changes on
+//! rotation, and that happens once in a long while. Here it changes while
+//! somebody drags the corner of the window, sixty times a second, and every
+//! change is a round trip to the worker that on top of that waits for whatever
+//! was in flight to drain. Hence `an_runtime_set_viewport` remembering the
+//! last size and dropping the repeats: the shell can call it on every
+//! `layout()` without thinking about it, which is what it does.
 
 use std::ffi::{c_char, c_void, CStr};
 use std::time::Duration;
@@ -25,30 +25,31 @@ use objc2::rc::Retained;
 use objc2::MainThreadMarker;
 use objc2_app_kit::NSView;
 
-/// 8 MB, lo mismo que en iOS: el router de Angular necesita algo más de 3 MB
-/// para completar una navegación y conviene margen.
+/// 8 MB, the same as on iOS: Angular's router needs a little over 3 MB to
+/// complete a navigation and some room to spare is worth having.
 const RUNTIME_STACK: usize = 8 * 1024 * 1024;
 
-/// Lo que el hilo de UI espera al motor dentro del frame. Doce milisegundos
-/// dejan margen sobre los 16,6 de un frame a 60 Hz para montar las vistas
-/// después.
+/// How long the UI thread waits for the engine inside the frame. Twelve
+/// milliseconds leave room over the 16.6 of a 60 Hz frame to mount the views
+/// afterwards.
 ///
-/// En un Mac la pantalla puede ir a 120 Hz, y entonces el frame dura 8,3 ms y
-/// este plazo se pasa. No se baja a propósito: pasarse del plazo no pierde el
-/// trabajo, solo lo monta en el frame siguiente, y bajarlo haría que un turno
-/// normal de Angular se montara siempre un frame tarde en las pantallas de 60.
+/// On a Mac the display may run at 120 Hz, and then the frame lasts 8.3 ms and
+/// this budget overruns it. It is not lowered, on purpose: overrunning the
+/// budget loses no work, it only mounts it on the next frame, and lowering it
+/// would have an ordinary Angular turn mount a frame late every time on the
+/// 60 Hz displays.
 const FRAME_BUDGET: Duration = Duration::from_millis(12);
 
 pub struct AnRuntime {
     worker: RuntimeWorker,
     mount: MountSide<crate::host::AppKitHost>,
     events: EventQueue,
-    /// Último viewport que se le mandó al worker. Ver la cabecera.
+    /// The last viewport sent to the worker. See the module header.
     viewport: (f32, f32),
 }
 
 impl AnRuntime {
-    /// Monta lo que haya llegado del worker. No bloquea.
+    /// Mounts whatever has arrived from the worker. Does not block.
     fn pump(&mut self) -> i32 {
         let mut applied = 0;
         while let Some(reply) = self.worker.try_reply() {
@@ -57,8 +58,8 @@ impl AnRuntime {
         applied
     }
 
-    /// Aplica una respuesta y acumula el recuento. Un -1 se pega: si algo falló
-    /// en el frame, el frame falló.
+    /// Applies one reply and accumulates the count. A -1 is contagious: if
+    /// anything in the frame failed, the frame failed.
     fn mount_reply(&mut self, reply: an_bridge::Reply, applied: i32) -> i32 {
         let failed = reply.error.is_some();
         if let Some(error) = reply.error {
@@ -72,8 +73,9 @@ impl AnRuntime {
         }
     }
 
-    /// Vacía lo que quede en vuelo. Antes de una operación de control hay que
-    /// dejar el canal limpio, o la respuesta que se recoja será de otro.
+    /// Drains whatever is still in flight. Before a control operation the
+    /// channel has to be left clean, or the reply picked up will belong to
+    /// something else.
     fn settle(&mut self) {
         while let Some(reply) = self.worker.wait_reply() {
             if let Some(error) = reply.error {
@@ -84,33 +86,33 @@ impl AnRuntime {
     }
 }
 
-/// Deja los pánicos en el log del sistema antes de que se pierdan.
+/// Gets panics into the system log before they are lost.
 ///
-/// Un pánico dentro de un `extern "C"` no puede desenrollar, así que Rust
-/// aborta con «panic in a function that cannot unwind» y el mensaje de verdad
-/// se pierde. Aquí se escribe y se vacía a mano, que es la diferencia entre
-/// depurar un cierre y adivinarlo.
+/// A panic inside an `extern "C"` cannot unwind, so Rust aborts with "panic in
+/// a function that cannot unwind" and the real message is lost. Here it is
+/// written and flushed by hand, which is the difference between debugging a
+/// crash and guessing at it.
 fn report_panics() {
     use std::sync::Once;
-    static UNA_VEZ: Once = Once::new();
-    UNA_VEZ.call_once(|| {
-        let anterior = std::panic::take_hook();
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        let previous = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
-            let donde = info
+            let where_at = info
                 .location()
                 .map(|l| format!("{}:{}", l.file(), l.line()))
-                .unwrap_or_else(|| "sitio desconocido".to_owned());
+                .unwrap_or_else(|| "an unknown place".to_owned());
             use std::io::Write;
-            let mut salida = std::io::stderr().lock();
-            let _ = writeln!(salida, "angular-native: pánico en {donde}: {info}");
-            let _ = salida.flush();
-            anterior(info);
+            let mut out = std::io::stderr().lock();
+            let _ = writeln!(out, "angular-native: panic at {where_at}: {info}");
+            let _ = out.flush();
+            previous(info);
         }));
     });
 }
 
 /// # Safety
-/// `container` debe ser una `NSView` viva. Llamar desde el hilo principal.
+/// `container` must be a live `NSView`. Call from the main thread.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_runtime_new(
     container: *mut c_void,
@@ -125,13 +127,13 @@ pub unsafe extern "C" fn an_runtime_new(
         return std::ptr::null_mut();
     }
     let container: Retained<NSView> = unsafe {
-        Retained::retain(container.cast::<NSView>()).expect("container no puede ser nil")
+        Retained::retain(container.cast::<NSView>()).expect("container cannot be nil")
     };
 
     let events = new_event_queue();
     let host = crate::host::AppKitHost::new(mtm, container, events.clone());
-    // Los controles del sistema se miden aquí, en el hilo principal: crear un
-    // `NSSwitch` fuera de él no está permitido.
+    // The system's controls are measured here, on the main thread: creating
+    // an `NSSwitch` off it is not allowed.
     let control_sizes = crate::controls::measure_controls(mtm);
 
     let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
@@ -144,7 +146,7 @@ pub unsafe extern "C" fn an_runtime_new(
     let worker = match worker {
         Ok(worker) => worker,
         Err(error) => {
-            eprintln!("angular-native: no arrancó el motor JS: {error}");
+            eprintln!("angular-native: the JS engine did not start: {error}");
             return std::ptr::null_mut();
         }
     };
@@ -157,14 +159,14 @@ pub unsafe extern "C" fn an_runtime_new(
     }))
 }
 
-/// Evalúa un script. El bundle de la app es quien decide qué cargar.
+/// Evaluates a script. The app's bundle is what decides what to load.
 ///
-/// Devuelve 0 si fue bien y -1 si JS lanzó; el error sale por stderr con su
-/// traza.
+/// Returns 0 if it went well and -1 if JS threw; the error goes out on stderr
+/// with its trace.
 ///
 /// # Safety
-/// `rt` debe venir de `an_runtime_new`. `name` y `code` deben ser cadenas C
-/// válidas y terminadas en cero.
+/// `rt` must come from `an_runtime_new`. `name` and `code` must be valid,
+/// nul-terminated C strings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_runtime_eval(
     rt: *mut AnRuntime,
@@ -177,15 +179,14 @@ pub unsafe extern "C" fn an_runtime_eval(
     report(rt.worker.request(Request::Eval { name, code }).error)
 }
 
-/// Mete código nuevo en la app que está corriendo. Es lo que usa `an dev` al
-/// detectar un cambio.
+/// Puts new code into the app that is running. It is what `an dev` uses when
+/// it spots a change.
 ///
-/// Si el bundle nuevo encaja con lo que hay montado, solo cambian las
-/// definiciones de los componentes y el estado se conserva. Si no, se levanta
-/// todo otra vez.
+/// If the new bundle fits what is mounted, only the components' definitions
+/// change and the state is kept. If it does not, everything is stood up again.
 ///
 /// # Safety
-/// `rt` debe venir de `an_runtime_new`. `name` y `code`, cadenas C válidas.
+/// `rt` must come from `an_runtime_new`. `name` and `code`, valid C strings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_runtime_reload(
     rt: *mut AnRuntime,
@@ -197,23 +198,23 @@ pub unsafe extern "C" fn an_runtime_reload(
     rt.settle();
     drain_events(&rt.events);
     let reply = rt.worker.request(Request::Reload { name, code });
-    // Desmontar va después de saber en qué acabó, y solo si **no** fue en
-    // caliente. En caliente el árbol sigue en pie: tirar las vistas dejaría la
-    // ventana en blanco esperando unas altas que el core no tiene por qué
-    // volver a mandar. El worker solo tira el árbol cuando reinicia, y es
-    // entonces cuando toca vaciar esto —aquí, que es donde se puede tocar
-    // AppKit—.
+    // Unmounting comes after knowing how it ended, and only if it was **not**
+    // hot. On a hot reload the tree is still standing: throwing the views away
+    // would leave the window blank waiting for creations the core has no
+    // reason to send again. The worker only throws the tree away when it
+    // restarts, and that is when this has to be emptied —here, which is where
+    // AppKit can be touched.
     if !reply.hot {
         rt.mount.clear();
     }
     report(reply.error)
 }
 
-/// La ventana cambió de tamaño. En escritorio esto pasa en caliente y muy a
-/// menudo, así que se descarta lo que no cambia: ver la cabecera del módulo.
+/// The window changed size. On the desktop this happens live and very often,
+/// so what does not change is dropped: see the module header.
 ///
 /// # Safety
-/// `rt` debe venir de `an_runtime_new` y seguir vivo.
+/// `rt` must come from `an_runtime_new` and still be alive.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_runtime_set_viewport(rt: *mut AnRuntime, width: f32, height: f32) {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return };
@@ -225,23 +226,24 @@ pub unsafe extern "C" fn an_runtime_set_viewport(rt: *mut AnRuntime, width: f32,
     rt.worker.request(Request::SetViewport(width, height));
 }
 
-/// Un frame completo: eventos nativos hacia JS, turno de JS, layout, y montaje
-/// aquí. `now_ms` es la marca de tiempo del `CADisplayLink`, que es el único
-/// reloj que ve la app.
+/// A complete frame: native events on to JS, JS's turn, layout, and mounting
+/// over here. `now_ms` is the `CADisplayLink`'s timestamp, which is the only
+/// clock the app sees.
 ///
-/// Devuelve el número de operaciones nativas aplicadas, o -1 si algo falló.
+/// Returns the number of native operations applied, or -1 if something failed.
 ///
 /// # Safety
-/// `rt` debe venir de `an_runtime_new` y seguir vivo.
+/// `rt` must come from `an_runtime_new` and still be alive.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_runtime_frame(rt: *mut AnRuntime, now_ms: f64) -> i32 {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return -1 };
 
-    // Se monta lo que el worker haya terminado desde el frame anterior.
+    // Whatever the worker finished since the previous frame is mounted.
     let mut applied = rt.pump();
 
-    // Si sigue ocupado no se le encola otro turno: la cola crecería sin fin y
-    // cada frame montado sería más viejo que el anterior.
+    // If it is still busy it is not queued another turn: the queue would grow
+    // without end and every mounted frame would be older than the one before
+    // it.
     if !rt.worker.busy() {
         let events = drain_events(&rt.events);
         rt.worker.post(Request::Tick { now_ms, events });
@@ -253,7 +255,7 @@ pub unsafe extern "C" fn an_runtime_frame(rt: *mut AnRuntime, now_ms: f64) -> i3
 }
 
 /// # Safety
-/// `rt` debe venir de `an_runtime_new` y no haberse liberado ya.
+/// `rt` must come from `an_runtime_new` and must not already have been freed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_runtime_free(rt: *mut AnRuntime) {
     if !rt.is_null() {
@@ -262,7 +264,7 @@ pub unsafe extern "C" fn an_runtime_free(rt: *mut AnRuntime) {
 }
 
 /// # Safety
-/// Ambos punteros tienen que ser cadenas C válidas o nulos.
+/// Both pointers have to be valid C strings or null.
 unsafe fn read_pair(name: *const c_char, code: *const c_char) -> Option<(String, String)> {
     if name.is_null() || code.is_null() {
         return None;

@@ -1,34 +1,35 @@
-//! Host macOS: implementa `HostRenderer` y `TextMeasurer` sobre AppKit, y
-//! expone el runtime al shell de Swift por FFI.
+//! The macOS host: it implements `HostRenderer` and `TextMeasurer` over
+//! AppKit, and exposes the runtime to the Swift shell over FFI.
 //!
-//! Es el hermano del host de iOS y no el del reloj: AppKit es imperativo y
-//! `NSView` existe, así que el árbol del núcleo se refleja en una jerarquía de
-//! vistas de verdad, con una vista por nodo montable y el marco escrito
-//! directamente. Lo que cambia respecto a UIKit no es el planteamiento, son
-//! tres cosas del escritorio, y las tres están comentadas donde se resuelven:
+//! It is the iOS host's sibling and not the watch's: AppKit is imperative and
+//! `NSView` exists, so the core's tree is mirrored in a real view hierarchy,
+//! with one view per mountable node and the frame written straight in. What
+//! differs from UIKit is not the approach, it is three things about the
+//! desktop, and all three are commented where they are dealt with:
 //!
-//! - **La ventana se redimensiona en caliente.** En un teléfono el viewport
-//!   solo cambia al rotar, que pasa una vez cada mucho; aquí cambia sesenta
-//!   veces por segundo mientras alguien arrastra una esquina. Ver
-//!   `ffi::an_runtime_set_viewport` y `AnRootView.layout()` en el shell.
-//! - **Hay ratón, no dedos.** Los gestos son los reconocedores de AppKit, que
-//!   no son los mismos que los de UIKit, y el deslizamiento no es uno de
-//!   ellos: es un evento suelto que llega por la cadena de responder. Ver
-//!   `flipped.rs`. Lo que hay además de los dedos —el puntero por encima y su
-//!   forma— es `events::HoverTarget` y la prop `cursor`. Lo que aun así no se
-//!   puede entregar se dice al suscribirse; ver `support::unsupported_event`.
-//! - **El menú es del sistema y vive en la ventana, no en el árbol.** Lo pone
-//!   el shell y no se expone a Angular: no hay primitiva para ello, e
-//!   inventarla sería cambiar `packages/primitives`. Ver
-//!   `shells/macos/Sources/AppDelegate.swift`.
+//! - **The window resizes live.** On a phone the viewport only changes on
+//!   rotation, which happens once in a long while; here it changes sixty times
+//!   a second while somebody drags a corner. See
+//!   `ffi::an_runtime_set_viewport` and `AnRootView.layout()` in the shell.
+//! - **There is a mouse, not fingers.** The gestures are AppKit's recognisers,
+//!   which are not the same as UIKit's, and the swipe is not one of them: it
+//!   is a loose event that arrives through the responder chain. See
+//!   `flipped.rs`. What exists on top of fingers —the pointer hovering and its
+//!   shape— is `events::HoverTarget` and the `cursor` prop. What still cannot
+//!   be delivered is said at subscription time; see
+//!   `support::unsupported_event`.
+//! - **The menu belongs to the system and lives in the window, not in the
+//!   tree.** The shell puts it there and it is not exposed to Angular: there
+//!   is no primitive for it, and inventing one would mean changing
+//!   `packages/primitives`. See `shells/macos/Sources/AppDelegate.swift`.
 //!
-//! Todo lo de aquí corre en el hilo principal, igual que en iOS: AppKit no
-//! admite otra cosa y el `MainThreadMarker` de objc2 lo hace explícito en el
-//! tipo.
+//! Everything here runs on the main thread, just as on iOS: AppKit will have
+//! it no other way and objc2's `MainThreadMarker` makes that explicit in the
+//! type.
 
-// El inventario de primitivas no toca plataforma a propósito: así se puede
-// comprobar desde `cargo test` en cualquier máquina, y `scripts/check-macos.sh`
-// lo puede leer sin compilar nada.
+// The inventory of primitives touches no platform on purpose: that way it can
+// be checked from `cargo test` on any machine, and `scripts/check-macos.sh`
+// can read it without compiling anything.
 pub mod support;
 
 #[cfg(target_os = "macos")]

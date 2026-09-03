@@ -1,15 +1,15 @@
-//! Medición de texto con la tipografía real del sistema.
+//! Text measurement with the system's real typeface.
 //!
-//! Mismo planteamiento que en iOS y por el mismo motivo: el layout pide el
-//! tamaño de cada `<Text>` varias veces por nodo y por frame, así que la caché
-//! no es una optimización, es lo que evita cientos de cruces a Objective-C por
-//! frame. La clave incluye el ancho disponible porque el salto de línea depende
-//! de él.
+//! The same approach as on iOS and for the same reason: the layout asks for
+//! each `<Text>`'s size several times per node and per frame, so the cache is
+//! not an optimisation, it is what avoids hundreds of crossings into
+//! Objective-C per frame. The key includes the available width because where
+//! the lines break depends on it.
 //!
-//! Lo que cambia respecto a UIKit es de dónde sale la medida. AppKit no tiene
-//! el `boundingRectWithSize:` de `NSString` con las opciones de fragmento de
-//! línea que usa el host de iOS, así que se mide sobre un
-//! `NSAttributedString`, que sí las tiene y da el mismo resultado.
+//! What differs from UIKit is where the measurement comes from. AppKit does
+//! not have `NSString`'s `boundingRectWithSize:` with the line-fragment
+//! options the iOS host uses, so the measuring is done over an
+//! `NSAttributedString`, which does have them and gives the same result.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -22,8 +22,8 @@ use objc2_app_kit::{
 use objc2_core_foundation::CGSize;
 use objc2_foundation::{NSAttributedString, NSAttributedStringKey, NSDictionary, NSString};
 
-/// Ancho redondeado a 1/8 de punto: anchos que difieren en flotantes
-/// irrelevantes comparten entrada de caché.
+/// Width rounded to 1/8 of a point: widths that differ by floats nobody cares
+/// about share a cache entry.
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct Key {
     text: String,
@@ -38,9 +38,9 @@ struct Key {
 #[derive(Default)]
 pub struct AppKitMeasurer {
     cache: RefCell<HashMap<Key, (f32, f32)>>,
-    /// Tamaños naturales de los controles, preguntados en el arranque: aquí no
-    /// se pueden consultar, porque este medidor vive en el hilo del motor y
-    /// crear un `NSSwitch` exige el principal.
+    /// The controls' natural sizes, asked for at startup: they cannot be
+    /// asked about here, because this measurer lives on the engine's thread
+    /// and creating an `NSSwitch` demands the main one.
     controls: crate::controls::ControlSizes,
 }
 
@@ -49,9 +49,9 @@ impl AppKitMeasurer {
         AppKitMeasurer { cache: RefCell::new(HashMap::new()), controls }
     }
 
-    /// Lo que el rótulo se guarda a los lados de su texto, preguntado al
-    /// arrancar. Ver `controls::text_inset`: sin sumarlo, un texto en una caja
-    /// de su tamaño exacto parte de línea y no se ve ninguna.
+    /// What the label keeps to either side of its text, asked for at startup.
+    /// See `controls::text_inset`: without adding it back, a text in a box of
+    /// its own exact size wraps and not one line of it can be seen.
     fn text_inset(&self) -> f32 {
         self.controls.get(crate::controls::TEXT_INSET).map(|(w, _)| *w).unwrap_or(0.0)
     }
@@ -68,10 +68,10 @@ impl AppKitMeasurer {
                 return f;
             }
         }
-        // Escala CSS 100..900 a la de AppKit, que va de -1 a 1 igual que la de
-        // UIKit. La cursiva no tiene fábrica propia en `NSFont`: se pide por
-        // rasgo sobre el descriptor, y eso es más trabajo del que merece
-        // mientras `fontStyle` solo lo use el rótulo.
+        // Scales CSS's 100..900 onto AppKit's, which runs from -1 to 1 just
+        // as UIKit's does. Italic has no factory of its own on `NSFont`: it is
+        // asked for as a trait on the descriptor, and that is more work than
+        // it is worth while `fontStyle` is only used by the label.
         let weight = match font.weight {
             0..=199 => -0.8,
             200..=299 => -0.6,
@@ -92,8 +92,8 @@ impl TextMeasurer for AppKitMeasurer {
         let Some((width, height)) = self.controls.get(name).copied() else {
             return (0.0, 0.0);
         };
-        // Los mismos que en iOS ocupan todo el ancho que se les dé; su medida
-        // natural solo manda en el alto.
+        // The same ones as on iOS take whatever width they are given; their
+        // natural measurement only rules the height.
         let stretches =
             matches!(name, "Slider" | "ProgressBar" | "TabBar" | "SearchBar" | "SegmentedControl");
         match available_width {
@@ -122,15 +122,15 @@ impl TextMeasurer for AppKitMeasurer {
         let font_ref: &objc2::runtime::AnyObject = &nsfont;
         let attrs: Retained<NSDictionary<NSAttributedStringKey, _>> =
             NSDictionary::from_slices(&[unsafe { NSFontAttributeName }], &[font_ref]);
-        // SAFETY: el diccionario lleva un `NSFont` bajo `NSFontAttributeName`,
-        // que es el tipo que ese atributo espera.
+        // SAFETY: the dictionary carries an `NSFont` under
+        // `NSFontAttributeName`, which is the type that attribute expects.
         let attributed = unsafe {
             NSAttributedString::new_with_attributes(&NSString::from_str(text), &attrs)
         };
 
-        // El hueco que se le da al texto es el de la caja menos lo que el
-        // rótulo se guarda a los lados: medir con el ancho entero haría que
-        // partiera de línea una palabra más tarde de lo que va a partir.
+        // The room the text is given is the box's minus what the label keeps
+        // to either side: measuring with the full width would have it wrap one
+        // word later than it is actually going to wrap.
         let inset = self.text_inset();
         let constraint = CGSize {
             width: max_width
@@ -143,15 +143,16 @@ impl TextMeasurer for AppKitMeasurer {
             | NSStringDrawingOptions::UsesFontLeading;
         let rect = attributed.boundingRectWithSize_options_context(constraint, options, None);
 
-        // `UIFont` tiene `lineHeight` y `NSFont` no: hay que sumar las tres
-        // métricas que lo componen. El descendente viene en negativo, así que
-        // se resta.
+        // `UIFont` has `lineHeight` and `NSFont` does not: the three metrics
+        // it is made of have to be added up. The descender comes through
+        // negative, hence the subtraction.
         let natural_line = (nsfont.ascender() - nsfont.descender() + nsfont.leading()) as f32;
         let mut width = rect.size.width as f32 + inset;
         let mut height = rect.size.height as f32;
 
-        // `boundingRect` no conoce `lineHeight` ni `numberOfLines`: se aplican
-        // sobre el número de líneas que devolvió, igual que en iOS.
+        // `boundingRect` knows nothing of `lineHeight` or `numberOfLines`:
+        // they are applied to the number of lines it came back with, just as
+        // on iOS.
         let lines = if natural_line > 0.0 {
             (height / natural_line).round().max(1.0)
         } else {
@@ -167,8 +168,8 @@ impl TextMeasurer for AppKitMeasurer {
         if let Some(limit) = max_width.filter(|w| w.is_finite()) {
             width = width.min(limit);
         }
-        // AppKit devuelve fraccionarios; redondear hacia arriba evita el
-        // truncado de la última letra.
+        // AppKit returns fractional values; rounding up keeps the last letter
+        // from being clipped.
         let result = (width.ceil(), height.ceil());
         self.cache.borrow_mut().insert(key, result);
         result

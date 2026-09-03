@@ -1,46 +1,47 @@
-//! Qué pinta este host y qué no, dicho una vez y en un solo sitio.
+//! What this host paints and what it does not, said once and in one place.
 //!
-//! El resto del proyecto tiene la regla de que nada falle en silencio, y en un
-//! host la forma más fácil de romperla es un `_ => {}` en el `match` de
-//! `create`: la primitiva se monta como una caja vacía, ocupa su sitio en el
-//! layout y no se ve. Ni error, ni traza, ni nada que mirar.
+//! The rest of the project has the rule that nothing fails in silence, and in
+//! a host the easiest way to break it is a `_ => {}` in `create`'s `match`:
+//! the primitive mounts as an empty box, takes its place in the layout and is
+//! not seen. No error, no trace, nothing to look at.
 //!
-//! Así que el inventario está aquí, fuera de `cfg(target_os = "macos")`, y no
-//! dentro del `match`. Con eso se consiguen tres cosas:
+//! So the inventory is here, outside `cfg(target_os = "macos")`, and not
+//! inside the `match`. That buys three things:
 //!
-//! 1. `create` puede recorrer el enum entero sin comodín: si alguien añade un
-//!    `NodeKind` al núcleo, este fichero deja de compilar.
-//! 2. Una primitiva que macOS no cubre lo dice por la salida de error la
-//!    primera vez que aparece, con el motivo, en vez de no verse.
-//! 3. `scripts/check-macos.sh` lee esta tabla y la compara con el enum del
-//!    núcleo, así que la lista tampoco se queda atrás sin que nadie se entere.
+//! 1. `create` can walk the whole enum with no wildcard: if somebody adds a
+//!    `NodeKind` to the core, this file stops compiling.
+//! 2. A primitive macOS does not cover says so through the error output the
+//!    first time it turns up, with the reason, instead of not being seen.
+//! 3. `scripts/check-macos.sh` reads this table and compares it with the
+//!    core's enum, so the list does not fall behind unnoticed either.
 
 use an_core::NodeKind;
 
-/// Con qué dibuja macOS una primitiva.
+/// What macOS draws a primitive with.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Support {
-    /// Hay un control del sistema que es exactamente esto. El texto es el
-    /// nombre de la clase de AppKit, que es lo que sale en el informe.
+    /// There is a system control that is exactly this. The text is the name
+    /// of the AppKit class, which is what comes out in the report.
     Native(&'static str),
-    /// No existe tal cual en AppKit y se arma con vistas del sistema. Se dice
-    /// cuál es cuál, igual que hace Android con la barra de pestañas.
+    /// It does not exist as such in AppKit and is assembled out of system
+    /// views. Which is which gets said, the same way Android does for the tab
+    /// bar.
     Assembled(&'static str),
-    /// macOS no lo trae y no se imita. El texto explica por qué.
+    /// macOS does not ship it and it is not imitated. The text explains why.
     Missing(&'static str),
-    /// Lo que la primitiva pide sí se cumple, pero no con una vista del árbol:
-    /// macOS lo pone en otro sitio. El texto dice dónde.
+    /// What the primitive asks for is honoured, but not with a view in the
+    /// tree: macOS puts it somewhere else. The text says where.
     ///
-    /// No es un `Missing` con buenas palabras. Un `Missing` deja a la
-    /// plantilla sin lo que pidió; esto se lo da donde la plataforma lo tiene,
-    /// que en un Mac casi siempre está fuera de la ventana de contenido: la
-    /// barra de título, la barra de menús, el Dock.
+    /// This is not a `Missing` dressed in kind words. A `Missing` leaves the
+    /// template without what it asked for; this gives it to it where the
+    /// platform keeps it, which on a Mac is nearly always outside the content
+    /// window: the title bar, the menu bar, the Dock.
     Elsewhere(&'static str),
 }
 
-/// Todos los `NodeKind` que se pueden montar, con lo que macOS pone detrás.
+/// Every `NodeKind` that can be mounted, with what macOS puts behind it.
 ///
-/// `RawText` no está: es interno y nunca llega a ser una vista.
+/// `RawText` is not here: it is internal and never becomes a view.
 pub const SUPPORT: &[(NodeKind, Support)] = &[
     (NodeKind::View, Support::Native("NSView")),
     (NodeKind::Text, Support::Native("NSTextField")),
@@ -62,55 +63,58 @@ pub const SUPPORT: &[(NodeKind, Support)] = &[
     (NodeKind::DatePicker, Support::Native("NSDatePicker")),
     (NodeKind::Alert, Support::Native("NSAlert")),
     (NodeKind::WebView, Support::Native("WKWebView")),
-    // Una capa por encima del contenido, no una ventana aparte. En macOS lo
-    // modal de verdad es una hoja (`beginSheet:`) o un `NSPanel`, y las dos
-    // sacan el contenido de la ventana donde el layout lo colocó. Como el
-    // núcleo ya calcula el modal a pantalla completa, una vista encima da el
-    // mismo resultado sin pelearse con dos sistemas de coordenadas. El
-    // diálogo del sistema —`<an-alert>`— sí es un `NSAlert` de verdad.
-    (NodeKind::Modal, Support::Assembled("NSView por encima de la raíz")),
-    // macOS no tiene barra de pestañas. Lo más parecido del sistema es un
-    // `NSSegmentedControl`, que es justo lo que usan las apps de macOS para
-    // cambiar de sección, así que se arma con él y se dice. `NSTabView` no
-    // vale: es la pestaña de documento, con su marco y su fondo.
+    // A layer above the content, not a separate window. On macOS what is
+    // really modal is a sheet (`beginSheet:`) or an `NSPanel`, and both take
+    // the content out of the window where the layout placed it. Since the core
+    // already lays the modal out full screen, a view on top gives the same
+    // result without fighting two coordinate systems. The system dialog
+    // —`<an-alert>`— is a real `NSAlert`.
+    (NodeKind::Modal, Support::Assembled("NSView above the root")),
+    // macOS has no tab bar. The nearest thing the system has is an
+    // `NSSegmentedControl`, which is exactly what macOS apps use to change
+    // section, so it is assembled out of that and said so. `NSTabView` will
+    // not do: that is the document tab, with its own frame and background.
     (NodeKind::TabBar, Support::Assembled("NSSegmentedControl")),
-    // La cabecera de navegación de un Mac es la barra de título de la ventana.
-    // No se dibuja otra dentro del contenido —serían dos—, pero tampoco se
-    // tira lo que la plantilla escribió: el `[title]` va a parar al título de
-    // la ventana, que es donde un usuario de Mac lo busca. Lo pone
-    // `AppKitHost::apply_window_title`. El nodo mide cero, así que no deja
-    // hueco donde no hay nada. Ver `controls.rs`.
+    // A Mac's navigation header is the window's title bar. No second one is
+    // drawn inside the content —there would be two of them— but neither is
+    // what the template wrote thrown away: the `[title]` ends up as the
+    // window's title, which is where a Mac user looks for it.
+    // `AppKitHost::apply_window_title` puts it there. The node measures zero,
+    // so it leaves no gap where there is nothing. See `controls.rs`.
     (
         NodeKind::NavigationBar,
-        Support::Elsewhere("la barra de título de la ventana: el [title] acaba ahí"),
+        Support::Elsewhere("the window's title bar: the [title] ends up there"),
     ),
-    // MapKit nativo no pide clave —esa es MapKit JS, que es otro producto— y
-    // en macOS `MKMapView` hereda de `NSView`, así que entra en el árbol como
-    // una vista más. Enseñar dónde estás sí pide permiso, y eso es `showsUser`.
+    // Native MapKit asks for no key —that is MapKit JS, a different product—
+    // and on macOS `MKMapView` inherits from `NSView`, so it goes into the
+    // tree as one more view. Showing where you are does ask for permission,
+    // and that is `showsUser`.
     (NodeKind::MapView, Support::Native("MKMapView")),
-    // En AppKit sí hay vista de vídeo, cosa que en UIKit no: `AVPlayerView`
-    // **es** una `NSView` y trae los controles del sistema. Sale más barato
-    // que en iOS, donde hay que contener un `AVPlayerViewController`.
+    // AppKit does have a video view, which UIKit does not: `AVPlayerView`
+    // **is** an `NSView` and brings the system's controls with it. It works
+    // out cheaper than on iOS, where an `AVPlayerViewController` has to be
+    // contained.
     (NodeKind::VideoView, Support::Native("AVPlayerView")),
 ];
 
-/// Lo que macOS pone detrás de una primitiva.
+/// What macOS puts behind a primitive.
 pub fn support(kind: NodeKind) -> Option<Support> {
     SUPPORT.iter().find(|(k, _)| *k == kind).map(|(_, s)| *s)
 }
 
-/// Los nombres de evento que el framework sabe mandar.
+/// The event names the framework knows how to send.
 ///
-/// Hace falta porque al host llegan dos clases de nombre. Uno es el de
-/// `nativeEvent()` en `packages/primitives` —`press`, `change`, `scroll`— y ese
-/// sí es una petición de verdad. El otro es el nombre de la *salida* de la
-/// directiva —`onChange`, `valueChange`—: Angular registra también un oyente de
-/// elemento por cada `(salida)` que aparece en una plantilla, y ese nombre no
-/// le corresponde a ningún evento de plataforma en ninguno de los hosts.
+/// It is needed because two kinds of name reach the host. One is
+/// `nativeEvent()`'s in `packages/primitives` —`press`, `change`, `scroll`—
+/// and that one really is a request. The other is the name of the directive's
+/// *output* —`onChange`, `valueChange`—: Angular also registers an element
+/// listener for every `(output)` that appears in a template, and that name
+/// corresponds to no platform event in any of the hosts.
 ///
-/// Avisar de los segundos sería avisar en cada arranque de algo que funciona, y
-/// un aviso que sale siempre es un aviso que nadie lee. Se avisa solo de los
-/// primeros: de lo que alguien pidió de verdad y esta plataforma no da.
+/// Warning about the second kind would mean warning on every startup about
+/// something that works, and a warning that always comes out is a warning
+/// nobody reads. Only the first kind is warned about: what somebody genuinely
+/// asked for and this platform does not give.
 pub const KNOWN_EVENTS: &[&str] = &[
     "press", "doublePress", "longPress", "pan", "pinch", "rotate", "swipeLeft", "swipeRight",
     "swipeUp", "swipeDown", "hover", "layout", "safeArea", "back", "refresh", "scroll", "load",
@@ -121,55 +125,55 @@ pub fn is_known_event(event: &str) -> bool {
     KNOWN_EVENTS.contains(&event)
 }
 
-/// Eventos que esta plataforma no puede entregar, con el motivo.
+/// Events this platform cannot deliver, with the reason.
 ///
-/// Se consulta al suscribirse, no al dispararse: una plantilla que pide
-/// `(swipeLeft)` en un Mac tiene que enterarse al montar, no quedarse esperando
-/// un evento que nunca va a llegar.
+/// It is consulted on subscription and not on firing: a template that asks for
+/// `(swipeLeft)` on a Mac has to find out at mount time, not sit waiting for
+/// an event that is never going to arrive.
 pub fn unsupported_event(kind: NodeKind, event: &str) -> Option<&'static str> {
     match (kind, event) {
         (kind, "swipeLeft" | "swipeRight" | "swipeUp" | "swipeDown") if !catches_swipe(kind) => {
             Some(
-                "el deslizamiento de AppKit no es un reconocedor que se le cuelgue a una vista: \
-                 es un evento que sube por la cadena de responder, y solo lo puede recoger una \
-                 vista de este host. Un control del sistema no se puede subclasear con la app en \
-                 marcha; ponlo en el <an-view> que lo envuelve, que sí lo recibe",
+                "AppKit's swipe is not a recogniser hung off a view: it is an event that goes up \
+                 the responder chain, and only a view of this host's can catch it. A system \
+                 control cannot be subclassed with the app already running; put it on the \
+                 <an-view> wrapping it, which does receive it",
             )
         }
         (NodeKind::NavigationBar, "back") => Some(
-            "la cabecera de este host es la barra de título de la ventana, y una barra de título \
-             no tiene botón de atrás: en un Mac se vuelve con el menú o con un botón de la app",
+            "this host's header is the window's title bar, and a title bar has no back button: \
+             on a Mac you go back through the menu or through a button of the app's",
         ),
         (NodeKind::ScrollView, "refresh") => Some(
-            "no hay «tirar para recargar» en escritorio: se recarga con un botón o con un \
-             atajo, y eso es cosa de la app",
+            "there is no pull-to-refresh on the desktop: you reload with a button or with a \
+             shortcut, and that is the app's business",
         ),
         (NodeKind::Modal, "dismiss") => Some(
-            "el modal de este host es una capa que se enseña y se esconde con `visible`, no una \
-             presentación del sistema: nunca se cierra sola, así que no hay nada que avisar",
+            "this host's modal is a layer shown and hidden with `visible`, not a presentation of \
+             the system's: it never closes by itself, so there is nothing to announce",
         ),
         (NodeKind::StackView, "back") => Some(
-            "el gesto de volver atrás desde el borde es de iOS; en escritorio se vuelve con el \
-             menú o con un botón",
+            "the swipe-from-the-edge back gesture is iOS's; on the desktop you go back through \
+             the menu or through a button",
         ),
-        // El área segura es el recorte de la pantalla —la muesca, la barra de
-        // inicio—, y una ventana de escritorio no tiene nada de eso. Cero por
-        // los cuatro lados es la respuesta correcta, no un fallo: se contesta
-        // y no se avisa.
+        // The safe area is the screen's cut-outs —the notch, the home
+        // indicator— and a desktop window has none of that. Zero on all four
+        // sides is the correct answer, not a failure: it is answered and not
+        // warned about.
         _ => None,
     }
 }
 
-/// Una dirección de deslizamiento suscrita.
+/// One subscribed swipe direction.
 ///
-/// Se guardan en un mapa de bits porque cada dirección es su propia salida:
-/// escuchar solo `swipeLeft` no tiene por qué entregar las otras tres.
+/// They are kept in a bit mask because each direction is its own output:
+/// listening only for `swipeLeft` has no business delivering the other three.
 pub const SWIPE_LEFT: u8 = 1 << 0;
 pub const SWIPE_RIGHT: u8 = 1 << 1;
 pub const SWIPE_UP: u8 = 1 << 2;
 pub const SWIPE_DOWN: u8 = 1 << 3;
 
-/// El bit que le toca a cada nombre de evento, si es uno de los cuatro.
+/// The bit each event name gets, if it is one of the four.
 pub fn swipe_bit(event: &str) -> Option<u8> {
     Some(match event {
         "swipeLeft" => SWIPE_LEFT,
@@ -180,19 +184,19 @@ pub fn swipe_bit(event: &str) -> Option<u8> {
     })
 }
 
-/// Hacia dónde fue un deslizamiento, a partir de los deltas del `NSEvent`.
+/// Which way a swipe went, from the `NSEvent`'s deltas.
 ///
-/// La correspondencia entre el signo y la dirección no es una suposición y no
-/// se puede comprobar sin un trackpad y una mano encima, así que está donde se
-/// puede leer y probar sin ninguna de las dos cosas. La escribe Apple en
-/// `NSEvent.h`, en el comentario de `deltaX`:
+/// The correspondence between sign and direction is not a guess and cannot be
+/// checked without a trackpad and a hand on it, so it sits where it can be
+/// read and tested without either. Apple writes it in `NSEvent.h`, in the
+/// comment on `deltaX`:
 ///
 /// > A non-0 deltaX will represent a horizontal swipe, -1 for swipe right and
 /// > 1 for swipe left. A non-0 deltaY will represent a vertical swipe, -1 for
 /// > swipe down and 1 for swipe up.
 ///
-/// El horizontal manda sobre el vertical cuando llegan los dos, que en la
-/// práctica no pasa: el sistema manda un eje por gesto.
+/// The horizontal wins over the vertical when both arrive, which in practice
+/// does not happen: the system sends one axis per gesture.
 pub fn swipe_direction(delta_x: f64, delta_y: f64) -> Option<(u8, &'static str)> {
     if delta_x != 0.0 {
         return Some(if delta_x < 0.0 {
@@ -211,25 +215,26 @@ pub fn swipe_direction(delta_x: f64, delta_y: f64) -> Option<(u8, &'static str)>
     None
 }
 
-/// Primitivas cuya vista en este host la crea el propio host, y no AppKit.
+/// Primitives whose view in this host is created by the host itself, and not
+/// by AppKit.
 ///
-/// Importa para una sola cosa, y por eso está aquí y no escondida en `host.rs`:
-/// **el deslizamiento**. AppKit no tiene reconocedor de deslizamiento, pero sí
-/// tiene el gesto: llega como `swipeWithEvent:` a la cadena de responder, y una
-/// clase de Objective-C solo puede atenderlo si el método está en ella. Las
-/// vistas de esta lista son `AnFlippedView` —ver `flipped.rs`— y lo tienen; un
-/// `NSButton` es del sistema y no se le puede añadir un método con la app en
-/// marcha.
+/// It matters for one thing only, which is why it is here and not tucked away
+/// in `host.rs`: **the swipe**. AppKit has no swipe recogniser, but it does
+/// have the gesture: it arrives as `swipeWithEvent:` down the responder chain,
+/// and an Objective-C class can only handle it if the method is on it. The
+/// views in this list are `AnFlippedView` —see `flipped.rs`— and they have it;
+/// an `NSButton` belongs to the system and a method cannot be added to it with
+/// the app already running.
 ///
-/// No es un agujero: un `swipeWithEvent:` que un control no atiende sube al
-/// siguiente en la cadena, que es su vista padre. O sea que un deslizamiento
-/// encima de un botón acaba llegando al `<an-view>` que lo envuelve, que es
-/// donde una plantilla lo pone casi siempre.
+/// This is not a hole: a `swipeWithEvent:` a control does not handle goes up
+/// to the next responder in the chain, which is its parent view. Which means a
+/// swipe over a button ends up reaching the `<an-view>` wrapping it, which is
+/// where a template puts it nearly always.
 pub fn catches_swipe(kind: NodeKind) -> bool {
     matches!(
         kind,
-        // El `<an-scroll-view>` lo recoge por su documento, que también es
-        // nuestro; el `NSScrollView` de fuera es del sistema.
+        // The `<an-scroll-view>` catches it through its document view, which
+        // is ours as well; the `NSScrollView` around it is the system's.
         NodeKind::View | NodeKind::StackView | NodeKind::ScrollView | NodeKind::Modal
     )
 }

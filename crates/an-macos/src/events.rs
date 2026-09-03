@@ -1,37 +1,38 @@
-//! Eventos nativos de vuelta hacia JavaScript.
+//! Native events on their way back to JavaScript.
 //!
-//! Igual que en iOS, AppKit entrega gestos y acciones por target-action, que
-//! exige un objeto de Objective-C de verdad como destino: aquí se definen dos,
-//! uno para gestos y otro para controles, cada uno con el id del nodo y la cola
-//! de eventos dentro.
+//! Just as on iOS, AppKit delivers gestures and actions through target-action,
+//! which demands a real Objective-C object as the target: two are defined
+//! here, one for gestures and one for controls, each with the node's id and
+//! the event queue inside it.
 //!
-//! **Lo que cambia en el escritorio.** Aquí no hay dedos, hay ratón y trackpad,
-//! y los reconocedores de AppKit no son los mismos que los de UIKit:
+//! **What changes on the desktop.** There are no fingers here, there is a
+//! mouse and a trackpad, and AppKit's recognisers are not UIKit's:
 //!
-//! - `press` es un clic, no un toque: `NSClickGestureRecognizer`. `doublePress`
-//!   es el mismo con dos clics.
-//! - `longPress` es `NSPressGestureRecognizer`, que es mantener pulsado el
-//!   botón del ratón, no el dedo.
-//! - `pan` es `NSPanGestureRecognizer`, arrastrar con el botón pulsado.
-//! - `pinch` es `NSMagnificationGestureRecognizer` y `rotate` es
-//!   `NSRotationGestureRecognizer`: los dos son de trackpad, con un ratón no
-//!   pasan nunca. Se enganchan igual, porque un Mac con trackpad sí los da.
-//! - **El deslizamiento no es un reconocedor.** AppKit no tiene
-//!   `NSSwipeGestureRecognizer`, pero sí tiene el gesto: llega como
-//!   `swipeWithEvent:` por la cadena de responder, así que no se engancha a
-//!   una vista cualquiera, hay que atenderlo en la clase. Por eso vive en
-//!   `flipped.rs` y no aquí. No se imita con un `pan` con umbral: los umbrales
-//!   son los del sistema.
-//! - **Y hay algo que en un teléfono no existe: el puntero.** Estar encima de
-//!   una vista es un evento —`hover`— y la forma del cursor es una prop. Los
-//!   dos se montan con un `NSTrackingArea`, que a diferencia de un reconocedor
-//!   no tiene que ser la vista quien lo atienda: el dueño del área es un
-//!   objeto aparte, y por eso funcionan igual sobre un `NSButton` del sistema
-//!   que sobre una vista nuestra.
+//! - `press` is a click, not a tap: `NSClickGestureRecognizer`. `doublePress`
+//!   is the same one with two clicks.
+//! - `longPress` is `NSPressGestureRecognizer`, which is holding the mouse
+//!   button down, not the finger.
+//! - `pan` is `NSPanGestureRecognizer`, dragging with the button held down.
+//! - `pinch` is `NSMagnificationGestureRecognizer` and `rotate` is
+//!   `NSRotationGestureRecognizer`: both belong to the trackpad and never
+//!   happen with a mouse. They are attached all the same, because a Mac with a
+//!   trackpad does give them.
+//! - **The swipe is not a recogniser.** AppKit has no
+//!   `NSSwipeGestureRecognizer`, but it does have the gesture: it arrives as
+//!   `swipeWithEvent:` down the responder chain, so it is not attached to just
+//!   any view, it has to be handled on the class. Hence it living in
+//!   `flipped.rs` and not here. It is not imitated with a `pan` and a
+//!   threshold: the thresholds are the system's.
+//! - **And there is something a phone does not have: the pointer.** Being over
+//!   a view is an event —`hover`— and the cursor's shape is a prop. Both are
+//!   set up with an `NSTrackingArea`, which unlike a recogniser does not have
+//!   to be handled by the view itself: the area's owner is a separate object,
+//!   which is why they work the same over a system `NSButton` as over a view
+//!   of ours.
 //!
-//! Lo que no cambia es cuándo se despachan: el evento se encola y se entrega al
-//! principio del frame siguiente, para que todo lo que pasó entre dos vsync se
-//! procese junto.
+//! What does not change is when they are dispatched: the event is queued and
+//! delivered at the start of the next frame, so that everything that happened
+//! between two vsyncs is processed together.
 
 use an_core::{NodeId, PropValue};
 use an_host::{push_event, EventQueue, HostEvent};
@@ -60,8 +61,8 @@ pub struct TargetIvars {
 
 define_class!(
     // SAFETY:
-    // - NSObject no impone requisitos a sus subclases.
-    // - AnGestureTarget no implementa Drop.
+    // - NSObject places no requirements on its subclasses.
+    // - AnGestureTarget does not implement Drop.
     #[unsafe(super(objc2_foundation::NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "AnMacGestureTarget"]
@@ -71,8 +72,8 @@ define_class!(
     unsafe impl NSObjectProtocol for GestureTarget {}
 
     impl GestureTarget {
-        /// Clic y doble clic. Un `NSClickGestureRecognizer` solo se dispara
-        /// cuando el gesto ya ha terminado, así que no hay que filtrar estado.
+        /// Click and double click. An `NSClickGestureRecognizer` only fires
+        /// once the gesture is over, so there is no state to filter on.
         #[unsafe(method(handleClick:))]
         fn handle_click(&self, recognizer: &NSGestureRecognizer) {
             let ivars = self.ivars();
@@ -88,9 +89,10 @@ define_class!(
             );
         }
 
-        /// Arrastrar con el botón pulsado. Lleva desplazamiento y velocidad,
-        /// que es lo que hace falta para mover algo con el ratón y para decidir
-        /// si al soltar sigue por inercia.
+        /// Dragging with the button held down. It carries translation and
+        /// velocity, which is what it takes to move something with the mouse
+        /// and to decide whether it keeps going under its own momentum when
+        /// released.
         #[unsafe(method(handlePan:))]
         fn handle_pan(&self, recognizer: &NSPanGestureRecognizer) {
             let ivars = self.ivars();
@@ -106,10 +108,10 @@ define_class!(
                     ("x".to_owned(), PropValue::Number(point.0)),
                     ("y".to_owned(), PropValue::Number(point.1)),
                     ("translationX".to_owned(), PropValue::Number(translation.x)),
-                    // AppKit da el desplazamiento en coordenadas de la vista, y
-                    // las vistas de este host van con el origen arriba (ver
-                    // `flipped.rs`), así que la `y` ya crece hacia abajo y
-                    // coincide con la de iOS y la de Android.
+                    // AppKit gives the translation in the view's coordinates,
+                    // and this host's views have their origin at the top (see
+                    // `flipped.rs`), so `y` already grows downwards and agrees
+                    // with iOS's and Android's.
                     ("translationY".to_owned(), PropValue::Number(translation.y)),
                     ("velocityX".to_owned(), PropValue::Number(velocity.x)),
                     ("velocityY".to_owned(), PropValue::Number(velocity.y)),
@@ -121,8 +123,8 @@ define_class!(
             );
         }
 
-        /// Mantener pulsado. Solo se avisa al empezar, igual que en iOS: el
-        /// sistema ya decidió que el gesto cuenta.
+        /// Press and hold. It is only reported at the start, just as on iOS:
+        /// the system has already decided the gesture counts.
         #[unsafe(method(handleLongPress:))]
         fn handle_long_press(&self, recognizer: &NSGestureRecognizer) {
             if unsafe { recognizer.state() } != NSGestureRecognizerState::Began {
@@ -144,8 +146,9 @@ define_class!(
         #[unsafe(method(handlePinch:))]
         fn handle_pinch(&self, recognizer: &NSMagnificationGestureRecognizer) {
             let ivars = self.ivars();
-            // AppKit da la ampliación como incremento sobre 1 y UIKit da la
-            // escala. Se manda escala, que es lo que la plantilla espera.
+            // AppKit gives magnification as an increment over 1 and UIKit
+            // gives the scale. The scale is what is sent, because that is what
+            // the template expects.
             let scale = 1.0 + unsafe { recognizer.magnification() };
             emit(
                 &ivars.queue,
@@ -153,8 +156,8 @@ define_class!(
                 ivars.name,
                 vec![
                     ("scale".to_owned(), PropValue::Number(scale)),
-                    // El trackpad no da velocidad de ampliación; cero es
-                    // honesto y no rompe a quien la lea.
+                    // The trackpad gives no magnification velocity; zero is
+                    // honest and breaks nobody who reads it.
                     ("velocity".to_owned(), PropValue::Number(0.0)),
                     (
                         "state".to_owned(),
@@ -202,8 +205,8 @@ impl GestureTarget {
     }
 }
 
-/// Nombre del estado, tal cual lo verá la plantilla. Los mismos cuatro que en
-/// iOS: la plantilla no tiene por qué saber en qué plataforma corre.
+/// The state's name, exactly as the template will see it. The same four as on
+/// iOS: a template has no business knowing which platform it runs on.
 fn state_name(state: NSGestureRecognizerState) -> String {
     match state {
         NSGestureRecognizerState::Began => "begin",
@@ -221,7 +224,7 @@ pub struct ControlIvars {
 }
 
 define_class!(
-    // SAFETY: igual que GestureTarget.
+    // SAFETY: the same as GestureTarget.
     #[unsafe(super(objc2_foundation::NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "AnMacControlTarget"]
@@ -237,8 +240,9 @@ define_class!(
             emit(&ivars.queue, ivars.node, "press", Vec::new());
         }
 
-        /// El interruptor de macOS avisa por acción, no por `ValueChanged`:
-        /// `NSSwitch` es un `NSControl` y su estado es `1` o `0`.
+        /// macOS's switch reports through an action and not through
+        /// `ValueChanged`: `NSSwitch` is an `NSControl` and its state is `1`
+        /// or `0`.
         #[unsafe(method(handleSwitch:))]
         fn handle_switch(&self, sender: &NSSwitch) {
             let ivars = self.ivars();
@@ -276,9 +280,9 @@ define_class!(
             );
         }
 
-        /// La barra de pestañas de macOS es un segmentado (ver `support.rs`),
-        /// así que la selección llega por el mismo camino pero se llama
-        /// `select`, que es como la nombra la primitiva.
+        /// macOS's tab bar is a segmented control (see `support.rs`), so the
+        /// selection arrives down the same path but is called `select`, which
+        /// is how the primitive names it.
         #[unsafe(method(handleTabs:))]
         fn handle_tabs(&self, sender: &NSSegmentedControl) {
             let ivars = self.ivars();
@@ -321,7 +325,8 @@ define_class!(
         #[unsafe(method(handleDate:))]
         fn handle_date(&self, sender: &NSDatePicker) {
             let ivars = self.ivars();
-            // Milisegundos desde 1970, que es lo que entiende `Date` en JS.
+            // Milliseconds since 1970, which is what `Date` understands in
+            // JS.
             let seconds = unsafe { sender.dateValue().timeIntervalSince1970() };
             emit(
                 &ivars.queue,
@@ -331,9 +336,10 @@ define_class!(
             );
         }
 
-        /// Un campo de texto de AppKit manda su acción al pulsar Intro, no en
-        /// cada tecla; lo de cada tecla va por el delegado, que es otro camino
-        /// y bastante más caro. `submit` es lo que esta acción significa.
+        /// An AppKit text field sends its action on Return, not on every
+        /// keystroke; the per-keystroke part goes through the delegate, which
+        /// is a different path and a good deal more expensive. `submit` is
+        /// what this action means.
         #[unsafe(method(handleSubmit:))]
         fn handle_submit(&self, sender: &NSTextField) {
             let ivars = self.ivars();
@@ -348,8 +354,9 @@ define_class!(
 
     }
 
-    /// Lo que un campo cuenta mientras se escribe no llega por acción sino por
-    /// delegado: la acción de un `NSTextField` solo se dispara al pulsar Intro.
+    /// What a field reports while it is being typed into does not arrive
+    /// through an action but through a delegate: an `NSTextField`'s action
+    /// only fires on Return.
     unsafe impl NSControlTextEditingDelegate for ControlTarget {
         #[unsafe(method(controlTextDidChange:))]
         fn controlTextDidChange(&self, notification: &objc2_foundation::NSNotification) {
@@ -388,26 +395,27 @@ impl ControlTarget {
     }
 }
 
-/// El puntero, que en un teléfono no existe.
+/// The pointer, which on a phone does not exist.
 ///
-/// Es el dueño de un `NSTrackingArea`, no la vista: `NSTrackingArea` acepta
-/// cualquier objeto como dueño y le manda a él las entradas y las salidas. Eso
-/// es lo que hace que `(hover)` funcione igual encima de un `NSButton` del
-/// sistema que encima de una vista nuestra, sin subclasear nada.
+/// This is an `NSTrackingArea`'s owner, not the view: `NSTrackingArea` takes
+/// any object as its owner and sends the entries and the exits to it. That is
+/// what makes `(hover)` work the same over a system `NSButton` as over a view
+/// of ours, without subclassing anything.
 pub struct HoverIvars {
     node: NodeId,
     queue: EventQueue,
-    /// La vista vigilada. Hace falta para dar el punto en sus coordenadas: el
-    /// evento trae el de la ventana, y `NSTrackingArea` no dice de quién es.
+    /// The view being watched. It is needed to give the point in its own
+    /// coordinates: the event carries the window's, and `NSTrackingArea` does
+    /// not say whose it is.
     ///
-    /// Retenerla no deja un ciclo: la vista retiene el área, el área apunta al
-    /// dueño en débil, y quien retiene al dueño es el host, que suelta los dos
-    /// al destruir el nodo.
+    /// Retaining it leaves no cycle: the view retains the area, the area
+    /// points at the owner weakly, and what retains the owner is the host,
+    /// which releases both when the node is destroyed.
     view: Retained<NSView>,
 }
 
 define_class!(
-    // SAFETY: igual que GestureTarget.
+    // SAFETY: the same as GestureTarget.
     #[unsafe(super(objc2_foundation::NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "AnMacHoverTarget"]
@@ -440,11 +448,12 @@ impl HoverTarget {
         unsafe { msg_send![super(this), init] }
     }
 
-    /// Un solo evento con un booleano, que es como lo declara la primitiva.
+    /// One single event with a boolean, which is how the primitive declares
+    /// it.
     ///
-    /// El punto va en coordenadas de la vista, igual que el de un `press`. Al
-    /// salir es el último por el que pasó el puntero, o sea el borde por donde
-    /// se fue.
+    /// The point goes in the view's coordinates, just as a `press`'s does. On
+    /// exit it is the last one the pointer passed through — that is, the edge
+    /// it left by.
     fn emit(&self, event: &NSEvent, hovered: bool) {
         let ivars = self.ivars();
         let point = ivars.view.convertPoint_fromView(unsafe { event.locationInWindow() }, None);
@@ -461,19 +470,19 @@ impl HoverTarget {
     }
 }
 
-/// La forma del puntero encima de una vista.
+/// The pointer's shape over a view.
 ///
-/// También es dueño de un `NSTrackingArea`, y por la misma razón: poner un
-/// cursor con `addCursorRect:cursor:` exige sobrescribir `resetCursorRects` en
-/// la vista, y las vistas de este host son en su mayoría controles del sistema.
-/// Con `NSTrackingCursorUpdate` el sistema pregunta al dueño del área justo
-/// cuando el puntero entra, que es cuando hay que contestar.
+/// This too owns an `NSTrackingArea`, and for the same reason: setting a
+/// cursor with `addCursorRect:cursor:` requires overriding `resetCursorRects`
+/// on the view, and this host's views are mostly system controls. With
+/// `NSTrackingCursorUpdate` the system asks the area's owner right when the
+/// pointer enters, which is when the answer is due.
 pub struct CursorIvars {
     cursor: Retained<NSCursor>,
 }
 
 define_class!(
-    // SAFETY: igual que GestureTarget.
+    // SAFETY: the same as GestureTarget.
     #[unsafe(super(objc2_foundation::NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "AnMacCursorTarget"]
@@ -497,11 +506,11 @@ impl CursorTarget {
     }
 }
 
-/// El cursor del sistema que le toca a cada nombre de la primitiva.
+/// The system cursor each of the primitive's names gets.
 ///
-/// `None` es un nombre que no está en el vocabulario: quien llama avisa. No hay
-/// ninguno dibujado a mano; todos son los del sistema, con el aspecto que
-/// tengan en esa versión de macOS.
+/// `None` means a name that is not in the vocabulary: the caller warns. None
+/// of them is drawn by hand; they are all the system's, looking however they
+/// look on that version of macOS.
 pub fn system_cursor(name: &str) -> Option<Retained<NSCursor>> {
     Some(match name {
         "default" => NSCursor::arrowCursor(),
@@ -515,15 +524,14 @@ pub fn system_cursor(name: &str) -> Option<Retained<NSCursor>> {
     })
 }
 
-/// El área que cubre a una vista entera, ahora y después de cada cambio de
-/// tamaño.
+/// The area covering a whole view, now and after every change of size.
 ///
-/// `InVisibleRect` es lo que hace que no haya que rehacerla en cada
-/// `set_layout`: con ella el rectángulo lo lleva AppKit pegado al de la vista y
-/// el que se pasa aquí se ignora. Sin ella, un área quedaría del tamaño que
-/// tenía la vista cuando alguien se suscribió, y al redimensionar la ventana
-/// —que en escritorio pasa constantemente— el puntero entraría y saldría por
-/// donde ya no hay nada.
+/// `InVisibleRect` is what saves having to rebuild it on every `set_layout`:
+/// with it AppKit keeps the rectangle glued to the view's and the one passed
+/// in here is ignored. Without it, an area would stay the size the view was
+/// when somebody subscribed, and on resizing the window —which on the desktop
+/// happens constantly— the pointer would enter and leave over ground where
+/// there is nothing any more.
 fn tracking_area(
     view: &NSView,
     options: NSTrackingAreaOptions,
@@ -543,20 +551,20 @@ fn tracking_area(
     area
 }
 
-/// Pone el cursor de esta vista, quitando el que hubiera.
+/// Sets this view's cursor, taking away whatever was there.
 ///
-/// Devuelve lo que hay que guardar vivo: AppKit se queda con el dueño del área
-/// por referencia débil, así que soltarlo aquí dejaría un área que no contesta
-/// y un puntero que no cambia, sin ningún error.
+/// It returns what has to be kept alive: AppKit holds the area's owner by weak
+/// reference, so releasing it here would leave an area that does not answer
+/// and a pointer that does not change, with no error at all.
 pub fn attach_cursor(
     mtm: objc2::MainThreadMarker,
     view: &NSView,
     cursor: Retained<NSCursor>,
 ) -> (Retained<NSTrackingArea>, Retained<CursorTarget>) {
     let target = CursorTarget::new(mtm, cursor);
-    // `ActiveInKeyWindow` es lo que hace AppKit con sus propios rectángulos de
-    // cursor: la forma del puntero es cosa de la ventana con la que se está
-    // trabajando, no de una que está detrás.
+    // `ActiveInKeyWindow` is what AppKit does with its own cursor rects: the
+    // pointer's shape is the business of the window being worked in, not of
+    // one sitting behind it.
     let area = tracking_area(
         view,
         NSTrackingAreaOptions::CursorUpdate | NSTrackingAreaOptions::ActiveInKeyWindow,
@@ -565,24 +573,26 @@ pub fn attach_cursor(
     (area, target)
 }
 
-/// Una suscripción viva. Guarda lo que AppKit referencia débilmente, que es
-/// justo lo que se libera solo si no lo retiene nadie: el destino de una acción
-/// y el delegado de un campo.
+/// A live subscription. It holds what AppKit references weakly, which is
+/// exactly what gets freed on its own if nobody retains it: an action's target
+/// and a field's delegate.
 pub enum AttachedListener {
     Gesture { recognizer: Retained<NSGestureRecognizer>, _target: Retained<GestureTarget> },
-    /// Acción de un `NSControl`. AppKit solo admite **una** por control, así
-    /// que dos suscripciones al mismo control se pisarían; en la práctica no
-    /// pasa porque cada control tiene un solo evento que dar.
+    /// An `NSControl`'s action. AppKit allows only **one** per control, so
+    /// two subscriptions on the same control would tread on each other; in
+    /// practice that does not happen because each control has a single event
+    /// to give.
     Action { _target: Retained<ControlTarget> },
-    /// Delegado de un campo de texto, que es por donde llegan las tres cosas
-    /// que un campo cuenta mientras se escribe.
+    /// A text field's delegate, which is where the three things a field
+    /// reports while it is being typed into come from.
     FieldDelegate { _target: Retained<ControlTarget> },
-    /// El puntero por encima. No es un reconocedor: es un `NSTrackingArea` con
-    /// un dueño aparte, que es lo que deja vigilar un control del sistema.
+    /// The pointer hovering. It is not a recogniser: it is an
+    /// `NSTrackingArea` with a separate owner, which is what makes watching a
+    /// system control possible.
     Hover { area: Retained<NSTrackingArea>, _target: Retained<HoverTarget> },
-    /// Una dirección de deslizamiento. No hay nada que enganchar: el método ya
-    /// está en la clase de la vista (ver `flipped.rs`); lo que se guarda es a
-    /// quién hay que decírselo y qué dirección deja de escucharse al soltar.
+    /// One swipe direction. There is nothing to attach: the method is already
+    /// on the view's class (see `flipped.rs`); what is kept is who has to be
+    /// told and which direction stops being listened for on release.
     Swipe { view: Retained<crate::flipped::FlippedView>, bit: u8 },
 }
 
@@ -606,7 +616,7 @@ impl AttachedListener {
     }
 }
 
-/// Qué acción de `NSControl` le toca a cada par (primitiva, evento).
+/// Which `NSControl` action each (primitive, event) pair gets.
 fn control_action(kind: an_core::NodeKind, event: &str) -> Option<Sel> {
     use an_core::NodeKind;
     Some(match (kind, event) {
@@ -623,8 +633,8 @@ fn control_action(kind: an_core::NodeKind, event: &str) -> Option<Sel> {
     })
 }
 
-/// Engancha un evento a una vista. `None` significa que esta plataforma no
-/// sabe entregarlo; quien llama decide si eso merece un aviso.
+/// Attaches an event to a view. `None` means this platform does not know how
+/// to deliver it; the caller decides whether that is worth a warning.
 pub fn attach(
     mtm: objc2::MainThreadMarker,
     view: &NSView,
@@ -645,10 +655,10 @@ pub fn attach(
         return Some(AttachedListener::Action { _target: target });
     }
 
-    // Lo que un campo cuenta mientras se escribe llega por delegado.
-    // `change`/`input`, `focus` y `blur` son las tres notificaciones de
-    // `NSControl`, y el mismo destino las atiende todas: engancharlo una vez
-    // vale para las tres.
+    // What a field reports while it is being typed into arrives through a
+    // delegate. `change`/`input`, `focus` and `blur` are `NSControl`'s three
+    // notifications, and the same target handles them all: attaching it once
+    // covers the three.
     if matches!(kind, NodeKind::TextInput | NodeKind::SearchBar)
         && matches!(event, "change" | "input" | "focus" | "blur")
     {
@@ -661,15 +671,16 @@ pub fn attach(
         return Some(AttachedListener::FieldDelegate { _target: target });
     }
 
-    // El puntero por encima. Va antes que los gestos porque no es uno: no hay
-    // reconocedor, hay un área vigilada, y el dueño del área es un objeto
-    // aparte. Por eso funciona sobre cualquier vista, del sistema o nuestra.
+    // The pointer hovering. It goes before the gestures because it is not one
+    // of them: there is no recogniser, there is a watched area, and the area's
+    // owner is a separate object. Which is why it works over any view, the
+    // system's or ours.
     if event == "hover" {
         let target = HoverTarget::new(mtm, node, queue, view.retain());
-        // `ActiveInActiveApp` y no `ActiveAlways`: en un Mac los controles solo
-        // se iluminan al pasar por encima cuando la app está delante, y esta no
-        // va a ser la excepción que se comporta distinto que el resto del
-        // escritorio.
+        // `ActiveInActiveApp` and not `ActiveAlways`: on a Mac controls only
+        // light up under the pointer when the app is in front, and this one is
+        // not going to be the exception that behaves differently from the rest
+        // of the desktop.
         let area = tracking_area(
             view,
             NSTrackingAreaOptions::MouseEnteredAndExited | NSTrackingAreaOptions::ActiveInActiveApp,
@@ -678,7 +689,7 @@ pub fn attach(
         return Some(AttachedListener::Hover { area, _target: target });
     }
 
-    // Gestos continuos.
+    // Continuous gestures.
     let continuous: Option<(Retained<NSGestureRecognizer>, Retained<GestureTarget>)> = match event {
         "pan" => {
             let target = GestureTarget::new(mtm, node, "pan", queue.clone());
@@ -731,7 +742,7 @@ pub fn attach(
         return Some(AttachedListener::Gesture { recognizer, _target: target });
     }
 
-    // Clic y doble clic.
+    // Click and double click.
     let (name, clicks): (&'static str, isize) = match event {
         "press" | "click" | "tap" => ("press", 1),
         "doublePress" => ("doublePress", 2),
