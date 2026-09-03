@@ -56,4 +56,32 @@ void an_watch_runtime_event(AnWatchRuntime *rt, uint32_t target,
 
 void an_watch_runtime_free(AnWatchRuntime *rt);
 
+// --- Plugins ---------------------------------------------------------------
+//
+// The same quartet the phone has, with this host's prefix. Registration happens
+// **before** an_watch_runtime_new: the core builds one module per registered
+// name when the engine starts, and a name arriving afterwards would never get
+// in.
+//
+// What a watch can and cannot do is not decided here. A plugin only reaches
+// this registry if it declared a watchOS half in its package.json, and `an
+// watchos` stops the build of an app whose plugins did not.
+
+/// Registers a plugin under the name JS calls it by.
+void an_watch_plugin_register(const char *name);
+
+/// Installs the callback the core hands the queued calls to, once per frame and
+/// on the main actor. NULL takes it away.
+void an_watch_plugin_set_dispatch(void (*dispatch)(uint64_t id,
+                                                   const char *module,
+                                                   const char *method,
+                                                   const char *args));
+
+/// Answers a call with its return value, already serialised; "null" for a
+/// method that returns nothing. 0 if the call was waiting, -1 if it was not.
+int32_t an_watch_plugin_resolve(uint64_t id, const char *json);
+
+/// Rejects a call. 0 if the call was waiting, -1 if it was not.
+int32_t an_watch_plugin_reject(uint64_t id, const char *message);
+
 #endif

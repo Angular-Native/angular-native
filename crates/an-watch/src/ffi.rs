@@ -142,13 +142,22 @@ pub unsafe extern "C" fn an_watch_runtime_new(
     let device = crate::modules::DeviceModule::from_shell(unsafe { read(device_json) }.as_deref());
     let events = new_event_queue();
     let host = WatchHost::new(events.clone());
+    // The plugins the shell registered before getting here. One per name; what
+    // they do lives in Swift, so these only carry and fetch.
+    let plugins = crate::plugins::host_plugins();
+    // Read before the worker starts, because it names the plugins that are
+    // there and the registry is closed the moment the engine is built.
+    let absent = crate::plugins::absent_note();
 
     let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
         let mut js = QuickJsRuntime::new()?;
         js.register_module(Box::new(device));
-        // There are no plugins on this host, and a call to one has to be told
-        // why and not only that the name is unknown. See `modules::ABSENT_NOTE`.
-        js.explain_absent_modules(crate::modules::ABSENT_NOTE);
+        for plugin in plugins {
+            js.register_module(Box::new(plugin));
+        }
+        // A call to a module that is not here has to be told why and not only
+        // that the name is unknown. See `plugins::absent_note`.
+        js.explain_absent_modules(absent);
         Ok((js, ShadowSide::new(WatchMeasurer::new(controls), (width, height))))
     });
     let worker = match worker {
@@ -236,6 +245,12 @@ pub unsafe extern "C" fn an_watch_runtime_set_viewport(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_watch_runtime_frame(rt: *mut AnWatchRuntime, now_ms: f64) -> i32 {
     let Some(rt) = (unsafe { rt.as_mut() }) else { return -1 };
+
+    // The plugin calls the engine left behind are served here, which the shell
+    // runs on the main actor: it is the only place where a plugin may touch
+    // WatchKit. It goes before JS's turn so that an answer arriving on the spot
+    // makes it into this very frame.
+    crate::plugins::pump();
 
     let mut applied = rt.pump();
     // If the worker is still busy it is not queued another turn: the queue
