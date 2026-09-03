@@ -697,10 +697,26 @@ pub fn swift_sources(dir: &Path) -> Result<Vec<String>> {
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
         .filter(|path| path.extension().is_some_and(|e| e == "swift"))
+        .filter(|path| !is_generated_placeholder(path))
         .map(|path| path.to_string_lossy().into_owned())
         .collect();
     found.sort();
     Ok(found)
+}
+
+/// The file name of the plugin registry `an` writes per build.
+pub const GENERATED_PLUGINS: &str = "AnGeneratedPlugins.swift";
+
+/// Whether this is the empty stand-in a shell keeps so it compiles on its own.
+///
+/// The macOS and watchOS shells carry one, because their registries call
+/// `AnGeneratedPlugins.install()` unconditionally and `swiftc -typecheck` over
+/// the shell's sources alone would otherwise fail on a symbol that only exists
+/// at build time — which `scripts/check-accessibility.sh` does, and should keep
+/// being able to do. In a real build the generated file is added instead, and
+/// the two together would be a redeclaration, so the stand-in is dropped here.
+fn is_generated_placeholder(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| name == GENERATED_PLUGINS)
 }
 
 pub fn launch(package: &Package, device: &str) -> Result<()> {
