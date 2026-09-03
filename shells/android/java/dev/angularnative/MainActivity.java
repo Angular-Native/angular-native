@@ -34,6 +34,9 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
     private static final String TAG = "angular-native";
 
     private AnRuntime runtime;
+    /** The viewport the engine has been told about, so it is only told changes. */
+    private float viewportWidthDp;
+    private float viewportHeightDp;
     private AnHost host;
     private Choreographer.FrameCallback frameCallback;
     private DevClient devClient;
@@ -49,9 +52,15 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
                 new ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
+        // The screen's size, which is a starting guess and not the answer: the
+        // engine has to be given a viewport before the first frame, and at this
+        // point the container has not been laid out. What the app really gets
+        // is settled below, when it is.
         DisplayMetrics metrics = getResources().getDisplayMetrics();
         float widthDp = metrics.widthPixels / metrics.density;
         float heightDp = metrics.heightPixels / metrics.density;
+        viewportWidthDp = widthDp;
+        viewportHeightDp = heightDp;
 
         // Before creating the runtime: the core builds one native module per
         // plugin when the engine starts, and whatever is registered afterwards
@@ -65,6 +74,28 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
             return;
         }
         host.attachRuntime(runtime);
+
+        // The viewport follows the container, and not the screen.
+        //
+        // They are not the same number: a rotation swaps them, split screen and
+        // a foldable change them without the app being recreated, and on the
+        // first cold start the container can be laid out at a size the metrics
+        // did not predict —that was a real phone showing the whole layout
+        // squeezed into a square, portrait width by portrait width, while the
+        // rest of the screen stayed black. Nothing called `setViewport`, so
+        // taffy went on laying out for the size it was handed at startup for as
+        // long as the app lived.
+        container.addOnLayoutChangeListener((v, left, top, right, bottom, ol, ot, or_, ob) -> {
+            float density = getResources().getDisplayMetrics().density;
+            float w = (right - left) / density;
+            float h = (bottom - top) / density;
+            if (w == viewportWidthDp && h == viewportHeightDp) {
+                return;
+            }
+            viewportWidthDp = w;
+            viewportHeightDp = h;
+            runtime.setViewport(w, h);
+        });
 
         String source = readAsset("main.js");
         if (source == null) {

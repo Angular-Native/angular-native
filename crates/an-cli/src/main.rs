@@ -173,6 +173,13 @@ enum Command {
         /// `--sign`: Play takes nothing signed with a debug key.
         #[arg(long)]
         aab: bool,
+        /// The adb serial to install on, as `adb devices` prints it.
+        ///
+        /// Without it the single phone-shaped device is taken, and with an
+        /// emulator and a real phone both plugged in there are two: a device
+        /// is named here, not guessed.
+        #[arg(long)]
+        device: Option<String>,
     },
     /// Shows the plugins an app depends on.
     ///
@@ -451,7 +458,7 @@ fn main() -> anyhow::Result<()> {
             let package = watchos::assemble(&workspace, &bundle, release, None)?;
             watchos::launch(&package, &device)
         }
-        Command::Android { app, release, no_launch, sign, aab } => {
+        Command::Android { app, release, no_launch, sign, aab, device } => {
             let app = workspace.app(app.as_deref())?;
             let found = plugins::discover(&workspace, &app)?;
             let (keystore, bundletool) = android_signing(&workspace, sign, aab)?;
@@ -475,7 +482,7 @@ fn main() -> anyhow::Result<()> {
                 println!("{}", artefact.display());
                 return Ok(());
             }
-            android::install_and_launch(&workspace, &artefact, android::Form::Phone, None)
+            android::install_and_launch(&workspace, &artefact, android::Form::Phone, device.as_deref())
         }
         Command::Wearos { app, release, no_launch, device, sign, aab } => {
             // Same as on the Apple watch: the default example cannot be the

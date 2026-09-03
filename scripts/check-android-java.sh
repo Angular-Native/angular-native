@@ -30,3 +30,19 @@ if [ ! -f "$APK" ]; then
   exit 1
 fi
 echo "  ok   javac compiles AnHost and friends against Material 3"
+
+# The viewport has to follow the window, and only the Java says whether it does.
+# `check-rotation-device.sh` proves it on a phone, but it needs one plugged in;
+# this is the part that can be asserted anywhere, and it is the part that was
+# missing for as long as the bug lived: nothing ever called `setViewport`, so a
+# rotation left the app laid out for the width it started with.
+ACTIVITY=shells/android/java/dev/angularnative/MainActivity.java
+if ! grep -q "addOnLayoutChangeListener" "$ACTIVITY"; then
+  echo "  FAIL MainActivity does not watch the container's size"
+  exit 1
+fi
+if ! grep -q "setViewport" "$ACTIVITY"; then
+  echo "  FAIL MainActivity never tells the engine the viewport changed"
+  exit 1
+fi
+echo "  ok   the viewport follows the container, so a rotation relays out"
