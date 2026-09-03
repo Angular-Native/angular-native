@@ -59,7 +59,7 @@ JS does not call into Rust once per mutation. It writes commands into a buffer
 and hands the whole thing over at the end of the tick.
 
 An `@for` over 200 rows is around 1,200 mutations. One call each is 1,200 border
-crossings; a buffer is one. The protocol is thirteen opcodes — create, destroy,
+crossings; a buffer is one. The protocol is twelve opcodes — create, destroy,
 insert, remove, set style, set a string/number/boolean/null prop, set text, set a
 listener, set the root — little-endian, with strings carrying a length and UTF-8
 bytes and no alignment, so the decoder reads byte by byte and needs none.

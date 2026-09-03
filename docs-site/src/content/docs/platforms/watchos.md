@@ -379,7 +379,7 @@ no route into a watch simulator's tree — so nothing proves a screen reader wou
 announce any of it. The Rust test only checks the snapshot carries the right
 names.
 
-## Muros that were expected and were not there
+## Walls that were expected and were not there
 
 Documented because they were on the list of things that might stop this:
 

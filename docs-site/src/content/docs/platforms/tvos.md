@@ -233,13 +233,6 @@ finds out:
 
 ## What is missing
 
-- **`(focus)` and `(blur)` cannot be asked for from a template.**
-  `AnFocusableView` emits them towards the core and `events::attach` knows how
-  to register them, but in `packages/primitives` those two outputs only exist on
-  the `an-text-input` directive, not on the base that `an-view` and friends use.
-  Until they are there, a template cannot react to focus, which is the natural
-  way to highlight a view of your own on a TV. It is one line in `NativeView`,
-  and it is the first thing to do here.
 - **Icon.** The tvOS `Info.plist` deliberately carries no `CFBundleIcons`: a
   tvOS app's icon is a layered icon plus the top shelf image, and both live in
   an asset catalogue compiled with `actool`. There is none here yet, so the key

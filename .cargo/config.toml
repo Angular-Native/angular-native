@@ -1,10 +1,10 @@
 [alias]
-# `cargo an dev` en vez de `cargo run -q -p an-cli -- dev`.
+# `cargo an dev` instead of `cargo run -q -p an-cli -- dev`.
 an = "run -q -p an-cli --"
 
-# Android: el NDK trae su propio clang y su sysroot. Sin esto, `cc` busca un
-# `aarch64-linux-android-clang` que no existe y QuickJS no llega a compilarse.
-# El API 24 es el mínimo que soporta el NDK 27.
+# Android: the NDK brings its own clang and its own sysroot. Without this, `cc`
+# looks for an `aarch64-linux-android-clang` that does not exist and QuickJS never
+# gets built. API 24 is the oldest the NDK 27 supports.
 [target.aarch64-linux-android]
 linker = "/Users/nestorgarciabou/Library/Android/sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android24-clang"
 
@@ -17,7 +17,7 @@ AR_aarch64-linux-android = "/Users/nestorgarciabou/Library/Android/sdk/ndk/27.1.
 CC_armv7-linux-androideabi = "/Users/nestorgarciabou/Library/Android/sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/bin/armv7a-linux-androideabi24-clang"
 AR_armv7-linux-androideabi = "/Users/nestorgarciabou/Library/Android/sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-ar"
 
-# bindgen usa libclang, que por defecto es el de Xcode y no sabe nada de
-# Android: hay que darle el sysroot del NDK o no encuentra ni <stdint.h>.
+# bindgen uses libclang, which by default is Xcode's and knows nothing about
+# Android: it needs the NDK sysroot or it cannot even find <stdint.h>.
 BINDGEN_EXTRA_CLANG_ARGS_aarch64-linux-android = "--sysroot=/Users/nestorgarciabou/Library/Android/sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/sysroot --target=aarch64-linux-android24"
 BINDGEN_EXTRA_CLANG_ARGS_armv7-linux-androideabi = "--sysroot=/Users/nestorgarciabou/Library/Android/sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/sysroot --target=armv7a-linux-androideabi24"

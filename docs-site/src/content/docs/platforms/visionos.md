@@ -125,11 +125,6 @@ not capture the highlight in place.
 
 ## What is missing
 
-- **`deviceInfo.platform` still says `"ios"`** in all three families. An app
-  that wants to adapt to the headset — or to the TV — has no way to know where
-  it is. The fix is not in `an-ios`: the `NativeDeviceInfo.platform` type in
-  `packages/primitives` declares the values it can take, and it has to be opened
-  up there first.
 - **Icon.** The `Info.plist` carries no `CFBundleIcons`: the visionOS icon is
   layered and lives in an asset catalogue compiled with `actool`. The app
   installs and launches; in the grid it appears with no icon.
