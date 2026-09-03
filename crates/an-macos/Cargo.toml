@@ -15,6 +15,9 @@ an-core.workspace = true
 an-host.workspace = true
 an-layout.workspace = true
 an-bridge = { path = "../an-bridge" }
+# The device module's answer travels to JS as JSON, the same as on iOS.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.151"
 
 # AppKit only exists on macOS. What is left off it is the inventory of
 # primitives, which touches no platform, so that the workspace's `cargo test`
@@ -31,6 +34,8 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
   "std", "NSString", "NSAttributedString", "NSDictionary", "NSValue", "NSGeometry",
   "NSURL", "NSURLSession", "NSURLRequest", "NSData", "NSOperation", "NSError",
   "NSURLResponse", "NSArray", "NSDate", "NSRange", "block2", "objc2-core-foundation",
+  # The device module: the system's version and the preferred language.
+  "NSProcessInfo", "NSLocale",
 ] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGColor"] }
 objc2-quartz-core = { version = "0.3", default-features = false, features = [
@@ -39,6 +44,8 @@ objc2-quartz-core = { version = "0.3", default-features = false, features = [
 objc2-app-kit = { version = "0.3", default-features = false, features = [
   "std", "objc2-core-foundation", "objc2-quartz-core", "objc2-core-graphics",
   "NSFontDescriptor", "NSParagraphStyle", "NSScroller", "NSResponder", "NSView", "NSWindow", "NSApplication", "NSColor", "NSFont",
+  # The device module: the backing factor of the screen the window opened on.
+  "NSScreen",
   "NSTextField", "NSTextFieldCell", "NSControl", "NSCell", "NSActionCell",
   "NSButton", "NSButtonCell", "NSSwitch", "NSSlider", "NSSliderCell",
   "NSProgressIndicator", "NSScrollView", "NSClipView", "NSImageView", "NSImage",
