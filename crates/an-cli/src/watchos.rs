@@ -13,6 +13,12 @@
 //! 3. **The bundle is a watch's.** `WKApplication` in the `Info.plist` and
 //!    device family 4; without those `simctl` installs something it then cannot
 //!    launch.
+//! 4. **A plugin has to declare watchOS on purpose.** The watch runs the same
+//!    registry as the phone —see `crates/an-watch/src/plugins.rs`— but it is
+//!    not the same platform in the manifest, and that is not bureaucracy: a
+//!    watch has no pasteboard and no biometric sensor, so half the plugins that
+//!    build for a phone cannot exist here. The refusal names the plugin and the
+//!    reason it gave; see `plugins::require`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -21,25 +27,18 @@ use anyhow::{bail, Context, Result};
 
 use crate::build::run;
 use crate::ios::swift_sources;
-use crate::plugins::Plugin;
+use crate::plugins::{self, Platform, Plugin};
 use crate::workspace::Workspace;
 
-/// The watch does not load plugins yet: `an-watch` has none of the registry
-/// `an-ios` and `an-android` have, and its shell is not a port of the iOS one.
+/// Every plugin has to bring its watchOS half, and the ones that do not are
+/// named along with whatever they said about it.
 ///
-/// It is said here and it stops. Building the `.app` anyway would leave an app
-/// in which the module does not exist and every call is turned down at runtime,
-/// and that is exactly what this system must never do.
-pub fn reject_plugins(plugins: &[Plugin]) -> Result<()> {
-    if plugins.is_empty() {
-        return Ok(());
-    }
-    let names: Vec<&str> = plugins.iter().map(|plugin| plugin.package.as_str()).collect();
-    bail!(
-        "this app cannot be built for watchOS: the watch does not load plugins yet, \
-         and it depends on {}. See https://angular-native.dev/extending/plugins/.",
-        names.join(", ")
-    )
+/// The watch used to refuse plugins outright, and the refusal was honest but
+/// blunt: it said the host loads none, which stopped being true the moment
+/// `an-watch` grew a registry. What is refused now is narrower and truer — the
+/// plugin that cannot run on a watch, by name, with its own sentence about why.
+pub fn require_plugins(plugins: &[Plugin]) -> Result<()> {
+    plugins::require(plugins, Platform::Watchos)
 }
 
 const APP_NAME: &str = "AngularNativeWatch";
@@ -58,7 +57,11 @@ pub fn assemble(
     bundle: &Path,
     release: bool,
     dev_server: Option<&str>,
+    plugins: &[Plugin],
 ) -> Result<Package> {
+    // Before compiling anything: if some plugin does not bring its watchOS
+    // half, the build stops here and says which one and why.
+    require_plugins(plugins)?;
     let root = &workspace.root;
     let profile = if release { "release" } else { "debug" };
     let app_dir = workspace.build_dir().join("watchos").join(format!("{APP_NAME}.app"));
@@ -108,6 +111,21 @@ pub fn assemble(
     }
     sources.extend(swift_sources(&root.join("shells/shared"))?);
 
+    // The plugins: their Swift sources and the registry that hooks them up,
+    // into the same `swiftc` invocation as the shell so a plugin sees
+    // `AnPlugin` and `AnPluginCall` without importing anything.
+    let generated = app_dir.parent().unwrap_or(&app_dir).join("generated");
+    for plugin in plugins {
+        let contributed = plugins::sources(plugin, Platform::Watchos)?;
+        eprintln!("==> plugin {} ({} Swift sources)", plugin.module, contributed.len());
+        sources.extend(contributed);
+    }
+    sources.push(
+        plugins::generate_swift(plugins, Platform::Watchos, &generated)?
+            .to_string_lossy()
+            .into_owned(),
+    );
+
     let lib_dir = workspace.target_dir().join(TARGET).join(profile);
     let mut args: Vec<String> = vec![
         "swiftc".into(),
@@ -132,6 +150,20 @@ pub fn assemble(
         "-o".into(),
         app_dir.join(APP_NAME).to_string_lossy().into_owned(),
     ];
+    // The entitlements, if any plugin asks for one. **On the simulator they go
+    // inside the binary and not in a signature** — the same thing `an ios` does
+    // and for the same reason: `keychain-access-groups` is a restricted
+    // entitlement, and a simulator binary carrying it in its signature without a
+    // provisioning profile behind it is refused at launch, with a message that
+    // mentions entitlements nowhere. Xcode embeds it exactly like this.
+    if let Some(entitlements) = write_entitlements(plugins, BUNDLE_ID, &generated)? {
+        for flag in ["-sectcreate", "__TEXT", "__entitlements"] {
+            args.push("-Xlinker".into());
+            args.push(flag.into());
+        }
+        args.push("-Xlinker".into());
+        args.push(entitlements.to_string_lossy().into_owned());
+    }
     if release {
         args.push("-O".into());
     }
@@ -139,7 +171,11 @@ pub fn assemble(
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     run(workspace, "xcrun", &borrowed, "the shell link step failed")?;
 
-    std::fs::copy(root.join("shells/watchos/Resources/Info.plist"), app_dir.join("Info.plist"))?;
+    write_plist(
+        &root.join("shells/watchos/Resources/Info.plist"),
+        &app_dir.join("Info.plist"),
+        plugins,
+    )?;
     std::fs::copy(bundle, app_dir.join("main.js"))?;
     match dev_server {
         Some(url) => std::fs::write(app_dir.join("dev-server.txt"), url)?,
@@ -227,6 +263,127 @@ fn find_device(name: &str) -> Result<String> {
         }
     }
     fallback.with_context(|| format!("there is no watch simulator called {name:?}"))
+}
+
+/// Writes the `.app`'s `Info.plist`: the shell's plus whatever the plugins ask
+/// for.
+///
+/// A watch asks for fewer usage keys than a phone, but the ones it does ask for
+/// are just as fatal when they are missing: watchOS kills the process the moment
+/// the permission is evaluated and says nothing about the key. The app's own
+/// plist outranks the plugin, and what was ignored gets said out loud.
+fn write_plist(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result<()> {
+    let contributed = plugins::plist_entries(plugins, Platform::Watchos)?;
+    std::fs::copy(base, destination)?;
+    if contributed.is_empty() {
+        return Ok(());
+    }
+    let already_there = plist_keys(base)?;
+    for (key, entry) in &contributed {
+        if let Some(current) = already_there.get(key) {
+            if current != &entry.value {
+                eprintln!(
+                    "==> Info.plist: {key} is already declared by the app\n    \
+                     ({current}); ignoring {}'s ({})",
+                    entry.package, entry.value
+                );
+            }
+            continue;
+        }
+        eprintln!("==> Info.plist: {key} (from {})", entry.package);
+        let status = Command::new("plutil")
+            .args(["-replace", key, "-json", &entry.value.to_string()])
+            .arg(destination)
+            .status()
+            .context("plutil could not be run")?;
+        if !status.success() {
+            bail!("the key {key} a plugin asks for could not be written into the Info.plist");
+        }
+    }
+    Ok(())
+}
+
+/// The top-level keys of an `Info.plist`, actually read. `plutil` and not a grep
+/// for `<key>`: a plist can be binary, and grepping a binary finds nothing and
+/// would have you believe the app declares no keys at all.
+fn plist_keys(plist: &Path) -> Result<serde_json::Map<String, serde_json::Value>> {
+    let json = capture("plutil", &["-convert", "json", "-o", "-", &plist.to_string_lossy()])
+        .with_context(|| format!("{}: it could not be read", plist.display()))?;
+    let parsed: serde_json::Value = serde_json::from_str(&json).with_context(|| {
+        format!("{}: plutil returned something that is not JSON", plist.display())
+    })?;
+    match parsed {
+        serde_json::Value::Object(map) => Ok(map),
+        _ => bail!("{}: the root of an Info.plist has to be a dictionary", plist.display()),
+    }
+}
+
+/// The entitlements the link step embeds, if any plugin asks for one. `None`
+/// when there are none and there is nothing to embed.
+///
+/// On a watch the one that matters is the keychain's: without
+/// `keychain-access-groups` or `application-identifier` the app belongs to no
+/// keychain group, `SecItemAdd` answers −34018 and there is nowhere to save. The
+/// error names neither the signature nor the entitlement, so from the outside it
+/// looks like a keychain that is broken rather than an app that never asked for
+/// one.
+///
+/// This is `an ios`'s `write_entitlements` doing the same job on the same kind of
+/// simulator binary. What a real watch would need is the other route —an identity
+/// and a provisioning profile— and that is not here: `an watchos` installs on the
+/// simulator.
+fn write_entitlements(
+    plugins: &[Plugin],
+    bundle_id: &str,
+    out: &Path,
+) -> Result<Option<PathBuf>> {
+    let requested = plugins::entitlement_entries(plugins, Platform::Watchos)?;
+    if requested.is_empty() {
+        return Ok(None);
+    }
+    let mut entitlements = serde_json::Map::new();
+    // Put there by `an` and not by the plugin: a plugin does not know —and has
+    // no reason to— which app it is going to be dropped into. It is also what
+    // gives `$(BUNDLE_ID)` its value.
+    entitlements.insert(
+        "application-identifier".to_owned(),
+        serde_json::Value::String(bundle_id.to_owned()),
+    );
+    for (key, entry) in &requested {
+        eprintln!("==> entitlements: {key} (from {})", entry.package);
+        entitlements.insert(key.clone(), substitute(&entry.value, bundle_id));
+    }
+
+    std::fs::create_dir_all(out)?;
+    let json = out.join("entitlements.json");
+    let plist = out.join("angular-native.entitlements");
+    std::fs::write(&json, serde_json::Value::Object(entitlements).to_string())?;
+    // The linker wants a plist, not a JSON. `plutil` saves writing the XML by
+    // hand and escaping the plugins' values along the way.
+    let converted = Command::new("plutil")
+        .args(["-convert", "xml1", "-o"])
+        .arg(&plist)
+        .arg(&json)
+        .status()
+        .context("plutil could not be run")?;
+    if !converted.success() {
+        bail!("{} could not be written", plist.display());
+    }
+    Ok(Some(plist))
+}
+
+/// Swaps `$(BUNDLE_ID)` for this app's identifier: the keychain group is nearly
+/// always the app's own identifier and the plugin cannot know it.
+fn substitute(value: &serde_json::Value, bundle_id: &str) -> serde_json::Value {
+    match value {
+        serde_json::Value::String(text) => {
+            serde_json::Value::String(text.replace("$(BUNDLE_ID)", bundle_id))
+        }
+        serde_json::Value::Array(items) => serde_json::Value::Array(
+            items.iter().map(|item| substitute(item, bundle_id)).collect(),
+        ),
+        other => other.clone(),
+    }
 }
 
 fn capture(program: &str, args: &[&str]) -> Result<String> {

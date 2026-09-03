@@ -13,18 +13,25 @@
 //!    nothing but bring the old window to the front and it looks as though the
 //!    change never landed. It is the same bug that forces an uninstall before
 //!    an install on iOS, wearing a different face.
-//! 3. **It does not load plugins yet.** Same as the watch: `an-macos` has none
-//!    of the registry `an-ios` and `an-android` do have, so the build stops and
-//!    says so instead of leaving a module that swallows every call.
+//! 3. **The entitlements are always written.** On iOS they only exist when a
+//!    plugin asks for one; here there is a floor nobody can go under. The
+//!    hardened runtime needs `allow-jit` or QuickJS is killed on its first
+//!    allocation, so there is always a dictionary to write, and the plugins'
+//!    keys are merged into that same one. It is also the platform where they
+//!    matter most: a Mac app is sandboxed and signed, and an entitlement it does
+//!    not carry is a system call it does not get, with an error that names the
+//!    keychain or the network and never names the signature.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
+use serde_json::Value;
 
 use crate::build::run;
 use crate::ios::swift_sources;
-use crate::plugins::Plugin;
+use crate::plugins::{self, Platform, Plugin};
 use crate::signing::{self, Macos};
 use crate::workspace::Workspace;
 
@@ -45,20 +52,16 @@ pub struct Package {
     pub dir: PathBuf,
 }
 
-/// This host does not load plugins yet. It is said here and it stops: building
-/// the `.app` anyway would leave an app in which the module does not exist and
-/// every call is turned down at runtime, which is exactly what this system does
-/// not do.
-pub fn reject_plugins(plugins: &[Plugin]) -> Result<()> {
-    if plugins.is_empty() {
-        return Ok(());
-    }
-    let names: Vec<&str> = plugins.iter().map(|plugin| plugin.package.as_str()).collect();
-    bail!(
-        "this app cannot be built for macOS: the desktop host does not load plugins yet, \
-         and it depends on {}. See https://angular-native.dev/extending/plugins/.",
-        names.join(", ")
-    )
+/// Every plugin has to bring its macOS half, and the ones that do not are named
+/// along with whatever they said about it.
+///
+/// This is the same rule `an ios` and `an android` enforce, and it replaces the
+/// blanket refusal this host used to have. What changed is not the strictness —a
+/// plugin the `.app` cannot serve still stops the build— but what is being
+/// checked: it used to be "there is a plugin", and now it is "there is a plugin
+/// with no Mac half".
+pub fn require_plugins(plugins: &[Plugin]) -> Result<()> {
+    plugins::require(plugins, Platform::Macos)
 }
 
 /// `signing` decides how the `.app` is signed at the end. `None` is ad hoc,
@@ -70,8 +73,12 @@ pub fn assemble(
     bundle: &Path,
     release: bool,
     dev_server: Option<&str>,
+    plugins: &[Plugin],
     signing: Option<&Macos>,
 ) -> Result<Package> {
+    // Before compiling anything: if some plugin does not bring its macOS half,
+    // the build stops here and says which one and what it said about it.
+    require_plugins(plugins)?;
     let root = &workspace.root;
     let profile = if release { "release" } else { "debug" };
     let app_dir = root.join("build/macos").join(format!("{APP_NAME}.app"));
@@ -113,6 +120,22 @@ pub fn assemble(
         bail!("there are no Swift sources in shells/macos/Sources");
     }
     sources.extend(swift_sources(&root.join("shells/shared"))?);
+
+    // The plugins: their Swift sources and the registry that hooks them up. It
+    // all goes into the same `swiftc` invocation as the shell, so a plugin sees
+    // `AnPlugin` and `AnPluginCall` without importing anything.
+    for plugin in plugins {
+        let contributed = plugins::sources(plugin, Platform::Macos)?;
+        eprintln!("==> plugin {} ({} Swift sources)", plugin.module, contributed.len());
+        sources.extend(contributed);
+    }
+    sources.push(
+        plugins::generate_swift(plugins, Platform::Macos, &app_dir.parent()
+            .unwrap_or(&app_dir)
+            .join("generated"))?
+            .to_string_lossy()
+            .into_owned(),
+    );
 
     let lib_dir = workspace.target_dir().join(TARGET).join(profile);
     let mut args: Vec<String> = vec![
@@ -158,7 +181,11 @@ pub fn assemble(
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     run(workspace, "xcrun", &borrowed, "the shell link step failed")?;
 
-    std::fs::copy(root.join("shells/macos/Resources/Info.plist"), contents.join("Info.plist"))?;
+    write_plist(
+        &root.join("shells/macos/Resources/Info.plist"),
+        &contents.join("Info.plist"),
+        plugins,
+    )?;
     std::fs::copy(bundle, resources.join("main.js"))?;
     match dev_server {
         Some(url) => std::fs::write(resources.join("dev-server.txt"), url)?,
@@ -167,6 +194,11 @@ pub fn assemble(
         }
     }
 
+    // One entitlements file for both signing paths. It is what carries the
+    // plugins' keys, and a plugin that only got them on the signed path would
+    // work for whoever ships the app and fail for whoever develops it, which is
+    // the wrong way round.
+    let entitlements = write_entitlements(&app_dir, plugins, BUNDLE_ID)?;
     match signing {
         // Unsigned, macOS kills the app on the first `mmap` of generated code
         // —which is what QuickJS does— with a `Killed: 9` and no explanation.
@@ -174,7 +206,8 @@ pub fn assemble(
         // account.
         None => {
             let signed = Command::new("codesign")
-                .args(["--force", "--sign", "-"])
+                .args(["--force", "--sign", "-", "--entitlements"])
+                .arg(&entitlements)
                 .arg(&app_dir)
                 .status()
                 .context("codesign could not be run")?;
@@ -182,10 +215,70 @@ pub fn assemble(
                 bail!("the ad-hoc signing of the .app failed");
             }
         }
-        Some(macos) => sign(&app_dir, macos)?,
+        Some(macos) => sign(&app_dir, &entitlements, macos)?,
     }
 
     Ok(Package { dir: app_dir })
+}
+
+/// Writes the `.app`'s `Info.plist`: the shell's plus whatever the plugins ask
+/// for.
+///
+/// It is the same merge `an ios` does and for the same reason: a plugin that
+/// needs a usage key and does not get it produces an app the system kills the
+/// moment the permission is evaluated, with nothing in the log about the key. On
+/// the Mac the list is shorter than the phone's —there is no Face ID here— but
+/// it is not empty: `NSMicrophoneUsageDescription` and the Apple-events one are
+/// exactly as fatal.
+///
+/// The shell's own plist outranks the plugin, and not silently: what was ignored
+/// and whose it was gets said.
+fn write_plist(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result<()> {
+    let contributed = plugins::plist_entries(plugins, Platform::Macos)?;
+    std::fs::copy(base, destination)?;
+    if contributed.is_empty() {
+        return Ok(());
+    }
+    let already_there = plist_keys(base)?;
+    for (key, entry) in &contributed {
+        if let Some(current) = already_there.get(key) {
+            if current != &entry.value {
+                eprintln!(
+                    "==> Info.plist: {key} is already declared by the app\n    \
+                     ({current}); ignoring {}'s ({})",
+                    entry.package, entry.value
+                );
+            }
+            continue;
+        }
+        eprintln!("==> Info.plist: {key} (from {})", entry.package);
+        let status = Command::new("plutil")
+            .args(["-replace", key, "-json", &entry.value.to_string()])
+            .arg(destination)
+            .status()
+            .context("plutil could not be run")?;
+        if !status.success() {
+            bail!("the key {key} a plugin asks for could not be written into the Info.plist");
+        }
+    }
+    Ok(())
+}
+
+/// The top-level keys of an `Info.plist`, actually read.
+///
+/// Converted to JSON with `plutil` and not grepped for `<key>`: a plist can come
+/// in binary form, and looking for text inside a binary finds nothing and would
+/// have you believe the app declares no keys at all.
+fn plist_keys(plist: &Path) -> Result<serde_json::Map<String, Value>> {
+    let json = capture("plutil", &["-convert", "json", "-o", "-", &plist.to_string_lossy()])
+        .with_context(|| format!("{}: it could not be read", plist.display()))?;
+    let parsed: Value = serde_json::from_str(&json).with_context(|| {
+        format!("{}: plutil returned something that is not JSON", plist.display())
+    })?;
+    match parsed {
+        Value::Object(map) => Ok(map),
+        _ => bail!("{}: the root of an Info.plist has to be a dictionary", plist.display()),
+    }
 }
 
 /// Signs the `.app` with a Developer ID certificate and the hardened runtime.
@@ -194,8 +287,7 @@ pub fn assemble(
 /// this more than a flag change: it turns off the ability to map writable,
 /// executable memory, and the app dies on startup without a single word about
 /// entitlements. Which is why one is written here — see [`hardened_entitlements`].
-fn sign(app_dir: &Path, macos: &Macos) -> Result<()> {
-    let entitlements = hardened_entitlements(app_dir)?;
+fn sign(app_dir: &Path, entitlements: &Path, macos: &Macos) -> Result<()> {
     eprintln!("==> codesign ({})", macos.identity_name);
     let signed = Command::new("codesign")
         .args([
@@ -237,41 +329,87 @@ fn sign(app_dir: &Path, macos: &Macos) -> Result<()> {
     Ok(())
 }
 
-/// The entitlements a hardened-runtime build needs, and why each one is there.
+/// The `.app`'s entitlements: the two the engine cannot live without, plus
+/// whatever the plugins ask for.
 ///
-/// The hardened runtime forbids by default the two things a JavaScript engine
-/// does. QuickJS is an interpreter and does not compile machine code, but it
-/// does map its bytecode and its stacks the way a JIT would, and the runtime
-/// does not tell the two apart: without `allow-jit` the app is killed on the
-/// first allocation, with a `Killed: 9` in the console and nothing about
-/// entitlements anywhere. It is the same failure the ad-hoc signature exists to
-/// prevent, wearing the one face nobody recognises.
+/// **The floor.** The hardened runtime forbids by default the two things a
+/// JavaScript engine does. QuickJS is an interpreter and does not compile
+/// machine code, but it does map its bytecode and its stacks the way a JIT
+/// would, and the runtime does not tell the two apart: without `allow-jit` the
+/// app is killed on the first allocation, with a `Killed: 9` in the console and
+/// nothing about entitlements anywhere. Notarisation allows both. They are
+/// declared here and not left to the project because getting them wrong produces
+/// an app that opens on the machine that built it —where the hardened runtime is
+/// not enforced the same way— and dies on everybody else's.
 ///
-/// Notarisation allows both of these. They are declared here and not left to the
-/// project because getting them wrong produces an app that opens on the machine
-/// that built it —where the hardened runtime is not enforced the same way— and
-/// dies on everybody else's.
-fn hardened_entitlements(app_dir: &Path) -> Result<PathBuf> {
-    let path = app_dir
-        .parent()
-        .unwrap_or(app_dir)
-        .join("hardened.entitlements");
+/// **The plugins' half.** This is where the Mac differs from the phone. On iOS a
+/// plugin's entitlements are needed by one plugin —the keychain— and on the Mac
+/// nearly every plugin has one, because the App Sandbox denies by default and
+/// each capability has to be asked for by name: the network, the microphone, a
+/// file the user picked, the keychain. The failure is the one that is hardest to
+/// read, too. `SecItemAdd` answers −34018 and says "the client has neither of
+/// the two"; nothing in that sentence mentions a signature, and the bug looks
+/// like a keychain bug for as long as it takes somebody to think of entitlements.
+///
+/// The floor wins a collision, and it is the only place it can: a plugin that
+/// asked for `allow-jit: false` would be asking for an app that does not start.
+fn write_entitlements(app_dir: &Path, plugins: &[Plugin], bundle_id: &str) -> Result<PathBuf> {
+    let mut entries: BTreeMap<String, Value> = BTreeMap::new();
+    for (key, entry) in &plugins::entitlement_entries(plugins, Platform::Macos)? {
+        eprintln!("==> entitlements: {key} (from {})", entry.package);
+        entries.insert(key.clone(), substitute(&entry.value, bundle_id));
+    }
+    for key in ["com.apple.security.cs.allow-jit", "com.apple.security.cs.allow-unsigned-executable-memory"] {
+        if let Some(previous) = entries.insert(key.to_owned(), Value::Bool(true)) {
+            if previous != Value::Bool(true) {
+                // Said and overruled, not silently overruled: a plugin that
+                // asked for this to be false asked for an app that is killed on
+                // startup, and it deserves to hear that it did not get it.
+                eprintln!(
+                    "==> entitlements: {key} stays true; without it QuickJS is killed on its \
+                     first allocation and the app never draws a frame"
+                );
+            }
+        }
+    }
+
+    let out = app_dir.parent().unwrap_or(app_dir);
+    std::fs::create_dir_all(out)?;
+    let json = out.join("entitlements.json");
+    let plist = out.join("angular-native.entitlements");
     std::fs::write(
-        &path,
-        r#"<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-	<key>com.apple.security.cs.allow-jit</key>
-	<true/>
-	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-	<true/>
-</dict>
-</plist>
-"#,
+        &json,
+        Value::Object(entries.into_iter().collect::<serde_json::Map<_, _>>()).to_string(),
     )
-    .with_context(|| format!("{} could not be written", path.display()))?;
-    Ok(path)
+    .with_context(|| format!("{} could not be written", json.display()))?;
+    // codesign wants a plist, not a JSON. Converting it with `plutil` saves
+    // writing XML by hand and escaping the plugins' values along the way.
+    let converted = Command::new("plutil")
+        .args(["-convert", "xml1", "-o"])
+        .arg(&plist)
+        .arg(&json)
+        .status()
+        .context("plutil could not be run")?;
+    if !converted.success() {
+        bail!("{} could not be written", plist.display());
+    }
+    Ok(plist)
+}
+
+/// Swaps `$(BUNDLE_ID)` for this app's identifier.
+///
+/// It is the only substitution there is, and it exists because the value that is
+/// nearly always asked for —the keychain group— is the app's identifier, and the
+/// plugin cannot know it. `an ios` does exactly the same thing; Xcode does it
+/// with `$(AppIdentifierPrefix)`.
+fn substitute(value: &Value, bundle_id: &str) -> Value {
+    match value {
+        Value::String(text) => Value::String(text.replace("$(BUNDLE_ID)", bundle_id)),
+        Value::Array(items) => {
+            Value::Array(items.iter().map(|item| substitute(item, bundle_id)).collect())
+        }
+        other => other.clone(),
+    }
 }
 
 // ---------------------------------------------------------------------------

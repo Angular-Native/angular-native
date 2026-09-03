@@ -40,6 +40,11 @@ final class RootViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        // Before the runtime and not after: the core builds one module per
+        // registered plugin the moment the engine starts, so a plugin that
+        // registered later would exist in this registry and nowhere else.
+        AnPluginRegistry.install(host: self)
+
         let bounds = view.bounds
         runtime = an_runtime_new(
             Unmanaged.passUnretained(view).toOpaque(),
