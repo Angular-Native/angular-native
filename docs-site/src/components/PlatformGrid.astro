@@ -1,0 +1,45 @@
+---
+/*
+ * The eight platforms, as tiles rather than as a table.
+ *
+ * As a three-column table this was the widest thing on the home page and the
+ * first to break at phone width, and it was also the least readable: what a
+ * reader wants from it is "is my platform done", which is one word per row
+ * buried in a sentence. A tile per platform answers that with a dot before it
+ * is read, and the grid reflows instead of scrolling.
+ *
+ * Both the labels and the rows come from the page, so the Spanish home page
+ * uses the same component with its own words.
+ */
+interface Platform {
+  name: string
+  renders: string
+  state: string
+  level: 'full' | 'partial' | 'none'
+}
+
+interface Props {
+  rendersLabel: string
+  platforms: Platform[]
+}
+
+const { rendersLabel, platforms } = Astro.props
+---
+
+<ul class="an-platforms not-content">
+  {
+    platforms.map((platform) => (
+      <li class="an-platform" data-level={platform.level}>
+        <p class="an-platform__name">{platform.name}</p>
+        <p class="an-platform__renders">
+          <span class="an-platform__label">{rendersLabel}</span>
+          <span class="an-platform__value">{platform.renders}</span>
+        </p>
+        <p class="an-platform__state">
+          <span class="an-platform__dot" aria-hidden="true" />
+          {platform.state}
+        </p>
+      </li>
+    ))
+  }
+</ul>

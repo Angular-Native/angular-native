@@ -1,0 +1,347 @@
+/*
+ * The home page.
+ *
+ * A docs landing page has one job: somebody who has never heard of this should
+ * know, before scrolling, what it does and what it costs to try. So the first
+ * screenful is the claim, the two ways in, the command, and the code the claim
+ * is about — and everything below it is evidence, in the order somebody asks
+ * for it: what is different about it, where it runs, and how long it takes.
+ *
+ * Scoped to `[data-has-hero]`, which Starlight puts on the document for any
+ * page with a hero, so none of this reaches a reference page.
+ */
+
+:root[data-has-hero] {
+	--sl-content-width: 66rem;
+}
+
+:root[data-has-hero] .content-panel {
+	padding-inline: 1.25rem;
+}
+
+/* A wash of the accent behind the top of the page, and nothing else: no image
+   to download, no gradient that has to be looked at twice. */
+:root[data-has-hero] main {
+	background-image: radial-gradient(
+		60rem 28rem at 50% -8rem,
+		var(--an-accent-tint),
+		transparent 70%
+	);
+	background-repeat: no-repeat;
+}
+
+/* ------------------------------------------------------------------ hero -- */
+
+.an-hero {
+	display: grid;
+	gap: 2.5rem;
+	padding-block: 2.5rem 1rem;
+	align-items: center;
+}
+
+.an-hero__copy,
+.an-hero__sample {
+	min-width: 0;
+}
+
+.an-hero__eyebrow {
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
+	color: var(--sl-color-text-accent);
+	margin: 0 0 0.875rem;
+}
+
+.an-hero h1 {
+	font-size: clamp(2.125rem, 1.2rem + 3.2vw, 2.875rem);
+	line-height: 1.08;
+	letter-spacing: -0.035em;
+	font-weight: 700;
+	color: var(--sl-color-white);
+	margin: 0;
+	text-wrap: balance;
+}
+
+.an-hero h1 em {
+	font-style: normal;
+	color: var(--sl-color-text-accent);
+}
+
+/* The headline is two sentences and it should break between them, not inside
+   the second one. Only once there is room for each on a line of its own —
+   below that the browser wraps it as it sees fit. */
+.an-hero h1 br {
+	display: none;
+}
+
+@media (min-width: 60rem) {
+	.an-hero h1 br {
+		display: inline;
+	}
+}
+
+.an-hero__tagline {
+	margin: 1.125rem 0 0;
+	font-size: clamp(1rem, 0.9rem + 0.4vw, 1.1875rem);
+	line-height: 1.6;
+	color: var(--sl-color-gray-3);
+	max-width: 34rem;
+	text-wrap: pretty;
+}
+
+.an-hero__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+	margin-top: 1.75rem;
+}
+
+/* The command line: a terminal without pretending to be a screenshot of one. */
+.an-command {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.5rem 0.625rem;
+	margin-top: 1.5rem;
+	padding: 0.6rem 0.6rem 0.6rem 0.875rem;
+	border: 1px solid var(--an-border);
+	border-radius: var(--an-radius-sm);
+	background-color: var(--an-surface);
+	font-family: var(--sl-font-mono);
+	font-size: 0.8125rem;
+	max-width: min(32rem, 100%);
+	overflow-x: auto;
+}
+
+.an-command__prompt {
+	grid-column: 1;
+	color: var(--sl-color-text-accent);
+	font-weight: 700;
+}
+
+.an-command code {
+	grid-column: 2;
+	color: var(--sl-color-gray-1);
+	white-space: nowrap;
+	min-width: 0;
+}
+
+/* Two commands, one copy button: the prompt of the second line sits under the
+   first and the button spans both rows. */
+.an-command__copy {
+	grid-column: 3;
+	grid-row: 1 / -1;
+	align-self: center;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.75rem;
+	height: 1.75rem;
+	border: 1px solid transparent;
+	border-radius: var(--an-radius-sm);
+	background: none;
+	color: var(--sl-color-gray-3);
+	cursor: pointer;
+}
+
+.an-command__copy:hover {
+	color: var(--sl-color-white);
+	border-color: var(--an-border-strong);
+	background-color: var(--an-surface-raised);
+}
+
+.an-command__copy.is-copied {
+	color: var(--an-ok);
+	border-color: color-mix(in srgb, var(--an-ok) 45%, transparent);
+}
+
+.an-hero__sample {
+	min-width: 0;
+}
+
+.an-hero__sample .expressive-code {
+	margin: 0;
+}
+
+.an-hero__note {
+	margin: 0.875rem 0 0;
+	font-size: 0.8125rem;
+	line-height: 1.55;
+	color: var(--sl-color-gray-3);
+}
+
+.an-hero__note code {
+	font-family: var(--sl-font-mono);
+	font-size: 0.9em;
+	color: var(--sl-color-gray-2);
+}
+
+@media (min-width: 60rem) {
+	.an-hero {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+		gap: 3.5rem;
+		padding-block: 4.5rem 2rem;
+	}
+}
+
+/* -------------------------------------------------------------- sections -- */
+
+/* On the home page an h2 is a section marker rather than a heading in a
+   document, so it loses the hairline the docs pages use — eight of those would
+   cut the page into strips — and keeps only the space around it. */
+:root[data-has-hero] .sl-markdown-content h2 {
+	font-size: clamp(1.375rem, 1.1rem + 1vw, 1.75rem);
+	letter-spacing: -0.02em;
+}
+
+:root[data-has-hero] .sl-markdown-content .sl-heading-wrapper {
+	margin-top: 4.5rem;
+	padding-top: 0;
+	border-top: none;
+}
+
+:root[data-has-hero] .sl-markdown-content .sl-heading-wrapper + * {
+	margin-top: 1.5rem;
+}
+
+:root[data-has-hero] .card-grid {
+	gap: 1rem;
+	margin-top: 3rem;
+}
+
+@media (min-width: 50rem) {
+	:root[data-has-hero] .card-grid {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}
+
+/* ------------------------------------------------------------- platforms -- */
+
+.an-platforms {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+	display: grid;
+	gap: 0.75rem;
+	/* Two to a row on a phone rather than eight stacked: the point of this
+	   section is that there are eight of them, which a column of one does not
+	   show. */
+	grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+}
+
+@media (min-width: 40rem) {
+	.an-platforms {
+		grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+	}
+}
+
+.an-platform {
+	border: 1px solid var(--an-border);
+	border-radius: var(--an-radius);
+	background-color: var(--an-surface);
+	padding: 1rem 1.125rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+}
+
+.an-platform__name {
+	margin: 0;
+	font-size: 0.9375rem;
+	font-weight: 650;
+	letter-spacing: -0.012em;
+	color: var(--sl-color-white);
+}
+
+.an-platform__renders {
+	margin: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 0.125rem;
+	flex: 1;
+}
+
+.an-platform__label {
+	font-size: 0.6875rem;
+	font-weight: 600;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	color: var(--sl-color-gray-4);
+}
+
+.an-platform__value {
+	font-family: var(--sl-font-mono);
+	font-size: 0.75rem;
+	line-height: 1.45;
+	color: var(--sl-color-gray-2);
+}
+
+.an-platform__state {
+	margin: 0;
+	display: flex;
+	align-items: baseline;
+	gap: 0.5rem;
+	font-size: 0.8125rem;
+	line-height: 1.45;
+	color: var(--sl-color-gray-3);
+}
+
+.an-platform__dot {
+	flex-shrink: 0;
+	width: 0.5rem;
+	height: 0.5rem;
+	border-radius: 50%;
+	background-color: var(--an-none);
+	translate: 0 -0.05rem;
+}
+
+.an-platform[data-level='full'] .an-platform__dot {
+	background-color: var(--an-ok);
+}
+
+.an-platform[data-level='full'] .an-platform__state {
+	color: var(--an-ok);
+}
+
+.an-platform[data-level='partial'] .an-platform__dot {
+	background-color: var(--an-partial);
+}
+
+.an-platform[data-level='none'] {
+	border-style: dashed;
+	background-color: transparent;
+}
+
+/* ------------------------------------------------------------ last band -- */
+
+/* The quick start, as the last thing on the page: a surface under it so the
+   page ends on something rather than trailing off after a paragraph. */
+/* The last section is a panel rather than more page, so the home page ends on
+   something instead of trailing off after a paragraph. Inside it the surfaces
+   move up one step, which is what keeps the code block from disappearing into
+   the panel it sits on. */
+.an-band {
+	margin-top: 4.5rem;
+	margin-bottom: 4rem;
+	padding: 0.5rem clamp(1.25rem, 4vw, 3rem) 2.25rem;
+	border: 1px solid var(--an-border);
+	border-radius: var(--an-radius-lg);
+	background-color: var(--an-surface);
+	--an-surface: var(--an-surface-raised);
+}
+
+.an-band__inner {
+	max-width: 42rem;
+	margin-inline: auto;
+}
+
+:root[data-has-hero] .an-band .sl-heading-wrapper {
+	margin-top: 2rem;
+}
+
+.an-band p:last-child {
+	margin-bottom: 0;
+	color: var(--sl-color-gray-3);
+	font-size: 0.9375rem;
+}
