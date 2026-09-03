@@ -607,6 +607,15 @@ mobile-starlight-toc nav > button {
 	border-radius: var(--an-radius-sm);
 }
 
+/* The theme and language pickers are given a fixed width in ems that fits the
+   English labels; "Oscuro" and "Español" come out as "Oscu…". They size to
+   whatever word they are showing instead. */
+starlight-theme-select select,
+starlight-lang-select select {
+	width: auto;
+	max-width: 11em;
+}
+
 /* --------------------------------------------------------------- footers -- */
 
 .pagination-links a {
