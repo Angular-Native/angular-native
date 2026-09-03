@@ -1,6 +1,6 @@
 target/
-# Sin la barra para que valga a cualquier profundidad: hay uno en la raíz y
-# otro en `docs-site`, que trae su propio Astro y no comparte nada con el
+# No leading slash, so it holds at any depth: there is one at the root and
+# another in `docs-site`, which brings its own Astro and shares nothing with the
 # framework.
 node_modules
 .astro/
@@ -9,9 +9,10 @@ dist/
 *.xcuserdatad/
 build/
 
-# Emulador y artefactos de Android
+# Android emulator and build artefacts
 *.apk
 
-# Las dependencias de Android: las baja `scripts/fetch-android-deps.py` y son
-# 11 MB de binarios de terceros que no tienen por qué vivir en el repo.
+# The Android dependencies: `scripts/fetch-android-deps.py` downloads them, and
+# they are a dozen megabytes of third-party binaries that have no business
+# living in the repository.
 vendor/android/
