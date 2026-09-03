@@ -175,7 +175,8 @@ pub fn run(
             // front and the change looks as though it never landed— and opens
             // the new one. See `macos.rs`.
             Target::MacOs => {
-                let package = macos::assemble(&workspace, &bundle_path, false, Some(&url))?;
+                let package =
+                    macos::assemble(&workspace, &bundle_path, false, Some(&url), None)?;
                 macos::launch(&package)?;
             }
             Target::Android | Target::Wear { .. } => {
@@ -191,7 +192,10 @@ pub fn run(
                     false,
                     Some(&url),
                     &plugins,
-                    form,
+                    // The dev loop is always the debug key: a release-signed
+                    // APK is an artefact for a store, not something to rebuild
+                    // every time a file is saved.
+                    crate::android::Packaging { form, signing: None, aab: false, bundletool: None },
                 )?;
                 crate::android::install_and_launch(&workspace, &apk, form, device)?;
             }

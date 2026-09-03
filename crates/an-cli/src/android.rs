@@ -12,6 +12,7 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 
 use crate::plugins::{self, Platform, Plugin};
+use crate::signing;
 use crate::workspace::Workspace;
 
 /// The shell's Java package. It does not change: it is the one in
@@ -58,6 +59,38 @@ impl Form {
         }
     }
 }
+/// What comes out of the build and what signs it.
+///
+/// Three flags that used to be one `Form` argument, kept together because they
+/// are decided at the same moment and read as a sentence at the call site:
+/// a phone APK signed with the debug key, a watch APK, a phone bundle signed
+/// with the release key.
+pub struct Packaging<'a> {
+    pub form: Form,
+    /// The release keystore, or `None` for the debug one — the same one Android
+    /// Studio generates, which no store accepts.
+    pub signing: Option<&'a signing::Android>,
+    /// An `.aab` instead of an `.apk`. Google Play has taken nothing else since
+    /// August 2021.
+    pub aab: bool,
+    /// Where `bundletool` is, when `aab` is on. It is looked up before anything
+    /// is compiled —see [`bundletool`]— because it is not part of the Android
+    /// SDK and its absence is the one thing here that a two-minute build cannot
+    /// fix.
+    pub bundletool: Option<PathBuf>,
+}
+
+impl Packaging<'_> {
+    /// Debug builds go to a device; a release-signed one is an artefact for a
+    /// store, and it is what the name of the file has to say.
+    fn suffix(&self) -> &'static str {
+        match self.signing {
+            Some(_) => "-release",
+            None => "",
+        }
+    }
+}
+
 pub struct Sdk {
     pub root: PathBuf,
     pub build_tools: PathBuf,
@@ -121,8 +154,9 @@ pub fn assemble(
     release: bool,
     dev_server: Option<&str>,
     plugins: &[Plugin],
-    form: Form,
+    packaging: Packaging<'_>,
 ) -> Result<PathBuf> {
+    let form = packaging.form;
     // Before compiling anything: if some plugin does not bring its Android
     // half, the build stops here and says which one.
     plugins::require(plugins, Platform::Android)?;
@@ -254,6 +288,13 @@ pub fn assemble(
         "-o".into(),
         unsigned.to_string_lossy().into_owned(),
     ];
+    if packaging.aab {
+        // A bundle's manifest and resources are protobuf, not the binary XML an
+        // APK carries. `bundletool` refuses a module built the other way with a
+        // message about a "proto" it does not explain, and it is aapt2 —not
+        // bundletool— that can produce them.
+        link.push("--proto-format".into());
+    }
     // In the monorepo the identifier is already the manifest's and there is
     // nothing to rename; renaming it anyway would change the installed package
     // without anybody having asked.
@@ -355,7 +396,6 @@ pub fn assemble(
     d8.extend(jars.iter().cloned());
     run(root, &sdk.tool("d8").to_string_lossy(), &d8, "d8 failed")?;
 
-    eprintln!("==> firma");
     // `aapt2` only puts the manifest in: the dex, the native library and the
     // assets are added to the zip afterwards, at the paths Android expects.
     // With the Material libraries in there, `d8` splits the dex into several:
@@ -370,6 +410,19 @@ pub fn assemble(
     if dexes.is_empty() {
         bail!("d8 left no .dex behind");
     }
+
+    // From here the two artefacts part company: a bundle is not a signed APK
+    // with a different extension, it is a different layout that a different
+    // tool assembles and a different tool signs.
+    if let Some(bundletool) = &packaging.bundletool {
+        let android = packaging.signing.expect("--aab always resolves a release keystore");
+        return build_aab(
+            workspace, &out, &staging, &unsigned, &dexes, bundletool, android, &app_name,
+            packaging.suffix(),
+        );
+    }
+
+    eprintln!("==> packing the APK");
     let mut entries = dexes;
     entries.extend([
         format!("lib/{ABI}/liban_android.so"),
@@ -409,38 +462,298 @@ pub fn assemble(
         "zipalign failed",
     )?;
 
-    let keystore = debug_keystore()?;
-    // One name per form: both APKs carry the same package, and if they shared a
-    // file, building the watch's would leave the phone's pointing at an APK that
-    // is no longer its own.
+    // One name per form and per key: both APKs carry the same package, and if
+    // they shared a file, building the watch's would leave the phone's pointing
+    // at an APK that is no longer its own — and a release build overwriting the
+    // debug one is how the wrong artefact reaches a store.
+    let suffix = packaging.suffix();
     let apk = out.join(match form {
-        Form::Phone => format!("{app_name}.apk"),
-        Form::Watch => format!("{app_name}-wear.apk"),
+        Form::Phone => format!("{app_name}{suffix}.apk"),
+        Form::Watch => format!("{app_name}-wear{suffix}.apk"),
     });
     let _ = std::fs::remove_file(&apk);
-    run(
-        root,
-        &sdk.tool("apksigner").to_string_lossy(),
-        &[
+    sign_apk(&sdk, &aligned, &apk, packaging.signing)?;
+
+    let size = std::fs::metadata(&apk)?.len();
+    eprintln!("==> {} MB in {}", size / (1024 * 1024), apk.display());
+    Ok(apk)
+}
+
+/// Signs the aligned APK, with the release keystore if there is one and with the
+/// debug one if there is not.
+///
+/// The passwords go to `apksigner` through the **environment** and not on the
+/// command line. `--ks-pass pass:hunter2` puts the keystore password in the
+/// process table, where every other user on the machine can read it with `ps`,
+/// and into the shell history of anybody who copies the command out of a log.
+/// `env:NAME` is the form apksigner offers for exactly this, and the variable is
+/// set on the child alone.
+fn sign_apk(
+    sdk: &Sdk,
+    aligned: &Path,
+    apk: &Path,
+    android: Option<&signing::Android>,
+) -> Result<()> {
+    let (keystore, alias, store_password, key_password) = match android {
+        Some(android) => (
+            android.keystore.clone(),
+            android.key_alias.clone(),
+            android.store_password.clone(),
+            android.key_password.clone(),
+        ),
+        None => (
+            debug_keystore()?,
+            "androiddebugkey".to_owned(),
+            "android".to_owned(),
+            "android".to_owned(),
+        ),
+    };
+    eprintln!(
+        "==> apksigner ({})",
+        match android {
+            Some(_) => "release keystore",
+            None => "debug keystore — no store accepts this",
+        }
+    );
+    let signed = Command::new(sdk.tool("apksigner"))
+        .args([
             "sign",
             "--ks",
             &keystore.to_string_lossy(),
             "--ks-pass",
-            "pass:android",
+            "env:AN_KS_PASS",
             "--key-pass",
-            "pass:android",
+            "env:AN_KEY_PASS",
             "--ks-key-alias",
-            "androiddebugkey",
+            &alias,
             "--out",
             &apk.to_string_lossy(),
             &aligned.to_string_lossy(),
-        ],
-        "the signing failed",
+        ])
+        .env("AN_KS_PASS", &store_password)
+        .env("AN_KEY_PASS", &key_password)
+        .output()
+        .context("apksigner could not be run")?;
+    if signed.status.success() {
+        return Ok(());
+    }
+    // apksigner reports a wrong password as a Java exception about a MAC check
+    // that mentions neither the keystore nor the password. Everybody who has
+    // ever seen it had to look it up.
+    let said = String::from_utf8_lossy(&signed.stderr);
+    let hint = if said.contains("password was incorrect") || said.contains("mac check failed") {
+        "\nThe keystore password is wrong. It is read from the environment variable \
+         named in signing.android.storePasswordEnv."
+    } else if said.contains("No key with alias") || said.contains("does not contain a key") {
+        "\nThe alias is not in that keystore. `keytool -list -keystore <file>` prints \
+         the aliases it holds."
+    } else {
+        ""
+    };
+    bail!(
+        "apksigner could not sign {} with {}.\n{}{hint}\nSee {}",
+        apk.display(),
+        keystore.display(),
+        said.trim(),
+        signing::DOCS
+    )
+}
+
+// ---------------------------------------------------------------------------
+// The Android App Bundle
+// ---------------------------------------------------------------------------
+
+/// Puts the `.aab` together and signs it.
+///
+/// A bundle is not an APK. It is a zip of *modules*, each one a zip with its own
+/// layout —`manifest/`, `dex/`, `res/`, `lib/`, `assets/`, `resources.pb`— and
+/// with the manifest and the resources in protobuf rather than in binary XML.
+/// There is one module here, `base`, because there is no dynamic feature to
+/// split off, and there will not be one until something asks for it.
+///
+/// It is signed with `jarsigner` and not with `apksigner`: a bundle is a signed
+/// jar, and apksigner refuses it. Play re-signs the APKs it generates from this
+/// with its own key anyway — what is signed here is the upload, which is how
+/// Play knows the bundle came from you.
+#[allow(clippy::too_many_arguments)]
+fn build_aab(
+    workspace: &Workspace,
+    out: &Path,
+    staging: &Path,
+    proto_apk: &Path,
+    dexes: &[String],
+    bundletool: &Path,
+    android: &signing::Android,
+    app_name: &str,
+    suffix: &str,
+) -> Result<PathBuf> {
+    eprintln!("==> the base module");
+    let module = out.join("bundle/base");
+    let _ = std::fs::remove_dir_all(out.join("bundle"));
+    std::fs::create_dir_all(module.join("manifest"))?;
+    std::fs::create_dir_all(module.join("dex"))?;
+
+    // What aapt2 wrote in proto form: the manifest and the compiled resources,
+    // which have to be taken out of the linked APK and put where a module keeps
+    // them.
+    let extracted = out.join("bundle/linked");
+    std::fs::create_dir_all(&extracted)?;
+    run(
+        &extracted,
+        "unzip",
+        &["-q", "-o", &proto_apk.to_string_lossy()],
+        "the linked resources could not be unpacked",
+    )?;
+    std::fs::rename(
+        extracted.join("AndroidManifest.xml"),
+        module.join("manifest/AndroidManifest.xml"),
+    )
+    .context("aapt2 --proto-format left no AndroidManifest.xml")?;
+    let resources = extracted.join("resources.pb");
+    if resources.is_file() {
+        std::fs::rename(resources, module.join("resources.pb"))?;
+    }
+    if extracted.join("res").is_dir() {
+        std::fs::rename(extracted.join("res"), module.join("res"))?;
+    }
+
+    for dex in dexes {
+        std::fs::copy(staging.join(dex), module.join("dex").join(dex))?;
+    }
+    for directory in ["lib", "assets"] {
+        if staging.join(directory).is_dir() {
+            copy_tree(&staging.join(directory), &module.join(directory))?;
+        }
+    }
+
+    // Zipped with no compression: bundletool recompresses everything anyway, and
+    // a `.so` stored twice is the difference between a bundle that opens in a
+    // second and one that takes ten.
+    let module_zip = out.join("bundle/base.zip");
+    let _ = std::fs::remove_file(&module_zip);
+    run(
+        &module,
+        "zip",
+        &["-q", "-X", "-r", "-0", &module_zip.to_string_lossy(), "."],
+        "the base module could not be packed",
     )?;
 
-    let size = std::fs::metadata(&apk)?.len();
-    eprintln!("==> {} MB en {}", size / (1024 * 1024), apk.display());
-    Ok(apk)
+    let aab = out.join(format!("{app_name}{suffix}.aab"));
+    let _ = std::fs::remove_file(&aab);
+    eprintln!("==> bundletool build-bundle");
+    let built = Command::new("java")
+        .arg("-jar")
+        .arg(bundletool)
+        .args([
+            "build-bundle",
+            &format!("--modules={}", module_zip.display()),
+            &format!("--output={}", aab.display()),
+        ])
+        .current_dir(&workspace.root)
+        .output()
+        .context("java could not be run; bundletool is a jar and needs a JDK")?;
+    if !built.status.success() {
+        bail!(
+            "bundletool could not build {}.\n{}\nSee {}",
+            aab.display(),
+            String::from_utf8_lossy(&built.stderr).trim(),
+            signing::DOCS
+        );
+    }
+
+    // And signed as the jar it is. `-storepass:env` for the same reason
+    // apksigner gets `env:`: a password on a command line is a password in the
+    // process table.
+    eprintln!("==> jarsigner (upload key)");
+    let signed = Command::new("jarsigner")
+        .args([
+            "-verbose:false",
+            "-sigalg",
+            "SHA256withRSA",
+            "-digestalg",
+            "SHA-256",
+            "-keystore",
+            &android.keystore.to_string_lossy(),
+            "-storepass:env",
+            "AN_KS_PASS",
+            "-keypass:env",
+            "AN_KEY_PASS",
+            &aab.to_string_lossy(),
+            &android.key_alias,
+        ])
+        .env("AN_KS_PASS", &android.store_password)
+        .env("AN_KEY_PASS", &android.key_password)
+        .output()
+        .context("jarsigner could not be run")?;
+    if !signed.status.success() {
+        bail!(
+            "jarsigner could not sign {} with {}.\n{}\n\
+             A bundle is signed as a jar, so it is jarsigner and not apksigner that \
+             does it; the keystore and the alias are the same ones.\nSee {}",
+            aab.display(),
+            android.keystore.display(),
+            String::from_utf8_lossy(&signed.stderr).trim(),
+            signing::DOCS
+        );
+    }
+
+    let size = std::fs::metadata(&aab)?.len();
+    eprintln!("==> {} MB in {}", size / (1024 * 1024), aab.display());
+    Ok(aab)
+}
+
+/// Where `bundletool` is.
+///
+/// It is **not** part of the Android SDK: Gradle downloads it as a dependency,
+/// and there is no Gradle here. Three places are looked at, in this order, and
+/// if none of them has it the message says all three and how to get it — because
+/// "bundletool: command not found" sends people to a package manager that does
+/// not carry it.
+pub fn bundletool(workspace: &Workspace) -> Result<PathBuf> {
+    if let Some(given) = std::env::var_os("AN_BUNDLETOOL") {
+        let path = PathBuf::from(given);
+        if path.is_file() {
+            return Ok(path);
+        }
+        bail!(
+            "AN_BUNDLETOOL points at {}, and there is no file there.\nSee {}",
+            path.display(),
+            signing::DOCS
+        );
+    }
+    let vendored = workspace.root.join("vendor/android/tools/bundletool.jar");
+    if vendored.is_file() {
+        return Ok(vendored);
+    }
+    bail!(
+        "`--aab` needs bundletool, and it is not part of the Android SDK: Gradle \
+         downloads it as a dependency, and there is no Gradle here.\n\n\
+         Get it once —it is a single jar, about 25 MB:\n\n\
+         \x20   python3 scripts/fetch-android-deps.py\n\n\
+         which leaves it in {}. Or point AN_BUNDLETOOL at a copy you already have.\n\
+         `an android --sign` with no `--aab` needs none of this: an APK is signed by \
+         apksigner, which does come with the SDK.\nSee {}",
+        vendored.display(),
+        signing::DOCS
+    )
+}
+
+/// A directory, copied. `ditto` keeps the permission bits on the `.so`, which a
+/// naive copy does not, and a `liban_android.so` that arrives without its
+/// executable bit is a bundle Play accepts and a device refuses to start.
+fn copy_tree(from: &Path, to: &Path) -> Result<()> {
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let copied = Command::new("ditto")
+        .arg(from)
+        .arg(to)
+        .status()
+        .context("ditto could not be run")?;
+    if !copied.success() {
+        bail!("{} could not be copied to {}", from.display(), to.display());
+    }
+    Ok(())
 }
 
 /// The identifier Android installs the app under.

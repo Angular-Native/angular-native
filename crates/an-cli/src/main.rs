@@ -105,6 +105,18 @@ enum Command {
         /// Only builds the .app, without launching it.
         #[arg(long)]
         no_launch: bool,
+        /// Signs with a Developer ID certificate and the hardened runtime,
+        /// instead of the ad-hoc signature that only works on this machine.
+        #[arg(long)]
+        sign: bool,
+        /// Sends the .app to Apple, waits for the answer and staples the
+        /// ticket to it. It implies `--sign`.
+        #[arg(long)]
+        notarize: bool,
+        /// Puts the .app in a .dmg. With `--sign` the image is signed too, and
+        /// with `--notarize` it is notarised and stapled in its own right.
+        #[arg(long)]
+        dmg: bool,
     },
     /// Compiles, builds the watch .app and launches it in the watchOS
     /// simulator.
@@ -134,6 +146,13 @@ enum Command {
         /// watch-shaped one around.
         #[arg(long)]
         device: Option<String>,
+        /// Signs with the release keystore. A Wear app goes to the same Play
+        /// listing as the phone's, so it is the same key.
+        #[arg(long)]
+        sign: bool,
+        /// Builds an `.aab` for Google Play instead of an `.apk`.
+        #[arg(long)]
+        aab: bool,
     },
     /// Compiles, builds the APK and launches it in the Android emulator.
     Android {
@@ -143,6 +162,17 @@ enum Command {
         /// Only builds the APK, without installing it.
         #[arg(long)]
         no_launch: bool,
+        /// Signs with the release keystore from the signing settings instead of
+        /// the debug one, which no store accepts.
+        ///
+        /// `--release` is about the compiler; this is about the key. A build
+        /// for Play wants both.
+        #[arg(long)]
+        sign: bool,
+        /// Builds an `.aab` for Google Play instead of an `.apk`. It implies
+        /// `--sign`: Play takes nothing signed with a debug key.
+        #[arg(long)]
+        aab: bool,
     },
     /// Shows the plugins an app depends on.
     ///
@@ -364,15 +394,46 @@ fn main() -> anyhow::Result<()> {
             }
             ios::launch(&package, &device)
         }
-        Command::Macos { app, release, no_launch } => {
+        Command::Macos { app, release, no_launch, sign, notarize, dmg } => {
             // The desktop's default example is not everybody else's:
             // `controls` shows the system controls one after another, which is
             // what to look at to know what this host draws.
             let app = workspace.app(Some(app.as_deref().unwrap_or("examples/controls")))?;
             let found = plugins::discover(&workspace, &app)?;
             macos::reject_plugins(&found)?;
+            // Before the bundle, before cargo: notarising asks for a keychain
+            // profile that either exists or does not, and it is not going to
+            // start existing because a compilation ran first.
+            let identity = if sign || notarize {
+                let settings = signing::Settings::read(&workspace)?;
+                let macos = signing::macos(&settings, notarize)?;
+                eprintln!("==> signing as {}", macos.identity_name);
+                Some(macos)
+            } else {
+                None
+            };
             let bundle = build::bundle(&workspace, &app, release, &found)?;
-            let package = macos::assemble(&workspace, &bundle, release, None)?;
+            let package =
+                macos::assemble(&workspace, &bundle, release, None, identity.as_ref())?;
+            if notarize {
+                macos::notarize(&package, identity.as_ref().expect("--notarize implies --sign"))?;
+            }
+            if dmg {
+                if identity.is_none() {
+                    // Said, and not refused: a .dmg of an ad-hoc build is a
+                    // perfectly good way to check the packaging works. It is
+                    // only useless as a download, and that is the part nobody
+                    // finds out until somebody else tries to open it.
+                    eprintln!(
+                        "==> warning: this .dmg holds an ad-hoc signed app, so another Mac \
+                         will refuse to open it. Add --sign --notarize for one that opens \
+                         anywhere."
+                    );
+                }
+                let image = macos::dmg(&package, identity.as_ref(), notarize)?;
+                println!("{}", image.display());
+                return Ok(());
+            }
             if no_launch {
                 println!("{}", package.dir.display());
                 return Ok(());
@@ -390,31 +451,62 @@ fn main() -> anyhow::Result<()> {
             let package = watchos::assemble(&workspace, &bundle, release, None)?;
             watchos::launch(&package, &device)
         }
-        Command::Android { app, release, no_launch } => {
+        Command::Android { app, release, no_launch, sign, aab } => {
             let app = workspace.app(app.as_deref())?;
             let found = plugins::discover(&workspace, &app)?;
+            let (keystore, bundletool) = android_signing(&workspace, sign, aab)?;
             let bundle = build::bundle(&workspace, &app, release, &found)?;
-            let apk =
-                android::assemble(&workspace, &bundle, release, None, &found, android::Form::Phone)?;
-            if no_launch {
-                println!("{}", apk.display());
+            let artefact = android::assemble(
+                &workspace,
+                &bundle,
+                release,
+                None,
+                &found,
+                android::Packaging {
+                    form: android::Form::Phone,
+                    signing: keystore.as_ref(),
+                    aab,
+                    bundletool,
+                },
+            )?;
+            // A bundle is not something a device installs: Play turns it into
+            // APKs. It is the one artefact here with nowhere to be launched.
+            if no_launch || aab {
+                println!("{}", artefact.display());
                 return Ok(());
             }
-            android::install_and_launch(&workspace, &apk, android::Form::Phone, None)
+            android::install_and_launch(&workspace, &artefact, android::Form::Phone, None)
         }
-        Command::Wearos { app, release, no_launch, device } => {
+        Command::Wearos { app, release, no_launch, device, sign, aab } => {
             // Same as on the Apple watch: the default example cannot be the
             // phone's. At 227 points wide, and round, it cannot be read.
             let app = workspace.app(Some(app.as_deref().unwrap_or("examples/hello-wear")))?;
             let found = plugins::discover(&workspace, &app)?;
+            let (keystore, bundletool) = android_signing(&workspace, sign, aab)?;
             let bundle = build::bundle(&workspace, &app, release, &found)?;
-            let apk =
-                android::assemble(&workspace, &bundle, release, None, &found, android::Form::Watch)?;
-            if no_launch {
-                println!("{}", apk.display());
+            let artefact = android::assemble(
+                &workspace,
+                &bundle,
+                release,
+                None,
+                &found,
+                android::Packaging {
+                    form: android::Form::Watch,
+                    signing: keystore.as_ref(),
+                    aab,
+                    bundletool,
+                },
+            )?;
+            if no_launch || aab {
+                println!("{}", artefact.display());
                 return Ok(());
             }
-            android::install_and_launch(&workspace, &apk, android::Form::Watch, device.as_deref())
+            android::install_and_launch(
+                &workspace,
+                &artefact,
+                android::Form::Watch,
+                device.as_deref(),
+            )
         }
         Command::Dev {
             app,
@@ -487,4 +579,31 @@ fn main() -> anyhow::Result<()> {
         // Already handled before the project was discovered.
         Command::Init { .. } => unreachable!(),
     }
+}
+
+/// The release keystore for an Android build, or `None` for the debug one.
+///
+/// `--aab` implies `--sign` and is not asked to say so twice: Play takes nothing
+/// signed with a debug key, so a bundle signed with one is an artefact with
+/// nowhere to go.
+fn android_signing(
+    workspace: &workspace::Workspace,
+    sign: bool,
+    aab: bool,
+) -> anyhow::Result<(Option<signing::Android>, Option<std::path::PathBuf>)> {
+    if !sign && !aab {
+        return Ok((None, None));
+    }
+    // Both looked up here, before the bundle is compiled: the keystore and
+    // bundletool are the two things that can be missing, and neither of them
+    // becomes present because `ngc` ran for a minute first.
+    let bundletool = aab.then(|| android::bundletool(workspace)).transpose()?;
+    let settings = signing::Settings::read(workspace)?;
+    let android = signing::android(&settings)?;
+    eprintln!(
+        "==> signing with {} (alias {})",
+        android.keystore.display(),
+        android.key_alias
+    );
+    Ok((Some(android), bundletool))
 }

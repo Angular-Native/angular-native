@@ -473,31 +473,64 @@ fn register_platform(root: &Path, platform: &str) -> Result<()> {
     write_project_manifest(root, &project.name, &project.bundle_id, &project.entry, &platforms)
 }
 
-/// Adds to the `.gitignore` the one thing angular-native generates that is not a
-/// source.
+/// The lines `an init` adds to the project's `.gitignore`, with the comment that
+/// explains each group.
 ///
-/// Only `.angular-native/build`. The tsconfig and the tarballs in
-/// `.angular-native/vendor` do get committed: the first is configuration and the
-/// second is what makes `npm ci` reinstall exactly the same framework packages
-/// on the machine next door.
+/// Two groups, and they are there for different reasons. The build directory is
+/// noise: it is remade from scratch on every compilation. The tsconfig and the
+/// tarballs in `.angular-native/vendor` are deliberately **not** in here — the
+/// first is configuration and the second is what makes `npm ci` reinstall
+/// exactly the same framework packages on the machine next door.
+///
+/// The credentials are the other reason, and it is not tidiness. A release
+/// keystore in a repository is the app's whole identity on Google Play, and once
+/// it is pushed the fix is to generate another one and ask Google to change the
+/// upload key. A `.p12` is a certificate's private key. Neither is something to
+/// notice later, so the patterns go in at `an init` time, before there is
+/// anything to catch — which is the only moment this costs nothing.
+const GITIGNORE: [(&str, &[&str]); 2] = [
+    (
+        "# angular-native: the .app, the APK and the compiled JS are remade from scratch.",
+        &["/.angular-native/build/"],
+    ),
+    (
+        "# Signing credentials. None of these belongs in a repository: a keystore is the\n         # app's identity on Play, and a .p12 carries a certificate's private key.\n         # See https://angular-native.dev/guide/signing-and-distribution/.",
+        &["*.keystore", "*.jks", "*.p12", "*.mobileprovision"],
+    ),
+];
+
+/// Adds to the `.gitignore` what angular-native generates and what must never be
+/// committed. See [`GITIGNORE`].
+///
+/// Line by line, and only what is missing: the file belongs to the project and
+/// may already say some of this.
 fn extend_gitignore(root: &Path) -> Result<()> {
     let path = root.join(".gitignore");
     let current = std::fs::read_to_string(&path).unwrap_or_default();
-    let line = "/.angular-native/build/";
-    if current.lines().any(|l| l.trim() == line) {
+    let mut updated = current.clone();
+    let mut added = 0usize;
+    for (comment, lines) in GITIGNORE {
+        let missing: Vec<&str> = lines
+            .iter()
+            .copied()
+            .filter(|line| !current.lines().any(|existing| existing.trim() == *line))
+            .collect();
+        if missing.is_empty() {
+            continue;
+        }
+        if !updated.is_empty() && !updated.ends_with('\n') {
+            updated.push('\n');
+        }
+        updated.push_str(&format!("\n{comment}\n{}\n", missing.join("\n")));
+        added += missing.len();
+    }
+    if added == 0 {
         eprintln!("    already there  .gitignore");
         return Ok(());
     }
-    let mut updated = current;
-    if !updated.is_empty() && !updated.ends_with('\n') {
-        updated.push('\n');
-    }
-    updated.push_str(&format!(
-        "\n# angular-native: the .app, the APK and the compiled JS are remade from scratch.\n{line}\n"
-    ));
     std::fs::write(&path, updated)
         .with_context(|| format!("{} could not be written", path.display()))?;
-    eprintln!("    extended       .gitignore");
+    eprintln!("    extended       .gitignore  ({added} lines)");
     Ok(())
 }
 

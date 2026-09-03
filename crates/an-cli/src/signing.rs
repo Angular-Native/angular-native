@@ -677,7 +677,6 @@ pub fn parse_identities(listing: &str) -> Vec<(String, String)> {
 pub struct Macos {
     pub identity: String,
     pub identity_name: String,
-    pub team: Option<String>,
     /// The `notarytool` keychain profile: a name, not a credential. The Apple ID
     /// and the app-specific password behind it live in the keychain, put there
     /// once by `xcrun notarytool store-credentials`.
@@ -685,10 +684,13 @@ pub struct Macos {
 }
 
 pub fn macos(settings: &Settings, notarising: bool) -> Result<Macos> {
+    // There is no `team` here on purpose: on macOS nothing needs it. The
+    // certificate carries the team, and notarytool gets it from the keychain
+    // profile. A key in the manifest that changes nothing is a key somebody
+    // will spend an afternoon getting right.
     let block = "  \"signing\": {\n    \
                  \"macos\": {\n      \
                  \"identity\": \"Developer ID Application\",\n      \
-                 \"team\": \"ABCDE12345\",\n      \
                  \"notaryProfile\": \"an-notary\"\n    }\n  }";
     let variables = "    export AN_MACOS_IDENTITY='Developer ID Application'\n\
                      \x20   export AN_MACOS_NOTARY_PROFILE=an-notary";
@@ -714,12 +716,7 @@ pub fn macos(settings: &Settings, notarising: bool) -> Result<Macos> {
         );
     }
 
-    Ok(Macos {
-        identity,
-        identity_name,
-        team: settings.value("macos", "team", "AN_MACOS_TEAM"),
-        notary_profile,
-    })
+    Ok(Macos { identity, identity_name, notary_profile })
 }
 
 /// Same lookup as on iOS, with a different sentence when there is nothing.
