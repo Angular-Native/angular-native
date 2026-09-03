@@ -205,6 +205,27 @@ simulator's, the SDK is `iphonesimulator`, and the launch path is `simctl` end
 to end. A real device needs the other route — an identity and a profile — and
 that is not here.
 
+## Onto a real iPhone, and into the store
+
+```bash
+an ios --physical                # signed, installed with devicectl
+an ios --archive                 # .xcarchive and .ipa
+```
+
+Both are the same build with a different destination: `aarch64-apple-ios`
+instead of the simulator target, the profile embedded in the bundle, and a real
+signature over the whole thing. The entitlements move too — on the simulator
+they live inside the binary, on a device they live in the signature — and they
+are taken from what the provisioning profile grants, because the system gives an
+app nothing its profile does not carry.
+
+Neither of these has ever been run against a physical device or an Apple
+Developer account by anybody working on this. What is checked is that they stop
+before compiling when a credential is missing, and say which one. See
+[Signing and distribution](/guide/signing-and-distribution/), which is explicit
+about which paths have executed and which are written from Apple's
+documentation.
+
 ## iPadOS
 
 There is no separate iPadOS code path. It is iOS, with three places where the

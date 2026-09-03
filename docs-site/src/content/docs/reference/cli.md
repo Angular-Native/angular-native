@@ -107,7 +107,29 @@ They all share the same shape.
 | `an android` | `examples/hello-angular` | **—** | ✅ | ✅ |
 | `an wearos` | `examples/hello-wear` | an `adb` serial, no default | ✅ | ✅ |
 
-Four asymmetries in that table are real and not typos:
+And the flags that produce something for a device or a store. They are on the
+platform's own subcommand rather than in a command of their own, because they
+change what that build *is*, not what happens afterwards:
+
+| Command | Flag | What comes out |
+|---|---|---|
+| `an ios` | `--physical` | Signed for a connected iPhone or iPad, installed with `devicectl`. `--device` then names the device rather than a simulator. |
+| `an ios` | `--archive` | `<Name>.xcarchive` and `<Name>.ipa`. Implies `--release`. Conflicts with `--physical`. |
+| `an android`, `an wearos` | `--sign` | Signed with the release keystore instead of the debug one. |
+| `an android`, `an wearos` | `--aab` | An Android App Bundle. Implies `--sign`; never installs. |
+| `an macos` | `--sign` | Developer ID signature with the hardened runtime, instead of ad hoc. |
+| `an macos` | `--notarize` | That, submitted to Apple, waited on and stapled. Implies `--sign`. |
+| `an macos` | `--dmg` | A `.dmg`, signed and notarised in its own right when those are on. |
+
+All of them need settings that live in `angular-native.json`, and every one of
+them fails before anything is compiled when a credential is missing. See
+[Signing and distribution](/guide/signing-and-distribution/), which is also the
+page that says what to get from Apple and Google.
+
+`--release` and `--sign` are separate on purpose: the first is about the
+compiler, the second about the key. A build for Google Play wants both.
+
+Four asymmetries in the table above are real and not typos:
 
 - **`an watchos` has no `--no-launch`.** It is the only build command without
   one.
@@ -179,7 +201,16 @@ build/visionos/<Name>Vision.app
 build/watchos/AngularNativeWatch.app
 build/macos/AngularNativeMac.app
 build/android/<AppName>.apk       and <AppName>-wear.apk for Wear
+build/ios/<Name>.xcarchive        --archive
+build/ios/<Name>.ipa              --archive
+build/macos/<Name>.dmg            --dmg
+build/android/<AppName>-release.apk   --sign
+build/android/<AppName>-release.aab   --aab
 ```
+
+The release artefacts are named apart from the debug ones on purpose: a signed
+build quietly overwriting the APK your emulator has been running is how the
+wrong file reaches a store.
 
 tvOS and visionOS get a name and a bundle-id suffix — `TV`/`.tv` and
 `Vision`/`.vision` — so that building one does not overwrite the other's `.app`
@@ -277,6 +308,15 @@ because there is no platform WebSocket there.
 | `AN_HOME` | `an` | Where the framework's sources are, when running outside the monorepo. Checked first, and **validated** — pointing it somewhere that is not an SDK is an error, not a fallback. |
 | `CARGO_TARGET_DIR` | `an` | Where to look for the compiled staticlibs. |
 | `ANDROID_HOME`, `ANDROID_SDK_ROOT` | `an` | The Android SDK, in that order, falling back to `~/Library/Android/sdk`. |
+| `AN_IOS_TEAM`, `AN_IOS_IDENTITY`, `AN_IOS_PROFILE` | `an` | Override `signing.ios.*`. |
+| `AN_MACOS_IDENTITY`, `AN_MACOS_NOTARY_PROFILE` | `an` | Override `signing.macos.*`. |
+| `AN_ANDROID_KEYSTORE`, `AN_ANDROID_KEY_ALIAS` | `an` | Override `signing.android.*`. |
+| `AN_ANDROID_KEYSTORE_PASSWORD`, `AN_ANDROID_KEY_PASSWORD` | `an` | The two passwords. They exist **only** here — the manifest names the variable, never the value. |
+| `AN_BUNDLETOOL` | `an` | Where `bundletool.jar` is, for `--aab`. |
+
+The signing variables win over `angular-native.json`, which is what CI wants and
+what makes those paths usable from inside this repository, which has no project
+manifest.
 
 Outside the monorepo, `an` walks up from the working directory looking for an
 `angular-native.json`. The SDK itself is `AN_HOME` if set, otherwise the path
@@ -304,6 +344,15 @@ Each of these is a hard error with the reason in it, not a warning:
 - **An `AndroidManifest.xml` that no longer declares `package="dev.angularnative"`.**
 - **An empty Android dependency cache**, pointing at
   `scripts/prepare-android-deps.py`.
+- **A password written into `angular-native.json`.** Refused by name, by every
+  command that runs inside a project — not only the ones that sign.
+- **A keystore or a profile that git can see**, whether committed or merely not
+  ignored.
+- **Any missing or wrong signing credential**: no section for the platform, a
+  profile that is absent, unreadable, expired or for another app, a team that
+  disagrees with the profile, a certificate that is not in the keychain, a
+  keystore whose password or alias is wrong, a `bundletool` that is not there.
+  All of them before `cargo` is called.
 
 ## Two things to know before you hit them
 

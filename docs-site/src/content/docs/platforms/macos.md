@@ -333,6 +333,27 @@ One consequence of `ActiveInActiveApp`: the hover assertion is **skipped**, and
 says so, when the app cannot be brought to the front. A skip is reported and is
 not a pass.
 
+## Shipping it to another Mac
+
+```bash
+an macos . --sign                # Developer ID, hardened runtime
+an macos . --notarize --dmg      # submitted, stapled, and packed
+```
+
+The ad-hoc signature above is what lets the app run **here**. Anywhere else,
+Gatekeeper wants a Developer ID signature and a notarisation ticket, and the
+hardened runtime that notarisation requires is not a flag change: it forbids
+mapping writable executable memory, which is the first thing the JS engine does.
+So the signed build declares `com.apple.security.cs.allow-jit`. Without it the
+app is killed on startup with a `Killed: 9` that mentions no entitlement — the
+same failure the ad-hoc signature exists to prevent, wearing the one face nobody
+recognises.
+
+The `.dmg` is signed and notarised in its own right, because the image is the
+file that gets downloaded. Packing one is checked here; signing and notarising
+need a paid Developer ID certificate and have never been run. See
+[Signing and distribution](/guide/signing-and-distribution/).
+
 ## What is missing
 
 - **`(scroll)` is not delivered.** It is a known event name and iOS implements

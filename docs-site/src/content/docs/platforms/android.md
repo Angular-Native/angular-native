@@ -215,6 +215,30 @@ expanding is an *action* and without one a reader would announce something that
 cannot be done. What is set and what is refused is in
 [Accessibility on Android](/accessibility/android/).
 
+## Into Google Play
+
+```bash
+an android --sign --release      # a release-signed APK
+an android --aab --release       # the bundle Play takes
+```
+
+The debug keystore this page's build uses is the one Android Studio generates,
+with the password written into the source; no store accepts it. `--sign` uses a
+keystore you generate and keep, `--aab` builds an Android App Bundle — which is
+the only thing Google Play has taken since August 2021.
+
+There is no Gradle for this either. `aapt2 link --proto-format` produces the
+protobuf manifest and resources a bundle wants, the module is assembled by hand,
+`bundletool` turns it into the `.aab` and `jarsigner` signs it, because
+`apksigner` refuses one. `bundletool` is not part of the Android SDK —
+`scripts/fetch-android-deps.py` brings it.
+
+This whole path runs end to end in `scripts/check-signing.sh`, with a keystore
+the check generates: an upload key needs nobody's permission. What that check
+cannot do is upload anything, and neither can `an`. What to get from Google, and
+where to put the keystore, is in
+[Signing and distribution](/guide/signing-and-distribution/).
+
 ## Build and run
 
 ```text
