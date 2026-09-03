@@ -198,7 +198,7 @@ pub fn assemble(
     // plugins' keys, and a plugin that only got them on the signed path would
     // work for whoever ships the app and fail for whoever develops it, which is
     // the wrong way round.
-    let entitlements = write_entitlements(&app_dir, plugins, BUNDLE_ID)?;
+    let entitlements = write_entitlements(&app_dir, plugins, BUNDLE_ID, signing.is_some())?;
     match signing {
         // Unsigned, macOS kills the app on the first `mmap` of generated code
         // —which is what QuickJS does— with a `Killed: 9` and no explanation.
@@ -353,9 +353,30 @@ fn sign(app_dir: &Path, entitlements: &Path, macos: &Macos) -> Result<()> {
 ///
 /// The floor wins a collision, and it is the only place it can: a plugin that
 /// asked for `allow-jit: false` would be asking for an app that does not start.
-fn write_entitlements(app_dir: &Path, plugins: &[Plugin], bundle_id: &str) -> Result<PathBuf> {
+fn write_entitlements(
+    app_dir: &Path,
+    plugins: &[Plugin],
+    bundle_id: &str,
+    real_identity: bool,
+) -> Result<PathBuf> {
     let mut entries: BTreeMap<String, Value> = BTreeMap::new();
     for (key, entry) in &plugins::entitlement_entries(plugins, Platform::Macos)? {
+        if !real_identity && needs_profile(key) {
+            // See `needs_profile`. This is the loudest warning in this file
+            // because it is the one that changes what the app can do, and the
+            // app still starts and still looks right: whoever gets it has to be
+            // told what stopped working and what to run to get it back.
+            eprintln!(
+                "==> warning: {key} (asked for by {}) is left out of this build.\n    \
+                 An ad-hoc signature cannot carry it —macOS wants a provisioning profile behind \
+                 it— and an .app that carries it anyway is killed the instant it launches, with \
+                 a bare `Killed: 9`.\n    \
+                 The plugin will fall back to whatever it can do without the entitlement and say \
+                 so at run time. `an macos --sign` gives it the real one.",
+                entry.package
+            );
+            continue;
+        }
         eprintln!("==> entitlements: {key} (from {})", entry.package);
         entries.insert(key.clone(), substitute(&entry.value, bundle_id));
     }
@@ -394,6 +415,35 @@ fn write_entitlements(app_dir: &Path, plugins: &[Plugin], bundle_id: &str) -> Re
         bail!("{} could not be written", plist.display());
     }
     Ok(plist)
+}
+
+/// Whether macOS demands a provisioning profile behind this entitlement.
+///
+/// This is the rule that cost an afternoon, so it is written down rather than
+/// discovered again. macOS splits entitlements in two. The `com.apple.security.`
+/// ones —the hardened-runtime relaxations, the sandbox— are *restrictions the
+/// app puts on itself*, and anybody may sign them, ad hoc included. The rest are
+/// *permissions the system grants*, and the system will not grant one on the
+/// word of a signature that belongs to nobody. An ad-hoc `.app` carrying
+/// `keychain-access-groups` does not fail to use the keychain: **it is killed at
+/// launch**, before its first line runs, with a `Killed: 9` and nothing in the
+/// log about entitlements. It is indistinguishable from the JIT kill the
+/// hardened-runtime entitlements exist to prevent, which is precisely how it
+/// wastes an afternoon.
+///
+/// So an ad-hoc build leaves them out and says so, and the plugin finds out at
+/// run time that it did not get them. That is why the keychain plugin probes
+/// instead of assuming, and why its `backing()` has something to report.
+///
+/// `com.apple.security.application-groups` is on this list despite the prefix:
+/// a group identifier is a name Apple hands out, not a restriction, and it needs
+/// the profile like the rest of them.
+fn needs_profile(key: &str) -> bool {
+    key == "keychain-access-groups"
+        || key == "application-identifier"
+        || key == "com.apple.application-identifier"
+        || key == "com.apple.security.application-groups"
+        || key.starts_with("com.apple.developer.")
 }
 
 /// Swaps `$(BUNDLE_ID)` for this app's identifier.
