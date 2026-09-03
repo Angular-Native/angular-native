@@ -153,17 +153,21 @@ public final class AnShare implements AnBuiltinModule {
         send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
         if (host.getPackageManager().resolveActivity(send, 0) == null) {
-            // Which is the normal state of a watch: Wear OS has no mail client,
-            // no messaging app of its own and nothing that declares ACTION_SEND,
-            // so the chooser would come up empty. It is said by name rather than
-            // an empty sheet being put on somebody's wrist.
+            // A watch is where this actually happens. Wear OS has no mail
+            // client and no messaging app of its own; what a given watch can
+            // receive is Bluetooth and whatever the manufacturer added, and on
+            // some there is nothing at all. It is asked rather than assumed —
+            // and when the answer is nothing, it is said by name rather than an
+            // empty chooser being put on somebody's wrist.
             boolean watch =
                     host.getPackageManager().hasSystemFeature(PackageManager.FEATURE_WATCH);
             respond.reject(
                     watch
-                            ? "no app on this watch can receive a share: Wear OS ships nothing that"
+                            ? "no app on this watch can receive a share: nothing installed on it"
                                     + " declares ACTION_SEND, so the chooser would come up empty."
-                                    + " Send it to the phone and share it from there."
+                                    + " Ask share.canShare() first — on a Wear watch the answer"
+                                    + " depends on the watch. Send it to the phone and share it"
+                                    + " from there."
                             : "no app on this device can receive a share: ACTION_SEND resolves to"
                                     + " nothing.");
             return;

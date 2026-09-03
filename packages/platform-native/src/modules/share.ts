@@ -25,14 +25,18 @@ export interface ShareRequest {
 /**
  * Where a share sheet exists.
  *
- * Not on a television —`UIActivityViewController` does not exist on tvOS, and
- * there is no AirDrop and nothing to hand anything to— and not on a watch, on
- * either platform: watchOS has no sheet at all, and on Wear OS nothing declares
- * `ACTION_SEND`, so the chooser would come up empty. `canShare()` answers
- * `false` there, so a button can be hidden rather than found out about by being
- * rejected.
+ * Not on a television: `UIActivityViewController` does not exist on tvOS, there
+ * is no AirDrop and there is nothing to hand anything to. Not on watchOS
+ * either, which has no sheet at all.
+ *
+ * Wear OS is in, and it is the one that has to be checked rather than assumed.
+ * A Wear watch does resolve `ACTION_SEND` — to Bluetooth, and to whatever the
+ * manufacturer added — so the chooser is real but may hold one entry or none
+ * depending on the watch. That is why the module asks the device instead of
+ * deciding from the platform, and why `canShare()` exists: ask it, and hide the
+ * button when the answer is `false`.
  */
-export type SharePlatform = Exclude<NativePlatform, 'tvos' | 'watchos' | 'wearos'>
+export type SharePlatform = Exclude<NativePlatform, 'tvos' | 'watchos'>
 
 /**
  * The system share sheet.
@@ -49,8 +53,12 @@ export class Share {
   private readonly modules = inject(NativeModules)
 
   /**
-   * Whether this platform has a sheet at all. Ask before showing the button;
-   * `share()` rejects by name on the platforms where the answer is `false`.
+   * Whether there is anywhere to share to.
+   *
+   * On tvOS and watchOS it is the platform answering: there is no sheet. On
+   * Wear OS it is the watch answering, because what a Wear watch can receive
+   * varies with the watch. Ask before showing the button; `share()` rejects by
+   * name when the answer is `false`.
    */
   canShare(): Promise<boolean> {
     return this.modules.call<boolean>('share', 'canShare')
