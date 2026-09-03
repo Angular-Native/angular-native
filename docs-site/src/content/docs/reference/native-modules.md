@@ -149,11 +149,11 @@ This is the part that surprises people.
 
 | Platform | `device` | Plugins |
 |---|---|---|
-| iOS · iPadOS | ✅ | ✅ |
-| tvOS | ✅ | ✅ |
-| visionOS | ✅ | ✅ |
-| Android | ✅ | ✅ |
-| Wear OS | ✅ | ✅ |
+| iOS · iPadOS | ✓ | ✓ |
+| tvOS | ✓ | ✓ |
+| visionOS | ✓ | ✓ |
+| Android | ✓ | ✓ |
+| Wear OS | ✓ | ✓ |
 | **macOS** | — | — |
 | **watchOS** | — | — |
 

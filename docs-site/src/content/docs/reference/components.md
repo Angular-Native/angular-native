@@ -14,31 +14,31 @@ fill in for a missing control.
 
 | Primitive | iOS · iPadOS | Android | macOS | tvOS | visionOS | watchOS | Wear OS |
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `an-view` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `an-text` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `an-image` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `an-icon` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `an-scroll-view` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `an-button` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `an-text-input` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `an-textarea` | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ |
-| `an-switch` | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
-| `an-slider` | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
-| `an-stepper` | ✅ | ✅ | ✅ | — | ✅ | ✅ | ✅ |
-| `an-progress-bar` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `an-activity-indicator` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `an-select` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| `an-date-picker` | ✅ | ✅ | ✅ | — | ✅ | ✅ | — |
-| `an-segmented-control` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
-| `an-search-bar` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
-| `an-tab-bar` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — |
-| `an-navigation-bar` | ✅ | ✅ | title bar | ✅ | ✅ | — | — |
-| `an-stack-view` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `an-modal` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `an-alert` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `an-web-view` | ✅ | ✅ | ✅ | — | ✅ | — | — |
-| `an-map-view` | ✅ | tiles | ✅ | ✅ | ✅ | — | ✅ |
-| `an-video-view` | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ |
+| `an-view` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `an-text` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `an-image` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `an-icon` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `an-scroll-view` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `an-button` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `an-text-input` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `an-textarea` | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ |
+| `an-switch` | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
+| `an-slider` | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
+| `an-stepper` | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
+| `an-progress-bar` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `an-activity-indicator` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `an-select` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| `an-date-picker` | ✓ | ✓ | ✓ | — | ✓ | ✓ | — |
+| `an-segmented-control` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| `an-search-bar` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| `an-tab-bar` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| `an-navigation-bar` | ✓ | ✓ | title bar | ✓ | ✓ | — | — |
+| `an-stack-view` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `an-modal` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `an-alert` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `an-web-view` | ✓ | ✓ | ✓ | — | ✓ | — | — |
+| `an-map-view` | ✓ | tiles | ✓ | ✓ | ✓ | — | ✓ |
+| `an-video-view` | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ |
 | | **25** | **25** | **25** | **20** | **25** | **17** | **18** |
 
 `an-safe-area` is not in the table because it is not a primitive: it is a

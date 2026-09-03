@@ -2,6 +2,7 @@
 title: The `an` CLI
 description: Every command, every flag and every default, read from the code — and the handful of asymmetries between them that are worth knowing before you hit one.
 sidebar:
+  label: The an CLI
   order: 3
 ---
 
@@ -98,14 +99,14 @@ They all share the same shape.
 
 | Command | `APP` default | `--device` default | `--release` | `--no-launch` |
 |---|---|---|:--:|:--:|
-| `an build` | `examples/hello-angular` | — | ✅ | — |
-| `an ios` | `examples/hello-angular` | `iPhone 17 Pro` | ✅ | ✅ |
-| `an tvos` | `examples/hello-tv` | `Apple TV 4K (3rd generation)` | ✅ | ✅ |
-| `an visionos` | `examples/hello-vision` | `Apple Vision Pro` | ✅ | ✅ |
-| `an watchos` | `examples/hello-watch` | `Apple Watch Series 11 (46mm)` | ✅ | **—** |
-| `an macos` | `examples/controls` | **—** | ✅ | ✅ |
-| `an android` | `examples/hello-angular` | **—** | ✅ | ✅ |
-| `an wearos` | `examples/hello-wear` | an `adb` serial, no default | ✅ | ✅ |
+| `an build` | `examples/hello-angular` | — | ✓ | — |
+| `an ios` | `examples/hello-angular` | `iPhone 17 Pro` | ✓ | ✓ |
+| `an tvos` | `examples/hello-tv` | `Apple TV 4K (3rd generation)` | ✓ | ✓ |
+| `an visionos` | `examples/hello-vision` | `Apple Vision Pro` | ✓ | ✓ |
+| `an watchos` | `examples/hello-watch` | `Apple Watch Series 11 (46mm)` | ✓ | **—** |
+| `an macos` | `examples/controls` | **—** | ✓ | ✓ |
+| `an android` | `examples/hello-angular` | **—** | ✓ | ✓ |
+| `an wearos` | `examples/hello-wear` | an `adb` serial, no default | ✓ | ✓ |
 
 And the flags that produce something for a device or a store. They are on the
 platform's own subcommand rather than in a command of their own, because they
