@@ -98,6 +98,19 @@ export class AppComponent {
   }
 
   /**
+   * The verdict, on screen and in the log.
+   *
+   * On screen for a person, in the log for a check: `simctl io … screenshot` can
+   * take the picture but nothing reads a sentence out of it, and `simctl launch
+   * --console-pty` is the one channel that comes back as text from a watch
+   * simulator without borrowing the Mac's mouse.
+   */
+  private verdict(said: string): void {
+    this.roundTripResult.set(said)
+    console.log(said)
+  }
+
+  /**
    * Store, read back, delete — on startup, with nobody pressing anything.
    *
    * The buttons below do the same three things one at a time and they are what a
@@ -123,14 +136,14 @@ export class AppComponent {
 
       const stored = await this.keychain.set(KEY, SECRET)
       if (stored.outcome !== 'saved') {
-        this.roundTripResult.set(`round trip: not stored (${stored.outcome})`)
+        this.verdict(`round trip: not stored (${stored.outcome})`)
         this.detail.set(stored.detail)
         return
       }
 
       const read = await this.keychain.get(KEY)
       if (read.outcome !== 'found' || read.value !== SECRET) {
-        this.roundTripResult.set(`round trip: read back ${read.outcome}`)
+        this.verdict(`round trip: read back ${read.outcome}`)
         this.detail.set(read.detail)
         return
       }
@@ -139,7 +152,7 @@ export class AppComponent {
       const left = await this.keychain.has(KEY)
       this.store.set(left ? 'a secret is stored' : 'nothing stored')
       if (left) {
-        this.roundTripResult.set('round trip: stored and read, but delete left it there')
+        this.verdict('round trip: stored and read, but delete left it there')
         return
       }
 
@@ -153,7 +166,7 @@ export class AppComponent {
         reason: 'Show the stored token'
       })
       const refused = protectedSave.outcome !== 'saved' && !(await this.keychain.has(KEY))
-      this.roundTripResult.set(
+      this.verdict(
         refused
           ? 'round trip: stored, read and deleted; biometrics refused'
           : `round trip: biometrics was NOT refused (${protectedSave.outcome})`
@@ -162,7 +175,7 @@ export class AppComponent {
       // The one that matters most. With no plugin in the `.app` every call
       // rejects, and a screen that just sat there saying nothing would be the
       // silent failure this whole system exists to avoid.
-      this.roundTripResult.set(`round trip failed: ${error}`)
+      this.verdict(`round trip failed: ${error}`)
     }
   }
 
