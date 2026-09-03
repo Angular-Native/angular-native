@@ -108,6 +108,8 @@ dependencies = [
  "objc2-core-graphics",
  "objc2-foundation",
  "objc2-quartz-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

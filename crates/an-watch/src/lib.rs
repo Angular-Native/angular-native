@@ -34,12 +34,17 @@
 
 pub mod host;
 pub mod measure;
+// The device module touches no platform: the four fields it answers come from
+// the shell. That is what lets `cargo test` exercise it on the Mac, with no
+// watch and no nightly.
+pub mod modules;
 pub mod snapshot;
 
 #[cfg(target_os = "watchos")]
 mod ffi;
 
 pub use host::{WatchHost, WatchNode};
+pub use modules::DeviceModule;
 pub use measure::{ControlSizes, WatchMeasurer};
 pub use snapshot::{snapshot, Snapshot};
 

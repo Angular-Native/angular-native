@@ -286,6 +286,22 @@ counterpart, and the `busy` state, whose nearest relative is the
 Reading the tree from outside needs the Accessibility permission granted by
 hand; the example is `examples/a11y`.
 
+## Native modules
+
+`device` is registered, so `Device.info()` resolves here. Three of the five
+fields mean exactly what they mean on a phone; two do not, and rather than
+returning the nearest-looking number the difference is written down:
+
+| Field | On macOS |
+|---|---|
+| `platform` | `'macos'` |
+| `systemVersion` | `NSProcessInfo.operatingSystemVersion`, as `major.minor.patch`. Not `operatingSystemVersionString`, which reads "Version 15.3.1 (Build 24D70)" and is prose. |
+| `model` | The hardware identifier from `sysctl hw.model` — `Mac15,7`, `MacBookPro18,3`. AppKit has no `UIDevice.model`, which on a phone answers a device *class*; here that word would be "Mac" for every Mac ever made. |
+| `scale` | `backingScaleFactor` of the screen the app **started on**. A window can be dragged to a display with another factor and this will not follow: it is read once, on the main thread, because `NSScreen` cannot be touched from the engine's thread. With no screen at all it is `0.0`, the same answer visionOS gives, rather than an invented `2.0`. |
+| `locale` | `NSLocale.currentLocale`, BCP 47. |
+
+There is no second module: everything else would be a plugin, and see above.
+
 ## How it is checked
 
 It is the one platform that can genuinely be checked without starting anything
@@ -293,11 +309,20 @@ external: the app runs on the same machine that compiled it.
 `scripts/check-macos.sh` starts it, lets it mount the tree and **asks it for a
 screenshot**, over `examples/controls`, `examples/desktop` and `examples/media`.
 
+The same property is what makes `scripts/check-dev-macos.sh` possible, and it is
+the only place the development loop is checked end to end: the server serves, the
+`.app` is built with the URL inside it, the app connects, a file is saved and the
+window is then asked what it is showing. What it has to be showing is the new
+template *and* the state from before the save — `hello-angular` puts a running
+timer and an `@if` that unfolded at three seconds on screen, and a restart sends
+both back to nothing.
+
 Screenshot mode is macOS-only and driven by environment variables read at
 startup: `AN_SCREENSHOT=<path>` plus `AN_SCREENSHOT_FRAMES` (40 by default),
 `AN_SCREENSHOT_PRESS=x,y`, `AN_SCREENSHOT_SWIPE=x,y,dx,dy`,
-`AN_SCREENSHOT_HOVER=x,y`, `AN_SCREENSHOT_WINDOW=1` and
-`AN_SCREENSHOT_RELOADS=n`. The three synthetic inputs fire inside the wait in a
+`AN_SCREENSHOT_HOVER=x,y`, `AN_SCREENSHOT_WINDOW=1`,
+`AN_SCREENSHOT_RELOADS=n` and `AN_DUMP_TEXT=1`, which logs the strings the
+mounted `NSView`s are really showing — the one thing a PNG cannot be asked. The three synthetic inputs fire inside the wait in a
 fixed order — press at a quarter of the frames, swipe at a third, hover at a
 half — and the shot is taken at the end. It uses `cacheDisplay(in:to:)`, which
 needs no screen-recording permission, and `CGWarpMouseCursorPosition`, which
@@ -310,17 +335,14 @@ not a pass.
 
 ## What is missing
 
-- **`an dev --macos` does not exist.** The flag is not in the CLI, and there is
-  no macOS target in the dev server. Both halves of the machinery are built —
-  `an_runtime_reload` implements hot reload with the cold-reload guard, and the
-  shell reads a `dev-server.txt` through the shared dev client — but nothing
-  wires them together. Rebuild with `an macos` in the meantime.
 - **`(scroll)` is not delivered.** It is a known event name and iOS implements
   it; this host does not, so subscribing to it gets the generic "cannot deliver"
   warning. It is a real gap, not a decision.
-- **No native modules and no plugins.** `an-macos` registers none, so
-  `Device.info()` rejects here, and `an macos` refuses to build an app that
-  depends on a plugin rather than shipping one whose every call would fail.
+- **No plugins.** `an-macos` has no plugin registry — nothing carries a call out
+  to Swift — so `an macos` and `an dev --macos` refuse to build an app that
+  depends on one rather than shipping an app whose every call would fail. A
+  module name reached at run time without a declared dependency is rejected with
+  the name *and* the reason, which is not the same message a typo gets.
 - **No `an add macos`.** There is no per-project `Info.plist` and no per-project
   bundle id: the shell's plist is copied verbatim, and the id is
   `dev.angularnative.playground.mac`.

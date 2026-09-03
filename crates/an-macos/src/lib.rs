@@ -57,6 +57,8 @@ mod map;
 #[cfg(target_os = "macos")]
 mod measure;
 #[cfg(target_os = "macos")]
+mod modules;
+#[cfg(target_os = "macos")]
 mod video;
 #[cfg(target_os = "macos")]
 mod web;

@@ -171,6 +171,12 @@ impl QuickJsRuntime {
         self.modules.borrow_mut().register(module);
     }
 
+    /// Says why a module that is not registered is not there. It is appended to
+    /// the rejection; see `ModuleRegistry::explain_absent`.
+    pub fn explain_absent_modules(&mut self, note: impl Into<String>) {
+        self.modules.borrow_mut().explain_absent(note);
+    }
+
     /// Hands JS the module answers that are already in.
     fn settle_module_calls(&mut self) -> Result<(), JsError> {
         let answers = self.modules.borrow_mut().drain();

@@ -58,6 +58,12 @@ final class RootViewController: NSViewController {
 
         connectDevServer()
         screenshot = Screenshot.destination.map(Screenshot.Trigger.init(path:))
+        // `AN_DUMP_TEXT` hangs off the screenshot's shutter: with no
+        // destination there is no moment for it to fire. A variable that
+        // silently does nothing is worse than one nobody reads, so it is said.
+        if TextDump.wanted && screenshot == nil {
+            NSLog("angular-native: AN_DUMP_TEXT needs AN_SCREENSHOT too; nothing will be dumped")
+        }
     }
 
     override func viewDidLayout() {

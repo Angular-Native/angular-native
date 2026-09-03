@@ -115,9 +115,11 @@ an dev --tvos       # Apple TV simulator
 an dev --visionos   # Vision Pro simulator
 an dev --watchos    # Apple Watch simulator
 an dev --wearos     # Wear OS emulator
+an dev --macos      # a window on this Mac
 ```
 
-There is no `an dev --macos` yet: rebuild with `an macos`.
+`--macos` is the odd one out: there is no simulator, so the app opens on the
+machine that is compiling it and the server it talks to is on that same machine.
 
 Saving a component swaps its definition in the running app. You stay on the
 same screen, with whatever you had typed and the timers still running.

@@ -9,10 +9,18 @@
 
 typedef struct AnWatchRuntime AnWatchRuntime;
 
-/// Starts the engine. `control_json` holds the controls' natural sizes as
-/// measured by SwiftUI, like {"Button":[80,44]}; it may be NULL.
+/// Starts the engine.
+///
+/// `control_json` holds the controls' natural sizes as measured by SwiftUI,
+/// like {"Button":[80,44]}; it may be NULL.
+///
+/// `device_json` is what Device.info() answers, minus the platform, which the
+/// host decides: {"systemVersion":..,"model":..,"scale":..,"locale":..}. It
+/// comes from the shell because those four are WatchKit's and there is no way
+/// to them from Rust. It may be NULL, and then the call is rejected saying so.
 AnWatchRuntime *an_watch_runtime_new(float width, float height,
-                                     const char *control_json);
+                                     const char *control_json,
+                                     const char *device_json);
 
 /// Evaluates a script. 0 if it went well, -1 if JS threw.
 int32_t an_watch_runtime_eval(AnWatchRuntime *rt, const char *name,

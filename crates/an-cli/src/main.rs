@@ -159,6 +159,11 @@ enum Command {
         /// Launches in the headset simulator instead of the phone's.
         #[arg(long)]
         visionos: bool,
+        /// Opens a window on this Mac instead of the phone's simulator. There
+        /// is no simulator here: the app runs on the machine doing the
+        /// building, so the dev server is on the same computer as the app.
+        #[arg(long)]
+        macos: bool,
         /// Launches nothing; it only serves the bundle.
         #[arg(long)]
         no_launch: bool,
@@ -356,15 +361,21 @@ fn main() -> anyhow::Result<()> {
             watchos,
             tvos,
             visionos,
+            macos,
             no_launch,
         } => {
-            // Same as in `an wearos`: the phone's example cannot be read at 227
-            // round points, so the watch gets its own by default.
-            let app = workspace.app(if wearos {
-                Some(app.as_deref().unwrap_or("examples/hello-wear"))
+            // Same as in `an wearos` and `an macos`: the phone's example is not
+            // the right default anywhere else. It cannot be read at 227 round
+            // points, and on the desktop `controls` is the one that shows at a
+            // glance what AppKit draws and what it does not.
+            let default_app = if wearos {
+                Some("examples/hello-wear")
+            } else if macos {
+                Some("examples/controls")
             } else {
-                app.as_deref()
-            })?;
+                None
+            };
+            let app = workspace.app(app.as_deref().or(default_app))?;
             let found = plugins::discover(&workspace, &app)?;
             // If `--device` is still the phone's, then nobody chose it, and
             // what is wanted is the device the flag asks for.
@@ -375,27 +386,36 @@ fn main() -> anyhow::Result<()> {
                     device.clone()
                 }
             };
-            let target = match (android, wearos, watchos, tvos, visionos) {
-                (true, _, _, _, _) => dev::Target::Android,
+            let target = match (android, wearos, watchos, tvos, visionos, macos) {
+                (true, _, _, _, _, _) => dev::Target::Android,
                 // An Android watch is identified by its `adb` serial number,
                 // not by a simulator's name, so it does not go through `chosen`:
                 // with no `--device` it picks one by asking for the shape.
-                (_, true, _, _, _) => dev::Target::Wear {
+                (_, true, _, _, _, _) => dev::Target::Wear {
                     device: (device != DEFAULT_PHONE).then(|| device.clone()),
                 },
-                (_, _, true, _, _) => dev::Target::WatchOs {
+                (_, _, true, _, _, _) => dev::Target::WatchOs {
                     device: chosen(DEFAULT_WATCH),
                 },
-                (_, _, _, true, _) => dev::Target::TvOs {
+                (_, _, _, true, _, _) => dev::Target::TvOs {
                     device: chosen(DEFAULT_TV),
                 },
-                (_, _, _, _, true) => dev::Target::VisionOs {
+                (_, _, _, _, true, _) => dev::Target::VisionOs {
                     device: chosen(DEFAULT_HEADSET),
                 },
+                // The Mac takes no `--device`: there is no simulator to name.
+                (_, _, _, _, _, true) => dev::Target::MacOs,
                 _ => dev::Target::Ios { device },
             };
+            // The two hosts with no plugin registry refuse before compiling
+            // anything, exactly as their own subcommands do: an app whose every
+            // plugin call would be turned down at runtime is not an app worth
+            // building.
             if matches!(target, dev::Target::WatchOs { .. }) {
                 watchos::reject_plugins(&found)?;
+            }
+            if matches!(target, dev::Target::MacOs) {
+                macos::reject_plugins(&found)?;
             }
             dev::run(workspace, app, target, port, no_launch, found)
         }

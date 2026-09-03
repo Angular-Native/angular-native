@@ -30,7 +30,7 @@ use tokio::sync::broadcast;
 
 use crate::plugins::Plugin;
 use crate::workspace::Workspace;
-use crate::{build, ios, watchos};
+use crate::{build, ios, macos, watchos};
 
 /// Changes arrive in bursts: saving in an editor fires several events, and
 /// `ngc` writes dozens of files. It waits for things to die down.
@@ -48,6 +48,10 @@ pub enum Target {
     TvOs { device: String },
     VisionOs { device: String },
     WatchOs { device: String },
+    /// The Mac. It is the only target that is not a simulator: the app runs on
+    /// the machine doing the building, which is why it carries no device —there
+    /// is nothing to look up— and why the URL needs no translating.
+    MacOs,
     Android,
     /// The Android watch. Same emulator and same server as `Android`; what
     /// changes is the manifest the APK is built with and the shape of the device
@@ -79,11 +83,15 @@ pub fn run(
     // from in there.
     let url = match target {
         // The watch simulator shares the Mac's network the same way the
-        // phone's does, so the same address works for it.
+        // phone's does, so the same address works for it. And the Mac needs no
+        // translation at all, for a stronger reason: the app is not inside
+        // anything. It runs on this very machine, so 127.0.0.1 is not a bridge
+        // to the host — it *is* the host.
         Target::Ios { .. }
         | Target::TvOs { .. }
         | Target::VisionOs { .. }
-        | Target::WatchOs { .. } => {
+        | Target::WatchOs { .. }
+        | Target::MacOs => {
             format!("http://127.0.0.1:{port}")
         }
         Target::Android | Target::Wear { .. } => {
@@ -149,6 +157,14 @@ pub fn run(
             Target::WatchOs { device } => {
                 let package = watchos::assemble(&workspace, &bundle_path, false, Some(&url))?;
                 watchos::launch(&package, device)?;
+            }
+            // No `simctl` and no device: `launch` kills whatever instance was
+            // already up —otherwise `open` only brings the old window to the
+            // front and the change looks as though it never landed— and opens
+            // the new one. See `macos.rs`.
+            Target::MacOs => {
+                let package = macos::assemble(&workspace, &bundle_path, false, Some(&url))?;
+                macos::launch(&package)?;
             }
             Target::Android | Target::Wear { .. } => {
                 let (form, device) = match &target {

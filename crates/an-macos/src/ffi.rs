@@ -132,12 +132,20 @@ pub unsafe extern "C" fn an_runtime_new(
 
     let events = new_event_queue();
     let host = crate::host::AppKitHost::new(mtm, container, events.clone());
+    // The Mac's data is read here, on the main thread, and travels already
+    // resolved: `NSScreen` cannot be touched from the worker.
+    let device = crate::modules::DeviceModule::capture(mtm);
     // The system's controls are measured here, on the main thread: creating
     // an `NSSwitch` off it is not allowed.
     let control_sizes = crate::controls::measure_controls(mtm);
 
     let worker = RuntimeWorker::spawn(RUNTIME_STACK, move || {
-        let js = QuickJsRuntime::new()?;
+        let mut js = QuickJsRuntime::new()?;
+        js.register_module(Box::new(device));
+        // There are no plugins on this host, and a call to one has to be told
+        // why rather than only that the name is unknown. See
+        // `modules::ABSENT_NOTE`.
+        js.explain_absent_modules(crate::modules::ABSENT_NOTE);
         Ok((
             js,
             ShadowSide::new(crate::measure::AppKitMeasurer::new(control_sizes), (width, height)),
