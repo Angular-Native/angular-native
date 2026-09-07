@@ -30,24 +30,38 @@ entera.
 
 ## Las cuatro capas
 
-```text
-  ┌──────────────────────────────────────────────────────┐
-  │  Angular, compilado con AOT, sin zonas               │  JS
-  │  NativeRenderer (Renderer2) → búfer de comandos      │
-  └──────────────────────────────────────────────────────┘
-                          │ un búfer por tick
-  ┌──────────────────────────────────────────────────────┐
-  │  an-bridge   QuickJS, el protocolo, módulos nativos  │
-  │  an-core     el árbol en la sombra, props, colores   │  Rust
-  │  an-layout   flexbox sobre taffy, y la medición      │
-  │  an-host     HostRenderer + TextMeasurer, dos traits │
-  └──────────────────────────────────────────────────────┘
-                          │ Frame { MountOp[] }
-  ┌──────────────────────────────────────────────────────┐
-  │  an-ios · an-android · an-macos · an-watch           │  los hosts
-  │  + los shells de Swift y de Java                     │
-  └──────────────────────────────────────────────────────┘
-```
+import LayerDiagram from '../../../../components/LayerDiagram.astro'
+
+<LayerDiagram
+  title="Las cuatro capas"
+  description="Angular en JavaScript escribe un búfer de comandos; cuatro crates de Rust lo convierten en un frame de operaciones de montaje; los hosts de cada plataforma las aplican."
+  layers={[
+    {
+      side: 'JS',
+      lines: [
+        'Angular, compilado con AOT, sin zonas',
+        'NativeRenderer (Renderer2) → búfer de comandos'
+      ]
+    },
+    {
+      side: 'Rust',
+      lines: [
+        'an-bridge   QuickJS, el protocolo, módulos nativos',
+        'an-core     el árbol en la sombra, props, colores',
+        'an-layout   flexbox sobre taffy, y la medición',
+        'an-host     HostRenderer + TextMeasurer, dos traits'
+      ]
+    },
+    {
+      side: 'los hosts',
+      lines: [
+        'an-ios · an-android · an-macos · an-watch',
+        '+ los shells de Swift y de Java'
+      ]
+    }
+  ]}
+  arrows={['un búfer por tick', 'Frame { MountOp[] }']}
+/>
 
 El núcleo no sabe nada de UIKit ni de Android. Todo lo que una plataforma tiene
 que traer está en **dos traits**: `HostRenderer`, que monta vistas, y

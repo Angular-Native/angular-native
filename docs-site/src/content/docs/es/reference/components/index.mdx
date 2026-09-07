@@ -1,0 +1,786 @@
+---
+title: Componentes
+description: Las 25 primitivas, en qué se convierte cada una en cada plataforma, y dónde no está disponible.
+sidebar:
+  order: 1
+---
+
+Cada primitiva se corresponde con un control que el sistema ya tiene. Donde una
+plataforma no tiene equivalente, el nodo **no se crea**: el layout deja el hueco
+que había medido y el host dice por qué, una vez, en el log. No se dibuja nada a
+mano para suplir un control que falta.
+
+## Matriz de soporte
+
+import SupportMatrix from '../../../../../components/SupportMatrix.astro'
+
+export const platforms = [
+    "iOS · iPadOS",
+    "Android",
+    "macOS",
+    "tvOS",
+    "visionOS",
+    "watchOS",
+    "Wear OS"
+  ]
+
+export const rows = [
+    {
+      "name": "an-view",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-text",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-image",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-icon",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-scroll-view",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-button",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-text-input",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-textarea",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-switch",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-slider",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-stepper",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-progress-bar",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-activity-indicator",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-select",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        }
+      ]
+    },
+    {
+      "name": "an-date-picker",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        }
+      ]
+    },
+    {
+      "name": "an-segmented-control",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        },
+        {
+          "level": "none"
+        }
+      ]
+    },
+    {
+      "name": "an-search-bar",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        },
+        {
+          "level": "none"
+        }
+      ]
+    },
+    {
+      "name": "an-tab-bar",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        },
+        {
+          "level": "none"
+        }
+      ]
+    },
+    {
+      "name": "an-navigation-bar",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "partial",
+          "note": "title bar"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        },
+        {
+          "level": "none"
+        }
+      ]
+    },
+    {
+      "name": "an-stack-view",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-modal",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-alert",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-web-view",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        },
+        {
+          "level": "none"
+        }
+      ]
+    },
+    {
+      "name": "an-map-view",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "partial",
+          "note": "tiles"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    },
+    {
+      "name": "an-video-view",
+      "cells": [
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "full"
+        },
+        {
+          "level": "none"
+        },
+        {
+          "level": "full"
+        }
+      ]
+    }
+  ]
+
+<SupportMatrix
+  platforms={platforms}
+  rows={rows}
+  totals={[
+    "25",
+    "25",
+    "25",
+    "20",
+    "25",
+    "17",
+    "18"
+  ]}
+  labels={{
+    filter: 'Ver',
+    all: 'Todas las plataformas',
+    primitive: 'Primitiva',
+    full: 'Disponible',
+    partial: 'Disponible, de otra forma',
+    none: 'No disponible'
+  }}
+/>
+
+`an-safe-area` no está en la tabla porque no es una primitiva: es un componente
+construido sobre `an-view` que convierte en padding los márgenes que reporta el
+host. Se monta en todas partes, pero en watchOS los márgenes son siempre cero
+—la app ocupa la pantalla entera y el sistema no reserva ningún margen que se
+pueda preguntar—, así que allí no hace nada. En Wear OS es por donde llega el
+margen de la pantalla redonda.
+
+Dos casillas no son ni un sí ni un no, y ambas están explicadas donde ocurren: en
+macOS `an-navigation-bar` pone su título en la **barra de título de la ventana**,
+porque un Mac ya tiene una y dibujar otra dentro del contenido sería pintar dos;
+en Android `an-map-view` pinta **teselas de OpenStreetMap** sobre un canvas,
+porque la plataforma no trae mapa —el de Google vive en Play Services detrás de
+una clave de API—.
+
+## En qué se convierte cada una
+
+| Primitiva | iOS · iPadOS | Android | macOS | watchOS |
+|---|---|---|---|---|
+| `an-view` | `UIView` | `ViewGroup` | `NSView` | `ZStack` |
+| `an-text` | `UILabel` | `TextView` | `NSTextField` | `Text` |
+| `an-image` | `UIImageView` | `ImageView` | `NSImageView` | `Image` |
+| `an-icon` | SF Symbol | Material Symbols | SF Symbol | SF Symbol |
+| `an-scroll-view` | `UIScrollView` | `ScrollView` | `NSScrollView` | `ScrollView` |
+| `an-button` | `UIButton` | `MaterialButton` | `NSButton` | `Button` |
+| `an-text-input` | `UITextField` | `EditText` | `NSTextField` | `TextField` |
+| `an-textarea` | `UITextView` | `EditText` | `NSTextView` | — |
+| `an-switch` | `UISwitch` | `MaterialSwitch` | `NSSwitch` | `Toggle` |
+| `an-slider` | `UISlider` | `Slider` | `NSSlider` | `Slider` |
+| `an-stepper` | `UIStepper` | dos botones de icono | `NSStepper` | `Stepper` |
+| `an-progress-bar` | `UIProgressView` | `LinearProgressIndicator` | `NSProgressIndicator` | `ProgressView` |
+| `an-select` | `UIButton` + `UIMenu` | `Spinner` | `NSPopUpButton` | `Picker` |
+| `an-date-picker` | `UIDatePicker` | diálogo del sistema | `NSDatePicker` | `DatePicker` |
+| `an-tab-bar` | `UITabBarController` | `BottomNavigationView` | `NSSegmentedControl` | — |
+| `an-alert` | `UIAlertController` | `MaterialAlertDialog` | `NSAlert` | `.alert` |
+| `an-web-view` | `WKWebView` | `android.webkit.WebView` | `WKWebView` | — |
+| `an-video-view` | `AVPlayerViewController` | `VideoView` | `AVPlayerView` | — |
+
+## Props que tienen todas las primitivas
+
+Viven en la clase base, así que funcionan en las 25.
+
+| Prop | Tipo | Qué hace |
+|---|---|---|
+| `backgroundColor` | `string` | `#rgb`, `#rrggbbaa`, `rgb()`, `rgba()` y un puñado de nombres. |
+| `borderRadius` | `number` | También por esquina: `borderTopLeftRadius` y sus tres hermanas. |
+| `borderWidth`, `borderColor` | `number`, `string` | |
+| `opacity` | `number` | |
+| `translateX`, `translateY`, `scale`, `scaleX`, `scaleY`, `rotate` | `number` | Deliberadamente fuera del layout: una vista movida sigue ocupando su sitio de antes, así que no hay nada que recalcular y puede seguir a un dedo. |
+| `animate` | `number` | Milisegundos. A partir de ahí los **cambios** de esa vista los anima la plataforma, en su propio hilo de dibujo. `animateDelay` y `animateEasing` van con él. |
+| `cursor` | `NativeCursor` | Solo macOS — un dedo no tiene forma. |
+| `testID` | `string` | Acaba en `accessibilityIdentifier`. |
+
+### Accesibilidad
+
+| Prop | Tipo | Qué hace |
+|---|---|---|
+| `accessibilityLabel` | `string` | El nombre que anuncia un lector de pantalla. Los controles del sistema traen el suyo; esto se pone cuando el suyo no dice lo que hay que decir. |
+| `accessibilityHint` | `string` | Qué pasa al activarlo, leído después del nombre. |
+| `accessibilityRole` | `NativeRole` | `button`, `link`, `header`, `image`, `text`, `checkbox`, `radio`, `switch`, `slider`, `search`, `summary`, `none`. |
+| `accessibilityValue` | `string` | Cuánto vale ahora mismo: «35 %», «tres de siete». |
+| `accessibilityState` | `NativeAccessibilityState` | `disabled`, `selected`, `checked` (`true`, `false` o `'mixed'`), `expanded`, `busy`. |
+| `accessible` | `boolean` | Si esto es **un** elemento o un contenedor en el que entrar. `false` lo oculta con todo lo que lleva dentro — lo que necesita la decoración. |
+
+Los seis, plataforma por plataforma, están en [el contrato](/es/accessibility/overview/).
+
+## Eventos que emiten todas
+
+| Evento | Carga | Notas |
+|---|---|---|
+| `(press)`, `(doublePress)`, `(longPress)` | `{x, y}` | En tvOS llegan del botón central del mando, no de un toque. |
+| `(pan)` | traslación, velocidad, estado | La traslación se mide desde donde empezó el dedo, no desde el evento anterior. |
+| `(pinch)`, `(rotation)` | escala / radianes | En tvOS no: la superficie del mando es de un solo toque. |
+| `(swipeLeft/Right/Up/Down)` | `{x, y}` | Cada dirección engancha su propio reconocedor, así que escuchar una no cuesta nada por las otras tres. |
+| `(hover)` | `{hovered, x, y}` | Solo macOS. |
+| `(focus)`, `(blur)` | `{value?}` | La plataforma entera en una tele; el teclado en un móvil. |
+| `(crown)`, `(crownIdle)` | `{delta, offset, velocity}` | La corona digital, en los dos relojes. Va a la vista que tenga el foco. |
+| `(layout)` | `{x, y, width, height}` | Lo emite el núcleo, no una plataforma — es quien calcula el frame, así que sale gratis en todas. |
+| `(safeArea)` | márgenes | Cambia al rotar y cuando se abre el teclado. |
+
+Un evento que una plataforma no puede entregar **avisa al suscribirse**, en vez
+de quedarse callado. Esa es la diferencia entre un hueco y un bug. La lista
+completa, con la carga exacta de cada uno y la razón que da cada plataforma que
+no lo tiene, está en [Eventos](/es/reference/events/).
