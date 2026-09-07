@@ -189,6 +189,11 @@ pub struct Node {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transition: Option<String>,
 
+    /// Whether this node keeps its children inside its own frame. SwiftUI's
+    /// `.clipped()` on the other side. Omitted when false, which is the
+    /// default, so the snapshot does not grow a key per node for nothing.
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub clip: bool,
     /// Only on a `ScrollView`, and only when the content overflows.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_width: Option<f32>,
@@ -444,6 +449,7 @@ fn node(host: &WatchHost, id: NodeId, overlays: &mut Vec<Node>) -> Option<Node> 
         buttons: strings_of(host, id, "buttons"),
         presentation: string_of(host, id, "presentation"),
         transition: string_of(host, id, "transition"),
+        clip: source.clip,
         content_width: content.map(|c| c.0),
         content_height: content.map(|c| c.1),
         listens,

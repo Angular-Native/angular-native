@@ -41,6 +41,11 @@ struct TreeRecorder {
     pannable: Vec<NodeId>,
     scrollable: Vec<NodeId>,
     backable: Vec<NodeId>,
+    /// Which nodes keep their children inside their own frame. Written down
+    /// because "it clips" is otherwise invisible in a dump: a node that leaks
+    /// its children and one that does not have identical frames, and the
+    /// difference only shows up on a screen.
+    clips: std::collections::HashSet<NodeId>,
     /// So it can be claimed that scrolling creates no views.
     created: usize,
     destroyed: usize,
@@ -61,6 +66,13 @@ impl HostRenderer for TreeRecorder {
         self.props.remove(&id);
         for children in self.order.values_mut() {
             children.retain(|child| *child != id);
+        }
+    }
+    fn set_clip(&mut self, id: NodeId, clip: bool) {
+        if clip {
+            self.clips.insert(id);
+        } else {
+            self.clips.remove(&id);
         }
     }
     fn insert(&mut self, parent: NodeId, child: NodeId, index: u32) {
@@ -421,6 +433,7 @@ fn print_node(host: &TreeRecorder, id: NodeId, depth: usize) {
         .get(&id)
         .map(|(w, h)| format!("  content {w:.0}x{h:.0}"))
         .unwrap_or_default();
+    let clip = if host.clips.contains(&id) { "  clip" } else { "" };
     // The transforms are printed sorted: they are a map, and unsorted the
     // output would change from one run to the next and could not be checked.
     // The props are printed sorted for the same reason as the transforms: they
@@ -449,7 +462,7 @@ fn print_node(host: &TreeRecorder, id: NodeId, depth: usize) {
         })
         .unwrap_or_default();
     println!(
-        "{:indent$}{kind}#{id} [{:.0},{:.0} {:.0}x{:.0}]{content}{transform}{text}{props}",
+        "{:indent$}{kind}#{id} [{:.0},{:.0} {:.0}x{:.0}]{clip}{content}{transform}{text}{props}",
         "",
         rect.x,
         rect.y,

@@ -1863,6 +1863,19 @@ impl HostRenderer for AppKitHost {
         });
     }
 
+    fn set_clip(&mut self, id: NodeId, clip: bool) {
+        // AppKit has no `clipsToBounds`: a view clips when its layer masks to
+        // its bounds, which is also what a corner radius needs, so the two are
+        // decided together rather than one overwriting the other.
+        let Some(view) = self.views.get(&id) else { return };
+        let native = view.as_view();
+        native.setWantsLayer(true);
+        if let Some(layer) = unsafe { native.layer() } {
+            let rounded = layer.cornerRadius() > 0.0;
+            layer.setMasksToBounds(clip || rounded);
+        }
+    }
+
     fn set_root(&mut self, id: NodeId) {
         let Some(view) = self.views.get(&id) else { return };
         let native = view.as_view();

@@ -311,6 +311,22 @@ impl Default for LayoutStyle {
 }
 
 impl LayoutStyle {
+    /// Whether this node keeps its children inside its own frame.
+    ///
+    /// `hidden` and `scroll` both clip, and they clip for the same reason: the
+    /// node's box is the whole of what it may paint. The difference between
+    /// them is whether what does not fit can be reached by dragging, which is
+    /// the host's business and not the layout's.
+    ///
+    /// It is read out here rather than in the core so that there is one
+    /// definition of "clips" and taffy's own enum stays behind this crate's
+    /// door.
+    pub fn clips(&self) -> bool {
+        use taffy::style::Overflow;
+        matches!(self.0.overflow.x, Overflow::Hidden | Overflow::Scroll)
+            || matches!(self.0.overflow.y, Overflow::Hidden | Overflow::Scroll)
+    }
+
     /// Applies a prop. Returns `true` if the style really did change (the
     /// caller uses this to avoid dirtying layout for nothing).
     pub fn set(&mut self, key: StyleKey, value: StyleValue) -> bool {

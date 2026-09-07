@@ -210,6 +210,10 @@ impl HostRenderer for JniHost {
         );
     }
 
+    fn set_clip(&mut self, id: NodeId, clip: bool) {
+        self.call("setClip", "(IZ)V", &[JValue::Int(id as i32), JValue::Bool(clip)]);
+    }
+
     fn set_root(&mut self, id: NodeId) {
         self.call("setRoot", "(I)V", &[JValue::Int(id as i32)]);
     }

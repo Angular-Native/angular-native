@@ -37,6 +37,18 @@ pub trait HostRenderer {
     fn set_content_size(&mut self, id: NodeId, width: f32, height: f32) {
         let _ = (id, width, height);
     }
+    /// Whether this node keeps its children inside its own frame.
+    ///
+    /// It arrives once per node with the first layout and again whenever it
+    /// changes. The root always arrives as `true`: it is the app's body, and a
+    /// body that does not clip is a canvas — content dragged past its edge
+    /// keeps existing off-screen, which is how a list can be scrolled until
+    /// there is nothing left to look at.
+    ///
+    /// There is no default here on purpose. A host that ignores this paints
+    /// children outside their parents and nothing says so, which is exactly the
+    /// class of silent gap this project refuses everywhere else.
+    fn set_clip(&mut self, id: NodeId, clip: bool);
     fn set_root(&mut self, id: NodeId);
     /// Called once per frame, after all the ops have been applied.
     fn flush(&mut self) {}
@@ -186,6 +198,7 @@ impl<H: HostRenderer> MountSide<H> {
                     self.host.set_listener(*id, event, *enabled)
                 }
                 MountOp::SetLayout { id, frame } => self.host.set_layout(*id, *frame),
+                MountOp::SetClip { id, clip } => self.host.set_clip(*id, *clip),
                 MountOp::SetContentSize { id, width, height } => {
                     self.host.set_content_size(*id, *width, *height)
                 }
@@ -320,6 +333,9 @@ impl HostRenderer for RecordingHost {
     }
     fn set_content_size(&mut self, id: NodeId, width: f32, height: f32) {
         self.log.push(format!("content {id} {width}x{height}"));
+    }
+    fn set_clip(&mut self, id: NodeId, clip: bool) {
+        self.log.push(format!("clip {id} {clip}"));
     }
     fn set_root(&mut self, id: NodeId) {
         self.log.push(format!("root {id}"));

@@ -871,6 +871,39 @@ public final class AnHost {
         content.requestLayout();
     }
 
+    /**
+     * Whether this node keeps its children inside its own frame.
+     *
+     * <p>Android clips a {@code ViewGroup}'s children by default and this shell
+     * has always relied on that, so what arrives here can only ever tighten:
+     * {@code clip} true is applied, {@code clip} false is not. The reason is
+     * not timidity, it is that {@code overflow: visible} has never worked on
+     * this host — turning it on now would not be honouring a style, it would be
+     * a new feature arriving as a side effect of a bug fix, and every layout
+     * built against the old behaviour would start leaking children.
+     *
+     * <p>The gap is real and it is written down: see the styles reference. What
+     * matters for the bug this exists to fix — the root, and anything scrollable
+     * — clips on every host.
+     *
+     * <p>{@code setClipToOutline} goes with it because a rounded background is
+     * drawn as an outline: without it a child paints over the corner it was
+     * supposed to be tucked behind.
+     */
+    public void setClip(int id, boolean clip) {
+        if (!clip) {
+            return;
+        }
+        View view = views.get(id);
+        if (view == null) {
+            return;
+        }
+        if (view instanceof ViewGroup) {
+            ((ViewGroup) view).setClipChildren(true);
+        }
+        view.setClipToOutline(true);
+    }
+
     /** Called once per frame, once every op has been applied. */
     public void flush() {
         container.requestLayout();

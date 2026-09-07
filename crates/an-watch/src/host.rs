@@ -36,6 +36,9 @@ pub struct WatchNode {
     pub text: Option<String>,
     pub frame: Rect,
     pub content_size: Option<(f32, f32)>,
+    /// Whether this node keeps its children inside its own frame. It travels in
+    /// the snapshot and the SwiftUI side turns it into `.clipped()`.
+    pub clip: bool,
     pub listeners: HashSet<String>,
 }
 
@@ -205,6 +208,14 @@ impl HostRenderer for WatchHost {
 
     fn set_content_size(&mut self, id: NodeId, width: f32, height: f32) {
         self.entry(id).content_size = Some((width, height));
+        self.dirty = true;
+    }
+
+    fn set_clip(&mut self, id: NodeId, clip: bool) {
+        // This host mounts no views: the tree is mirrored into a model SwiftUI
+        // redraws, so the flag travels in the snapshot and the Swift side turns
+        // it into `.clipped()`. Storing it here is the whole of the work.
+        self.entry(id).clip = clip;
         self.dirty = true;
     }
 

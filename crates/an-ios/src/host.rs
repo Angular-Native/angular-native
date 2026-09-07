@@ -494,6 +494,18 @@ impl Default for Transform {
 }
 
 impl Transform {
+    /// Whether this view is being drawn where layout put it.
+    ///
+    /// It matters because UIKit says so: with a transform applied, `frame` is
+    /// documented as undefined and must not be assigned. See `set_layout`.
+    fn is_identity(&self) -> bool {
+        self.translate_x == 0.0
+            && self.translate_y == 0.0
+            && self.scale_x == 1.0
+            && self.scale_y == 1.0
+            && self.rotate == 0.0
+    }
+
     /// The order is scale, rotate, then translate.
     ///
     /// The other way round does not come out the same: if the translation goes
@@ -647,6 +659,11 @@ pub struct UikitHost {
     leaving: Vec<(NodeId, Retained<UIView>)>,
     /// Nodes whose view is animating out: `destroy` must not touch them.
     animating_out: std::collections::HashSet<NodeId>,
+    /// What layout asked for, per node: whether the node keeps its children
+    /// inside its own frame. A corner radius clips too, so the value actually
+    /// given to UIKit is the two of them together — kept here so that setting
+    /// one never silently undoes the other.
+    clips: HashMap<NodeId, bool>,
     /// The nodes subscribed to the safe area, with the last insets they were
     /// told about. They are only notified when those really change.
     safe_area: HashMap<NodeId, [f32; 4]>,
@@ -713,6 +730,7 @@ impl UikitHost {
             entering: Vec::new(),
             leaving: Vec::new(),
             animating_out: std::collections::HashSet::new(),
+            clips: HashMap::new(),
             safe_area: HashMap::new(),
             keyboard,
             alerts: HashMap::new(),
@@ -1249,7 +1267,11 @@ impl UikitHost {
             // being thread-safe, and here we are always on the UI thread.
             unsafe { layer.setMask(None) };
             layer.setCornerRadius(radii[0]);
-            native.setClipsToBounds(radii[0] > 0.0);
+            // Either reason to clip is enough, and neither may cancel the
+            // other: a rounded view still clips when layout did not ask, and a
+            // square one still clips when layout did.
+            let wanted = self.clips.get(&id).copied().unwrap_or(false);
+            native.setClipsToBounds(radii[0] > 0.0 || wanted);
             return;
         }
 
@@ -1309,7 +1331,18 @@ impl HostRenderer for UikitHost {
                 unsafe { label.setFont(Some(&UIFont::systemFontOfSize(default_size))) };
                 HostView::Label(label)
             }
-            NodeKind::Image => HostView::Image(UIImageView::new(mtm)),
+            NodeKind::Image => {
+                let image = UIImageView::new(mtm);
+                // `cover` is `ScaleAspectFill`, and an aspect-fill image view
+                // draws **outside** its frame unless it is told not to: the
+                // overflowing edge lands on whatever the layout put next to it,
+                // which in a card is the caption underneath. Layout's own
+                // `overflow` does not reach here — it is resolved in taffy and
+                // no host reads it — so the clip is set on the view itself,
+                // where it is true of every image regardless of the style.
+                image.setClipsToBounds(true);
+                HostView::Image(image)
+            }
             NodeKind::Icon => {
                 let view = UIImageView::new(mtm);
                 // `AlwaysTemplate` is what allows the symbol to be tinted
@@ -1418,7 +1451,18 @@ impl HostRenderer for UikitHost {
                 HostView::Segments(objc2_ui_kit::UISegmentedControl::new(mtm))
             }
             NodeKind::Stepper => HostView::Step(objc2_ui_kit::UIStepper::new(mtm)),
-            NodeKind::SearchBar => HostView::Search(objc2_ui_kit::UISearchBar::new(mtm)),
+            NodeKind::SearchBar => {
+                let search = objc2_ui_kit::UISearchBar::new(mtm);
+                // `.minimal` is the field on its own. The default style draws a
+                // bar behind it — a chrome background from the days when a
+                // search bar sat under a navigation bar and had to match it —
+                // and on any page that is not exactly that grey it reads as a
+                // rectangle somebody forgot to remove. The field itself is
+                // unchanged, including its placeholder, its magnifier and its
+                // clear button.
+                search.setSearchBarStyle(objc2_ui_kit::UISearchBarStyle::Minimal);
+                HostView::Search(search)
+            }
             NodeKind::Picker => {
                 // A drop-down on iOS is a button that opens a menu: there is
                 // no separate control, and `UIPickerView` is the full-screen
@@ -2490,7 +2534,32 @@ impl HostRenderer for UikitHost {
             origin: CGPoint { x: frame.x as f64, y: frame.y as f64 },
             size: CGSize { width: frame.width as f64, height: frame.height as f64 },
         };
-        self.animated(id, move || native.setFrame(rect));
+        // `frame` is only meaningful while the transform is the identity. UIKit
+        // documents it plainly: with a transform applied the value of `frame`
+        // is undefined and must not be set, because it is *derived* from
+        // `bounds`, `center` and the transform together. Assigning it anyway
+        // makes UIKit solve for a centre using the transformed size, and the
+        // view ends up somewhere it was never asked to be.
+        //
+        // A carousel is where this shows: the row carries a `translateX`, the
+        // next commit sets its frame, and from then on it is drawn from a
+        // corrupted origin — the page will not move again in either direction.
+        // So a transformed view is positioned the way UIKit expects, through
+        // `bounds` and `center`, and the transform is left alone.
+        if self.transforms.get(&id).is_some_and(|t| !t.is_identity()) {
+            let mut bounds = native.bounds();
+            bounds.size = rect.size;
+            let centre = CGPoint {
+                x: rect.origin.x + rect.size.width / 2.0,
+                y: rect.origin.y + rect.size.height / 2.0,
+            };
+            self.animated(id, move || {
+                native.setBounds(bounds);
+                native.setCenter(centre);
+            });
+        } else {
+            self.animated(id, move || native.setFrame(rect));
+        }
         if self.safe_area.contains_key(&id) {
             self.report_safe_area(id);
         }
@@ -2517,7 +2586,26 @@ impl HostRenderer for UikitHost {
 
     fn set_content_size(&mut self, id: NodeId, width: f32, height: f32) {
         if let Some(HostView::Scroll(scroll)) = self.views.get(&id) {
-            scroll.setContentSize(CGSize { width: width as f64, height: height as f64 });
+            // Never wider than the scroll view itself. The core already clamps
+            // this, and it is clamped again here because the consequence is out
+            // of all proportion to the mistake: a `UIScrollView` scrolls on
+            // whichever axis its content is bigger, so a content width a few
+            // points over -- one image reporting its intrinsic size into a row
+            // -- turns the whole page into something that can be dragged
+            // sideways until the screen is empty. This engine overflows
+            // downwards only, and that is enforced where the scrolling happens.
+            let bounds = scroll.bounds().size.width;
+            let width = if bounds > 0.0 { (width as f64).min(bounds) } else { width as f64 };
+            scroll.setContentSize(CGSize { width, height: height as f64 });
+        }
+    }
+
+    fn set_clip(&mut self, id: NodeId, clip: bool) {
+        self.clips.insert(id, clip);
+        let radii = self.corners.get(&id).copied().unwrap_or([0.0; 4]);
+        let rounded = radii.iter().any(|r| *r > 0.0);
+        if let Some(view) = self.views.get(&id) {
+            view.as_view().setClipsToBounds(clip || rounded);
         }
     }
 

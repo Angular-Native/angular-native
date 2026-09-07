@@ -58,6 +58,13 @@ pub enum MountOp {
     SetLayout { id: NodeId, frame: Rect },
     /// Content size of a scrollable node, when it overflows its frame.
     SetContentSize { id: NodeId, width: f32, height: f32 },
+    /// Whether this node keeps its children inside its own frame.
+    ///
+    /// Without this the host never learns that a node clips: `overflow` is
+    /// resolved in taffy and stops there, so a view whose children stick out
+    /// paints them over its neighbours and the app behaves like a canvas
+    /// rather than a page. The root always clips — it is the body.
+    SetClip { id: NodeId, clip: bool },
     SetRoot { id: NodeId },
 }
 
@@ -84,6 +91,9 @@ struct Node {
     frame: Rect,
     /// Scrollable nodes only.
     content: (f32, f32),
+    /// What was last sent to the host. `None` until the first frame, so the
+    /// initial value is always sent even when it is `false`.
+    clip: Option<bool>,
     /// `false` until the first layout: forces an initial `SetLayout` even when
     /// the frame that came out is (0,0,0,0).
     laid_out: bool,
@@ -100,6 +110,7 @@ impl Node {
             text: String::new(),
             frame: Rect::default(),
             content: (0.0, 0.0),
+            clip: None,
             laid_out: false,
         }
     }
@@ -546,15 +557,42 @@ impl ShadowTree {
             let frame = self.layout.layout(id).map_err(|e| Error::Layout(format!("{e:?}")))?;
             let scrollable = node.kind.is_scrollable();
             let content = if scrollable {
-                self.layout.content_size(id).map_err(|e| Error::Layout(format!("{e:?}")))?
+                let (w, h) =
+                    self.layout.content_size(id).map_err(|e| Error::Layout(format!("{e:?}")))?;
+                // The width is clamped to the scroll view's own, because this
+                // engine only overflows downwards: `contentSize` is computed
+                // that way and there is no horizontal scrolling to go with it.
+                //
+                // Reporting a wider content than that does not add a feature,
+                // it takes one away. A `UIScrollView` scrolls on whichever axis
+                // its content is bigger, so a row that came out a few points
+                // too wide — one image reporting its intrinsic size, say — lets
+                // the whole page be dragged sideways into nothing, and the app
+                // looks like it emptied itself. Vertically the overflow is the
+                // point; horizontally it is always a mistake somewhere else,
+                // and it should show up as a clipped edge rather than as a
+                // screen that can be swiped away.
+                (w.min(frame.width), h)
             } else {
                 (0.0, 0.0)
             };
+            // The root is the app's body, so it always clips: whatever a
+            // template does, nothing it contains may be painted outside the
+            // window. Everywhere else it is the resolved `overflow` that says.
+            let clip = id == root || self.nodes[id as usize]
+                .as_ref()
+                .expect("checked above")
+                .style
+                .clips();
             let node = self.nodes[id as usize].as_mut().expect("checked above");
             if !node.laid_out || node.frame != frame {
                 node.frame = frame;
                 node.laid_out = true;
                 ops.push(MountOp::SetLayout { id, frame });
+            }
+            if node.clip != Some(clip) {
+                node.clip = Some(clip);
+                ops.push(MountOp::SetClip { id, clip });
             }
             if scrollable && node.content != content {
                 node.content = content;
