@@ -42,8 +42,11 @@ rather than the first call at run time:
 | `permission()` | `Promise<LocationPermission>` |  |
 | `request()` | `Promise<LocationPermission>` | Asks, if there is anything to ask, and waits for the answer. |
 | `current(timeoutMs = 10_000)` | `Promise<Position>` | One fix. |
+| `watch(onFix, options: WatchOptions = {})` | `() => void` | A stream of fixes. Call what it returns to stop. |
 
-Every method is a call across the bridge, so every one returns a promise, and
-every failure is a rejection that names what was asked for. See
+`watch` is the exception to the rule below: it is a subscription, so it returns
+the function that ends it and not a promise. Every other method is a call across
+the bridge, so it returns a promise, and every failure is a rejection that names
+what was asked for. See
 [Native modules](/reference/native-modules/) for what crosses and what a
 rejection looks like.

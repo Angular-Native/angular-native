@@ -32,11 +32,11 @@ React Native means editing the Xcode project and `settings.gradle` from a
 script. Here the build was already "read some paths and hand them to `swiftc`
 and `javac`", so a plugin is a few more paths.
 
-:::note[This is native modules, not native views]
-JS calls a method and gets a promise. What is **not** in yet is plugins
-contributing *views* — a plugin bringing an `<an-camera>` that mounts in the
-tree — because that means opening the core's `NodeKind` to names it does not
-know at compile time. See [What is missing](#what-is-missing).
+:::note[Mostly methods, and one view]
+A plugin is native modules first: JS calls a method and gets a promise. It can
+also contribute **one** kind of thing to the tree — a view mounted through
+`<an-custom>` — and that hole is deliberately exactly one hole wide. See
+[A view a plugin brings](#a-view-a-plugin-brings).
 :::
 
 ## The contract
@@ -92,7 +92,7 @@ The `plist`, `entitlements` and `manifest` sections have a page of their own:
 
 ## What ships
 
-Eight plugins live in this repository. They are published like any other, and
+Nine plugins live in this repository. They are published like any other, and
 they are also the worked examples: each one is a real answer to a real platform
 question rather than a stub, and where a platform cannot do the thing, the
 refusal says why.
@@ -517,10 +517,11 @@ A method with no canned answer is rejected too, with the method's name in it.
 
 ## What is missing
 
-- **Native views.** A plugin can contribute methods, not primitives. For it to
-  bring an `<an-camera>` that mounts in the tree, the core's `NodeKind` would
-  have to open up to names it does not know at compile time, and all the hosts
-  would have to build a view that is not theirs. That is the big piece.
+- **A plugin view is not a primitive.** `<an-custom>` mounts one, but it is
+  never measured by its content, it does not exist on watchOS, and it has no
+  props of its own beyond the box the layout gives it. A plugin cannot add a
+  control the framework mounts on every host —
+  [the section above](#a-view-a-plugin-brings) says why that stays closed.
 - **Kotlin.** The Android shell is Java compiled with `javac` against
   `android.jar`; there is no Gradle here, and without Gradle no `kotlinc` comes
   for free. A plugin with `.kt` sources **stops the build** and says so, rather

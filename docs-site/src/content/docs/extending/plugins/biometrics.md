@@ -29,7 +29,7 @@ rather than the first call at run time:
 
 | Method | Returns | |
 |---|---|---|
-| `availability()` | `Promise<BiometricAvailability>` | Whether biometrics can be asked for, without asking for them: it shows no |
+| `availability()` | `Promise<BiometricAvailability>` | Whether biometrics can be asked for, without asking for them: it presents no dialog.  |
 | `authenticate(request: BiometricRequest)` | `Promise<BiometricResult>` |  |
 
 Every method is a call across the bridge, so every one returns a promise, and
