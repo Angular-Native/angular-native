@@ -1,0 +1,72 @@
+# Publishing the documentation site.
+#
+# The site is built here and pushed as plain files to
+# `Angular-Native/Angular-Native.github.io`, which is what GitHub Pages serves
+# at the root of the org's address. It is a second repository and not Pages on
+# this one because Pages on a project repository serves under `/angular-native/`,
+# and a base path would have to be threaded through every absolute link in the
+# content — and then unthreaded again the day the site moves to its own domain.
+# Served at a root, moving it is editing `DOCS_URL` and nothing else.
+#
+# The push uses a deploy key that is write-only on that one repository, so this
+# workflow cannot reach anything else in the org.
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs-site/**'
+      - 'DOCS_URL'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: docs
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci --prefix docs-site
+
+      # The same gate the `check` workflow runs, because a site that publishes
+      # a stale link is exactly the failure `DOCS_URL` exists to prevent.
+      - run: ./scripts/check-docs-url.sh
+
+      # `npm run check` builds and then walks every internal link, so the build
+      # this publishes is one that has already been checked.
+      - run: npm run check --prefix docs-site
+
+      - name: Publish to Angular-Native.github.io
+        env:
+          DEPLOY_KEY: ${{ secrets.DOCS_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/docs_deploy
+          chmod 600 ~/.ssh/docs_deploy
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/docs_deploy -o IdentitiesOnly=yes"
+
+          # The published repository holds output and no history worth keeping:
+          # every deployment is one commit that replaces the last, so the site's
+          # repository stays the size of the site.
+          cd docs-site/dist
+          git init -q -b main
+          git config user.name 'angular-native docs'
+          git config user.email 'docs@users.noreply.github.com'
+          git add -A
+          git commit -q -m "The documentation site, built from angular-native@${GITHUB_SHA::7}"
+          git push -q --force \
+            git@github.com:Angular-Native/Angular-Native.github.io.git main

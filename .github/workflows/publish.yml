@@ -1,0 +1,35 @@
+# Publishing the npm packages, on a tag.
+#
+# The packages are built the same way `an init` vendors them — `ngc` in partial
+# mode — because two ways of building them would be two ways for them to differ.
+# `check-publish.sh` runs first: `npm publish` will happily ship a tarball with
+# no code in it, and a version number cannot be reused once it is taken.
+name: publish
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: node scripts/build-packages.mjs
+      - run: ./scripts/check-publish.sh
+      - name: Publish
+        run: |
+          for dir in packages/*/; do
+            npm publish "$dir" --provenance --access public || exit 1
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

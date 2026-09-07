@@ -1,7 +1,7 @@
 {
-  "name": "@angular-native/plugin-keychain",
+  "name": "@angular-native/plugin-geolocation",
   "version": "0.0.1",
-  "description": "The keychain and the Android keystore, as an angular-native plugin.",
+  "description": "Where the device is — CLLocationManager and Android's LocationManager, as an angular-native plugin.",
   "type": "module",
   "main": "src/public-api.ts",
   "exports": {
@@ -30,7 +30,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/nesgarbo/angular-native.git",
-    "directory": "packages/plugin-keychain"
+    "directory": "packages/plugin-geolocation"
   },
   "license": "MIT",
   "author": "Néstor García Bou",
@@ -47,49 +47,40 @@
     "@angular/core": ">=22.0.0"
   },
   "angularNative": {
-    "module": "keychain",
+    "module": "geolocation",
     "entry": "src/public-api.ts",
     "ios": {
-      "sources": "native/ios",
-      "register": "AnKeychainPlugin",
+      "sources": "native/apple",
+      "register": "AnGeolocationPlugin",
       "plist": {
-        "NSFaceIDUsageDescription": "To check it is you before showing what is stored."
+        "NSLocationWhenInUseUsageDescription": "To show you what is around you."
+      }
+    },
+    "macos": {
+      "sources": "native/apple",
+      "register": "AnGeolocationPlugin",
+      "plist": {
+        "NSLocationUsageDescription": "To show you what is around you."
       },
       "entitlements": {
-        "keychain-access-groups": [
-          "$(BUNDLE_ID)"
-        ]
+        "com.apple.security.personal-information.location": true
       }
     },
     "android": {
       "sources": "native/android",
-      "register": "dev.angularnative.plugins.KeychainPlugin",
+      "register": "dev.angularnative.plugins.GeolocationPlugin",
       "manifest": {
         "uses-permission": [
-          "android.permission.USE_BIOMETRIC"
+          "android.permission.ACCESS_COARSE_LOCATION",
+          "android.permission.ACCESS_FINE_LOCATION"
         ],
         "uses-feature": {
-          "android.hardware.fingerprint": false
+          "android.hardware.location": false
         }
       }
     },
-    "macos": {
-      "sources": "native/macos",
-      "register": "AnKeychainPlugin",
-      "entitlements": {
-        "keychain-access-groups": [
-          "$(BUNDLE_ID)"
-        ]
-      }
-    },
     "watchos": {
-      "sources": "native/watchos",
-      "register": "AnKeychainPlugin",
-      "entitlements": {
-        "keychain-access-groups": [
-          "$(BUNDLE_ID)"
-        ]
-      }
+      "unsupported": "watchOS does have CoreLocation, but a watch app that wants a fix has to declare a background mode and hold a session open: that is a different feature with a different lifecycle, not the same call on a smaller screen. A watch app that needs a position should ask the paired phone for it."
     }
   }
 }

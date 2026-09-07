@@ -1,0 +1,45 @@
+{
+  "name": "@angular-native/plugin-preferences",
+  "version": "0.0.1",
+  "description": "Small values that outlive the app being closed — UserDefaults and SharedPreferences, as an angular-native plugin.",
+  "type": "module",
+  "main": "src/public-api.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/public-api.d.ts",
+      "default": "./dist/public-api.js"
+    }
+  },
+  "types": "dist/public-api.d.ts",
+  "files": ["dist", "native", "README.md"],
+  "sideEffects": false,
+  "keywords": ["angular", "native", "ios", "android", "rust", "no-webview", "angular-native", "plugin"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nesgarbo/angular-native.git",
+    "directory": "packages/plugin-preferences"
+  },
+  "license": "MIT",
+  "author": "Néstor García Bou",
+  "homepage": "https://angular-native.github.io",
+  "bugs": { "url": "https://github.com/nesgarbo/angular-native/issues" },
+  "publishConfig": {
+    "access": "public",
+    "main": "dist/public-api.js",
+    "module": "dist/public-api.js"
+  },
+  "peerDependencies": {
+    "@angular/core": ">=22.0.0"
+  },
+  "angularNative": {
+    "module": "preferences",
+    "entry": "src/public-api.ts",
+    "ios": { "sources": "native/apple", "register": "AnPreferencesPlugin" },
+    "macos": { "sources": "native/apple", "register": "AnPreferencesPlugin" },
+    "watchos": { "sources": "native/apple", "register": "AnPreferencesPlugin" },
+    "android": {
+      "sources": "native/android",
+      "register": "dev.angularnative.plugins.PreferencesPlugin"
+    }
+  }
+}

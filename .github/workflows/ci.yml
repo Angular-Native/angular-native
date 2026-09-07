@@ -1,0 +1,60 @@
+# The device-free half of the suite, on every push.
+#
+# `scripts/check-all.sh` is the gate locally and it is the gate here too: one
+# script rather than a list of steps that can drift from it. It needs macOS —
+# swiftc, the simulators' SDKs and a real `.app` that gets launched and
+# screenshotted are all part of what it checks — so there is no cheaper runner
+# to move it to.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install the Rust targets the checks cross-compile to
+        run: |
+          rustup target add aarch64-apple-ios-sim aarch64-apple-ios
+          rustup toolchain install nightly --component rust-src
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: npm ci
+
+      # The NDK paths in `.cargo/config.toml` are absolute and belong to one
+      # machine, so the Android half cannot run here. It is skipped rather than
+      # faked: a check that cannot do its job says so.
+      - name: Run the device-free suite
+        run: ./scripts/check-all.sh
+
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --prefix docs-site
+      # Every link that leaves the site has to agree with `DOCS_URL`; the docs
+      # job is the cheapest place to say so, and it runs without a Mac.
+      - run: ./scripts/check-docs-url.sh
+      # `npm run check` builds the site and then walks every internal link in
+      # it. A broken link is a broken page, and it is cheap to catch here.
+      - run: npm run check --prefix docs-site

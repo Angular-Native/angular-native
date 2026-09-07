@@ -1,0 +1,36 @@
+{
+  "name": "@angular-native/runtime",
+  "version": "0.0.1",
+  "description": "The JavaScript prelude the engine evaluates first: console, timers, AbortController and the command buffer.",
+  "type": "module",
+  "main": "runtime.js",
+  "exports": {
+    ".": "./runtime.js"
+  },
+  "files": [
+    "runtime.js"
+  ],
+  "keywords": [
+    "angular",
+    "native",
+    "ios",
+    "android",
+    "rust",
+    "no-webview",
+    "angular-native"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nesgarbo/angular-native.git",
+    "directory": "packages/runtime"
+  },
+  "license": "MIT",
+  "author": "Néstor García Bou",
+  "homepage": "https://angular-native.github.io",
+  "bugs": {
+    "url": "https://github.com/nesgarbo/angular-native/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
