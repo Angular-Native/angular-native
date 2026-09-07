@@ -16,20 +16,31 @@
 //         --pack also writes tarballs into build/npm, which is what you upload.
 
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, copyFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 // In dependency order: a package is compiled against the `.d.ts` of the ones
-// before it, so `primitives` cannot come after `platform`.
+// before it, so `primitives` cannot come after `platform`. The plugins are
+// discovered rather than listed, because a list is a thing to forget — adding a
+// plugin and not adding it here produced a package that published with no code
+// in it, which `check-publish.sh` now catches but should not have to.
 const ORDER = [
   'primitives',
   'platform-native',
-  'plugin-clipboard',
-  'plugin-biometrics',
-  'plugin-keychain'
+  ...readdirSync(join(root, 'packages'))
+    .filter((name) => name.startsWith('plugin-'))
+    .sort()
 ]
 
 const ALIASES = {

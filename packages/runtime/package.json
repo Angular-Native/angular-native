@@ -21,14 +21,14 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nesgarbo/angular-native.git",
+    "url": "git+https://github.com/Angular-Native/angular-native.git",
     "directory": "packages/runtime"
   },
   "license": "MIT",
   "author": "Néstor García Bou",
   "homepage": "https://angular-native.github.io",
   "bugs": {
-    "url": "https://github.com/nesgarbo/angular-native/issues"
+    "url": "https://github.com/Angular-Native/angular-native/issues"
   },
   "publishConfig": {
     "access": "public"
