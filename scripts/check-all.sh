@@ -17,6 +17,10 @@ cd "$ROOT"
 echo "== duplicated lists"
 "$ROOT/scripts/check-styles.sh"
 "$ROOT/scripts/check-kinds.sh"
+# The site's address is a duplicated list too — one entry, written out in four
+# languages — and a stale link is the one kind of drift a reader hits before we
+# do. It costs nothing, so it runs first.
+"$ROOT/scripts/check-docs-url.sh"
 
 echo
 "$ROOT/scripts/check-signals.sh"
@@ -31,6 +35,9 @@ cargo test --quiet 2>&1 | tail -1
 
 "$ROOT/scripts/check-angular.sh"
 "$ROOT/scripts/check-list.sh"
+"$ROOT/scripts/check-clip.sh"
+"$ROOT/scripts/check-publish.sh"
+"$ROOT/scripts/check-plugin-sources.sh"
 "$ROOT/scripts/check-router.sh"
 "$ROOT/scripts/check-controls.sh"
 "$ROOT/scripts/check-measure.sh"

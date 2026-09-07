@@ -1,0 +1,13 @@
+{
+  "name": "@angular-native/example-plugins",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@angular-native/plugin-biometrics": "*",
+    "@angular-native/plugin-clipboard": "*",
+    "@angular-native/plugin-geolocation": "*",
+    "@angular-native/plugin-keychain": "*",
+    "@angular-native/plugin-preferences": "*"
+  }
+}
