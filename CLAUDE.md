@@ -138,8 +138,11 @@ it is the fastest way to find out which:
 
 ### Things that will bite
 
-- **`.cargo/config.toml` is committed with absolute NDK paths** for this
-  machine. An Android build on another machine needs those rewritten.
+- **The Android cross-compilation settings are discovered, not committed.**
+  `Sdk::cargo_env` works out where the NDK is, which version and what this host
+  is called, and hands them to the `cargo` it spawns; `.cargo/config.toml`
+  holds only the `cargo an` alias, and `check-cargo-config.sh` keeps it that
+  way. Set `ANDROID_NDK_HOME` to use one that is not under `<sdk>/ndk`.
 - **The TV, the headset and both Apple watches need nightly with `rust-src`**:
   `aarch64-apple-tvos-sim`, `-visionos-sim` and `-watchos-sim` are tier 3 and
   their `std` is built on the spot. `rust-toolchain.toml` pins stable + the two

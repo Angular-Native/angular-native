@@ -15,7 +15,7 @@ your repository is a small manifest.
 cargo install --path crates/an-cli
 ```
 
-There are **twelve commands** and no nested subcommands. Every option is
+There are **thirteen commands** and no nested subcommands. Every option is
 long-form — there are no short flags anywhere in the CLI.
 
 | Command | What it does |
@@ -30,6 +30,7 @@ long-form — there are no short flags anywhere in the CLI.
 | `an macos [APP]` | Builds a `.app` and opens it on this machine. |
 | `an android [APP]` | Builds an APK and installs it on a connected phone. |
 | `an wearos [APP]` | The same, for a device shaped like a watch. |
+| `an env <PLATFORM>` | Prints the environment a cross-compilation needs. |
 | `an plugins [APP]` | Lists the plugins an app pulls in, and optionally checks one platform. |
 | `an dev [APP]` | Serves the bundle, watches, and hot-refreshes the running app. |
 
@@ -128,6 +129,28 @@ What it does **not** do is paint the screen. That is the app's own background,
 and the appearance is what the system's own controls follow: dialogs, date
 pickers, selection handles. An app that follows the device has to paint with
 the device too.
+
+## `an env`
+
+```bash
+$(an env android) cargo build --target aarch64-linux-android -p an-android
+```
+
+Nobody needs this for an ordinary build: `an android` sets the same things on
+the `cargo` it spawns. It exists because those settings stopped being a
+committed `.cargo/config.toml` — they hold this machine's NDK path, its
+version and this host's name, none of which belongs in a file everybody clones
+— and something still has to hand them to a `cargo` that is not `an`'s: a
+check script, a CI job, an editor cross-checking.
+
+It prints an **`env` prefix** rather than a list of `export`s, and that is not
+a style choice. Most of the names carry the target triple with its hyphens, and
+a shell cannot export one of those — `export CC_aarch64-linux-android=…` is
+`not a valid identifier`. Nor can the hyphens be swapped for underscores to
+suit it: `cc` would take either, and **bindgen reads only the hyphenated
+form**, so a build that looked fixed would go back to asking Apple's clang to
+compile for Android and failing to find `stdio.h`. `env` takes `NAME=VALUE` as
+arguments and has no opinion about identifiers.
 
 ## The build-and-run commands
 

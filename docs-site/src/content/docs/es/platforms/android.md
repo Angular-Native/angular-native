@@ -15,7 +15,15 @@ an dev --android                # lo mismo, vigilando, con recarga en caliente
 ```
 
 El SDK de Android y el NDK se encuentran a través de `ANDROID_HOME`,
-`ANDROID_SDK_ROOT` o su ubicación habitual. Material 3 se resuelve una vez:
+`ANDROID_SDK_ROOT` o su ubicación habitual — y `ANDROID_NDK_HOME` para un NDK
+que no esté bajo `<sdk>/ndk`. De ellos no hay nada commiteado: la versión y el
+nombre del host (`darwin-x86_64`, `linux-x86_64`) se leen del disco, y el
+linker, el archivador y el sysroot de bindgen le llegan a `cargo` como entorno.
+`.cargo/config.toml` llevaba todo eso escrito hasta hace poco, lo que
+significaba que una compilación de Android funcionaba en la máquina de quien
+escribió el fichero y en ninguna otra.
+
+Material 3 se resuelve una vez:
 
 ```bash
 python3 scripts/fetch-android-deps.py

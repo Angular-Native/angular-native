@@ -15,7 +15,7 @@ deja en tu repositorio es un manifiesto pequeño.
 cargo install --path crates/an-cli
 ```
 
-Hay **doce comandos** y ningún subcomando anidado. Todas las opciones son de
+Hay **trece comandos** y ningún subcomando anidado. Todas las opciones son de
 forma larga: en todo el CLI no hay ni una bandera corta.
 
 | Comando | Qué hace |
@@ -30,6 +30,7 @@ forma larga: en todo el CLI no hay ni una bandera corta.
 | `an macos [APP]` | Construye un `.app` y lo abre en esta máquina. |
 | `an android [APP]` | Construye un APK y lo instala en un móvil conectado. |
 | `an wearos [APP]` | Lo mismo, para un dispositivo con forma de reloj. |
+| `an env <PLATAFORMA>` | Imprime el entorno que necesita una compilación cruzada. |
 | `an plugins [APP]` | Lista los plugins que arrastra una app, y opcionalmente comprueba una plataforma. |
 | `an dev [APP]` | Sirve el bundle, vigila, y recarga en caliente la app en marcha. |
 
@@ -128,6 +129,29 @@ Lo que **no** hace es pintar la pantalla. Eso es el fondo de la propia app, y
 la apariencia es lo que siguen los controles del sistema: diálogos, selectores
 de fecha, los tiradores de selección. Una app que siga al dispositivo tiene que
 pintar con el dispositivo también.
+
+## `an env`
+
+```bash
+$(an env android) cargo build --target aarch64-linux-android -p an-android
+```
+
+Para una compilación normal no lo necesita nadie: `an android` pone esas mismas
+cosas en el `cargo` que lanza. Existe porque esos ajustes dejaron de ser un
+`.cargo/config.toml` commiteado —llevan la ruta del NDK de esta máquina, su
+versión y el nombre de este host, y nada de eso pertenece a un fichero que
+clona todo el mundo— y algo tiene que poder pasárselos a un `cargo` que no es
+el de `an`: un script de comprobación, un job de CI, un editor.
+
+Imprime un **prefijo `env`** y no una lista de `export`, y eso no es una
+cuestión de estilo. Casi todos los nombres llevan el triple del target con sus
+guiones, y un shell no puede exportar uno de esos: `export
+CC_aarch64-linux-android=…` es `not a valid identifier`. Tampoco vale cambiar
+los guiones por guiones bajos para contentarlo: `cc` aceptaría cualquiera de
+las dos formas y **bindgen solo lee la de guiones**, así que una compilación
+que pareciera arreglada volvería a pedirle al clang de Apple que compile para
+Android y a no encontrar `stdio.h`. `env` toma `NOMBRE=VALOR` como argumentos y
+no tiene opinión sobre identificadores.
 
 ## Los comandos de compilar y ejecutar
 

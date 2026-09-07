@@ -15,7 +15,14 @@ an dev --android                # the same, watching, with hot refresh
 ```
 
 The Android SDK and the NDK are found through `ANDROID_HOME`, `ANDROID_SDK_ROOT`
-or their usual location. Material 3 is resolved once:
+or their usual location — and `ANDROID_NDK_HOME` for an NDK that is not under
+`<sdk>/ndk`. Nothing about them is committed: the version and the host tag
+(`darwin-x86_64`, `linux-x86_64`) are read off the disk, and the linker, the
+archiver and bindgen's sysroot go to `cargo` as environment. `.cargo/config.toml`
+carried all of it written out until recently, which meant an Android build
+worked on the machine of whoever wrote the file and on no other.
+
+Material 3 is resolved once:
 
 ```bash
 python3 scripts/fetch-android-deps.py

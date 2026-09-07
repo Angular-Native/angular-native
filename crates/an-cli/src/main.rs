@@ -190,6 +190,21 @@ enum Command {
         #[arg(long)]
         platform: Option<PlatformArg>,
     },
+    /// Prints the environment a cross-compilation for Android needs, as an
+    /// `env` prefix to put in front of a command.
+    ///
+    ///     $(an env android) cargo build --target aarch64-linux-android -p an-android
+    ///
+    /// `an android` sets these itself, so nobody needs this for an ordinary
+    /// build. It exists because the settings stopped being a committed
+    /// `.cargo/config.toml` — they hold this machine's NDK path, its version
+    /// and this host's name, none of which belongs in a file everybody clones
+    /// — and something still has to be able to hand them to a `cargo` that is
+    /// not `an`'s: a check script, a CI job, an editor cross-checking.
+    Env {
+        #[arg(value_enum)]
+        platform: EnvPlatform,
+    },
     /// Dev server: it watches the files and reloads the app when you save.
     Dev {
         app: Option<String>,
@@ -245,6 +260,15 @@ enum Command {
     Add {
         platform: String,
     },
+}
+
+/// Which platform's cross-compilation environment to print.
+///
+/// One value today. It is an enum rather than a bare flag so that adding the
+/// Apple ones later is a variant and not a second command.
+#[derive(Clone, Copy, ValueEnum)]
+enum EnvPlatform {
+    Android,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -463,6 +487,37 @@ fn main() -> anyhow::Result<()> {
             let bundle = build::bundle(&workspace, &app, release, &found)?;
             let package = watchos::assemble(&workspace, &bundle, release, None, &found)?;
             watchos::launch(&package, &device)
+        }
+        Command::Env { platform } => {
+            match platform {
+                EnvPlatform::Android => {
+                    let sdk = android::Sdk::discover()?;
+                    let env = sdk.cargo_env();
+                    if env.is_empty() {
+                        anyhow::bail!(
+                            "there is no NDK under {}/ndk, so there is nothing to cross-compile \
+                             with. Install it with `sdkmanager \"ndk;27.1.12297006\"`, or point \
+                             ANDROID_NDK_HOME at one you already have.",
+                            sdk.root.display()
+                        );
+                    }
+                    // An `env` prefix and not a list of `export`s. Most of
+                    // these names carry the target triple with its hyphens,
+                    // and a shell cannot export one of those:
+                    // `export CC_aarch64-linux-android=…` is not a valid
+                    // identifier. `env` takes them as arguments and does not
+                    // care. The names cannot be changed to suit the shell
+                    // either — bindgen reads only the hyphenated form.
+                    let mut line = String::from("env");
+                    for (key, value) in env {
+                        // Single quoted: an NDK under a path with a space in
+                        // it would otherwise be two arguments.
+                        line.push_str(&format!(" '{key}={value}'"));
+                    }
+                    println!("{line}");
+                }
+            }
+            Ok(())
         }
         Command::Android { app, release, no_launch, sign, aab, device } => {
             let app = workspace.app(app.as_deref())?;

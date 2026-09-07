@@ -2,22 +2,17 @@
 # `cargo an dev` instead of `cargo run -q -p an-cli -- dev`.
 an = "run -q -p an-cli --"
 
-# Android: the NDK brings its own clang and its own sysroot. Without this, `cc`
-# looks for an `aarch64-linux-android-clang` that does not exist and QuickJS never
-# gets built. API 24 is the oldest the NDK 27 supports.
-[target.aarch64-linux-android]
-linker = "/Users/nestorgarciabou/Library/Android/sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android24-clang"
-
-[target.armv7-linux-androideabi]
-linker = "/Users/nestorgarciabou/Library/Android/sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/bin/armv7a-linux-androideabi24-clang"
-
-[env]
-CC_aarch64-linux-android = "/Users/nestorgarciabou/Library/Android/sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android24-clang"
-AR_aarch64-linux-android = "/Users/nestorgarciabou/Library/Android/sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-ar"
-CC_armv7-linux-androideabi = "/Users/nestorgarciabou/Library/Android/sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/bin/armv7a-linux-androideabi24-clang"
-AR_armv7-linux-androideabi = "/Users/nestorgarciabou/Library/Android/sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-ar"
-
-# bindgen uses libclang, which by default is Xcode's and knows nothing about
-# Android: it needs the NDK sysroot or it cannot even find <stdint.h>.
-BINDGEN_EXTRA_CLANG_ARGS_aarch64-linux-android = "--sysroot=/Users/nestorgarciabou/Library/Android/sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/sysroot --target=aarch64-linux-android24"
-BINDGEN_EXTRA_CLANG_ARGS_armv7-linux-androideabi = "--sysroot=/Users/nestorgarciabou/Library/Android/sdk/ndk/27.1.12297006/toolchains/llvm/prebuilt/darwin-x86_64/sysroot --target=armv7a-linux-androideabi24"
+# There is deliberately nothing else here.
+#
+# This file used to carry the Android cross-compilation settings: the NDK's
+# clang as the linker, `CC_*` and `AR_*` for the `cc` crate, and a sysroot for
+# bindgen. Every one of those lines held an absolute path, and the path held
+# three things that are not the repository's to know — which machine
+# (`/Users/somebody`), which NDK version (`27.1.12297006`) and which host
+# (`darwin-x86_64`). It worked for exactly one laptop. Anybody else cloning
+# this got `cc` looking for an `aarch64-linux-android-clang` that does not
+# exist, and QuickJS never built.
+#
+# `an android` works all three out at build time — see `Sdk::cargo_env` in
+# `crates/an-cli/src/android.rs` — and hands them to the `cargo` it spawns.
+# `scripts/check-cargo-config.sh` is what keeps them from coming back.

@@ -245,7 +245,7 @@ simulator, and it is what most of those scripts drive.
 | `an-android` | JNI host, measuring with `StaticLayout`, JNI entry points. Also Wear OS |
 | `an-watch` | watchOS host: the tree mirrored into a model SwiftUI draws |
 | `an-macos` | AppKit host: one `NSView` per node, system controls and the C surface |
-| `an-cli` | The `an` tool: the twelve commands, the plugin pipeline and the dev server |
+| `an-cli` | The `an` tool: the thirteen commands, the plugin pipeline and the dev server |
 
 | npm package | What it does |
 |---|---|
@@ -382,8 +382,12 @@ several times per frame, and with no cache that is hundreds of border
 crossings.
 
 The tools find themselves: the Android SDK through `ANDROID_HOME` or its usual
-location, and inside it the latest build-tools and platform. The NDK and the
-bindgen flags are pinned in `.cargo/config.toml`.
+location, and inside it the latest build-tools and platform. The NDK too —
+where it is, which version, and what this host is called, which is
+`darwin-x86_64` on a Mac and `linux-x86_64` on Linux — and from that the linker,
+the archiver and the bindgen sysroot, handed to the `cargo` that cross-compiles.
+None of it is committed: `.cargo/config.toml` used to hold all three written
+out, which worked on exactly one laptop.
 
 The documentation site is `docs-site/` — Astro and Starlight, English at the
 root with an `es` locale — and it runs with `npm run docs`.

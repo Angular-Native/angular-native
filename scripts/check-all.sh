@@ -46,6 +46,14 @@ echo
 echo
 # One word in `angular-native.json` and three platform idioms underneath.
 "$ROOT/scripts/check-appearance.sh"
+
+echo
+# That the committed cargo config carries nothing belonging to one machine.
+"$ROOT/scripts/check-cargo-config.sh"
+
+echo
+# That the number of commands the pages claim is the number clap has.
+"$ROOT/scripts/check-cli-commands.sh"
 "$ROOT/scripts/check-publish.sh"
 "$ROOT/scripts/check-plugin-sources.sh"
 "$ROOT/scripts/check-router.sh"
@@ -129,15 +137,38 @@ echo
 
 echo
 echo "== cross-compilation"
+# Android needs the NDK in the environment. It used to come from a committed
+# `.cargo/config.toml` holding one machine's paths; it is worked out at build
+# time now, and `an env android` is how anything that is not `an android`
+# itself — this, a CI job, an editor — gets hold of it.
+# An `env` prefix, not a list of exports: most of these names carry the target
+# triple with its hyphens, and a shell cannot export one of those.
+ANDROID_ENV_ERR="$(mktemp)"
+# Only what it printed. `2>&1` would fold cargo's own build warnings into the
+# variable, and the whole thing is about to be eval'd.
+ANDROID_ENV="$(cargo an env android 2>"$ANDROID_ENV_ERR")" || {
+  echo "  FAIL the Android cross-compilation environment could not be worked out"
+  sed 's/^/       /' "$ANDROID_ENV_ERR"
+  exit 1
+}
 for target in aarch64-apple-ios-sim aarch64-linux-android; do
   case "$target" in
     *ios*) crate=an-ios ;;
     *) crate=an-android ;;
   esac
-  if cargo build --quiet -p "$crate" --target "$target" 2>/dev/null; then
+  # The output is kept, not thrown away: a `2>/dev/null` here cannot tell a
+  # crate that does not compile from a toolchain that is not installed, and
+  # the two want completely different things done about them.
+  LOG="$(mktemp)"
+  case "$target" in
+    *android*) PREFIX="$ANDROID_ENV" ;;
+    *) PREFIX="" ;;
+  esac
+  if eval "$PREFIX cargo build --quiet -p '$crate' --target '$target'" >"$LOG" 2>&1; then
     echo "  ok   $crate for $target"
   else
     echo "  FAIL $crate for $target"
+    tail -30 "$LOG" | sed 's/^/       /'
     exit 1
   fi
 done

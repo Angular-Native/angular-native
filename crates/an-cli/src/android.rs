@@ -95,6 +95,13 @@ pub struct Sdk {
     pub root: PathBuf,
     pub build_tools: PathBuf,
     pub android_jar: PathBuf,
+    /// The `toolchains/llvm/prebuilt/<host>` directory inside the NDK: the
+    /// clang, the archiver and the sysroot that cross-compile for Android.
+    ///
+    /// `None` when there is no NDK. That is not fatal here — everything except
+    /// the Rust core builds without one, and saying so where the core is built
+    /// is better than refusing a command that would have worked.
+    pub ndk_toolchain: Option<PathBuf>,
 }
 
 impl Sdk {
@@ -116,11 +123,73 @@ impl Sdk {
         if !android_jar.is_file() {
             bail!("there is no android.jar in {}", platform.display());
         }
+        let ndk_toolchain = find_ndk_toolchain(&root);
         Ok(Sdk {
             root,
             build_tools,
             android_jar,
+            ndk_toolchain,
         })
+    }
+
+    /// What `cargo` needs in its environment to cross-compile for Android.
+    ///
+    /// This used to live in `.cargo/config.toml`, committed, with one
+    /// machine's home directory, one NDK version and one host operating system
+    /// written into every line of it. It worked for exactly the person who
+    /// wrote it: anybody else got `cc` looking for an
+    /// `aarch64-linux-android-clang` that does not exist, and QuickJS never
+    /// built.
+    ///
+    /// None of the three is knowable at commit time and all three are knowable
+    /// here, so they are worked out and handed to the `cargo` this spawns.
+    /// What stays in `.cargo/config.toml` is the alias, which is the only part
+    /// of it that belongs to the repository rather than to a laptop.
+    pub fn cargo_env(&self) -> Vec<(String, String)> {
+        let Some(toolchain) = &self.ndk_toolchain else {
+            return Vec::new();
+        };
+        let bin = toolchain.join("bin");
+        let sysroot = toolchain.join("sysroot");
+        let mut env = Vec::new();
+        // Two ABIs, and the compiler's name is not the target triple in either
+        // of them: the NDK spells the 32-bit one `armv7a-linux-androideabi`
+        // where Rust says `armv7-linux-androideabi`, and both carry the API
+        // level in the middle of the file name.
+        for (triple, compiler) in [
+            ("aarch64-linux-android", format!("aarch64-linux-android{ANDROID_API}-clang")),
+            ("armv7-linux-androideabi", format!("armv7a-linux-androideabi{ANDROID_API}-clang")),
+        ] {
+            let cc = bin.join(&compiler).to_string_lossy().into_owned();
+            let upper = triple.to_uppercase().replace('-', "_");
+            // The triple exactly as Rust writes it, hyphens and all. `cc`
+            // would take either form; bindgen takes only this one, and a
+            // sysroot it does not receive is Apple's clang being asked to
+            // compile for Android and failing to find `stdio.h`.
+            //
+            // That has a consequence for `an env android`, which prints this
+            // same list: a shell cannot `export` a name with hyphens in it —
+            // `export CC_aarch64-linux-android=…` is not a valid identifier —
+            // so what it prints is an `env` command prefix, which takes
+            // `NAME=VALUE` as arguments and does not care.
+            //
+            // `[target.X] linker` in the old file was this variable.
+            env.push((format!("CARGO_TARGET_{upper}_LINKER"), cc.clone()));
+            env.push((format!("CC_{triple}"), cc));
+            env.push((
+                format!("AR_{triple}"),
+                bin.join("llvm-ar").to_string_lossy().into_owned(),
+            ));
+            // bindgen uses libclang, which by default is Xcode's and knows
+            // nothing about Android: without the NDK sysroot it cannot even
+            // find <stdint.h>.
+            let ndk_target = compiler.trim_end_matches("-clang").to_owned();
+            env.push((
+                format!("BINDGEN_EXTRA_CLANG_ARGS_{triple}"),
+                format!("--sysroot={} --target={ndk_target}", sysroot.display()),
+            ));
+        }
+        env
     }
 
     fn tool(&self, name: &str) -> PathBuf {
@@ -134,6 +203,34 @@ impl Sdk {
 
 /// Returns the subdirectory with the highest name, which is the newest
 /// version.
+/// The oldest API level NDK 27 supports, and the one the core is built against.
+const ANDROID_API: &str = "24";
+
+/// The NDK's toolchain directory, wherever it is on this machine.
+///
+/// Three things vary and all three used to be written out in a committed file:
+/// where the NDK is, which version of it, and what the host is called. The
+/// first two are `ANDROID_NDK_HOME` or the newest under `<sdk>/ndk`; the third
+/// is read rather than guessed, because `prebuilt` holds exactly one directory
+/// and its name is `darwin-x86_64` on a Mac and `linux-x86_64` on Linux —
+/// including on Apple silicon, where the NDK still ships the x86_64 name and
+/// runs under Rosetta.
+fn find_ndk_toolchain(sdk: &Path) -> Option<PathBuf> {
+    let ndk = std::env::var("ANDROID_NDK_HOME")
+        .or_else(|_| std::env::var("NDK_HOME"))
+        .map(PathBuf::from)
+        .ok()
+        .filter(|path| path.is_dir())
+        .or_else(|| newest_dir(&sdk.join("ndk")))?;
+    let prebuilt = ndk.join("toolchains/llvm/prebuilt");
+    // One entry, whatever it is called here.
+    std::fs::read_dir(&prebuilt)
+        .ok()?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .find(|path| path.join("bin").is_dir())
+}
+
 fn newest_dir(parent: &Path) -> Option<PathBuf> {
     let mut entries: Vec<PathBuf> = std::fs::read_dir(parent)
         .ok()?
@@ -221,8 +318,21 @@ pub fn assemble(
     if release {
         cargo_args.push("--release");
     }
+    if sdk.ndk_toolchain.is_none() {
+        bail!(
+            "the Rust core cannot be cross-compiled without the NDK, and there is none under \
+             {}/ndk.\n\
+             Install it —`sdkmanager \"ndk;27.1.12297006\"`, or Android Studio's SDK Manager— \
+             or point ANDROID_NDK_HOME at one you already have.",
+            sdk.root.display()
+        );
+    }
     let status = Command::new("cargo")
         .args(&cargo_args)
+        // Where the NDK is, which version and what this host is called: three
+        // things that used to be written out in a committed `.cargo/config.toml`
+        // and are worked out here instead. See `Sdk::cargo_env`.
+        .envs(sdk.cargo_env())
         .current_dir(root)
         .status()
         .context("cargo could not be run")?;

@@ -126,9 +126,6 @@ pub struct ManifestEntries {
 }
 
 impl ManifestEntries {
-    pub fn is_empty(&self) -> bool {
-        self.permissions.is_empty() && self.features.is_empty() && self.services.is_empty()
-    }
 }
 
 /// A manifest entry along with the package that asked for it.
