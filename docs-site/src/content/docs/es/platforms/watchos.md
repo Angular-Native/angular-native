@@ -364,9 +364,6 @@ datos reales.
   serializa el árbol entero. Con diez o quince nodos no se nota. Cuando aparezca
   una lista larga habrá que mandar las ops por su cuenta, y lo que cambia es
   `snapshot.rs` y el `Decodable` de Swift, no el host.
-- **La tabla de iconos vive en dos sitios.** La copia buena está en
-  `an_core::icons` y el reloj la usa; `an-ios` todavía tiene la suya, privada.
-  Mientras existan las dos, `check-watchos.sh` comprueba que dicen lo mismo.
 - **Complicaciones y notificaciones.** Otra superficie del sistema, con su
   propio ciclo de vida. No comparten nada con esto.
 - **Un dispositivo real.** No hay camino de dispositivo por ninguna parte: ni

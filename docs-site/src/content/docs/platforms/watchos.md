@@ -358,9 +358,6 @@ answering an object with holes in it that would read as real data.
   serialises the whole tree. For ten or fifteen nodes it does not show. When a
   long list turns up, the ops will have to be sent on their own, and what
   changes is `snapshot.rs` and the Swift `Decodable`, not the host.
-- **The icon table lives in two places.** The good copy is in `an_core::icons`
-  and the watch uses it; `an-ios` still has its own, private. While both exist,
-  `check-watchos.sh` checks they say the same thing.
 - **Complications and notifications.** A different system surface, with its own
   lifecycle. They share nothing with this.
 - **A real device.** There is no device path anywhere: no `aarch64-apple-watchos`

@@ -94,14 +94,25 @@ check $r "the crown is hooked up from the shell"
 grep -q 'digitalCrownRotation' shells/watchos/Sources/AnCrown.swift && r=0 || r=1
 check $r "and with SwiftUI's crown API, not with an imitated gesture"
 
-# 4. The icon table, which lives in two places while `an-ios` keeps its own.
-#    Copied is allowed; drifted is not: `back` has to be the same drawing on the
-#    phone and on the watch.
-table() {
-  awk '/fn translate/,/^\}/' "$1" | grep -oE '"[^"]+"( \| "[^"]+")* => "[^"]+"' | sort
-}
-diff <(table crates/an-core/src/icons.rs) <(table crates/an-ios/src/icons.rs) >/dev/null 2>&1 && r=0 || r=1
-check $r "the core's icon table says the same as an-ios's"
+# 4. The icon table, which is now in one place.
+#
+#    It used to be in three — the core's, plus a private copy in `an-ios` and
+#    another in `an-macos` — and this check existed to catch them drifting
+#    apart: `back` has to be the same drawing on the phone, the Mac and the
+#    watch. Both copies are gone, so what is checked is the stronger thing: that
+#    no host has grown one back. A table nobody can duplicate cannot drift.
+COPIES="$(grep -ln 'fn translate(name: &str) -> &str' crates/an-ios/src/icons.rs \
+  crates/an-macos/src/icons.rs 2>/dev/null || true)"
+[ -z "$COPIES" ] && r=0 || r=1
+check $r "the icon table lives only in the core, with no host keeping its own"
+if [ -n "$COPIES" ]; then echo "$COPIES" | sed 's/^/       /'; fi
+# And that they really do go through it, rather than having stopped translating
+# at all: a host that dropped the call would leave `back` reaching UIKit as the
+# word "back", which is not a symbol and draws nothing.
+for host in ios macos; do
+  if grep -q 'an_core::icons::translate' "crates/an-$host/src/icons.rs"; then r=0; else r=1; fi
+  check $r "an-$host asks the core to translate a name"
+done
 
 # 5. The shell cannot lay anything out on its own. All the layout belongs to
 #    taffy, and a `VStack` or a `padding` slipped in would be a second engine
