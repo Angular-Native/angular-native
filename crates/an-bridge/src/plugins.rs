@@ -30,10 +30,43 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
 use crate::modules::{NativeModule, Responder};
+
+/// A call the platform has taken and not answered.
+///
+/// The `Responder` is what keeps the promise on the JS side alive. The rest is
+/// so that a call which never comes back can be *named*: without the module,
+/// the method and the moment it went out, an unanswered promise is invisible —
+/// no error, no log, a screen that simply never moves on.
+struct Waiting {
+    responder: Responder,
+    module: String,
+    method: String,
+    since: Instant,
+    /// Said once. A frame is sixty a second and the same call would otherwise
+    /// fill the log with the same line until the app is closed.
+    warned: bool,
+}
+
+/// How long a call may go unanswered before it is mentioned.
+///
+/// Deliberately generous. A camera is open for as long as the person using it
+/// takes, and a download is as slow as the network: a number small enough to
+/// catch a hang quickly is a number that cries wolf over calls that were going
+/// to work. A minute is past anything that is merely slow and well short of
+/// forever.
+///
+/// It warns and does not reject. Cutting the call short would mean deciding,
+/// from here, that a plugin waiting on a human has failed — and nothing here
+/// can tell that apart from a plugin that lost its call object. The decision
+/// belongs to the plugin, which is the only one that knows which of its
+/// methods wait on people; until it can say so, the honest thing is to make
+/// the wait visible rather than to guess at it.
+const SLOW_CALL: Duration = Duration::from_secs(60);
 
 /// A call waiting for the platform to get to it.
 pub struct PluginCall {
@@ -56,10 +89,10 @@ pub struct PluginBridge {
     next: AtomicU64,
     /// Calls the UI thread has not picked up yet.
     pending: Mutex<Vec<PluginCall>>,
-    /// Calls picked up and still unanswered. The `Responder` kept here is what
+    /// Calls picked up and still unanswered. The `Responder` inside is what
     /// keeps the promise on the JS side alive; if the mailbox is destroyed, its
     /// `Drop` rejects them instead of leaving them hanging for ever.
-    waiting: Mutex<HashMap<u64, Responder>>,
+    waiting: Mutex<HashMap<u64, Waiting>>,
     /// One emitter per registered plugin, by the name JS calls it by.
     ///
     /// The shell emits by name — it has a string from Swift or Java and nothing
@@ -77,7 +110,61 @@ impl PluginBridge {
     /// Picks up whatever came in since last time. The UI thread calls it once
     /// per frame.
     pub fn take_calls(&self) -> Vec<PluginCall> {
+        // Once per frame is also exactly the heartbeat the slow-call check
+        // wants, and it is already here on every host: no clock to wire, no
+        // thread to start, and nothing at all to pay on a frame with no calls
+        // outstanding.
+        self.mention_slow_calls(SLOW_CALL);
         std::mem::take(&mut *self.pending.lock().expect("the plugin mailbox is poisoned"))
+    }
+
+    /// Says, once per call, that something went out and has not come back.
+    ///
+    /// This is the last way left to leave a promise unsettled: the plugin keeps
+    /// its `AnPluginCall` and calls neither `resolve` nor `reject`. Every other
+    /// road now ends in one of the two — an unknown module, an unknown method,
+    /// an answer that is not JSON, an error escaping the plugin, the mailbox
+    /// being destroyed.
+    ///
+    /// It stays a warning. See `SLOW_CALL`.
+    /// The threshold is a parameter and not read straight from `SLOW_CALL` for
+    /// one reason: a test cannot wait a minute. Passing `Duration::ZERO` is how
+    /// the warning path is exercised at all, and a warning nobody has ever seen
+    /// fire is a warning that may not.
+    fn mention_slow_calls(&self, after: Duration) -> usize {
+        let mut mentioned = 0;
+        let mut waiting = self.waiting.lock().expect("the plugin mailbox is poisoned");
+        for call in waiting.values_mut() {
+            if call.warned {
+                continue;
+            }
+            let waited = call.since.elapsed();
+            if waited < after {
+                continue;
+            }
+            call.warned = true;
+            mentioned += 1;
+            eprintln!(
+                "angular-native: {}.{} was called {}s ago and has not answered. If that is \
+                 normal for this method — a camera waits for a person — there is nothing wrong \
+                 here. If it is not, the plugin is holding its call object and has called \
+                 neither resolve nor reject, and the promise on the JS side will never settle.",
+                call.module,
+                call.method,
+                waited.as_secs()
+            );
+        }
+        mentioned
+    }
+
+    /// How long the oldest unanswered call has been waiting. For the tests.
+    pub fn oldest_wait(&self) -> Option<Duration> {
+        self.waiting
+            .lock()
+            .expect("the plugin mailbox is poisoned")
+            .values()
+            .map(|call| call.since.elapsed())
+            .max()
     }
 
     /// Answers a call. `json` is the return value, already serialised; `"null"`
@@ -137,14 +224,26 @@ impl PluginBridge {
     }
 
     fn take_waiting(&self, id: u64) -> Result<Responder, String> {
-        self.waiting.lock().expect("the plugin mailbox is poisoned").remove(&id).ok_or_else(|| {
-            format!("there is no plugin call with id {id} waiting for an answer")
-        })
+        self.waiting
+            .lock()
+            .expect("the plugin mailbox is poisoned")
+            .remove(&id)
+            .map(|call| call.responder)
+            .ok_or_else(|| format!("there is no plugin call with id {id} waiting for an answer"))
     }
 
     fn enqueue(&self, module: &str, method: &str, args: Value, respond: Responder) {
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
-        self.waiting.lock().expect("the plugin mailbox is poisoned").insert(id, respond);
+        self.waiting.lock().expect("the plugin mailbox is poisoned").insert(
+            id,
+            Waiting {
+                responder: respond,
+                module: module.to_owned(),
+                method: method.to_owned(),
+                since: Instant::now(),
+                warned: false,
+            },
+        );
         self.pending.lock().expect("the plugin mailbox is poisoned").push(PluginCall {
             id,
             module: module.to_owned(),
@@ -200,6 +299,50 @@ mod tests {
         let mut registry = ModuleRegistry::new();
         registry.register(Box::new(HostPlugin::new("clipboard", bridge.clone())));
         (registry, bridge)
+    }
+
+    /// The last road to an unsettled promise, and the only one left: the
+    /// plugin keeps its call object and calls neither. Nothing can be done
+    /// about it from here without deciding that a plugin waiting on a person
+    /// has failed — but it can be named, and what it must not do is stay
+    /// invisible.
+    #[test]
+    fn a_call_nobody_answers_is_still_being_waited_on_and_can_be_named() {
+        let (mut registry, bridge) = registry_with_clipboard();
+        registry.invoke("clipboard", "read", Value::Null);
+
+        // Taken by the platform and never answered.
+        let calls = bridge.take_calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(bridge.in_flight(), 1, "the promise is still alive");
+
+        // Frames go by; it stays in flight and nothing else picks it up.
+        for _ in 0..5 {
+            assert!(bridge.take_calls().is_empty());
+        }
+        assert_eq!(bridge.in_flight(), 1);
+        // And the mailbox knows how long it has been, which is what the
+        // warning is built on.
+        assert!(bridge.oldest_wait().is_some());
+
+        // The warning itself, with the threshold brought down to nothing so a
+        // test does not have to wait a minute for it.
+        assert_eq!(bridge.mention_slow_calls(Duration::ZERO), 1, "it has to be mentioned");
+        // Once per call and not once per frame: at sixty frames a second the
+        // second kind fills the log until the app is closed.
+        assert_eq!(bridge.mention_slow_calls(Duration::ZERO), 0, "and only once");
+    }
+
+    /// The counterpart: a call that *is* answered leaves nothing behind, so
+    /// the slow-call bookkeeping cannot grow without bound on a healthy app.
+    #[test]
+    fn an_answered_call_stops_being_waited_on() {
+        let (mut registry, bridge) = registry_with_clipboard();
+        registry.invoke("clipboard", "read", Value::Null);
+        let calls = bridge.take_calls();
+        bridge.resolve(calls[0].id, "\"some text\"").unwrap();
+        assert_eq!(bridge.in_flight(), 0);
+        assert!(bridge.oldest_wait().is_none());
     }
 
     #[test]

@@ -408,8 +408,17 @@ the end, `fatalError`, a Java `Error`. Those take the process with them and no
 `catch` reaches them.
 
 So the only way left to leave a promise hanging is for a plugin to keep its
-`AnPluginCall` and call neither. That is a bug in the plugin, and there is no
-deadline cutting it short yet.
+`AnPluginCall` and call neither. Nothing cuts that short — but it is no longer
+invisible: a call that has gone a minute without an answer is named in the log
+once, with its module and its method.
+
+It warns and does not reject, deliberately. Cutting the call would mean
+deciding, from inside the mailbox, that a plugin waiting on a person has
+failed, and nothing there can tell that apart from a plugin that lost its call
+object. A camera is open for as long as the person using it takes. The
+decision belongs to the plugin, which is the only one that knows which of its
+methods wait on people; until it can say so, the honest thing is to make the
+wait visible rather than guess at it.
 
 ## How it works inside
 

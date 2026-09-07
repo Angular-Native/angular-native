@@ -34,6 +34,8 @@ use objc2_app_kit::{
     NSUserInterfaceItemIdentification, NSView,
 };
 use objc2_core_foundation::{CGAffineTransform, CGPoint, CGRect, CGSize};
+use objc2_core_foundation::CFRetained;
+use objc2_core_graphics::CGMutablePath;
 use objc2_foundation::{
     NSAttributedString, NSMutableAttributedString, NSNumber, NSRange, NSString,
 };
@@ -671,13 +673,22 @@ impl AppKitHost {
         self.apply_corners(id);
     }
 
-    /// Rounds the corners through the layer.
+    /// Rounds the corners.
     ///
-    /// A layer has **one** radius and a mask of which corners carry it, so
-    /// four different radii cannot be asked for. When they differ, whichever
-    /// have anything are rounded with the largest and that gets said: drawing
-    /// the shape by hand the way the iOS host does would cost a `CAShapeLayer`
-    /// per view, and here it is not needed yet.
+    /// Three cases, and the cheapest one that will do is the one taken.
+    ///
+    /// A `CALayer` has **one** radius, so all four the same is the whole of it
+    /// and costs nothing. Several the same plus some at zero is still one
+    /// radius: `maskedCorners` says which of them carry it, which covers the
+    /// common shape of a card rounded along its top.
+    ///
+    /// What a layer cannot do is two different radii at once, and until now
+    /// that was rounded with the largest and merely said out loud. It is drawn
+    /// now, the way the iOS host draws it: the outline goes into a
+    /// `CAShapeLayer` used as the layer's mask. That costs a layer per view
+    /// that asks for it and nothing at all for every view that does not, and it
+    /// has to be redrawn on every resize — a mask does not stretch — which is
+    /// why `place` comes back here.
     fn apply_corners(&mut self, id: NodeId) {
         let Some(radii) = self.corners.get(&id).copied() else { return };
         let Some(view) = self.views.get(&id) else { return };
@@ -686,9 +697,35 @@ impl AppKitHost {
         let Some(layer) = (unsafe { native.layer() }) else { return };
 
         let max = radii.iter().cloned().fold(0.0_f64, f64::max);
-        let uneven = radii.iter().any(|r| (*r - radii[0]).abs() > f64::EPSILON);
+        // How many distinct radii there are once the corners that are simply
+        // square are set aside. One means a layer can do it; more means it
+        // cannot.
+        let rounded: Vec<f64> = radii.iter().copied().filter(|r| *r > 0.0).collect();
+        let several = rounded
+            .iter()
+            .any(|r| (*r - rounded[0]).abs() > f64::EPSILON);
+
+        if several {
+            let bounds = native.bounds();
+            if bounds.size.width <= 0.0 || bounds.size.height <= 0.0 {
+                // No size yet. The frame will arrive and `place` calls back.
+                return;
+            }
+            layer.setCornerRadius(0.0);
+            let shape = objc2_quartz_core::CAShapeLayer::new();
+            let path = rounded_path(bounds.size.width, bounds.size.height, radii);
+            unsafe { shape.setPath(Some(&path)) };
+            unsafe { layer.setMask(Some(&shape)) };
+            layer.setMasksToBounds(true);
+            return;
+        }
+
+        // Back to no mask, in case this node had one a moment ago: a template
+        // can go from four different radii to one, and a stale mask would
+        // outlive the shape that asked for it.
+        unsafe { layer.setMask(None) };
         layer.setCornerRadius(max);
-        if uneven {
+        if radii.iter().any(|r| *r <= 0.0) && max > 0.0 {
             use objc2_quartz_core::CACornerMask;
             let mut mask = CACornerMask::empty();
             // The core's order is top-left, top-right, bottom-right,
@@ -707,12 +744,14 @@ impl AppKitHost {
                 mask |= CACornerMask::LayerMinXMaxYCorner;
             }
             layer.setMaskedCorners(mask);
-            self.warn_once(format!("corners:{id}"), || {
-                eprintln!(
-                    "angular-native: an AppKit layer has only one radius; node {id}'s corners \
-                     are all rounded with the largest one ({max})"
-                );
-            });
+        } else {
+            use objc2_quartz_core::CACornerMask;
+            layer.setMaskedCorners(
+                CACornerMask::LayerMinXMinYCorner
+                    | CACornerMask::LayerMaxXMinYCorner
+                    | CACornerMask::LayerMaxXMaxYCorner
+                    | CACornerMask::LayerMinXMaxYCorner,
+            );
         }
         layer.setMasksToBounds(max > 0.0);
     }
@@ -1994,4 +2033,37 @@ impl HostRenderer for AppKitHost {
         self.window_title = None;
         self.dirty_title = true;
     }
+}
+
+/// The outline of a rectangle with a different radius per corner.
+///
+/// The corners go in the order top-left, top-right, bottom-right, bottom-left,
+/// the same one CSS uses, the same one Android expects and the same one the
+/// iOS host draws.
+///
+/// It is built with `CGPath` and not `NSBezierPath`, which is what an AppKit
+/// file would reach for first. `NSBezierPath`'s arc takes **degrees**, and its
+/// sense of clockwise is in the unflipped coordinate system every view here
+/// has turned over — two chances to get a corner subtly wrong for no gain.
+/// `addArcToPoint` takes the two lines that meet and a radius, so there are no
+/// angles to be wrong about.
+fn rounded_path(width: f64, height: f64, radii: [f64; 4]) -> CFRetained<CGMutablePath> {
+    // No corner may eat more than half the box, or the arcs cross and the
+    // outline turns inside out.
+    let limit = width.min(height) / 2.0;
+    let [tl, tr, br, bl] = radii.map(|r| r.clamp(0.0, limit));
+    let path = CGMutablePath::new();
+    unsafe {
+        // Start halfway along the top edge, where no corner can reach.
+        CGMutablePath::move_to_point(Some(&path), std::ptr::null(), width / 2.0, 0.0);
+        CGMutablePath::add_arc_to_point(Some(&path), std::ptr::null(), width, 0.0, width, height, tr);
+        CGMutablePath::add_arc_to_point(Some(&path), std::ptr::null(), width, height, 0.0, height, br);
+        CGMutablePath::add_arc_to_point(Some(&path), std::ptr::null(), 0.0, height, 0.0, 0.0, bl);
+        CGMutablePath::add_arc_to_point(Some(&path), std::ptr::null(), 0.0, 0.0, width, 0.0, tl);
+        CGMutablePath::close_subpath(Some(&path));
+    }
+    // A CGPath is Core Foundation and not Objective-C, so it arrives in a
+    // `CFRetained` rather than a `Retained`. The mutable one derefs to the
+    // immutable one, which is what `setPath` wants.
+    path
 }

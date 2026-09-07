@@ -92,6 +92,27 @@ import type { NativeCursor, NativeHoverEvent } from '@angular-native/primitives'
       </an-scroll-view>
       <an-text [fontSize]="12" [color]="'#6ee7b7'">offset: {{ offset() }}</an-text>
 
+      <!-- Four different radii. A CALayer has one, so this is the one shape
+           the host cannot get from the layer and has to draw: the outline goes
+           into a CAShapeLayer used as a mask, which is what the iOS host does
+           too. The left one asks for four different ones, the right one for
+           two corners at the same radius and two square, which a layer can do
+           on its own with maskedCorners. -->
+      <an-view [style.flexDirection]="'row'" [style.gap]="'12'" [style.height]="'56'">
+        <an-view
+          [style.flexGrow]="'1'"
+          [backgroundColor]="'#6ee7b7'"
+          [borderTopLeftRadius]="26"
+          [borderTopRightRadius]="4"
+          [borderBottomRightRadius]="26"
+          [borderBottomLeftRadius]="4"></an-view>
+        <an-view
+          [style.flexGrow]="'1'"
+          [backgroundColor]="'#1e293b'"
+          [borderTopLeftRadius]="20"
+          [borderTopRightRadius]="20"></an-view>
+      </an-view>
+
       <!-- Swiping. Two fingers on the trackpad, with the system threshold. -->
       <an-text [fontSize]="15" [fontWeight]="600" [color]="'#cbd5e1'">swipe</an-text>
       <an-view

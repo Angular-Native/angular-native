@@ -213,6 +213,36 @@ else
   fail=1
 fi
 
+# Four different radii, which is the one shape a `CALayer` cannot make: it has
+# a single radius. The box asks for 26 on one diagonal and 4 on the other, so
+# what is looked at is the four corners of the same box — two that have to be
+# the page behind it and two that have to be the box's own green. Rounding all
+# four with the largest, which is what this host did before, turns the two
+# green ones into background and this line catches it.
+#
+# The coordinates are the 720x820 window's; if the example moves, they move.
+corner() {
+  ffmpeg -v error -i "$SHOT_STILL" -vf "crop=1:1:$1:$2" -f rawvideo -pix_fmt rgb24 - 2>/dev/null \
+    | od -An -tu1 | tr -s ' ' | sed 's/^ //;s/ $//'
+}
+if command -v ffmpeg >/dev/null 2>&1; then
+  cut_tl="$(corner 23 490)"
+  kept_tr="$(corner 350 490)"
+  kept_bl="$(corner 23 538)"
+  cut_br="$(corner 350 538)"
+  green="110 231 183"
+  if [ "$kept_tr" = "$green" ] && [ "$kept_bl" = "$green" ] \
+     && [ "$cut_tl" != "$green" ] && [ "$cut_br" != "$green" ]; then
+    echo "  ok   four different corner radii are drawn, not rounded to the largest"
+  else
+    echo "  FAIL the four radii came out wrong: tl=$cut_tl tr=$kept_tr bl=$kept_bl br=$cut_br"
+    echo "       the two small radii have to keep the box's green; the two large ones cut to the page"
+    fail=1
+  fi
+else
+  echo "  skipped the corner radii: ffmpeg is not installed, so the pixels cannot be read"
+fi
+
 # A hover only happens if the window is actually under the pointer, and that
 # needs the app to win the front. With a simulator or an emulator open, macOS
 # hands the front to whoever asked last and this check would fail for a reason

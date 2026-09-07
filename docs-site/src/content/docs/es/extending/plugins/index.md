@@ -414,8 +414,16 @@ nil, un índice fuera de rango, `fatalError`, un `Error` de Java. Esos se llevan
 el proceso por delante y no hay `catch` que llegue.
 
 Así que la única forma que queda de dejar una promesa colgando es que un plugin
-se quede su `AnPluginCall` y no llame a ninguno de los dos. Eso es un fallo del
-plugin, y todavía no hay ningún plazo que lo corte.
+se quede su `AnPluginCall` y no llame a ninguno de los dos. Nada lo corta — pero
+ya no es invisible: una llamada que lleva un minuto sin respuesta se nombra en
+el log una vez, con su módulo y su método.
+
+Avisa y no rechaza, deliberadamente. Cortar la llamada significaría decidir,
+desde dentro del buzón, que un plugin que espera a una persona ha fallado, y
+ahí no hay forma de distinguir eso de un plugin que perdió su objeto de
+llamada. Una cámara está abierta lo que tarde quien la usa. La decisión es del
+plugin, que es el único que sabe cuáles de sus métodos esperan a alguien; hasta
+que pueda decirlo, lo honesto es hacer visible la espera en lugar de adivinarla.
 
 ## Cómo funciona por dentro
 

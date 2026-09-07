@@ -276,6 +276,26 @@ responder chain. Without an Edit menu, copy and paste in an `an-text-input` does
 not work, with no error and nothing to look at. That is why the minimum menu
 includes Edit and not just Quit.
 
+### Corners a layer cannot make
+
+A `CALayer` has **one** radius, and three shapes come out of that. All four the
+same is the radius and nothing else. Some corners rounded and the rest square
+is still one radius, with `maskedCorners` saying which carry it — the card
+rounded along its top, which is most of them.
+
+Two genuinely different radii is the one a layer cannot do, and it is drawn:
+the outline goes into a `CAShapeLayer` used as the layer's mask, the same way
+the iOS host draws it. That costs a layer for the views that ask and nothing
+for the ones that do not, and it is redone on every resize, because a mask does
+not stretch.
+
+The path is built with `CGPath` rather than `NSBezierPath`, which is what an
+AppKit file would reach for first. `NSBezierPath`'s arc takes **degrees**, and
+its sense of clockwise belongs to the unflipped coordinate system every view
+here has turned over: two chances to get a corner subtly wrong for nothing in
+return. `addArcToPoint` takes the two lines that meet and a radius, so there
+are no angles to be wrong about.
+
 ## The four points a label keeps to itself
 
 Layout measures text with `boundingRectWithSize:`, which measures **the text**
@@ -397,8 +417,6 @@ need a paid Developer ID certificate and have never been run. See
   launch by the system, so an unsigned build drops those keys and warns naming
   the key, the plugin and the flag that restores them. See
   [Plugins on the Mac and the watch](/extending/plugins-on-the-mac-and-the-watch/).
-- **Unequal corner radii collapse.** A `CALayer` has one radius, so all four
-  rounded corners take the largest of them, warned once.
 - **`enabled` on anything that is not an `NSControl`** does nothing: AppKit has
   no `userInteractionEnabled`.
 - **`animateDelay` is folded into the duration** — `NSAnimationContext` has no

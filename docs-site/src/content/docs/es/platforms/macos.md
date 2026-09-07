@@ -288,6 +288,27 @@ respondedores. Sin un menú Edición, copiar y pegar en un `an-text-input` no
 funciona, sin error y sin nada que mirar. Por eso el menú mínimo incluye Edición
 y no solo Salir.
 
+### Esquinas que una capa no sabe hacer
+
+Una `CALayer` tiene **un** radio, y de ahí salen tres formas. Las cuatro
+iguales es el radio y nada más. Unas esquinas redondeadas y el resto cuadradas
+sigue siendo un solo radio, con `maskedCorners` diciendo cuáles lo llevan — la
+tarjeta redondeada por arriba, que son la mayoría.
+
+Dos radios de verdad distintos es lo que una capa no puede, y se dibuja: el
+contorno va a un `CAShapeLayer` usado como máscara de la capa, igual que lo
+dibuja el host de iOS. Eso cuesta una capa para las vistas que lo piden y nada
+para las que no, y se rehace en cada cambio de tamaño, porque una máscara no se
+estira.
+
+El trazado se construye con `CGPath` y no con `NSBezierPath`, que es lo primero
+a lo que echaría mano un fichero de AppKit. El arco de `NSBezierPath` toma
+**grados**, y su sentido de las agujas del reloj pertenece al sistema de
+coordenadas sin invertir que aquí ha volteado cada vista: dos oportunidades de
+equivocar una esquina sutilmente a cambio de nada. `addArcToPoint` toma las dos
+líneas que se encuentran y un radio, así que no hay ángulos en los que
+equivocarse.
+
 ## Los cuatro puntos que una etiqueta se guarda
 
 El layout mide el texto con `boundingRectWithSize:`, que mide **el texto** y nada
@@ -412,9 +433,6 @@ Mira [Firma y distribución](/es/guide/signing-and-distribution/).
   deja fuera esas claves y avisa nombrando la clave, el plugin y el flag que las
   devuelve. Mira
   [Plugins en el Mac y en el reloj](/es/extending/plugins-on-the-mac-and-the-watch/).
-- **Los radios de esquina desiguales colapsan.** Una `CALayer` tiene un solo
-  radio, así que las cuatro esquinas redondeadas toman el mayor de ellos, con un
-  aviso una vez.
 - **`enabled` en cualquier cosa que no sea un `NSControl`** no hace nada: AppKit
   no tiene `userInteractionEnabled`.
 - **`animateDelay` se funde en la duración** —`NSAnimationContext` no tiene
