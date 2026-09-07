@@ -132,7 +132,7 @@ parámetros de ruta intactos. Esto no cuesta nada en una build de producción: n
 hay recarga, así que el valor guardado no se lee nunca.
 
 El mismo mecanismo está disponible para tus componentes — ver
-[la recarga en caliente en la referencia del CLI](/es/reference/cli/#what-a-save-actually-does)
+[la recarga en caliente en la referencia del CLI](/es/reference/cli/#qué-hace-de-verdad-un-guardado)
 para la señal `hotState`.
 
 ## Lo que no hay

@@ -701,6 +701,12 @@ export const rows = [
   }}
 />
 
+`an-custom` tampoco está en la tabla, y por otro motivo: no es un control que
+monte este framework sino un agujero por el que un **plugin** monta su propia
+vista, así que en qué se convierte depende enteramente de qué plugin. Funciona
+en todas partes menos en watchOS, donde no hay jerarquía de vistas donde meterla.
+Mira [una vista que trae un plugin](/es/extending/plugins/#una-vista-que-trae-un-plugin).
+
 `an-safe-area` no está en la tabla porque no es una primitiva: es un componente
 construido sobre `an-view` que convierte en padding los márgenes que reporta el
 host. Se monta en todas partes, pero en watchOS los márgenes son siempre cero
