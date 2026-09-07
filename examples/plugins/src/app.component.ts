@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core'
 import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
 import { Biometrics } from '@angular-native/plugin-biometrics'
+import { Camera } from '@angular-native/plugin-camera'
 import { Clipboard } from '@angular-native/plugin-clipboard'
 import { Geolocation } from '@angular-native/plugin-geolocation'
 import { Keychain } from '@angular-native/plugin-keychain'
@@ -59,6 +60,7 @@ interface Row {
 })
 export class AppComponent {
   private readonly biometrics = inject(Biometrics)
+  private readonly camera = inject(Camera)
   private readonly clipboard = inject(Clipboard)
   private readonly geolocation = inject(Geolocation)
   private readonly keychain = inject(Keychain)
@@ -82,7 +84,9 @@ export class AppComponent {
     { name: 'biometrics', run: async () =>
         `availability: ${(await this.biometrics.availability()).status}` },
     { name: 'geolocation', run: async () =>
-        `permission: ${await this.geolocation.permission()}` }
+        `permission: ${await this.geolocation.permission()}` },
+    { name: 'camera', run: async () =>
+        `permission: ${await this.camera.permission()}` }
   ]
 
   protected async run(row: Row): Promise<void> {

@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@angular-native/plugin-biometrics": "*",
+    "@angular-native/plugin-camera": "*",
     "@angular-native/plugin-clipboard": "*",
     "@angular-native/plugin-geolocation": "*",
     "@angular-native/plugin-keychain": "*",

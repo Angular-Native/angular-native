@@ -17,6 +17,7 @@
       "@angular-native/platform": ["../../packages/platform-native/src/public-api.ts"],
       "@angular-native/primitives": ["../../packages/primitives/src/public-api.ts"],
       "@angular-native/plugin-biometrics": ["../../packages/plugin-biometrics/src/public-api.ts"],
+      "@angular-native/plugin-camera": ["../../packages/plugin-camera/src/public-api.ts"],
       "@angular-native/plugin-clipboard": ["../../packages/plugin-clipboard/src/public-api.ts"],
       "@angular-native/plugin-geolocation": ["../../packages/plugin-geolocation/src/public-api.ts"],
       "@angular-native/plugin-keychain": ["../../packages/plugin-keychain/src/public-api.ts"],

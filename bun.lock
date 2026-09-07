@@ -92,6 +92,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@angular-native/plugin-biometrics": "*",
+        "@angular-native/plugin-camera": "*",
         "@angular-native/plugin-clipboard": "*",
         "@angular-native/plugin-geolocation": "*",
         "@angular-native/plugin-keychain": "*",
@@ -145,6 +146,13 @@
     },
     "packages/plugin-biometrics": {
       "name": "@angular-native/plugin-biometrics",
+      "version": "0.0.1",
+      "peerDependencies": {
+        "@angular/core": ">=22.0.0",
+      },
+    },
+    "packages/plugin-camera": {
+      "name": "@angular-native/plugin-camera",
       "version": "0.0.1",
       "peerDependencies": {
         "@angular/core": ">=22.0.0",
@@ -244,6 +252,8 @@
     "@angular-native/platform": ["@angular-native/platform@workspace:packages/platform-native"],
 
     "@angular-native/plugin-biometrics": ["@angular-native/plugin-biometrics@workspace:packages/plugin-biometrics"],
+
+    "@angular-native/plugin-camera": ["@angular-native/plugin-camera@workspace:packages/plugin-camera"],
 
     "@angular-native/plugin-clipboard": ["@angular-native/plugin-clipboard@workspace:packages/plugin-clipboard"],
 

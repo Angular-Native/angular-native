@@ -1,0 +1,86 @@
+{
+  "name": "@angular-native/plugin-camera",
+  "version": "0.0.1",
+  "description": "The camera and the photo library, presented by the system, as an angular-native plugin.",
+  "type": "module",
+  "main": "src/public-api.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/public-api.d.ts",
+      "default": "./dist/public-api.js"
+    }
+  },
+  "types": "dist/public-api.d.ts",
+  "files": [
+    "dist",
+    "native",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "keywords": [
+    "angular",
+    "native",
+    "ios",
+    "android",
+    "rust",
+    "no-webview",
+    "angular-native",
+    "plugin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Angular-Native/angular-native.git",
+    "directory": "packages/plugin-camera"
+  },
+  "license": "MIT",
+  "author": "Néstor García Bou",
+  "homepage": "https://angular-native.github.io",
+  "bugs": {
+    "url": "https://github.com/Angular-Native/angular-native/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "dist/public-api.js",
+    "module": "dist/public-api.js"
+  },
+  "peerDependencies": {
+    "@angular/core": ">=22.0.0"
+  },
+  "angularNative": {
+    "module": "camera",
+    "entry": "src/public-api.ts",
+    "ios": {
+      "sources": "native/ios",
+      "register": "AnCameraPlugin",
+      "plist": {
+        "NSCameraUsageDescription": "To take a photograph inside the app.",
+        "NSPhotoLibraryAddUsageDescription": "To save a photograph you took here."
+      }
+    },
+    "macos": {
+      "sources": "native/macos",
+      "register": "AnCameraPlugin",
+      "entitlements": {
+        "com.apple.security.device.camera": true
+      },
+      "plist": {
+        "NSCameraUsageDescription": "To take a photograph inside the app."
+      }
+    },
+    "android": {
+      "sources": "native/android",
+      "register": "dev.angularnative.plugins.CameraPlugin",
+      "manifest": {
+        "uses-permission": [
+          "android.permission.CAMERA"
+        ],
+        "uses-feature": {
+          "android.hardware.camera": false
+        }
+      }
+    },
+    "watchos": {
+      "unsupported": "a watch has no camera, and watchOS ships neither UIImagePickerController nor PHPickerViewController. What it can do is ask the paired phone to take one, which is a different feature with a different API."
+    }
+  }
+}
