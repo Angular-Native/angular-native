@@ -701,6 +701,12 @@ export const rows = [
   }}
 />
 
+`an-custom` is not in the table either, and for a different reason: it is not a
+control this framework mounts but a hole a **plugin** mounts its own view
+through, so what it becomes depends entirely on which plugin. It works
+everywhere except watchOS, where there is no view hierarchy to put one in. See
+[a view a plugin brings](/extending/plugins/#a-view-a-plugin-brings).
+
 `an-safe-area` is not in the table because it is not a primitive: it is a
 component built on top of `an-view` that turns the insets the host reports into
 padding. It mounts everywhere, but on watchOS the insets are always zero — the

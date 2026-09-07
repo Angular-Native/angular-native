@@ -319,6 +319,54 @@ an plugins examples/my-app   # is it seen?
 an ios examples/my-app       # does it work?
 ```
 
+## A view a plugin brings
+
+A plugin contributes methods. That was true without exception until recently,
+and it is why a barcode scanner could only ever open full screen: a live preview
+is a view, and there was no way for one to exist.
+
+There is now exactly one hole, and it is worth understanding why it is shaped
+this way. `NodeKind` in the core is a closed enum whose byte codes are frozen in
+the protocol — that byte is the thing four files in three languages have to
+agree about, and `check-kinds.sh` exists to keep them agreeing. Opening it to
+arbitrary names would end that. So instead there is **one** new kind, `Custom`,
+and the name travels as a prop: the kind says "ask the host's plugin-view
+registry", and `an:view` says which one.
+
+A plugin registers a factory:
+
+```swift
+AnPluginViews.register("barcode-preview") { AnBarcodePreview() }
+```
+
+```java
+AnPluginViews.register("barcode-preview", context -> new BarcodePreview(context));
+```
+
+and a template mounts it like any other box:
+
+```html
+<an-custom [view]="'barcode-preview'" [style.height]="'260'" [borderRadius]="16" />
+```
+
+Three things follow from the design, and all three are load-bearing:
+
+- **It is never measured by its content.** Measuring would mean the core calling
+  into a plugin during layout, on the engine thread, and the whole measuring
+  path is built the other way round. Give it a size; a view with none comes out
+  at zero, which looks like a plugin that does not work.
+- **A name nobody registered mounts nothing** and says so once in the log, naming
+  the name. Once per name and not once per node: a list of five hundred rows
+  with the same missing view is one mistake.
+- **Not on watchOS.** That host mirrors the tree into a model SwiftUI redraws
+  rather than mounting views, so there is nowhere to put one.
+
+This is not a way to add a primitive. A primitive is a control the framework
+mounts on **every** host, with a name every layer agrees about and a check that
+keeps them agreeing. A plugin view is one platform's view, mounted where the
+template asked, sized by the layout and nothing else — and an app using it is
+choosing to be that much less portable, on purpose.
+
 ## A missing platform shows itself
 
 **It is the most important rule in this system.** A plugin covering only iOS,
