@@ -1,0 +1,30 @@
+---
+/*
+ * The last thing on the page.
+ *
+ * A docs landing that ends on its final paragraph reads as having run out
+ * rather than arrived. This is the same offer the top of the page made, made
+ * again to somebody who has now read the argument — so it is one line and one
+ * button, not a second pitch.
+ */
+import { LinkButton } from '@astrojs/starlight/components'
+
+interface Props {
+  title: string
+  /** The word inside the title that carries the gradient. */
+  accent: string
+  body: string
+  action: string
+  href: string
+}
+
+const { title, accent, body, action, href } = Astro.props
+---
+
+<section class="an-closing not-content">
+  <h2 class="an-closing__title">
+    {title} <em>{accent}</em>
+  </h2>
+  <p class="an-closing__body">{body}</p>
+  <LinkButton {href} variant="primary" icon="right-arrow">{action}</LinkButton>
+</section>

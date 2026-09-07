@@ -1,0 +1,104 @@
+---
+/*
+ * The stack, as a diagram rather than as box-drawing characters.
+ *
+ * The ASCII version was accurate and it read well in a terminal, which is
+ * where the README is read. On a page it has three problems the SVG does not:
+ * it does not reflow, its monospace measure decides the page's minimum width,
+ * and a screen reader gets a wall of pipes and dashes.
+ *
+ * So: real text in real elements, one `viewBox` that scales, colours taken from
+ * the site's custom properties so it follows the theme without a second copy,
+ * and a `<title>`/`<desc>` pair that says out loud what the picture says.
+ *
+ * Every string comes from the page, because the Spanish page draws the same
+ * diagram with its own words.
+ */
+interface Layer {
+  /** The band's label on the right: JS, Rust, the hosts. */
+  side: string
+  lines: string[]
+}
+
+interface Props {
+  title: string
+  description: string
+  layers: Layer[]
+  /** What travels between one band and the next. One fewer than there are layers. */
+  arrows: string[]
+}
+
+const { title, description, layers, arrows } = Astro.props
+
+const boxHeight = (layer: Layer) => 26 + layer.lines.length * 20
+const gap = 44
+let y = 14
+const placed = layers.map((layer) => {
+  const box = { layer, y, height: boxHeight(layer) }
+  y += box.height + gap
+  return box
+})
+const height = y - gap + 14
+---
+
+<figure class="an-diagram not-content">
+  <svg
+    viewBox={`0 0 640 ${height}`}
+    role="img"
+    aria-labelledby="an-diagram-title an-diagram-desc"
+    preserveAspectRatio="xMidYMin meet">
+    <title id="an-diagram-title">{title}</title>
+    <desc id="an-diagram-desc">{description}</desc>
+
+    {
+      placed.map((box, index) => (
+        <>
+          <rect
+            class="an-diagram__box"
+            x="1"
+            y={box.y}
+            width="520"
+            height={box.height}
+            rx="10"
+          />
+          {box.layer.lines.map((line, row) => (
+            <text class="an-diagram__line" x="20" y={box.y + 26 + row * 20}>
+              {line}
+            </text>
+          ))}
+          <text class="an-diagram__side" x="540" y={box.y + box.height / 2 + 4}>
+            {box.layer.side}
+          </text>
+          {index < placed.length - 1 && (
+            <>
+              <line
+                class="an-diagram__arrow"
+                x1="60"
+                y1={box.y + box.height + 6}
+                x2="60"
+                y2={box.y + box.height + gap - 10}
+                marker-end="url(#an-diagram-head)"
+              />
+              <text class="an-diagram__flow" x="76" y={box.y + box.height + gap / 2 + 4}>
+                {arrows[index]}
+              </text>
+            </>
+          )}
+        </>
+      ))
+    }
+
+    <defs>
+      <marker
+        id="an-diagram-head"
+        viewBox="0 0 8 8"
+        refX="7"
+        refY="4"
+        markerWidth="6"
+        markerHeight="6"
+        orient="auto">
+        <path class="an-diagram__head" d="M 0 0 L 8 4 L 0 8 z" />
+      </marker>
+    </defs>
+  </svg>
+</figure>

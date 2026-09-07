@@ -1,0 +1,23 @@
+---
+/*
+ * A section opening, the same one the whole landing uses.
+ *
+ * The page had two kinds of heading: the eyebrow-and-title of the components
+ * written for it, and plain markdown `##`s left over from an earlier version.
+ * Two heading systems on one page is the thing that makes a redesign look
+ * half-finished, so the markdown ones go through here instead.
+ */
+interface Props {
+  eyebrow: string
+  title: string
+  body?: string
+}
+
+const { eyebrow, title, body } = Astro.props
+---
+
+<header class="an-section not-content">
+  <p class="an-section__eyebrow">{eyebrow}</p>
+  <h2 class="an-section__title">{title}</h2>
+  {body && <p class="an-section__body" set:html={body} />}
+</header>

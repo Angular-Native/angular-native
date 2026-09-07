@@ -32,69 +32,137 @@
 
 /* ------------------------------------------------------------------ hero -- */
 
+/* Centred and vertical. The claim is one sentence; a sentence that short reads
+   better with nothing beside it competing for the first look. */
 .an-hero {
-	display: grid;
-	gap: 2.5rem;
-	padding-block: 2.5rem 1rem;
+	position: relative;
+	overflow: clip;
+	display: flex;
+	flex-direction: column;
 	align-items: center;
+	text-align: center;
+	padding-block: clamp(3rem, 8vw, 6.5rem) clamp(1.5rem, 3vw, 2.5rem);
 }
 
-.an-hero__copy,
-.an-hero__sample {
-	min-width: 0;
+/* A hairline grid behind the opening screen, fading out before it reaches the
+   content. It is texture and not a table: at full strength it would read as a
+   spreadsheet, and it is set in a custom property so the light theme can pull
+   it down further still. */
+.an-hero__grid {
+	position: absolute;
+	/* Not `-50vw`: bleeding past the viewport widens the document and pushes
+	   every centred thing on the page off to the left. The mask fades the grid
+	   out well before the edges anyway, so the box is enough. */
+	inset: -3rem 0 0;
+	pointer-events: none;
+	background-image: linear-gradient(var(--an-grid) 1px, transparent 1px),
+		linear-gradient(90deg, var(--an-grid) 1px, transparent 1px);
+	background-size: 4.5rem 4.5rem;
+	mask-image: radial-gradient(42rem 22rem at 50% 6rem, #000 0%, transparent 78%);
+	z-index: 0;
 }
 
-.an-hero__eyebrow {
-	font-size: 0.75rem;
-	font-weight: 600;
-	letter-spacing: 0.09em;
-	text-transform: uppercase;
+.an-hero > *:not(.an-hero__grid) {
+	position: relative;
+	z-index: 1;
+}
+
+/* What changed recently, as a link rather than a banner: it sits above the
+   headline because that is where somebody returning to the site looks first,
+   and it is small because somebody arriving for the first time should read
+   straight past it. */
+.an-announce {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.3125rem 0.875rem 0.3125rem 0.75rem;
+	margin-bottom: 1.75rem;
+	font-size: 0.8125rem;
+	line-height: 1.4;
+	color: var(--sl-color-gray-2);
+	text-decoration: none;
+	background-color: var(--an-surface);
+	border: 1px solid var(--an-border);
+	border-radius: 2rem;
+	transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.an-announce:hover {
+	color: var(--sl-color-white);
+	border-color: var(--an-border-strong);
+}
+
+.an-announce__dot {
+	width: 0.4375rem;
+	height: 0.4375rem;
+	border-radius: 50%;
+	background: var(--an-gradient);
+}
+
+.an-announce__arrow {
+	color: var(--sl-color-gray-3);
+}
+
+.an-announce:hover .an-announce__arrow {
 	color: var(--sl-color-text-accent);
-	margin: 0 0 0.875rem;
 }
 
 .an-hero h1 {
-	font-size: clamp(2.125rem, 1.2rem + 3.2vw, 2.875rem);
-	line-height: 1.08;
-	letter-spacing: -0.035em;
+	font-size: clamp(2.375rem, 1.1rem + 5.2vw, 4.25rem);
+	line-height: 1.04;
+	letter-spacing: -0.042em;
 	font-weight: 700;
 	color: var(--sl-color-white);
 	margin: 0;
+	max-width: 18ch;
 	text-wrap: balance;
 }
 
+/* The one gradient on the site, on the one clause that is the whole argument.
+   `em` is what the page's frontmatter wraps it in, so the choice of which words
+   get it belongs to the page and to its translation. */
 .an-hero h1 em {
 	font-style: normal;
-	color: var(--sl-color-text-accent);
+	background: var(--an-gradient);
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
 }
 
 /* The headline is two sentences and it should break between them, not inside
-   the second one. Only once there is room for each on a line of its own —
-   below that the browser wraps it as it sees fit. */
+   the second one. Only once there is room for each on a line of its own. */
 .an-hero h1 br {
 	display: none;
 }
 
-@media (min-width: 60rem) {
+@media (min-width: 46rem) {
 	.an-hero h1 br {
 		display: inline;
 	}
 }
 
 .an-hero__tagline {
-	margin: 1.125rem 0 0;
-	font-size: clamp(1rem, 0.9rem + 0.4vw, 1.1875rem);
+	margin: 1.25rem 0 0;
+	font-size: clamp(1rem, 0.92rem + 0.4vw, 1.1875rem);
 	line-height: 1.6;
 	color: var(--sl-color-gray-3);
-	max-width: 34rem;
+	max-width: 44ch;
 	text-wrap: pretty;
 }
 
 .an-hero__actions {
 	display: flex;
 	flex-wrap: wrap;
+	justify-content: center;
 	gap: 0.75rem;
-	margin-top: 1.75rem;
+	margin-top: 2rem;
+}
+
+/* Pills on the landing only. In the docs the same component is a rectangle,
+   because there it sits in prose and a pill in a paragraph reads as a tag. */
+.an-hero__actions .sl-link-button {
+	border-radius: 2rem;
+	padding-inline: 1.375rem;
 }
 
 /* The command line: a terminal without pretending to be a screenshot of one. */
@@ -103,13 +171,14 @@
 	grid-template-columns: auto minmax(0, 1fr) auto;
 	align-items: center;
 	gap: 0.5rem 0.625rem;
-	margin-top: 1.5rem;
+	margin-top: 2rem;
 	padding: 0.6rem 0.6rem 0.6rem 0.875rem;
 	border: 1px solid var(--an-border);
-	border-radius: var(--an-radius-sm);
+	border-radius: var(--an-radius);
 	background-color: var(--an-surface);
 	font-family: var(--sl-font-mono);
 	font-size: 0.8125rem;
+	text-align: left;
 	max-width: min(32rem, 100%);
 	overflow-x: auto;
 }
@@ -156,33 +225,158 @@
 	border-color: color-mix(in srgb, var(--an-ok) 45%, transparent);
 }
 
-.an-hero__sample {
-	min-width: 0;
-}
-
-.an-hero__sample .expressive-code {
-	margin: 0;
-}
-
-.an-hero__note {
-	margin: 0.875rem 0 0;
-	font-size: 0.8125rem;
-	line-height: 1.55;
+/* The count, last: it is a fact about the project and not a promise about it,
+   so it reads after the claim rather than before. */
+.an-hero__eyebrow {
+	margin: 2rem 0 0;
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
 	color: var(--sl-color-gray-3);
 }
 
-.an-hero__note code {
-	font-family: var(--sl-font-mono);
-	font-size: 0.9em;
-	color: var(--sl-color-gray-2);
+/* ------------------------------------------------------------- signature -- */
+
+.an-signature {
+	margin-top: clamp(1.5rem, 4vw, 3rem);
 }
 
-@media (min-width: 60rem) {
-	.an-hero {
-		grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
-		gap: 3.5rem;
-		padding-block: 4.5rem 2rem;
+.an-signature__head {
+	max-width: 46rem;
+}
+
+.an-signature__eyebrow {
+	margin: 0 0 0.625rem;
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
+	color: var(--sl-color-text-accent);
+}
+
+.an-signature__title {
+	margin: 0;
+	font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2rem);
+	line-height: 1.15;
+	letter-spacing: -0.028em;
+	font-weight: 700;
+	color: var(--sl-color-white);
+}
+
+.an-signature__body {
+	margin: 0.875rem 0 0;
+	font-size: 1rem;
+	line-height: 1.65;
+	color: var(--sl-color-gray-3);
+	text-wrap: pretty;
+}
+
+.an-signature__panels {
+	display: grid;
+	gap: 1rem;
+	margin-top: 2rem;
+	/* A grid item is `min-width: auto` by default, which for a code block means
+	   "as wide as the longest line". On a phone that pushed the whole page
+	   sideways by about a hundred points. */
+	grid-template-columns: minmax(0, 1fr);
+}
+
+.an-signature__panels > * {
+	min-width: 0;
+}
+
+@media (min-width: 54rem) {
+	.an-signature__panels {
+		grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+		gap: 1.25rem;
 	}
+}
+
+/* The code goes through Expressive Code like every other block on the site —
+   an unhighlighted panel next to a highlighted one reads as the odd one out,
+   and this is the block the whole page is about. Only the radius is overridden,
+   so it matches the panel beside it. */
+.an-signature__code .expressive-code,
+.an-signature__code .expressive-code pre {
+	margin: 0;
+	border-radius: var(--an-radius-lg);
+}
+
+.an-signature__code .expressive-code pre {
+	padding-block: 1.25rem;
+}
+
+.an-signature__answer {
+	display: flex;
+	flex-direction: column;
+	padding: 1.25rem 1.375rem;
+	background-color: var(--an-surface);
+	border: 1px solid var(--an-border);
+	border-radius: var(--an-radius-lg);
+}
+
+.an-signature__chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+}
+
+.an-signature__chip {
+	padding: 0.25rem 0.6875rem;
+	font: inherit;
+	font-size: 0.78125rem;
+	line-height: 1.4;
+	color: var(--sl-color-gray-2);
+	background-color: transparent;
+	border: 1px solid var(--an-border);
+	border-radius: 2rem;
+	cursor: pointer;
+	transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.an-signature__chip:hover {
+	color: var(--sl-color-white);
+	border-color: var(--an-border-strong);
+}
+
+.an-signature__chip[aria-pressed='true'] {
+	color: var(--sl-color-text-accent);
+	border-color: var(--sl-color-accent);
+	background-color: var(--an-accent-tint);
+}
+
+.an-signature__label {
+	margin: 1.5rem 0 0.5rem;
+	font-size: 0.6875rem;
+	font-weight: 600;
+	letter-spacing: 0.07em;
+	text-transform: uppercase;
+	color: var(--sl-color-gray-4);
+}
+
+.an-signature__card + .an-signature__card {
+	margin-top: 0.75rem;
+}
+
+.an-signature__becomes {
+	font-family: var(--sl-font-mono);
+	font-size: 1.0625rem;
+	line-height: 1.4;
+	color: var(--sl-color-white);
+	overflow-wrap: anywhere;
+}
+
+.an-signature__card[data-absent='true'] .an-signature__becomes {
+	color: var(--sl-color-gray-3);
+}
+
+.an-signature__note {
+	margin: 0.5rem 0 0;
+	font-size: 0.875rem;
+	line-height: 1.6;
+	color: var(--sl-color-gray-3);
+	text-wrap: pretty;
 }
 
 /* -------------------------------------------------------------- sections -- */
@@ -344,4 +538,487 @@
 	margin-bottom: 0;
 	color: var(--sl-color-gray-3);
 	font-size: 0.9375rem;
+}
+
+/* -------------------------------------------------------------- showcase -- */
+
+.an-showcase {
+	margin-top: clamp(3.5rem, 8vw, 6rem);
+}
+
+.an-showcase__head {
+	max-width: 46rem;
+}
+
+.an-showcase__eyebrow {
+	margin: 0 0 0.625rem;
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
+	color: var(--sl-color-text-accent);
+}
+
+.an-showcase__title {
+	margin: 0;
+	font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2rem);
+	line-height: 1.15;
+	letter-spacing: -0.028em;
+	font-weight: 700;
+	color: var(--sl-color-white);
+}
+
+.an-showcase__body {
+	margin: 0.875rem 0 0;
+	font-size: 1rem;
+	line-height: 1.65;
+	color: var(--sl-color-gray-3);
+	text-wrap: pretty;
+}
+
+.an-showcase__grid {
+	display: grid;
+	gap: 2.5rem 1.5rem;
+	margin-top: 2.5rem;
+}
+
+@media (min-width: 46rem) {
+	.an-showcase__grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+
+.an-demo {
+	display: flex;
+	flex-direction: column;
+	gap: 1.25rem;
+}
+
+/* A phone, drawn rather than photographed: a rounded rectangle with a bezel and
+   nothing else. A photograph of a specific handset would date the page and
+   would also be a claim about which device this is, which it is not. */
+.an-demo__phone {
+	align-self: center;
+	width: min(15rem, 100%);
+	padding: 0.5rem;
+	background: linear-gradient(170deg, var(--an-border-strong), var(--an-surface));
+	border: 1px solid var(--an-border);
+	border-radius: 2.25rem;
+	box-shadow: 0 1.5rem 3rem hsl(220 40% 2% / 0.45);
+}
+
+.an-demo__screen {
+	position: relative;
+	overflow: hidden;
+	border-radius: 1.75rem;
+	background-color: #0b0e14;
+	aspect-ratio: 1206 / 2622;
+}
+
+.an-demo__video {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.an-demo__title {
+	margin: 0;
+	font-size: 1.0625rem;
+	font-weight: 650;
+	letter-spacing: -0.015em;
+	color: var(--sl-color-white);
+}
+
+.an-demo__body {
+	margin: 0.5rem 0 0;
+	font-size: 0.9375rem;
+	line-height: 1.6;
+	color: var(--sl-color-gray-3);
+	text-wrap: pretty;
+}
+
+.an-demo__uses {
+	list-style: none;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+	margin: 0.875rem 0 0;
+	padding: 0;
+}
+
+.an-demo__uses code {
+	font-family: var(--sl-font-mono);
+	font-size: 0.75rem;
+	padding: 0.1875rem 0.5rem;
+	color: var(--sl-color-gray-2);
+	background-color: var(--an-surface);
+	border: 1px solid var(--an-border);
+	border-radius: 2rem;
+}
+
+.an-demo__link {
+	display: inline-block;
+	margin-top: 1rem;
+	font-size: 0.9375rem;
+	font-weight: 600;
+	color: var(--sl-color-text-accent);
+	text-decoration: none;
+}
+
+.an-demo__link:hover {
+	text-decoration: underline;
+	text-underline-offset: 0.25em;
+}
+
+/* ---------------------------------------------------------------- bento -- */
+
+.an-bento {
+	display: grid;
+	gap: 1rem;
+	margin-top: 2.5rem;
+}
+
+@media (min-width: 46rem) {
+	.an-bento {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	/* The first panel is the argument the whole project rests on, so it gets
+	   the width. Four identical squares would say the four are equal, and they
+	   are not. */
+	.an-bento__panel[data-wide] {
+		grid-column: 1 / -1;
+	}
+}
+
+.an-bento__panel {
+	display: flex;
+	flex-direction: column;
+	/* A flex item is `min-width: auto`, which here means "as wide as the longest
+	   line of the log output inside". That line is deliberately long, so without
+	   this the panel is wider than the phone it is being read on. */
+	min-width: 0;
+	padding: 1.5rem;
+	background-color: var(--an-surface);
+	border: 1px solid var(--an-border);
+	border-radius: var(--an-radius-lg);
+	transition: border-color 0.2s ease;
+}
+
+.an-bento__panel:hover {
+	border-color: var(--an-border-strong);
+}
+
+.an-bento__title {
+	margin: 0;
+	font-size: 1.0625rem;
+	font-weight: 650;
+	letter-spacing: -0.015em;
+	color: var(--sl-color-white);
+}
+
+.an-bento__body {
+	margin: 0.625rem 0 0;
+	font-size: 0.9375rem;
+	line-height: 1.65;
+	color: var(--sl-color-gray-3);
+	text-wrap: pretty;
+	max-width: 46ch;
+}
+
+.an-bento__body code {
+	font-family: var(--sl-font-mono);
+	font-size: 0.875em;
+	color: var(--sl-color-gray-1);
+}
+
+.an-bento__rows {
+	list-style: none;
+	display: grid;
+	gap: 0.5rem;
+	margin: 1.25rem 0 0;
+	padding: 0;
+}
+
+@media (min-width: 34rem) {
+	.an-bento__panel[data-wide] .an-bento__rows {
+		grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+	}
+}
+
+.an-bento__rows li {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 0.75rem;
+	padding: 0.5rem 0.75rem;
+	background-color: var(--an-surface-raised);
+	border: 1px solid var(--an-border);
+	border-radius: var(--an-radius-sm);
+}
+
+.an-bento__label {
+	font-size: 0.8125rem;
+	color: var(--sl-color-gray-2);
+}
+
+.an-bento__value {
+	font-family: var(--sl-font-mono);
+	font-size: 0.75rem;
+	color: var(--sl-color-text-accent);
+	white-space: nowrap;
+}
+
+.an-bento__output {
+	margin: 1.25rem 0 0;
+	padding: 0.75rem 0.875rem;
+	overflow-x: auto;
+	background-color: var(--an-code-bg);
+	border: 1px solid var(--an-border);
+	border-radius: var(--an-radius-sm);
+	font-family: var(--sl-font-mono);
+	font-size: 0.75rem;
+	line-height: 1.6;
+	color: var(--an-partial);
+	white-space: pre;
+}
+
+/* -------------------------------------------------------------- closing -- */
+
+.an-closing {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	text-align: center;
+	margin: clamp(4rem, 10vw, 7rem) 0 clamp(2rem, 5vw, 4rem);
+	padding-top: clamp(3rem, 7vw, 5rem);
+	border-top: 1px solid var(--sl-color-hairline);
+}
+
+.an-closing__title {
+	margin: 0;
+	font-size: clamp(1.75rem, 1.1rem + 2.6vw, 2.75rem);
+	line-height: 1.1;
+	letter-spacing: -0.035em;
+	font-weight: 700;
+	color: var(--sl-color-white);
+}
+
+.an-closing__title em {
+	font-style: normal;
+	background: var(--an-gradient);
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+}
+
+.an-closing__body {
+	margin: 1rem 0 1.75rem;
+	max-width: 40ch;
+	font-size: 1rem;
+	line-height: 1.6;
+	color: var(--sl-color-gray-3);
+	text-wrap: pretty;
+}
+
+.an-closing .sl-link-button {
+	border-radius: 2rem;
+	padding-inline: 1.5rem;
+}
+
+/* ------------------------------------------------- section openings -- */
+
+.an-section {
+	max-width: 46rem;
+	margin-top: clamp(3.5rem, 8vw, 6rem);
+}
+
+.an-section__eyebrow {
+	margin: 0 0 0.625rem;
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
+	color: var(--sl-color-text-accent);
+}
+
+.an-section__title {
+	margin: 0;
+	font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2rem);
+	line-height: 1.15;
+	letter-spacing: -0.028em;
+	font-weight: 700;
+	color: var(--sl-color-white);
+}
+
+.an-section__body {
+	margin: 0.875rem 0 0;
+	font-size: 1rem;
+	line-height: 1.65;
+	color: var(--sl-color-gray-3);
+	text-wrap: pretty;
+}
+
+/* The landing's own headings replace the markdown ones, so the leftover rule
+   that put a hairline and an accent segment above every `h2` has nothing to
+   act on here. */
+:root[data-has-hero] .sl-markdown-content .sl-heading-wrapper.level-h2::after {
+	display: none;
+}
+
+/* --------------------------------------------------------- commands -- */
+
+.an-commands {
+	display: grid;
+	gap: 2rem;
+	margin-top: clamp(3.5rem, 8vw, 6rem);
+	grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 54rem) {
+	.an-commands {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+		gap: 3rem;
+		align-items: center;
+	}
+}
+
+.an-commands > * {
+	min-width: 0;
+}
+
+.an-commands .an-section {
+	margin-top: 0;
+}
+
+.an-commands__notes {
+	margin: 1.75rem 0 0;
+	display: grid;
+	gap: 0.625rem;
+}
+
+.an-commands__notes div {
+	display: flex;
+	align-items: baseline;
+	gap: 0.75rem;
+}
+
+.an-commands__notes dt {
+	flex: 0 0 5.5rem;
+	margin: 0;
+}
+
+.an-commands__notes dt code {
+	font-family: var(--sl-font-mono);
+	font-size: 0.8125rem;
+	color: var(--sl-color-text-accent);
+}
+
+.an-commands__notes dd {
+	margin: 0;
+	font-size: 0.875rem;
+	line-height: 1.55;
+	color: var(--sl-color-gray-3);
+}
+
+.an-commands__code .expressive-code,
+.an-commands__code .expressive-code pre {
+	margin: 0;
+	border-radius: var(--an-radius-lg);
+}
+
+/* ------------------------------------------- platform tiles, aligned -- */
+
+/* Same surface, same radius and same border as the bento above them, so the
+   two sections read as one page rather than two eras of it. */
+.an-platform {
+	border-radius: var(--an-radius-lg);
+	padding: 1.125rem 1.25rem;
+}
+
+.an-platforms {
+	margin-top: 2.5rem;
+}
+
+/* --------------------------------------------------------- glints -- */
+
+/* A light running along one of the grid's own lines, and only ever along a
+   line: the grid is set at 4.5rem, so each glint is placed at a multiple of it
+   and travels the axis that line runs on. Off the line it would read as a
+   stray highlight; on it, it reads as the rule itself catching the light.
+   
+   They are children of the grid, so its radial mask fades them out at the
+   edges for free — a glint never arrives or leaves at a hard boundary. Four of
+   them, on different offsets and long waits, so no two are ever in step and the
+   page never looks like it is playing an animation at you. */
+.an-glint {
+	position: absolute;
+	pointer-events: none;
+	opacity: 0;
+}
+
+.an-glint[data-axis='x'] {
+	top: var(--at);
+	left: 0;
+	width: 14rem;
+	height: 1px;
+	background: linear-gradient(
+		90deg,
+		transparent,
+		color-mix(in srgb, var(--sl-color-accent) 55%, transparent) 45%,
+		color-mix(in srgb, var(--sl-color-accent) 85%, transparent) 50%,
+		color-mix(in srgb, var(--sl-color-accent) 55%, transparent) 55%,
+		transparent
+	);
+	animation: an-glint-x 9s var(--wait) infinite ease-in-out;
+}
+
+.an-glint[data-axis='y'] {
+	left: var(--at);
+	top: 0;
+	width: 1px;
+	height: 10rem;
+	background: linear-gradient(
+		180deg,
+		transparent,
+		color-mix(in srgb, var(--sl-color-accent) 45%, transparent) 45%,
+		color-mix(in srgb, var(--sl-color-accent) 75%, transparent) 50%,
+		color-mix(in srgb, var(--sl-color-accent) 45%, transparent) 55%,
+		transparent
+	);
+	animation: an-glint-y 11s var(--wait) infinite ease-in-out;
+}
+
+/* The travel is most of the cycle and the fade is at both ends, so what you
+   notice is the movement rather than something switching on. */
+@keyframes an-glint-x {
+	0% {
+		transform: translateX(-14rem);
+		opacity: 0;
+	}
+	12%,
+	60% {
+		opacity: 1;
+	}
+	72%,
+	100% {
+		transform: translateX(70rem);
+		opacity: 0;
+	}
+}
+
+@keyframes an-glint-y {
+	0% {
+		transform: translateY(-10rem);
+		opacity: 0;
+	}
+	14%,
+	58% {
+		opacity: 1;
+	}
+	70%,
+	100% {
+		transform: translateY(42rem);
+		opacity: 0;
+	}
 }

@@ -1,0 +1,147 @@
+---
+/*
+ * The support matrix, as something you can narrow down.
+ *
+ * As a plain table this is the widest thing on the site: twenty-five rows by
+ * seven platforms, and on a phone it is a horizontal scroll that loses the
+ * primitive's name the moment you look at the column you came for. What a
+ * reader wants from it is nearly always one question — "does my platform have
+ * this" — and the answer is one column.
+ *
+ * So the columns can be filtered down to one, the first column stays put while
+ * the rest scrolls, and every cell says its state in a `title` as well as in a
+ * colour, because a dot on its own is not an answer for somebody who cannot
+ * see the colour.
+ *
+ * Without JavaScript every column is shown and the table is the table it always
+ * was. The filter is an enhancement, not a requirement — the same rule the
+ * framework itself follows about gaps.
+ *
+ * Both the labels and the rows come from the page, so the Spanish page uses
+ * this component with its own words.
+ */
+type Level = 'full' | 'partial' | 'none'
+
+interface Cell {
+  level: Level
+  /** Shown instead of the dot: "title bar", "tiles". */
+  note?: string
+}
+
+interface Row {
+  name: string
+  cells: Cell[]
+}
+
+interface Props {
+  /** Column headings, in the order the cells come in. */
+  platforms: string[]
+  rows: Row[]
+  /** Row of totals under the table, one per platform. */
+  totals?: string[]
+  labels: {
+    /** Above the filter chips. */
+    filter: string
+    /** The chip that puts every column back. */
+    all: string
+    primitive: string
+    full: string
+    partial: string
+    none: string
+  }
+}
+
+const { platforms, rows, totals, labels } = Astro.props
+const state = (level: Level) =>
+  level === 'full' ? labels.full : level === 'partial' ? labels.partial : labels.none
+---
+
+<figure class="an-matrix not-content" data-matrix>
+  <div class="an-matrix__filter">
+    <span class="an-matrix__filter-label" id="an-matrix-filter">{labels.filter}</span>
+    <div class="an-matrix__chips" role="group" aria-labelledby="an-matrix-filter">
+      <button type="button" class="an-matrix__chip" data-column="all" aria-pressed="true">
+        {labels.all}
+      </button>
+      {
+        platforms.map((platform, index) => (
+          <button
+            type="button"
+            class="an-matrix__chip"
+            data-column={String(index)}
+            aria-pressed="false">
+            {platform}
+          </button>
+        ))
+      }
+    </div>
+  </div>
+
+  <div class="an-matrix__scroll">
+    <table class="an-matrix__table">
+      <thead>
+        <tr>
+          <th scope="col">{labels.primitive}</th>
+          {platforms.map((platform, index) => <th scope="col" data-column={String(index)}>{platform}</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {
+          rows.map((row) => (
+            <tr>
+              <th scope="row"><code>{row.name}</code></th>
+              {row.cells.map((cell, index) => (
+                <td data-column={String(index)} data-level={cell.level}>
+                  {cell.note ? (
+                    <span class="an-matrix__note">{cell.note}</span>
+                  ) : (
+                    <span class="an-matrix__dot" aria-hidden="true" />
+                  )}
+                  <span class="sr-only">{cell.note ?? state(cell.level)}</span>
+                </td>
+              ))}
+            </tr>
+          ))
+        }
+      </tbody>
+      {
+        totals && (
+          <tfoot>
+            <tr>
+              <th scope="row" />
+              {totals.map((total, index) => (
+                <td data-column={String(index)}>{total}</td>
+              ))}
+            </tr>
+          </tfoot>
+        )
+      }
+    </table>
+  </div>
+
+  <figcaption class="an-matrix__legend">
+    <span><span class="an-matrix__dot" data-level="full" aria-hidden="true" />{labels.full}</span>
+    <span><span class="an-matrix__dot" data-level="partial" aria-hidden="true" />{labels.partial}</span>
+    <span><span class="an-matrix__dot" data-level="none" aria-hidden="true" />{labels.none}</span>
+  </figcaption>
+</figure>
+
+<script>
+  // One column at a time, or all of them. The chips are buttons rather than a
+  // <select> so the current one is visible without being opened, and
+  // `aria-pressed` is what carries the state to a screen reader.
+  for (const matrix of document.querySelectorAll<HTMLElement>('[data-matrix]')) {
+    const chips = matrix.querySelectorAll<HTMLButtonElement>('.an-matrix__chip')
+    chips.forEach((chip) =>
+      chip.addEventListener('click', () => {
+        const wanted = chip.dataset.column
+        chips.forEach((other) =>
+          other.setAttribute('aria-pressed', String(other === chip))
+        )
+        for (const cell of matrix.querySelectorAll<HTMLElement>('[data-column]')) {
+          cell.hidden = wanted !== 'all' && cell.dataset.column !== wanted
+        }
+      })
+    )
+  }
+</script>

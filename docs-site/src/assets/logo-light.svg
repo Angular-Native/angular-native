@@ -1,4 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 34 32" width="34" height="32" role="img" aria-hidden="true">
-  <path d="M12 7 4.5 16 12 25" fill="none" stroke="#1a1e26" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="17.5" y="9.5" width="13" height="13" rx="4" fill="#cf3c17"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 38 24" width="38" height="24" role="img" aria-hidden="true">
+  <!--
+    The mark is a switch, because the switch is the argument.
+
+    A chevron and a rounded square could be any developer tool. This project
+    spends its front page insisting that `<an-switch>` *is* a UISwitch and a
+    MaterialSwitch, so the mark is that control: unmistakable as something the
+    system drew, at any size, which is the claim it is standing for.
+
+    It is drawn on, with the thumb to the right, because a switch that is off
+    is a switch you have to look twice at.
+  -->
+  <defs>
+    <linearGradient id="an-mark-light" x1="0" y1="0" x2="1" y2="0.4">
+      <stop offset="0" stop-color="#f5602b"/>
+      <stop offset="0.55" stop-color="#f0295a"/>
+      <stop offset="1" stop-color="#e8479c"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="36" height="22" rx="11" fill="url(#an-mark-light)"/>
+  <circle cx="26" cy="12" r="8" fill="#ffffff"/>
 </svg>

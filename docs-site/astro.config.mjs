@@ -1,6 +1,35 @@
 // @ts-check
+import { readFileSync, writeFileSync } from 'node:fs'
 import starlight from '@astrojs/starlight'
 import { defineConfig } from 'astro/config'
+
+// Where the site lives, read from the one file that says so.
+//
+// The URL is not only Astro's business: it is in the README's links, in the
+// `homepage` of every npm package, and inside the error messages the CLI
+// prints when it wants to send somebody to a page. Those cannot share a
+// variable across three languages and a JSON manifest, so they are written out
+// — and `scripts/check-docs-url.sh` fails the build when any of them disagrees
+// with this file. Moving the site is editing `DOCS_URL` and running that
+// script with `--fix`; nothing else is edited by hand.
+const site = readFileSync(new URL('../DOCS_URL', import.meta.url), 'utf8').trim()
+
+// GitHub Pages serves a custom domain only if the built output carries a
+// `CNAME` file, and serves a `*.github.io` address only if it does not. Which
+// of the two is wanted follows from the URL above, so it is derived rather
+// than kept as a second switch somebody has to remember to flip.
+const customDomain = new URL(site).hostname
+const cname = customDomain.endsWith('.github.io') ? null : customDomain
+
+/** @type {import('astro').AstroIntegration} */
+const pagesCname = {
+  name: 'an:pages-cname',
+  hooks: {
+    'astro:build:done': ({ dir }) => {
+      if (cname) writeFileSync(new URL('CNAME', dir), cname + '\n')
+    }
+  }
+}
 
 // The project's documentation.
 //
@@ -14,8 +43,9 @@ import { defineConfig } from 'astro/config'
 // yet, so a half-finished translation shows the English page instead of a 404 —
 // which is exactly what is wanted while a translation catches up.
 export default defineConfig({
-  site: 'https://angular-native.dev',
+  site,
   integrations: [
+    pagesCname,
     starlight({
       title: 'angular-native',
       // A chevron turning into a filled rounded rectangle: markup on the left,
@@ -34,7 +64,11 @@ export default defineConfig({
       // argument in the first screenful, so that one component is replaced and
       // everything else is left alone.
       components: {
-        Hero: './src/components/Hero.astro'
+        Hero: './src/components/Hero.astro',
+        // The stock page head is a title with the description under it as
+        // prose. These pages needed to say where in the site they sit, and to
+        // open the way the home page's sections do.
+        PageTitle: './src/components/PageTitle.astro'
       },
       // Code is most of what is read here, so it gets a theme of its own rather
       // than the default's high-contrast primaries: Vitesse is low in

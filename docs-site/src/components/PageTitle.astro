@@ -1,0 +1,37 @@
+---
+/*
+ * The head of a documentation page.
+ *
+ * Starlight prints the title and, under it, the description as ordinary prose,
+ * which on a reference page reads as a first paragraph that happens to repeat
+ * the tab's name. The home page opens every section with a label and a title;
+ * these pages had no such opening at all, which is most of why they still
+ * looked like the theme out of the box rather than like the rest of the site.
+ *
+ * The label is the section the page belongs to, taken from the first segment of
+ * its path. It is not decoration: on a site with sixty reference pages, the one
+ * thing missing from a page's head is where in the site you are standing.
+ */
+const { id, data } = Astro.locals.starlightRoute.entry
+const { title, description } = data
+const locale = Astro.locals.starlightRoute.locale
+
+// `id` is the file's path within the collection: `es/guide/lists.md`.
+const withoutLocale = locale ? id.replace(new RegExp(`^${locale}/`), '') : id
+const section = withoutLocale.includes('/') ? withoutLocale.split('/')[0] : ''
+
+const LABELS: Record<string, Record<string, string>> = {
+  guide: { en: 'Guide', es: 'Guía' },
+  reference: { en: 'Reference', es: 'Referencia' },
+  platforms: { en: 'Platforms', es: 'Plataformas' },
+  accessibility: { en: 'Accessibility', es: 'Accesibilidad' },
+  extending: { en: 'Extending it', es: 'Extenderlo' }
+}
+const label = LABELS[section]?.[locale === 'es' ? 'es' : 'en']
+---
+
+<div class="an-pagehead">
+  {label && <p class="an-pagehead__label">{label}</p>}
+  <h1 id="_top" data-page-title>{title}</h1>
+  {description && <p class="an-pagehead__lead">{description}</p>}
+</div>

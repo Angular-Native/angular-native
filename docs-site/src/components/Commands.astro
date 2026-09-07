@@ -1,0 +1,43 @@
+---
+/*
+ * The four commands, as the last thing before the offer.
+ *
+ * It used to be a panel with a markdown heading inside it, which meant the page
+ * ended with a box that looked like nothing else on it. Here it is the same
+ * two-column shape as the signature at the top: the claim on one side, the
+ * evidence on the other, so the page closes the way it opened.
+ */
+import { Code } from '@astrojs/starlight/components'
+
+interface Props {
+  eyebrow: string
+  title: string
+  body: string
+  code: string
+  /** Short notes beside the commands, one per line. */
+  notes: { command: string; what: string }[]
+}
+
+const { eyebrow, title, body, code, notes } = Astro.props
+---
+
+<section class="an-commands not-content">
+  <div class="an-commands__text">
+    <p class="an-section__eyebrow">{eyebrow}</p>
+    <h2 class="an-section__title">{title}</h2>
+    <p class="an-section__body" set:html={body} />
+    <dl class="an-commands__notes">
+      {
+        notes.map((note) => (
+          <div>
+            <dt><code>{note.command}</code></dt>
+            <dd>{note.what}</dd>
+          </div>
+        ))
+      }
+    </dl>
+  </div>
+  <div class="an-commands__code">
+    <Code {code} lang="bash" frame="terminal" />
+  </div>
+</section>

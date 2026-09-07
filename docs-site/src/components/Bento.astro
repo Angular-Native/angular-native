@@ -1,0 +1,54 @@
+---
+/*
+ * The four claims, as panels.
+ *
+ * Starlight's `Card` is a title, an icon and a paragraph, which is right for a
+ * list of links and thin for the four sentences this project stands on. Each of
+ * these gets room, and two of them get something to look at that is not a
+ * paragraph: the list of what a primitive turns into, and the shape of the
+ * warning you get when something is missing.
+ *
+ * The panels are deliberately uneven — the first is the argument and it is
+ * given the most room. A four-square grid of identical boxes reads as a
+ * template; this is a page with a first paragraph.
+ */
+interface Panel {
+  title: string
+  body: string
+  /** A list of name → value rows, shown as chips. Optional. */
+  rows?: { label: string; value: string }[]
+  /** A line of output, shown as a terminal would show it. Optional. */
+  output?: string
+  wide?: boolean
+}
+
+interface Props {
+  panels: Panel[]
+}
+
+const { panels } = Astro.props
+---
+
+<div class="an-bento not-content">
+  {
+    panels.map((panel) => (
+      <article class="an-bento__panel" data-wide={panel.wide}>
+        <h3 class="an-bento__title">{panel.title}</h3>
+        <p class="an-bento__body" set:html={panel.body} />
+        {panel.rows && (
+          <ul class="an-bento__rows">
+            {panel.rows.map((row) => (
+              <li>
+                <span class="an-bento__label">{row.label}</span>
+                <code class="an-bento__value">{row.value}</code>
+              </li>
+            ))}
+          </ul>
+        )}
+        {panel.output && (
+          <pre class="an-bento__output"><code>{panel.output}</code></pre>
+        )}
+      </article>
+    ))
+  }
+</div>

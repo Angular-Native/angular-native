@@ -1,0 +1,119 @@
+---
+/*
+ * Two example apps, running, in a phone.
+ *
+ * Everything else on this site is either prose or a code block, and neither one
+ * answers the question somebody actually has at this point — what does an app
+ * built this way look like when it moves. So: the real apps out of `examples/`,
+ * recorded on a real simulator, with the real UIKit controls in them.
+ *
+ * The recordings autoplay because they are the content, not an advertisement:
+ * muted, looped, inline, no audio track at all. Somebody who has asked their
+ * system for less movement gets the poster frame and a control to start it
+ * themselves — that decision is made in the script below, not in CSS, because
+ * an `autoplay` attribute cannot be undone by a media query.
+ */
+interface Demo {
+  title: string
+  body: string
+  video: string
+  /** An optional VP9/AV1 version, offered first. The browser falls through to
+   *  the mp4 on its own, so this can be added later without touching anything
+   *  else. */
+  webm?: string
+  poster: string
+  href: string
+  linkText: string
+  /** What the app is made of, as chips. */
+  uses: string[]
+}
+
+interface Props {
+  eyebrow: string
+  title: string
+  body: string
+  demos: Demo[]
+}
+
+const { eyebrow, title, body, demos } = Astro.props
+---
+
+<section class="an-showcase not-content">
+  <header class="an-showcase__head">
+    <p class="an-showcase__eyebrow">{eyebrow}</p>
+    <h2 class="an-showcase__title">{title}</h2>
+    <p class="an-showcase__body">{body}</p>
+  </header>
+
+  <div class="an-showcase__grid">
+    {
+      demos.map((demo) => (
+        <article class="an-demo">
+          <div class="an-demo__phone">
+            <div class="an-demo__screen">
+              <video
+                class="an-demo__video"
+                poster={demo.poster}
+                muted
+                loop
+                playsinline
+                preload="none"
+                data-autoplay
+                tabindex="-1">
+                {demo.webm && <source src={demo.webm} type="video/webm" />}
+                <source src={demo.video} type="video/mp4" />
+              </video>
+            </div>
+          </div>
+          <div class="an-demo__text">
+            <h3 class="an-demo__title">{demo.title}</h3>
+            <p class="an-demo__body">{demo.body}</p>
+            <ul class="an-demo__uses">
+              {demo.uses.map((use) => (
+                <li>
+                  <code>{use}</code>
+                </li>
+              ))}
+            </ul>
+            <a class="an-demo__link" href={demo.href}>
+              {demo.linkText} <span aria-hidden="true">→</span>
+            </a>
+          </div>
+        </article>
+      ))
+    }
+  </div>
+</section>
+
+<script>
+  // Autoplay is decided here rather than in the markup, so that "reduce motion"
+  // can actually win: an `autoplay` attribute cannot be taken back by CSS.
+  // Videos also only start once they are on screen, so a visitor who never
+  // scrolls this far downloads neither of them.
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)')
+  const videos = document.querySelectorAll<HTMLVideoElement>('[data-autoplay]')
+
+  if (still.matches) {
+    videos.forEach((video) => video.setAttribute('controls', ''))
+  } else if ('IntersectionObserver' in window) {
+    const watcher = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const video = entry.target as HTMLVideoElement
+          if (entry.isIntersecting) {
+            video.play().catch(() => video.setAttribute('controls', ''))
+          } else {
+            video.pause()
+          }
+        }
+      },
+      { threshold: 0.35 }
+    )
+    videos.forEach((video) => watcher.observe(video))
+  } else {
+    videos.forEach((video) => {
+      video.autoplay = true
+      video.play().catch(() => video.setAttribute('controls', ''))
+    })
+  }
+</script>

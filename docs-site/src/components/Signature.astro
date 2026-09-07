@@ -1,0 +1,97 @@
+---
+/*
+ * The claim, and the evidence for it, in one view.
+ *
+ * Everything else on this site argues that `<an-switch>` *is* the system's
+ * switch rather than a picture of one. This is the only place the argument is
+ * shown instead of stated: one template on the left, and on the right the class
+ * that template actually becomes on the platform you pick.
+ *
+ * The chips are buttons and not a `<select>` so the alternatives are readable
+ * without being opened — the point is that there are seven of them and that the
+ * template does not change between any two.
+ *
+ * With no JavaScript every platform's answer is rendered and visible, stacked;
+ * the script's whole job is to hide the six you did not ask for. A visitor who
+ * blocks scripts gets a longer list, not a broken one.
+ */
+interface Answer {
+  platform: string
+  /** The native class the switch turns into there. */
+  becomes: string
+  /** One line on what that buys, or why it is absent. */
+  note: string
+  absent?: boolean
+}
+
+import { Code } from '@astrojs/starlight/components'
+
+interface Props {
+  eyebrow: string
+  title: string
+  body: string
+  /** Heading above the right-hand column. */
+  becomesLabel: string
+  code: string
+  answers: Answer[]
+}
+
+const { eyebrow, title, body, becomesLabel, code, answers } = Astro.props
+---
+
+<section class="an-signature not-content" data-signature>
+  <header class="an-signature__head">
+    <p class="an-signature__eyebrow">{eyebrow}</p>
+    <h2 class="an-signature__title">{title}</h2>
+    <p class="an-signature__body">{body}</p>
+  </header>
+
+  <div class="an-signature__panels">
+    <div class="an-signature__code">
+      <Code code={code} lang="html" />
+    </div>
+
+    <div class="an-signature__answer">
+      <div class="an-signature__chips" role="group" aria-label={becomesLabel}>
+        {
+          answers.map((answer, index) => (
+            <button
+              type="button"
+              class="an-signature__chip"
+              data-answer={String(index)}
+              aria-pressed={index === 0 ? 'true' : 'false'}>
+              {answer.platform}
+            </button>
+          ))
+        }
+      </div>
+
+      <p class="an-signature__label">{becomesLabel}</p>
+      {
+        answers.map((answer, index) => (
+          <div class="an-signature__card" data-answer={String(index)} data-absent={answer.absent}>
+            <code class="an-signature__becomes">{answer.becomes}</code>
+            <p class="an-signature__note">{answer.note}</p>
+          </div>
+        ))
+      }
+    </div>
+  </div>
+</section>
+
+<script>
+  for (const section of document.querySelectorAll<HTMLElement>('[data-signature]')) {
+    const chips = section.querySelectorAll<HTMLButtonElement>('.an-signature__chip')
+    const cards = section.querySelectorAll<HTMLElement>('.an-signature__card')
+    const show = (wanted: string) => {
+      chips.forEach((chip) =>
+        chip.setAttribute('aria-pressed', String(chip.dataset.answer === wanted))
+      )
+      cards.forEach((card) => {
+        card.hidden = card.dataset.answer !== wanted
+      })
+    }
+    chips.forEach((chip) => chip.addEventListener('click', () => show(chip.dataset.answer!)))
+    show('0')
+  }
+</script>
