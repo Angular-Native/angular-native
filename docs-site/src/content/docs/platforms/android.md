@@ -194,9 +194,14 @@ travels as `-1`, because JNI has no option type.
 - **`lineHeight` and `letterSpacing` are drawn but not measured.** Both are
   applied when rendering and neither is passed to the measurement, so layout
   reserves the wrong box. iOS at least measures `lineHeight`.
-- **No keyboard avoidance.** No soft-input mode is declared, the IME inset type
-  is never read, and there is no input-method manager use anywhere. A field near
-  the bottom goes under the keyboard. Same gap as iOS.
+- **No keyboard inset below API 30.** From API 30 the IME arrives like any
+  other inset and it arrives *moving*: `WindowInsetsAnimation.Callback` gives
+  it once per frame, so the form travels with the keyboard. Before that,
+  `WindowInsets.Type.ime()` does not exist and neither does the callback, so
+  nothing arrives and a field at the bottom stays under the keyboard. The old
+  trick — watching the window's visible frame shrink — only reports anything if
+  the window is allowed to resize, and this shell asks it not to precisely so
+  that the layout the core computed is the one that gets drawn.
 - **Dark mode is forced process-wide**, and the code says it should not be:
   appearance is the app's decision, not the shell's.
 - **Back is the deprecated callback.** There is no predictive back.

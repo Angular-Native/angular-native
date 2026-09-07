@@ -250,10 +250,11 @@ orientations are portrait and both landscapes.
 
 ## What is missing
 
-- **Keyboard avoidance.** There is no keyboard observer, no input accessory view
-  and no scroll-inset adjustment anywhere. `safeAreaInsets` does not include the
-  keyboard, so `an-safe-area` does not move for it either. A field near the
-  bottom of the screen goes under the keyboard.
+- **No input accessory view.** The keyboard itself is handled — it is in the
+  bottom inset, moving, and `<an-safe-area>` travels with it; see
+  [The safe area and the keyboard](/guide/safe-area-and-keyboard/). What there
+  is no way to ask for is the bar above it: a Done button, a next-field arrow,
+  anything `inputAccessoryView` is for.
 - **`letterSpacing` is not measured.** It is part of the measurement cache key
   but no kerning attribute is passed, so layout sizes the text as if it were
   zero.

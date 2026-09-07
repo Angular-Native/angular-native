@@ -203,10 +203,15 @@ porque JNI no tiene tipo opción.
 - **`lineHeight` y `letterSpacing` se dibujan pero no se miden.** Los dos se
   aplican al renderizar y ninguno se pasa a la medición, así que el layout
   reserva la caja equivocada. iOS al menos mide `lineHeight`.
-- **No se esquiva el teclado.** No se declara ningún modo de entrada suave, el
-  tipo de inset del IME no se lee nunca, y no se usa el input method manager por
-  ninguna parte. Un campo cerca del borde inferior se queda debajo del teclado.
-  El mismo hueco que en iOS.
+- **Sin inset de teclado por debajo de la API 30.** Desde la API 30 el IME
+  llega como cualquier otro inset, y llega *en movimiento*:
+  `WindowInsetsAnimation.Callback` lo da una vez por fotograma, así que el
+  formulario viaja con el teclado. Antes de eso no existe
+  `WindowInsets.Type.ime()` ni el callback, así que no llega nada y un campo
+  abajo se queda debajo del teclado. El truco de siempre —vigilar cómo encoge
+  el marco visible de la ventana— solo informa de algo si se deja redimensionar
+  la ventana, y este shell pide que no, precisamente para que el layout que
+  calculó el core sea el que se dibuja.
 - **El modo oscuro se fuerza para todo el proceso**, y el código dice que no
   debería: la apariencia es decisión de la app, no del shell.
 - **Atrás es el callback obsoleto.** No hay atrás predictivo.

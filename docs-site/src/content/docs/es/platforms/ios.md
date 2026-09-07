@@ -257,10 +257,11 @@ el siguiente. Las orientaciones soportadas son vertical y las dos horizontales.
 
 ## Lo que falta
 
-- **Esquivar el teclado.** No hay observador de teclado, ni input accessory
-  view, ni ajuste de insets de scroll en ninguna parte. `safeAreaInsets` no
-  incluye el teclado, así que `an-safe-area` tampoco se mueve por él. Un campo
-  cerca del borde inferior se queda debajo del teclado.
+- **No hay input accessory view.** El teclado en sí está resuelto — va en el
+  inset inferior, en movimiento, y `<an-safe-area>` viaja con él; mira
+  [El área segura y el teclado](/es/guide/safe-area-and-keyboard/). Lo que no
+  hay forma de pedir es la barra de encima: un botón Hecho, una flecha al
+  siguiente campo, cualquier cosa para la que sirve `inputAccessoryView`.
 - **`letterSpacing` no se mide.** Forma parte de la clave de la caché de
   medición pero no se pasa ningún atributo de kerning, así que el layout
   dimensiona el texto como si fuera cero.
