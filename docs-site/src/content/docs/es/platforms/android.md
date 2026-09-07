@@ -1,0 +1,292 @@
+---
+title: Android
+description: Los 25 primitivos sobre android.view, Material 3 resuelto sin Gradle, y los seis controles que miden cero hasta que les das un tamaño.
+sidebar:
+  order: 2
+---
+
+Los veinticinco primitivos, sobre `android.view.View` de verdad, con Material 3
+debajo y sin Gradle por ninguna parte.
+
+```bash
+an android                      # examples/hello-angular en un dispositivo conectado
+an android examples/controls    # los controles del sistema
+an dev --android                # lo mismo, vigilando, con recarga en caliente
+```
+
+El SDK de Android y el NDK se encuentran a través de `ANDROID_HOME`,
+`ANDROID_SDK_ROOT` o su ubicación habitual. Material 3 se resuelve una vez:
+
+```bash
+python3 scripts/fetch-android-deps.py
+python3 scripts/prepare-android-deps.py
+```
+
+## Cómo está montado
+
+El reparto del trabajo es deliberadamente distinto al de iOS. Allí Rust habla
+con UIKit directamente, porque el puente con Objective-C es barato y tipado.
+Aquí cada llamada cruza JNI, así que la superficie se mantiene lo más pequeña
+posible: Java expone un puñado de métodos en una sola clase host y Rust llama a
+esos. El crate de Rust son unas mil líneas; solo el host de Java son tres mil
+quinientas.
+
+Todo el renderer son doce firmas de método —crear, destruir, insertar, quitar,
+poner prop, poner texto, poner listener, poner layout, poner tamaño de
+contenido, poner raíz, flush, limpiar— y **cada prop viaja como cadena**, los
+colores incluidos. El número de tipos distintos no justifica una firma JNI por
+tipo.
+
+Rust guarda el `JavaVM` y nunca un `JNIEnv`, reenganchándose en cada llamada:
+todo corre en el hilo de UI, así que sale barato. Una excepción de Java se
+describe y se limpia antes de informar de ella, porque si no lo único que
+obtienes es «Java exception was thrown» sin saber cuál.
+
+**stderr se redirige a logcat** con una tubería, un `dup2` y un hilo lector. Sin
+eso, cada `eprintln!` y cada mensaje de panic se esfuma, y un fallo parece una
+pantalla en blanco.
+
+### Dos hilos, en espejo con iOS
+
+La misma pila de 8 MB por el mismo motivo, el mismo presupuesto de 12 ms por
+fotograma, la misma regla de no encolar un tick encima de otro que sigue en
+marcha, la misma semántica de recarga en caliente. El reloj es un
+`Choreographer.FrameCallback` reprogramado en cada fotograma, que es la
+contraparte del `CADisplayLink`.
+
+### El modelo de montaje, y el contenedor que no mide nada
+
+Una jerarquía de vistas real: una vista por nodo, `addView` para la estructura,
+y frames absolutos convertidos de puntos a píxeles.
+
+El contenedor es un `ViewGroup` propio que **no calcula nada**. Dejar medir a
+Android pondría dos motores de layout en la misma pelea que empezaría Auto
+Layout en iOS. Sus layout params extienden `MarginLayoutParams` y no los
+simples, porque un `ScrollView` es internamente un `FrameLayout` y mide a sus
+hijos con `measureChildWithMargins` — con los params simples la app reventaba en
+el primer scroll. `onMeasure` mide cada hijo exactamente en su frame e informa
+de la unión, porque un `ScrollView` mide a su hijo con una altura sin
+especificar y devolver el mínimo sugerido colapsaría el contenido a nada.
+
+Los hijos se recortan por defecto: están posicionados en absoluto y pueden caer
+muy fuera del padre.
+
+## Material, y lo que de verdad está dibujado a mano
+
+La mayoría de los controles son los de verdad — `MaterialSwitch`, el `Slider` de
+Material, `CircularProgressIndicator`, `LinearProgressIndicator`,
+`MaterialButton`, `SearchView`, `Spinner`, `Toolbar`, `WebView`, `VideoView`,
+`EditText`, y diálogos reales para `an-alert` y `an-modal`.
+
+Tres que parecen ensamblados no lo son:
+
+| Primitivo | Qué es en realidad |
+|---|---|
+| `an-tab-bar` | Un `BottomNavigationView`. La píldora tras el icono seleccionado, la animación del cambio, el comportamiento con TalkBack y la altura por versión vienen todos de Material. Solo la reconstrucción del menú y la lista de estados de dos colores están escritas aquí. La propia plataforma de Android no tiene barra inferior — `android.widget` se quedó en las pestañas de 2011. |
+| `an-segmented-control` | Un `MaterialButtonToggleGroup`, el botón segmentado de Material 3 tal cual viene. Las formas de los extremos, el contenedor seleccionado, la marca de verificación y la respuesta a la pulsación son de la librería. |
+| `an-stepper` | Compuesto, no dibujado: dos botones de icono de Material y un text view de Material. Material 3 no tiene stepper — no es que falte en la librería, es que está ausente del sistema de diseño — así que se ensambla con piezas que *sí* son Material en lugar de dibujar una imitación. Muestra el valor, al contrario que el `UIStepper` de iOS, porque en Android dos botones sueltos no dicen qué cambian. |
+
+Dos cosas sí están dibujadas a mano, y las dos lo dicen:
+
+- **`an-map-view` son teselas de OpenStreetMap sobre un `Canvas`.** Android no
+  trae ningún mapa en la plataforma; el de Google vive en los Play Services
+  detrás de una clave de API y una dependencia de Gradle. Así que: teselas de
+  256 píxeles de `tile.openstreetmap.org`, un descargador de cuatro hilos, una
+  caché LRU dimensionada a un cuarto de la memoria de la app, la proyección de
+  Mercator escrita a mano, y el arrastre manejado en `onTouchEvent`. Un bitmap
+  centinela de un píxel marca una tesela que ya está en vuelo, para que
+  arrastrar no la vuelva a pedir. Es una vista nativa de verdad —no un navegador
+  escondido— pero tampoco es el mapa del sistema: sin rutas, sin búsqueda, sin
+  punto azul.
+- **Tirar para refrescar.** El scroll view detecta el arrastre hacia abajo
+  estando arriba y dibuja él mismo el arco del spinner, porque
+  `SwipeRefreshLayout` es una dependencia aparte de AndroidX. El umbral son
+  72 dp.
+
+**Los iconos vienen de una fuente empaquetada**, no de drawables del sistema:
+Material Symbols como TTF más su mapa de codepoints, buscados por nombre.
+`android.R.drawable` lleva congelado desde 2011 por compatibilidad y no es el
+conjunto de Material 3. Donde el sistema quiere un `Drawable` en lugar de una
+vista, el glifo se renderiza sobre un bitmap de 24 dp.
+
+En un teléfono no hay nada sin soportar. La maquinaria que rechaza un primitivo
+existe y solo se consulta en un reloj — mira [Wear OS](/es/platforms/wearos/).
+
+## El botón atrás
+
+`onBackPressed` pregunta al host, que envía `back` al **último** nodo que se
+suscribió —lo alto de la pila— y devuelve true. Si no hay nadie escuchando, cae
+al sistema y la app se cierra.
+
+El host solo informa; deshacer la navegación es cosa del router. Ese es el mismo
+contrato que el gesto de borde de iOS.
+
+## Insets
+
+El camino de los insets lee los insets de la ventana raíz, toma juntos las
+barras del sistema y el recorte de pantalla, divide por la densidad, compara
+contra los cuatro últimos valores, y solo despacha cuando hay un cambio real.
+
+**Cuatro números no caben en un evento posicional**, así que viajan como JSON y
+Rust los parsea a mano, sin parser de JSON, precisamente para que el evento que
+llega a la plantilla sea idéntico al que envía iOS. La misma API se usa una
+segunda vez para sumar la altura de la franja de gestos a la tab bar medida.
+
+## Material 3 sin Gradle
+
+Dos scripts de Python hacen de resolvedor de dependencias.
+
+El primero descarga Material y todo lo que arrastra, resolviendo los POM a mano
+contra los repositorios de Google y de Maven Central. Sigue
+`dependencyManagement` incluidas las importaciones de BOM —sin eso, androidx
+media acaba sin versión y no se descarga nunca— y resuelve los rangos de versión
+de Maven a su cota inferior. Antes de eso, cualquier cosa con corchetes en la
+versión se descartaba, lo que dejaba fuera media androidx en silencio hasta que
+la app arrancaba y no encontraba una clase. Los conflictos se resuelven al
+primero visto, el más cercano a la raíz, como hace Gradle. Un puñado de
+artefactos se excluyen a propósito: desde Kotlin 1.8 los jars partidos de la
+biblioteca estándar están dentro del principal, y entregar los dos conjuntos
+hace que el dexer se niegue.
+
+El segundo desempaqueta cada `.aar`, recoge los jars, compila los recursos de
+cada librería una vez, y escribe tres listas —un classpath, un conjunto de
+recursos y una lista de paquetes— reconstruyendo solo lo que falta, porque los
+recursos de cincuenta librerías tardan y no cambian nunca.
+
+En el enlazado eso se convierte en `--extra-packages` (una clase `R` por
+librería, cuyos ids por tanto no pueden ser constantes), `--non-final-ids` y
+`--auto-add-overlay`, ya que los recursos de las librerías se solapan a propósito
+y de otro modo sería un error. Los recursos propios del shell van los últimos
+para poder sobreescribir.
+
+## El teclado
+
+Una entrada de texto es un `EditText` pelado, sin padding y sin fondo. Lo que
+configura el teclado es un entero, y las cuatro props son banderas suyas —tipo
+de teclado, capitalización, autocorrección, entrada segura— así que el entero
+entero se **recompone desde el estado guardado** cada vez que llega cualquiera
+de ellas. Aplicar una sola borraría las otras tres.
+
+La entrada segura gana sobre la variante de teclado, porque un campo enmascarado
+con teclado de correo mostraría el texto. Las banderas de capitalización y de
+sin-sugerencias se saltan en teclados numéricos. Y fijar el tipo de entrada
+reinicia la tipografía a la monoespaciada de contraseña, así que hay que aplicar
+la tipografía otra vez justo después.
+
+## Medición del texto
+
+Un `StaticLayout` sobre un paint compartido, tomando como ancho la línea más
+ancha y como alto el del layout. Los dos vuelven empaquetados en un solo `long`
+como centésimas de punto: dos llamadas JNI por medición costarían el doble para
+nada.
+
+**Aquí el peso de la fuente es binario**: 600 o más es negrita, cualquier otra
+cosa es normal. Eso es mucho más grueso que el mapa de nueve pasos que usan los
+hosts de Apple, y conviene saberlo cuando un diseño se apoya en 500 o en 300.
+
+La caché vive en Rust y no en Java, con la misma clave que las de Apple, y por
+el mismo motivo más uno: aquí cada consulta cruza JNI, que es bastante más caro
+que un envío de mensaje de Objective-C. El ancho infinito viaja como `-1`,
+porque JNI no tiene tipo opción.
+
+## Lo que falta
+
+- **Seis controles miden cero.** El tamaño natural de un control se mide
+  construyendo una sonda desechable — pero solo se manejan seis nombres: switch,
+  slider, indicador de actividad, barra de progreso, botón y tab bar. El core
+  pide trece. Así que `an-segmented-control`, `an-stepper`, `an-search-bar`,
+  `an-select`, `an-date-picker` y `an-navigation-bar` miden todos **0×0**, y son
+  invisibles salvo que la plantilla les dé un tamaño. `an-icon` está en la misma
+  situación y escapa solo porque su directiva fija el ancho y el alto desde
+  `[size]`. **De esto no se emite ningún aviso**, lo que lo convierte en lo más
+  afilado de esta página.
+- **`lineHeight` y `letterSpacing` se dibujan pero no se miden.** Los dos se
+  aplican al renderizar y ninguno se pasa a la medición, así que el layout
+  reserva la caja equivocada. iOS al menos mide `lineHeight`.
+- **No se esquiva el teclado.** No se declara ningún modo de entrada suave, el
+  tipo de inset del IME no se lee nunca, y no se usa el input method manager por
+  ninguna parte. Un campo cerca del borde inferior se queda debajo del teclado.
+  El mismo hueco que en iOS.
+- **El modo oscuro se fuerza para todo el proceso**, y el código dice que no
+  debería: la apariencia es decisión de la app, no del shell.
+- **Atrás es el callback obsoleto.** No hay atrás predictivo.
+- **Solo se compila `arm64-v8a`.** Ni imagen x86-64 de emulador ni ABI de 32
+  bits.
+- **`flush` corre dos veces por fotograma productivo** —una desde el lado de
+  montaje del core y otra desde la activity— así que al contenedor se le pide
+  maquetar dos veces y los diálogos se reconcilian dos veces.
+
+Avisos, y ninguno silencioso: la corona en un teléfono (una vez); un paso de
+slider que no divide el rango, lo que hace que Material reviente al dibujar, así
+que se informa y el slider se queda continuo; un estado de accesibilidad que no
+es un objeto; un `checked` que no es ni booleano ni `'mixed'`; un rol
+desconocido, que existe porque llegar hasta él significa que la lista de roles
+de TypeScript y la del host se han separado; `expanded` en una vista sin
+`(press)`, ya que en Android expandir es una *acción* y sin ella un lector
+anunciaría algo que no se puede hacer. Qué se aplica y qué se rechaza está en
+[Accesibilidad en Android](/es/accessibility/android/).
+
+## A Google Play
+
+```bash
+an android --sign --release      # un APK firmado para publicar
+an android --aab --release       # el bundle que acepta Play
+```
+
+El keystore de depuración que usa la compilación de esta página es el que genera
+Android Studio, con la contraseña escrita en el código; no lo acepta ninguna
+tienda. `--sign` usa un keystore que generas y guardas tú, `--aab` compila un
+Android App Bundle — que es lo único que acepta Google Play desde agosto de
+2021.
+
+Para esto tampoco hay Gradle. `aapt2 link --proto-format` produce el manifiesto
+y los recursos en protobuf que quiere un bundle, el módulo se ensambla a mano,
+`bundletool` lo convierte en el `.aab` y `jarsigner` lo firma, porque `apksigner`
+se niega. `bundletool` no forma parte del SDK de Android —
+`scripts/fetch-android-deps.py` lo trae.
+
+Todo este camino se ejecuta de punta a punta en `scripts/check-signing.sh`, con
+un keystore que genera la propia comprobación: una clave de subida no necesita
+el permiso de nadie. Lo que esa comprobación no puede hacer es subir nada, y
+`an` tampoco. Qué conseguir de Google, y dónde poner el keystore, está en
+[Firma y distribución](/es/guide/signing-and-distribution/).
+
+## Compilar y ejecutar
+
+```text
+cargo build --target aarch64-linux-android -p an-android
+aapt2 compile / link  ·  javac  ·  d8  ·  zip  ·  zipalign  ·  apksigner
+→ build/android/<AppName>.apk
+```
+
+`javac` corre con `-source`/`-target 17` en lugar de `--release`, porque con
+`--release` ignora el boot classpath y la compilación tiene que ir contra
+`android.jar`. El dexer parte en varios ficheros dex en cuanto Material está
+dentro, y todos van al zip. De `aapt2` solo sale el manifiesto, así que los dex,
+la librería compartida y los assets se meten en el zip después.
+
+**La firma es solo de depuración**: el keystore de depuración estándar, creado
+con `keytool` si no está. Aquí no hay identidad de publicación.
+
+El id de la app puede diferir del paquete del shell: el paquete del manifiesto
+se renombra en el enlazado mientras las clases se quedan donde están, y por eso
+al lanzar se cualifica la activity como
+`<applicationId>/dev.angularnative.MainActivity`.
+
+Las entradas `<uses-permission>` y `<uses-feature>` de un plugin se funden en
+una copia del manifiesto, nunca en el tuyo. Un permiso duplicado se salta
+—pedirlo dos veces es pedirlo una— y una característica que la app ya declara
+con un `required` distinto conserva la de la app, con un log.
+
+**Un dispositivo físico funciona.** Los dispositivos se listan con `adb` y se
+clasifican preguntándole a cada uno sus características de build; se exige
+exactamente uno de la forma correcta, y `--device` en `an wearos` se rechaza si
+la forma no cuadra. Todas las llamadas a `adb` llevan `-s`: sin eso `adb` se
+niega a actuar en cuanto hay dos dispositivos conectados — y si el otro no está
+autorizado ni siquiera se niega, le manda el APK del reloj al teléfono.
+
+Queda una suposición de emulador: `an dev --android` cuece `10.0.2.2` en la app
+como dirección del servidor, así que la recarga en caliente contra un teléfono
+real no llega. El cliente de desarrollo hace **long-polling sobre HTTP** en
+lugar de usar un WebSocket, porque la plataforma no trae cliente de WebSocket y
+arrastrar una librería HTTP entera para esto no compensa.
