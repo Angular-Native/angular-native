@@ -144,12 +144,14 @@ network.watch()               // keeps `network.status()` fresh
 network.status()              // Signal<NetworkStatus | null>
 ```
 
-The monitor underneath is event-driven and always right — it is the system
-pushing at the moment the Wi-Fi drops. What is missing is the last hop: there is
-no channel from a native module back into JS yet, only answers to calls, so
-`watch()` asks it on an interval. The monitoring is the platform's and the
-polling is ours, and it is said here rather than dressed up as a subscription.
-When that channel exists, `watch()` keeps its shape and loses the timer.
+The monitor underneath is event-driven — it is the system pushing at the moment
+the Wi-Fi drops.
+
+This used to poll. There was no way for a native module to reach into JS: the
+bridge carried answers to calls and nothing else, so `watch()` asked on an
+interval and this paragraph said so. That channel now exists — see
+[module events](/reference/native-modules/#events-what-a-module-says-without-being-asked) —
+and `watch()` keeps the shape it always had and has lost its timer.
 
 ## Trying them
 

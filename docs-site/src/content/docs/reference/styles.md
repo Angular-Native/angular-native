@@ -41,6 +41,47 @@ if the two lists drift apart.
 
 `overflow` sets both axes at once — there is no `overflowX`.
 
+### What clipping actually does
+
+`hidden` and `scroll` both **clip**: the node's box is the whole of what it may
+paint, and a child that sticks out is cut off at the edge rather than drawn over
+whatever is next to it. `visible`, the default, lets it through.
+
+Two nodes clip whatever the template says:
+
+- **The root.** It is the app's body. Nothing an app contains may be painted
+  outside the window — a body that does not clip is a canvas, and content pushed
+  past its edge goes on existing off-screen.
+- **Anything scrollable.** Otherwise its content is drawn over the things around
+  it as soon as there is more of it than fits.
+
+:::caution[Two hosts only ever tighten]
+On Android and on watchOS, containers have always clipped unconditionally, and
+`overflow: visible` has never worked there. What arrives from layout can
+therefore only turn clipping **on**, never off: honouring `visible` on those two
+now would not be obeying a style, it would be a new behaviour arriving as the
+side effect of a bug fix, and every layout built against the old one would start
+leaking children. On iOS, tvOS, visionOS and macOS the resolved value is applied
+as it stands.
+:::
+
+### Nothing scrolls sideways
+
+`contentSize` is computed assuming the overflow goes downwards, so a scrollable
+node's content is **clamped to its own width** — in the core, and again in the
+host where the scrolling happens.
+
+That clamp is not tidiness. A `UIScrollView` scrolls on whichever axis its
+content is bigger, so content a few points too wide — one image reporting its
+intrinsic size into a row, say — turns the whole page into something that can be
+dragged sideways until there is nothing on screen. Vertically, overflow is the
+point; horizontally it is always a mistake somewhere else, and it should show up
+as a clipped edge rather than as a screen that can be swiped away.
+
+`scripts/check-clip.sh` asserts both: that the root and every scrollable node
+clip, that an ordinary container does not, and that no scrollable node is wider
+inside than out.
+
 ### Flex
 
 | Style | Values | Default |

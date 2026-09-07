@@ -48,6 +48,73 @@ way out and the answer is parsed on the way back.
 module calls — the command buffer between the core and the hosts is a separate
 mechanism and is not exposed here.
 
+## Events: what a module says without being asked
+
+A call has exactly one answer, which is why `call` returns a promise. A position
+while walking, a notification being tapped, a socket's messages: those have none
+or a thousand, and a promise cannot carry them. So a module has a second road.
+
+```ts
+const stop = modules.on<Position>('geolocation', 'position', (where) => {
+  this.here.set(where)
+})
+
+inject(DestroyRef).onDestroy(stop)
+```
+
+`on` returns the unsubscriber and nothing else. Several handlers may listen to
+the same event and each gets its own: a module has no idea who is listening, and
+one component unsubscribing must not deafen another.
+
+**A subscription that is never stopped keeps the handler alive, and with it
+everything the handler closes over, for the life of the app.** Worse, on the
+native side it usually keeps something switched on — a location manager, a
+socket. Stop it.
+
+### When they arrive
+
+At the top of a frame, in the order they were emitted, and **after** that
+frame's answers. That ordering is deliberate: a `start()` that resolves and
+immediately emits has to settle before its first event lands, or the event
+arrives ahead of the code that subscribes to it.
+
+A handler that throws is reported and the rest still run. One component's bug is
+not a reason for every other subscriber to miss the event.
+
+### Emitting one, in Rust
+
+A module is handed an `Emitter` as it is registered, and keeps it:
+
+```rust
+impl NativeModule for Ticker {
+    fn connect(&mut self, emitter: Emitter) {
+        self.emitter = Some(emitter);
+    }
+    …
+}
+```
+
+The name is bound to the emitter rather than passed to `emit`, so a module
+cannot emit under somebody else's name. It is `Send` and it can be cloned:
+emitting from a background thread — a location callback, a download — is the
+normal case, not the exception.
+
+### Emitting one from a plugin
+
+Swift and Java get the same thing under a name of their own:
+
+```swift
+AnEvents.emit("geolocation", "position", ["latitude": fix.coordinate.latitude])
+```
+
+```java
+AnEvents.emit("geolocation", "position", where);
+```
+
+Both can be called from any thread. Emitting under a name nobody registered is
+logged rather than dropped in silence: it is a typo in a plugin, and typos that
+vanish are the expensive kind.
+
 ## What happens when it goes wrong
 
 Every failure rejects the promise with an `Error`. None of them resolves with

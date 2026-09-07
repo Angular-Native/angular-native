@@ -6,10 +6,8 @@ eyebrow: 25 primitives · 8 platforms · one Rust core
 command: |
   npx @angular/cli@latest new my-app
   cd my-app && an init
-sample: |
-  An <code>&lt;an-switch&gt;</code> <strong>is</strong> a <code>UISwitch</code> on
-  iOS and a <code>MaterialSwitch</code> on Android — the control the system
-  draws, not a copy of it.
+announce: Plugins now load on macOS and the Apple Watch
+announceLink: /extending/plugins-on-the-mac-and-the-watch/
 hero:
   title: |
     Real native views.<br /><em>No WebView anywhere.</em>
@@ -27,34 +25,127 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components'
-import Band from '../../components/Band.astro'
 import PlatformGrid from '../../components/PlatformGrid.astro'
+import Signature from '../../components/Signature.astro'
+import Showcase from '../../components/Showcase.astro'
+import Bento from '../../components/Bento.astro'
+import Closing from '../../components/Closing.astro'
+import Section from '../../components/Section.astro'
+import Commands from '../../components/Commands.astro'
 
-<CardGrid>
-  <Card title="Real controls, not lookalikes" icon="approve-check">
-    An `<an-switch>` **is** a `UISwitch` on iOS and a `MaterialSwitch` on
-    Android. It looks and behaves however that control does in that version of
-    the system, and it ages with the platform instead of with this repository.
-  </Card>
-  <Card title="The layout is not the platform's" icon="puzzle">
-    Flexbox runs in a Rust core over taffy, once, and every host is handed
-    absolute frames. The same template lays out identically on a phone, a TV
-    and a watch — what differs is which control gets mounted.
-  </Card>
-  <Card title="Angular as it is" icon="list-format">
-    Signals, `@if`, `@for`, the router, AOT templates, dependency injection.
-    Zoneless, because the frame loop is what drives change detection. No
-    dialect, no subset.
-  </Card>
-  <Card title="A gap is never silent" icon="warning">
-    A prop no host reads, a style nobody recognises, a plugin missing a
-    platform: each one warns or stops the build. Checks enforce it — a
-    primitive that is unsupported somewhere has to say so in writing.
-  </Card>
-</CardGrid>
+<Signature
+  eyebrow="The whole argument"
+  title="One template. Whatever that platform actually ships."
+  body="Nothing here is drawn to resemble a control. The template does not change between one platform and the next — what changes is the class the framework mounts, and where a platform has no equivalent, nothing is mounted and the host says why."
+  becomesLabel="an-switch becomes"
+  code={`<an-view [style.gap]="'16'">
+  <an-text [fontSize]="28">Alerts</an-text>
+  <an-switch
+    [on]="alerts()"
+    (onChange)="alerts.set($event)" />
+</an-view>`}
+  answers={[
+    {
+      platform: 'iOS · iPadOS',
+      becomes: 'UISwitch',
+      note: "The system's own switch: its animation, its haptic, its accessibility trait, and whatever it looks like in the next release of iOS."
+    },
+    {
+      platform: 'Android',
+      becomes: 'MaterialSwitch',
+      note: 'Material 3, resolved without Gradle. It follows the device theme, including the dynamic colour a user picked from their wallpaper.'
+    },
+    {
+      platform: 'macOS',
+      becomes: 'NSSwitch',
+      note: 'AppKit, in a window that resizes — with a pointer that has a shape and a hover state, both of which a finger does not have.'
+    },
+    {
+      platform: 'watchOS',
+      becomes: 'Toggle',
+      note: 'The one host that is not a view hierarchy: the tree is mirrored into a model SwiftUI redraws.'
+    },
+    {
+      platform: 'visionOS',
+      becomes: 'UISwitch',
+      note: 'The same host as the phone, in a windowed scene. A window in space is not a screen, but it is still UIKit.'
+    },
+    {
+      platform: 'Wear OS',
+      becomes: 'MaterialSwitch',
+      note: "The phone's host on a round screen, where the safe area is how the bezel's margin arrives."
+    },
+    {
+      platform: 'tvOS',
+      becomes: 'nothing is mounted',
+      absent: true,
+      note: 'UISwitch is not in the tvOS SDK — a television is driven with a remote. The layout keeps the gap it had measured and the host says so once, in the log.'
+    }
+  ]}
+/>
 
-## Eight platforms, one bundle
+<Bento
+  panels={[
+    {
+      wide: true,
+      title: 'Real controls, not lookalikes',
+      body: 'Nothing is drawn to resemble a control. The switch in your template <strong>is</strong> the system\u2019s switch, so it looks and behaves however that control does in that version of the OS, and it ages with the platform instead of with this repository.',
+      rows: [
+        { label: 'iOS · iPadOS', value: 'UISwitch' },
+        { label: 'Android', value: 'MaterialSwitch' },
+        { label: 'macOS', value: 'NSSwitch' },
+        { label: 'watchOS', value: 'Toggle' },
+        { label: 'visionOS', value: 'UISwitch' },
+        { label: 'tvOS', value: 'not in the SDK' }
+      ]
+    },
+    {
+      title: 'The layout is not the platform\u2019s',
+      body: 'UIKit, AppKit and Android lay out differently, and SwiftUI does not let you lay out at all \u2014 so layout leaves the platform entirely. Flexbox runs once, in a Rust core over taffy, and every host is handed absolute frames in logical points. The same template lays out identically on a phone, a TV and a watch.'
+    },
+    {
+      title: 'Angular as it is',
+      body: 'Signals, <code>@if</code>, <code>@for</code>, the router with parameters, AOT templates, dependency injection. Zoneless, and not optionally: without zone.js there are no timers or XHR to patch inside the engine, which is most of what makes this painful elsewhere. No dialect, no subset.'
+    },
+    {
+      title: 'A gap is never silent',
+      body: 'A prop no host reads, a style nobody recognises, an event a platform cannot deliver, a plugin missing a platform: each one warns, or stops the build. A primitive that is unsupported somewhere has to say so in writing, and scripts enforce it.',
+      output: '[angular-native] (pinch) does not arrive on watchOS:\n  MagnifyGesture is @available(watchOS, unavailable),\n  and two fingers do not fit on a 40 mm screen'
+    }
+  ]}
+/>
+
+<Showcase
+  eyebrow="Recorded on a simulator, not mocked up"
+  title="Two apps out of examples/, running."
+  body="Both of these are ordinary Angular components — signals, @for, @if — and every control in them is the platform's own. The recordings are the iOS simulator, driven by hand: the search field is a UISearchBar, the size picker is a UISegmentedControl, the quantity is a UIStepper, and the stars are SF Symbols."
+  demos={[
+    {
+      title: 'A gallery that reflows',
+      body: 'Two columns dealt out by running height, a system search field, a category strip and pull-to-refresh. There is no grid in the layout engine and none is needed: a waterfall is two flex columns, resolved once in Rust.',
+      video: '/video/feed.mp4',
+      poster: '/img/shots/feed-poster.jpg',
+      href: '/guide/lists/',
+      linkText: 'How long lists work',
+      uses: ['an-search-bar', 'an-segmented-control', 'an-image', 'an-scroll-view']
+    },
+    {
+      title: 'A product page you can swipe',
+      body: 'The carousel is the one thing here that is not a system control, because no platform ships one — so it is a pan gesture moving a transform, and letting go hands the rest to the platform\u2019s own drawing thread. The stepper and the switch beside it are UIKit\u2019s.',
+      video: '/video/storefront.mp4',
+      poster: '/img/shots/storefront-poster.jpg',
+      href: '/guide/gestures-and-animation/',
+      linkText: 'Gestures and animation',
+      uses: ['an-stepper', 'an-switch', 'an-segmented-control', '(pan)', '[animate]']
+    }
+  ]}
+/>
+
+<Section
+  eyebrow="Where it runs"
+  title="Eight platforms, one bundle"
+  body="The same bundle on all of them. What differs is not the code — it is which controls that platform ships, and every gap is listed with the reason for it."
+/>
 
 <PlatformGrid
   rendersLabel="Renders with"
@@ -85,18 +176,25 @@ import PlatformGrid from '../../components/PlatformGrid.astro'
   ]}
 />
 
-<Band>
-
-## In one minute
-
-```bash
-npx @angular/cli@latest new my-app && cd my-app
+<Commands
+  eyebrow="In one minute"
+  title="Four commands on a project you already had"
+  body="An Angular CLI project, unmodified, running on native views. Nothing moves into this repository and <code>ng build</code> keeps working."
+  code={`npx @angular/cli@latest new my-app && cd my-app
 an init
 an add ios
-an ios
-```
+an ios`}
+  notes={[
+    { command: 'an init', what: 'Dependencies, tsconfig and an entry point. It touches neither src/main.ts nor angular.json.' },
+    { command: 'an add ios', what: 'Writes ios/Info.plist, yours from then on.' },
+    { command: 'an ios', what: 'Builds, assembles the .app without Xcode and launches it in the simulator.' }
+  ]}
+/>
 
-That is an Angular project created by the Angular CLI, unmodified, running on
-native views. Nothing moves into this repository and `ng build` keeps working.
-
-</Band>
+<Closing
+  title="Write Angular."
+  accent="Ship native."
+  body="An ordinary ng new project, four commands, and it is running on real UIKit and real Material views."
+  action="Quick start"
+  href="/guide/quick-start/"
+/>

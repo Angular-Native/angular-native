@@ -2,7 +2,7 @@
 title: Accessibility on Android
 description: The six accessibility props of the contract, and where each one lands in AccessibilityNodeInfo.
 sidebar:
-  order: 2
+  order: 3
 ---
 
 A template writes six props and a screen reader announces something. Between

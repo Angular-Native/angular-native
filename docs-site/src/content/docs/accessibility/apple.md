@@ -2,7 +2,7 @@
 title: Accessibility on Apple
 description: Where the six accessibility props land in UIKit, AppKit and SwiftUI, what has no equivalent on each, and how it is checked by reading the tree from outside the app.
 sidebar:
-  order: 1
+  order: 2
 ---
 
 Six props on every primitive say what a screen reader is told about a view:

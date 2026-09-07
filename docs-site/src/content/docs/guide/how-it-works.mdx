@@ -29,24 +29,38 @@ SwiftUI does not let you lay out at all. So layout leaves the platform entirely.
 
 ## The four layers
 
-```text
-  ┌──────────────────────────────────────────────────────┐
-  │  Angular, AOT-compiled, zoneless                     │  JS
-  │  NativeRenderer (Renderer2) → command buffer         │
-  └──────────────────────────────────────────────────────┘
-                          │ one buffer per tick
-  ┌──────────────────────────────────────────────────────┐
-  │  an-bridge   QuickJS, the protocol, native modules   │
-  │  an-core     the shadow tree, props, colours, icons  │  Rust
-  │  an-layout   flexbox over taffy, and measuring       │
-  │  an-host     HostRenderer + TextMeasurer, two traits │
-  └──────────────────────────────────────────────────────┘
-                          │ Frame { MountOp[] }
-  ┌──────────────────────────────────────────────────────┐
-  │  an-ios · an-android · an-macos · an-watch           │  the hosts
-  │  + the Swift and Java shells                         │
-  └──────────────────────────────────────────────────────┘
-```
+import LayerDiagram from '../../../components/LayerDiagram.astro'
+
+<LayerDiagram
+  title="The four layers"
+  description="Angular in JavaScript writes a command buffer; four Rust crates turn it into a frame of mount operations; the platform hosts apply them."
+  layers={[
+    {
+      side: 'JS',
+      lines: [
+        'Angular, AOT-compiled, zoneless',
+        'NativeRenderer (Renderer2) → command buffer'
+      ]
+    },
+    {
+      side: 'Rust',
+      lines: [
+        'an-bridge   QuickJS, the protocol, native modules',
+        'an-core     the shadow tree, props, colours, icons',
+        'an-layout   flexbox over taffy, and measuring',
+        'an-host     HostRenderer + TextMeasurer, two traits'
+      ]
+    },
+    {
+      side: 'the hosts',
+      lines: [
+        'an-ios · an-android · an-macos · an-watch',
+        '+ the Swift and Java shells'
+      ]
+    }
+  ]}
+  arrows={['one buffer per tick', 'Frame { MountOp[] }']}
+/>
 
 The core knows nothing about UIKit or Android. Everything a platform has to
 bring is in **two traits**: `HostRenderer`, which mounts views, and
