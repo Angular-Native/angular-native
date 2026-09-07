@@ -98,6 +98,7 @@
         "@angular-native/plugin-keychain": "*",
         "@angular-native/plugin-notifications": "*",
         "@angular-native/plugin-preferences": "*",
+        "@angular-native/plugin-updater": "*",
       },
     },
     "examples/preferences": {
@@ -194,6 +195,13 @@
         "@angular/core": ">=22.0.0",
       },
     },
+    "packages/plugin-updater": {
+      "name": "@angular-native/plugin-updater",
+      "version": "0.0.1",
+      "peerDependencies": {
+        "@angular/core": ">=22.0.0",
+      },
+    },
     "packages/primitives": {
       "name": "@angular-native/primitives",
       "version": "0.0.1",
@@ -272,6 +280,8 @@
     "@angular-native/plugin-notifications": ["@angular-native/plugin-notifications@workspace:packages/plugin-notifications"],
 
     "@angular-native/plugin-preferences": ["@angular-native/plugin-preferences@workspace:packages/plugin-preferences"],
+
+    "@angular-native/plugin-updater": ["@angular-native/plugin-updater@workspace:packages/plugin-updater"],
 
     "@angular-native/primitives": ["@angular-native/primitives@workspace:packages/primitives"],
 

@@ -22,7 +22,8 @@
       "@angular-native/plugin-geolocation": ["../../packages/plugin-geolocation/src/public-api.ts"],
       "@angular-native/plugin-keychain": ["../../packages/plugin-keychain/src/public-api.ts"],
       "@angular-native/plugin-notifications": ["../../packages/plugin-notifications/src/public-api.ts"],
-      "@angular-native/plugin-preferences": ["../../packages/plugin-preferences/src/public-api.ts"]
+      "@angular-native/plugin-preferences": ["../../packages/plugin-preferences/src/public-api.ts"],
+      "@angular-native/plugin-updater": ["../../packages/plugin-updater/src/public-api.ts"]
     },
     "types": []
   },

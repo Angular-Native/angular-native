@@ -83,13 +83,14 @@ final class RootViewController: NSViewController {
     }
 
     /// The app bundle carries the JS, just like React Native's
-    /// `main.jsbundle`.
+    /// `main.jsbundle` — unless an update has been installed over it and has
+    /// earned the right to run. `AnBundles` lives in `shells/shared`, so the
+    /// Mac and the phone answer that question the same way.
     private func loadBundleScript() {
-        guard let path = Bundle.main.path(forResource: "main", ofType: "js"),
-              let source = try? String(contentsOfFile: path, encoding: .utf8)
-        else {
-            NSLog("angular-native: there is no main.js in the bundle")
-            return
+        let (source, version) = AnBundles.source()
+        guard !source.isEmpty else { return }
+        if version != "packaged" {
+            NSLog("angular-native: running update \(version)")
         }
         if an_runtime_eval(runtime, "main.js", source) != 0 {
             NSLog("angular-native: main.js threw while being evaluated")

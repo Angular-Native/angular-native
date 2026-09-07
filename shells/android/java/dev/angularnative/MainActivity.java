@@ -100,7 +100,10 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
             runtime.setViewport(w, h);
         });
 
-        String source = readAsset("main.js");
+        // The assets carry the packaged bundle; AnBundles decides whether an
+        // installed update has earned the right to run instead, and retires one
+        // that failed to confirm itself on its trial launch.
+        String source = AnBundles.source(this, readAsset("main.js"));
         if (source == null) {
             Log.e(TAG, "there is no main.js in the assets");
         } else if (runtime.eval("main.js", source) != 0) {

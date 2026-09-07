@@ -1,0 +1,73 @@
+{
+  "name": "@angular-native/plugin-updater",
+  "version": "0.0.1",
+  "description": "Ship new JavaScript without a store release, with a bad bundle costing one launch — as an angular-native plugin.",
+  "type": "module",
+  "main": "src/public-api.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/public-api.d.ts",
+      "default": "./dist/public-api.js"
+    }
+  },
+  "types": "dist/public-api.d.ts",
+  "files": [
+    "dist",
+    "native",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "keywords": [
+    "angular",
+    "native",
+    "ios",
+    "android",
+    "rust",
+    "no-webview",
+    "angular-native",
+    "plugin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Angular-Native/angular-native.git",
+    "directory": "packages/plugin-updater"
+  },
+  "license": "MIT",
+  "author": "Néstor García Bou",
+  "homepage": "https://angular-native.github.io",
+  "bugs": {
+    "url": "https://github.com/Angular-Native/angular-native/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "dist/public-api.js",
+    "module": "dist/public-api.js"
+  },
+  "peerDependencies": {
+    "@angular/core": ">=22.0.0"
+  },
+  "angularNative": {
+    "module": "updater",
+    "entry": "src/public-api.ts",
+    "ios": {
+      "sources": "native/apple",
+      "register": "AnUpdaterPlugin"
+    },
+    "macos": {
+      "sources": "native/apple",
+      "register": "AnUpdaterPlugin"
+    },
+    "android": {
+      "sources": "native/android",
+      "register": "dev.angularnative.plugins.UpdaterPlugin",
+      "manifest": {
+        "uses-permission": [
+          "android.permission.INTERNET"
+        ]
+      }
+    },
+    "watchos": {
+      "unsupported": "the watch shell loads its bundle from the .app and has no writable place to keep another one that survives an update of the phone app it ships inside. A watch app's JavaScript changes when the app it is embedded in is released."
+    }
+  }
+}
