@@ -401,15 +401,21 @@ Y en tiempo de ejecución la misma idea: un método que el plugin no maneja
 resuelve con nada. Por eso las dos implementaciones de arriba terminan en un
 `reject` en el camino del método desconocido.
 
-Aquí hay una asimetría honesta. El registro de **Android** envuelve el `call` del
-plugin en un `try`/`catch` y convierte cualquier cosa que se escape en un
-rechazo; el de **iOS** no. Un error de Swift que se escape de un plugin en iOS no
-se convierte en un rechazo por ti — termina tú cada camino en `resolve` o en
-`reject`.
+Ahora todos los registros hacen esto igual. `call` es `throws` en los shells de
+Apple y un error que se escapa se convierte en el rechazo de esa promesa,
+nombrando el módulo y el método, exactamente como el registro de Android ha
+hecho siempre con una `RuntimeException`. A un plugin que no lance no le afecta:
+en Swift un método no lanzador satisface un requisito lanzador, así que nada de
+lo que compilaba antes tiene que cambiar — lo que se gana es que un `try` dentro
+de un plugin ya no tenga que ser un `try?` que se traga el motivo.
 
-La única forma de dejar una promesa colgando es que un plugin se quede su
-`AnPluginCall` y no llame a ninguno de los dos. Eso es un fallo del plugin, y
-todavía no hay ningún plazo que lo corte.
+Lo que ningún registro puede cazar es un **trap**: un desempaquetado forzado de
+nil, un índice fuera de rango, `fatalError`, un `Error` de Java. Esos se llevan
+el proceso por delante y no hay `catch` que llegue.
+
+Así que la única forma que queda de dejar una promesa colgando es que un plugin
+se quede su `AnPluginCall` y no llame a ninguno de los dos. Eso es un fallo del
+plugin, y todavía no hay ningún plazo que lo corte.
 
 ## Cómo funciona por dentro
 

@@ -165,6 +165,20 @@ pub fn assemble(
     let profile = if release { "release" } else { "debug" };
     let app_name = workspace.app_name();
     let application_id = application_id(workspace);
+    // The project's manifest overrides the shell's if there is one: it is what
+    // `an add android` writes, and from then on it belongs to the user. It has
+    // to go on declaring the shell's package, because that is where the classes
+    // are; the application identifier is put there by
+    // `--rename-manifest-package`.
+    let manifest = workspace
+        .overlay("android", form.manifest_name())
+        .unwrap_or_else(|| root.join(form.manifest()));
+    // Up here with the plugin coverage and not down beside the `aapt2` line
+    // that consumes it: reading a file costs nothing, and everything below is
+    // a cargo build and a resource compilation. It used to run after both,
+    // which made "before anything is built" a comment rather than a fact.
+    check_manifest(&manifest, packaging.aab, &application_id)?;
+
     let out = workspace.build_dir().join("android");
     let staging = out.join("apk");
     let _ = std::fs::remove_dir_all(&staging);
@@ -256,15 +270,6 @@ pub fn assemble(
     let generated = out.join("gen");
     let _ = std::fs::remove_dir_all(&generated);
     std::fs::create_dir_all(&generated)?;
-    // The project's manifest overrides the shell's if there is one: it is what
-    // `an add android` writes, and from then on it belongs to the user. It has
-    // to go on declaring the shell's package, because that is where the classes
-    // are; the application identifier is put there by
-    // `--rename-manifest-package`.
-    let manifest = workspace
-        .overlay("android", form.manifest_name())
-        .unwrap_or_else(|| root.join(form.manifest()));
-    check_manifest(&manifest, packaging.aab)?;
     // And the one handed to `aapt2` is the project's plus whatever the plugins
     // ask for. The original is left alone: it is the user's.
     let manifest = write_manifest(
@@ -920,6 +925,18 @@ fn substitute_application_id(text: &str, application_id: &str) -> String {
     text.replace("${applicationId}", application_id)
 }
 
+/// An `android:authorities` that will not be the app's, if the manifest has one.
+///
+/// Either spelling is fine: `${applicationId}` because `an` substitutes it, and
+/// the identifier written out because a project may have decided to say it
+/// itself. Anything else belongs to somebody else's app.
+fn frozen_authority<'a>(text: &'a str, application_id: &str) -> Option<&'a str> {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| line.contains("android:authorities"))
+        .find(|line| !line.contains("${applicationId}") && !line.contains(application_id))
+}
+
 /// The `android:name`s of one kind of manifest element, with their
 /// `android:required` if they carry one.
 ///
@@ -962,7 +979,7 @@ fn attribute(attributes: &str, name: &str) -> Option<String> {
 /// If somebody changes it by hand, `javac` compiles just the same —the classes
 /// carry their `package` inside them— but Android cannot find the activity and
 /// the app does not open. Better to stop it here.
-fn check_manifest(manifest: &Path, aab: bool) -> Result<()> {
+fn check_manifest(manifest: &Path, aab: bool, application_id: &str) -> Result<()> {
     let text = std::fs::read_to_string(manifest)
         .with_context(|| format!("{} could not be read", manifest.display()))?;
     // A device never asks for a version, which is why a manifest can go without
@@ -979,6 +996,32 @@ fn check_manifest(manifest: &Path, aab: bool) -> Result<()> {
              one it has already seen.\nSee {}",
             manifest.display(),
             signing::DOCS
+        );
+    }
+    // A `<provider>` authority is unique across the **device**, not the app, so
+    // a fixed one in a shell every app shares means the second angular-native
+    // app installed on a phone fails with INSTALL_FAILED_CONFLICTING_PROVIDER —
+    // at install time, on somebody else's phone, with nothing in this build to
+    // suggest it. And `AnShare` asks the system for `getPackageName()` plus the
+    // suffix, so a fixed one is already the wrong string for any app whose id
+    // is not the shell's: the first `share` throws.
+    //
+    // The shell writes `${applicationId}` and `an` substitutes it. What this
+    // catches is the copy: `an add android` hands the manifest over once and it
+    // is the user's from then on, so a project set up before that changed still
+    // carries the old literal and nothing else would ever mention it.
+    if let Some(literal) = frozen_authority(&text, application_id) {
+        bail!(
+            "{}: {literal}\n\
+             A provider authority is unique across the whole device, not the app, so a fixed \
+             one means two angular-native apps cannot be installed at once — the second fails \
+             with INSTALL_FAILED_CONFLICTING_PROVIDER. It is also not the authority this app \
+             asks for at run time: `share` looks for \"{application_id}.anfiles\", so the \
+             first file handed to another app throws.\n\
+             Write it against the application identifier:\n\
+             \x20   android:authorities=\"${{applicationId}}.anfiles\"\n\
+             `an` substitutes that when it puts the manifest together.",
+            manifest.display()
         );
     }
     if !text.contains(&format!("package=\"{PACKAGE}\"")) {
@@ -1250,6 +1293,29 @@ mod tests {
         assert!(declares_version(
             r#"<manifest package="dev.angularnative" android:versionCode="7">"#
         ));
+    }
+
+    #[test]
+    fn an_authority_that_will_not_be_the_apps_is_caught() {
+        let stale = r#"<provider android:authorities="dev.angularnative.anfiles" />"#;
+        // The literal the shells carried before this moved: right for the
+        // shell's own id and wrong for every app that renames itself.
+        assert_eq!(frozen_authority(stale, "com.example.notes"), Some(stale.trim()));
+        assert_eq!(frozen_authority(stale, "dev.angularnative"), None);
+        // The two spellings that are always fine.
+        assert_eq!(
+            frozen_authority(r#"<provider android:authorities="${applicationId}.anfiles" />"#, "x"),
+            None
+        );
+        assert_eq!(
+            frozen_authority(
+                r#"<provider android:authorities="com.example.notes.anfiles" />"#,
+                "com.example.notes"
+            ),
+            None
+        );
+        // A manifest with no provider at all has nothing to say about this.
+        assert_eq!(frozen_authority("<manifest></manifest>", "com.example.notes"), None);
     }
 
     #[test]

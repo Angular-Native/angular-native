@@ -64,6 +64,30 @@ for (const short of shorts) {
 process.exit(bad ? 1 : 0)
 NODE
 
+# ── One version, because they are one release ───────────────────────────────
+#
+# CHANGELOG.md says why: the packages, the `an` binary and the wire protocol
+# between them cannot be versioned apart. A `NodeKind` byte a newer
+# `@angular-native/primitives` emits comes back `None` from an older core's
+# `kind_from_byte`, and the app mounts nothing rather than failing — so a
+# combination that installs cleanly is exactly the failure. `publish.yml` tags
+# everything at once, and this is what stops one manifest drifting off on its
+# own between tags.
+workspace=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+drift=""
+for manifest in packages/*/package.json; do
+  version=$(node -p "require('./$manifest').version")
+  [ "$version" = "$workspace" ] || drift="$drift $(dirname "$manifest" | xargs basename)@$version"
+done
+if [ -z "$drift" ]; then
+  count=$(ls -d packages/*/ | wc -l | tr -d ' ')
+  echo "  ok   the $count packages and the workspace are all at $workspace"
+else
+  echo "  FAIL the workspace is at $workspace and these are not:$drift"
+  echo "       CHANGELOG.md explains why they cannot be versioned apart."
+  fail=1
+fi
+
 if [ "$fail" -ne 0 ]; then
   exit 1
 fi

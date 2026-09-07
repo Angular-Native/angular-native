@@ -395,12 +395,19 @@ promise naming the method that was asked for**. It does not hang and it does not
 resolve with nothing. That is why both implementations above end in a `reject`
 on the unknown-method path.
 
-There is one honest asymmetry here. The **Android** registry wraps the plugin's
-`call` in a `try`/`catch` and turns anything that escapes into a rejection; the
-**iOS** registry does not. A Swift error escaping a plugin on iOS is not turned
-into a rejection for you — end every path in `resolve` or `reject` yourself.
+Every registry does this the same way now. `call` is `throws` on the Apple
+shells and an error that escapes becomes the rejection of that promise, naming
+the module and the method, exactly as the Android registry has always done with
+a `RuntimeException`. A plugin that does not throw is unaffected: in Swift a
+non-throwing method satisfies a throwing requirement, so nothing that compiled
+before has to change — what it buys is that a `try` inside a plugin no longer
+has to be a `try?` that swallows the reason.
 
-The only way to leave a promise hanging is for a plugin to keep its
+What no registry can catch is a **trap**: a force unwrap of nil, an index past
+the end, `fatalError`, a Java `Error`. Those take the process with them and no
+`catch` reaches them.
+
+So the only way left to leave a promise hanging is for a plugin to keep its
 `AnPluginCall` and call neither. That is a bug in the plugin, and there is no
 deadline cutting it short yet.
 

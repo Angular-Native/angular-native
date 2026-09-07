@@ -177,4 +177,30 @@ else
   ko 'the Android registry was not generated'
 fi
 
+# ── An error escaping a plugin becomes a rejection, on every shell ──────────
+#
+# The three registries used to disagree about this and the disagreement was
+# invisible: the same plugin bug rejected a promise on Android and left one
+# unsettled on the Apple shells, so it looked like a hang on one platform and
+# an error on the other. What no shell can catch is a trap, and neither list
+# below pretends otherwise.
+for shell in ios macos; do
+  registry="shells/$shell/Sources/AnPluginRegistry.swift"
+  if grep -q 'func call(.*) throws' "$registry" && grep -q 'try plugin.call' "$registry"; then
+    ok "the $shell registry lets a plugin throw"
+  else
+    ko "the $shell registry lets a plugin throw"
+  fi
+  if grep -qE '} catch \{' "$registry" && grep -q 'threw:' "$registry"; then
+    ok "and turns what escapes into a rejection that names the method"
+  else
+    ko "and turns what escapes into a rejection that names the method"
+  fi
+done
+if grep -q 'catch (RuntimeException' shells/android/java/dev/angularnative/AnPluginRegistry.java; then
+  ok 'the Android registry does the same, as it always has'
+else
+  ko 'the Android registry does the same, as it always has'
+fi
+
 exit "$fail"

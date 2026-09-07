@@ -36,6 +36,12 @@ cargo test --quiet 2>&1 | tail -1
 "$ROOT/scripts/check-angular.sh"
 "$ROOT/scripts/check-list.sh"
 "$ROOT/scripts/check-clip.sh"
+
+echo
+# The fourth duplicated list, and the one that had no check: what a control
+# measures when nobody gives it a size. A name missing from a host is a control
+# laid out 0x0 and invisible.
+"$ROOT/scripts/check-control-sizes.sh"
 "$ROOT/scripts/check-publish.sh"
 "$ROOT/scripts/check-plugin-sources.sh"
 "$ROOT/scripts/check-router.sh"

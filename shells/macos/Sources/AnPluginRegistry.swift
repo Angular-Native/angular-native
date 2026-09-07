@@ -112,7 +112,14 @@ protocol AnPlugin: AnyObject {
     /// `args` is what JS sent, already decoded. If it sent something that is not
     /// an object, this arrives empty. A method that does not exist has to be
     /// rejected, not ignored.
-    func call(_ method: String, _ args: [String: Any], _ respond: AnPluginCall)
+    ///
+    /// It may `throw`, and a plugin that does not is unaffected: in Swift a
+    /// non-throwing method satisfies a throwing requirement, so nothing that
+    /// compiled before has to change. What it buys is the Java shell's
+    /// behaviour — an error that escapes becomes the rejection of that promise
+    /// instead of a promise nobody ever settles. A `try` inside a plugin no
+    /// longer has to be a `try?` that swallows the reason.
+    func call(_ method: String, _ args: [String: Any], _ respond: AnPluginCall) throws
 }
 
 extension AnPlugin {
@@ -166,7 +173,19 @@ enum AnPluginRegistry {
         }
         let decoded = try? JSONSerialization.jsonObject(
             with: Data(args.utf8), options: [.fragmentsAllowed])
-        plugin.call(method, decoded as? [String: Any] ?? [:], AnPluginCall(id: id))
+        do {
+            try plugin.call(method, decoded as? [String: Any] ?? [:], AnPluginCall(id: id))
+        } catch {
+            // The Java registry has done this from the start and this side did
+            // not, so the same plugin bug was a rejected promise on Android and
+            // a promise that never settled here.
+            //
+            // What this cannot catch is a trap — a force unwrap of nil, an
+            // index past the end, `fatalError`. Swift has no way to; those take
+            // the process with them, and they are the argument for a per-call
+            // deadline rather than for more `catch`.
+            _ = an_plugin_reject(id, "\(module).\(method) threw: \(error)")
+        }
     }
 
     private static func text(_ pointer: UnsafePointer<CChar>?) -> String {
