@@ -40,6 +40,8 @@ declare const __an_dom: {
  * `RawText` is not here: it has no tag because no template ever writes it,
  * `Renderer2.createText()` creates it.
  */
+// `Custom` at the end is the hole a plugin view comes through: the kind says
+// "ask the host plugin-view registry" and the `an:view` prop says which one.
 const NATIVE_KINDS = [
   'View',
   'Text',
@@ -65,7 +67,8 @@ const NATIVE_KINDS = [
   'Textarea',
   'WebView',
   'MapView',
-  'VideoView'
+  'VideoView',
+  'Custom'
 ] as const
 
 export type NativeKind = (typeof NATIVE_KINDS)[number] | 'RawText'

@@ -883,6 +883,12 @@ impl HostRenderer for AppKitHost {
             }
             NodeKind::WebView => HostView::Web(crate::web::WKWebView::new(mtm)),
             NodeKind::MapView => HostView::Map(crate::map::MKMapView::new(mtm)),
+            NodeKind::Custom => {
+                // A plain container to begin with. The name arrives as the
+                // `an:view` prop in the same frame, and the plugin is asked
+                // then: nothing can ask before the tree has said which view.
+                HostView::View(FlippedView::new(mtm))
+            }
             NodeKind::VideoView => {
                 let player = crate::video::AVPlayerView::new(mtm);
                 // The system's controls, inside the view. It is what

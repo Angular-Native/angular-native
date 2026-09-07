@@ -27,6 +27,9 @@ final class RootViewController: UIViewController {
         // Before creating the runtime: the core builds one native module per
         // plugin when the engine starts, and whatever is registered afterwards
         // does not get in.
+        // Before the plugins register, so a plugin can hand over a view
+        // factory from its own `attach` and find the door already open.
+        AnPluginViews.install()
         AnPluginRegistry.install(host: self)
         // And the modules the framework brings, which are not plugins: nobody
         // declares them and every host has them. They present from this

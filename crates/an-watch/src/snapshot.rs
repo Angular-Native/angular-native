@@ -246,6 +246,7 @@ fn kind_name(kind: NodeKind) -> &'static str {
         NodeKind::WebView => "WebView",
         NodeKind::MapView => "MapView",
         NodeKind::VideoView => "VideoView",
+        NodeKind::Custom => "Custom",
     }
 }
 
@@ -282,6 +283,11 @@ pub fn unsupported(kind: NodeKind) -> Option<&'static str> {
         NodeKind::VideoView => {
             "AVKit on watchOS ships neither AVPlayerViewController nor VideoPlayer: \
              its headers only declare types, no playback view at all"
+        }
+        NodeKind::Custom => {
+            "a watch has no view hierarchy: this host mirrors the tree into a model \
+             SwiftUI redraws, and a plugin view is a native view somebody else built. \
+             There is nowhere here to put one"
         }
         NodeKind::MapView => {
             "SwiftUI's Map does exist on watchOS, but it takes neither a centre nor a \

@@ -262,7 +262,8 @@
     Textarea: 22,
     WebView: 23,
     MapView: 24,
-    VideoView: 25
+    VideoView: 25,
+    Custom: 26
   }
 
   class CommandWriter {

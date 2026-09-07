@@ -1656,6 +1656,40 @@ export class Alert extends NativeVisual {
   )
 }
 
+/**
+ * A view a plugin brings.
+ *
+ * Everything else in this file is a control the framework mounts on every host.
+ * This one is a hole: the plugin registers a view under a name, and this mounts
+ * whatever that name resolves to on the platform being built.
+ *
+ * ```html
+ * <an-custom [view]="'barcode-preview'" [style.height]="'320'" />
+ * ```
+ *
+ * **Give it a size.** A plugin view is a container as far as layout is
+ * concerned and is never measured by its content: measuring would mean the core
+ * calling into a plugin during layout, on the engine thread, and the measuring
+ * path is built the other way round. A view with no size comes out at zero,
+ * which looks like a plugin that does not work.
+ *
+ * A name no plugin registered mounts nothing and says so once, in the log —
+ * the same as every other gap here.
+ */
+@Directive({ selector: 'an-custom' })
+export class Custom extends NativeVisual {
+  constructor() {
+    super()
+    // Prefixed, like the platform objects: it is not a prop of a control, it is
+    // the question "which view is this", and the prefix keeps it greppable in
+    // the hosts that answer it.
+    this.push({ 'an:view': this.view })
+  }
+
+  /** The name the plugin registered its view under. */
+  readonly view = input<string | null>(null)
+}
+
 /** For importing them all at once into a standalone component. */
 export const NATIVE_PRIMITIVES = [
   View,
@@ -1683,4 +1717,5 @@ export const NATIVE_PRIMITIVES = [
   Select,
   Stepper,
   Alert
-] as const
+,
+  Custom] as const

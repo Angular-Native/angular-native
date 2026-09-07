@@ -115,6 +115,9 @@ impl JniHost {
             NodeKind::WebView => 23,
             NodeKind::MapView => 24,
             NodeKind::VideoView => 25,
+            // The Java side owns the view map, so the name in `an:view` reaches
+            // it as an ordinary prop and it resolves the plugin view itself.
+            NodeKind::Custom => 26,
         }
     }
 }

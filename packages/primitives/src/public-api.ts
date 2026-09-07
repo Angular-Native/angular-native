@@ -26,6 +26,7 @@ export type { VirtualListContext } from './virtual-list'
 export {
   ActivityIndicator,
   Alert,
+  Custom,
   Button,
   DatePicker,
   Icon,

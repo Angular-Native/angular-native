@@ -54,6 +54,13 @@ int32_t an_plugin_reject(uint64_t id, const char *message);
 /// the JS side is waiting for it. Returns 0 if the module is registered.
 int32_t an_plugin_emit(const char *module, const char *event, const char *json);
 
+/// Installs the factory that turns the name in `<an-custom [view]>` into a view.
+///
+/// The shell hands back a `+1` reference — `Unmanaged.passRetained` — and the
+/// core takes ownership of it. Returning NULL means no plugin registers that
+/// name, and the core says so once rather than mounting an empty box.
+void an_plugin_view_set_factory(void *(*factory)(const char *name));
+
 // ── Built-in modules ────────────────────────────────────────────────────────
 //
 // The modules the framework brings: files, share, network status and haptics.

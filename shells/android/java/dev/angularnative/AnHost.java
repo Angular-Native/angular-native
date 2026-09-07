@@ -56,6 +56,9 @@ public final class AnHost {
     private static final int KIND_WEB = 23;
     private static final int KIND_MAP = 24;
     private static final int KIND_VIDEO = 25;
+
+    /** A view a plugin brings. Which one is the `an:view` prop, not the kind. */
+    private static final int KIND_CUSTOM = 26;
     /** How long a stack transition lasts. The same as on iOS. */
     private static final long TRANSITION_MS = 300;
     /** Resolution of the slider and the progress bar, which work in integers. */
@@ -65,6 +68,9 @@ public final class AnHost {
     private final AnViewGroup container;
     private final float density;
     private final SparseArray<View> views = new SparseArray<>();
+
+    /** Plugin view names asked for that nobody registered. Said once each. */
+    private final java.util.Set<String> warnedViews = new java.util.HashSet<>();
     /** The content of a ScrollView: Android demands a single child. */
     private final SparseArray<AnViewGroup> scrollContent = new SparseArray<>();
     private final TextPaint measurePaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
@@ -584,6 +590,14 @@ public final class AnHost {
             case KIND_MAP:
                 view = new AnMapView(context);
                 break;
+            case KIND_CUSTOM: {
+                // A plain container to begin with. The `an:view` prop arrives in
+                // the same frame and the plugin view is added inside it then:
+                // nothing can ask a plugin for a view before the tree has said
+                // which one is wanted.
+                view = new AnViewGroup(context);
+                break;
+            }
             case KIND_VIDEO: {
                 // `VideoView` is in the platform, with its controls and its
                 // audio focus handling.
@@ -1345,6 +1359,40 @@ public final class AnHost {
             return;
         }
         switch (key) {
+            case "an:view": {
+                // Which view a plugin should put here. It arrives once, in the
+                // same frame the node was created in, and the plugin is asked
+                // then — never before, because until this lands nothing knows
+                // which view is wanted.
+                if (!(view instanceof ViewGroup)) {
+                    break;
+                }
+                View brought = AnPluginViews.create(context, value);
+                if (brought == null) {
+                    // Once per name and not once per node: a list of five
+                    // hundred rows with the same missing view is one mistake.
+                    if (warnedViews.add(value)) {
+                        android.util.Log.w(
+                                "angular-native",
+                                "no plugin registers a view called \""
+                                        + value
+                                        + "\", so <an-custom [view]=\""
+                                        + value
+                                        + "\"> mounts nothing. The name is the one the plugin"
+                                        + " passes to AnPluginViews.register.");
+                    }
+                    break;
+                }
+                // It fills the node, whose size layout decided: a plugin view is
+                // never measured by its content, so the frame is the answer and
+                // not a starting point.
+                brought.setLayoutParams(
+                        new ViewGroup.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT));
+                ((ViewGroup) view).addView(brought);
+                break;
+            }
             case "backgroundColor":
             case "background-color":
                 applyBackground(view, parseColor(value), null);

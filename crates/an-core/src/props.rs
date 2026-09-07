@@ -61,6 +61,25 @@ pub enum NodeKind {
     MapView,
     /// A video player.
     VideoView,
+    /// A view a plugin brings.
+    ///
+    /// This is the one variant that is not a thing: it is a hole. Everything
+    /// else in this enum is a control the framework knows how to mount on every
+    /// host, and adding one means touching four languages. A plugin cannot do
+    /// that, so a plugin could contribute methods and never a view — which is
+    /// exactly why a barcode scanner could only ever be full screen.
+    ///
+    /// The enum stays closed on purpose. Opening it to arbitrary names would
+    /// mean the protocol's kind byte was no longer a fixed vocabulary, and that
+    /// byte is the thing four files have to agree about. So the *kind* is one
+    /// more byte and the **name travels as a prop**: `Custom` says "ask the
+    /// host's plugin-view registry", and `an:view` says which one.
+    ///
+    /// For layout it is an ordinary container. A plugin view that wants to be
+    /// measured by its content is not supported: the core would have to call
+    /// into the plugin during layout, on the engine thread, and the whole
+    /// measuring path is built the other way round. Give it a size.
+    Custom,
 }
 
 impl NodeKind {

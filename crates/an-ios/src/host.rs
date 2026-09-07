@@ -659,6 +659,9 @@ pub struct UikitHost {
     leaving: Vec<(NodeId, Retained<UIView>)>,
     /// Nodes whose view is animating out: `destroy` must not touch them.
     animating_out: std::collections::HashSet<NodeId>,
+    /// Plugin view names that were asked for and are not registered. Said once
+    /// each, not once per node.
+    warned_views: std::collections::HashSet<String>,
     /// What layout asked for, per node: whether the node keeps its children
     /// inside its own frame. A corner radius clips too, so the value actually
     /// given to UIKit is the two of them together — kept here so that setting
@@ -730,6 +733,7 @@ impl UikitHost {
             entering: Vec::new(),
             leaving: Vec::new(),
             animating_out: std::collections::HashSet::new(),
+            warned_views: std::collections::HashSet::new(),
             clips: HashMap::new(),
             safe_area: HashMap::new(),
             keyboard,
@@ -1443,6 +1447,13 @@ impl HostRenderer for UikitHost {
                 HostView::Web(web)
             }
             NodeKind::MapView => HostView::Map(crate::map::MKMapView::new(mtm)),
+            NodeKind::Custom => {
+                // A plain container to begin with. The name arrives as the
+                // `an:view` prop in the same frame, and the plugin's view is
+                // added inside this one then: a plugin cannot be asked for a
+                // view before the tree has said which one.
+                HostView::View(UIView::new(mtm))
+            }
             NodeKind::VideoView => {
                 let player = UIView::new(mtm);
                 HostView::Video(player)
@@ -1593,6 +1604,35 @@ impl HostRenderer for UikitHost {
         let number = value.as_f32();
 
         match key {
+            // Which view a plugin should put here. It arrives once, in the same
+            // frame the node was created in, and the plugin is asked then —
+            // never before, because until this prop lands nothing knows which
+            // view is wanted.
+            "an:view" => {
+                let Some(name) = text.as_deref() else { return };
+                let Some(brought) = crate::plugin_views::make(name) else {
+                    // Once per name and not once per node: a list of five
+                    // hundred rows with the same missing view is one mistake,
+                    // not five hundred.
+                    if self.warned_views.insert(name.to_owned()) {
+                        eprintln!(
+                            "angular-native: no plugin registers a view called {name:?}, so \
+                             <an-custom [view]=\"{name}\"> mounts nothing. The name is the one \
+                             the plugin passes to AnPluginViews.register."
+                        );
+                    }
+                    return;
+                };
+                // It fills the node, whose size layout decided: a plugin view is
+                // never measured by its content, so the frame is the answer and
+                // not a starting point.
+                brought.setFrame(native.bounds());
+                brought.setAutoresizingMask(
+                    objc2_ui_kit::UIViewAutoresizing::FlexibleWidth
+                        | objc2_ui_kit::UIViewAutoresizing::FlexibleHeight,
+                );
+                native.addSubview(&brought);
+            }
             "backgroundColor" | "background-color" => {
                 let color = text.as_deref().and_then(crate::color::to_uicolor);
                 native.setBackgroundColor(color.as_deref());

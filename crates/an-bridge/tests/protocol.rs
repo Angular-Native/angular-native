@@ -88,7 +88,7 @@ fn every_node_kind_survives_the_round_trip() {
 /// the same thing.
 #[test]
 fn the_code_of_every_kind_is_nailed_down() {
-    let expected: [(NodeKind, u8); 26] = [
+    let expected: [(NodeKind, u8); 27] = [
         (NodeKind::View, 0),
         (NodeKind::Text, 1),
         (NodeKind::RawText, 2),
@@ -118,11 +118,15 @@ fn the_code_of_every_kind_is_nailed_down() {
         (NodeKind::WebView, 23),
         (NodeKind::MapView, 24),
         (NodeKind::VideoView, 25),
+        // The hole a plugin's view comes through. The kind says "ask the host's
+        // plugin-view registry"; which view is a prop, not a code, which is what
+        // keeps this list finite.
+        (NodeKind::Custom, 26),
     ];
     for (kind, byte) in expected {
         assert_eq!(kind_to_byte(kind), byte, "{kind:?} changed code");
     }
-    assert_eq!(kind_from_byte(26), None, "26 does not belong to anybody yet");
+    assert_eq!(kind_from_byte(27), None, "27 does not belong to anybody yet");
 }
 
 /// Would catch: changing the order of the fields, the size of an integer or the

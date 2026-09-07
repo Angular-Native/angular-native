@@ -22,7 +22,13 @@ final class AnBarcodePlugin: NSObject, AnPlugin, AVCaptureMetadataOutputObjectsD
         func attach(_ host: NSViewController) { self.host = host }
     #else
         private weak var host: UIViewController?
-        func attach(_ host: UIViewController) { self.host = host }
+        func attach(_ host: UIViewController) {
+            self.host = host
+            // The inline preview, registered under the name a template mounts
+            // it by. It is the one thing here that is a view rather than a
+            // method, and it needs the core's `Custom` node to exist at all.
+            AnPluginViews.register("barcode-preview") { AnBarcodePreview() }
+        }
     #endif
 
     private var pending: AnPluginCall?

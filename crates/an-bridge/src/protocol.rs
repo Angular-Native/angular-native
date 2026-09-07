@@ -66,6 +66,8 @@ pub fn kind_from_byte(byte: u8) -> Option<NodeKind> {
         23 => NodeKind::WebView,
         24 => NodeKind::MapView,
         25 => NodeKind::VideoView,
+        // The hole a plugin's view comes through. See `NodeKind::Custom`.
+        26 => NodeKind::Custom,
         _ => return None,
     })
 }
@@ -98,6 +100,7 @@ pub fn kind_to_byte(kind: NodeKind) -> u8 {
         NodeKind::WebView => 23,
         NodeKind::MapView => 24,
         NodeKind::VideoView => 25,
+        NodeKind::Custom => 26,
     }
 }
 
