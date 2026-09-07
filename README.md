@@ -70,7 +70,7 @@ So `<an-switch>` **is** a `UISwitch` and a `MaterialSwitch`. Nothing is drawn by
 hand to resemble a control, and where a platform has no equivalent the node is
 not created at all: the layout leaves the gap it had measured and the host says
 why, once, in the log. The long version is in
-[guide/how-it-works](https://angular-native.dev/guide/how-it-works/).
+[guide/how-it-works](https://angular-native.github.io/guide/how-it-works/).
 
 What follows from that is the interesting part: if the views belong to the
 platform, the **layout** cannot. UIKit, AppKit and Android each lay out
@@ -93,7 +93,7 @@ an ios                               # to the simulator
 It touches neither `src/main.ts` nor `angular.json`, so `ng build` and
 `ng serve` keep working exactly as before. The whole flow — and why the
 framework packages are vendored and the `.app` is not committed — is in
-[guide/existing-angular-project](https://angular-native.dev/guide/existing-angular-project/).
+[guide/existing-angular-project](https://angular-native.github.io/guide/existing-angular-project/).
 
 From inside this repository the same commands run against `examples/`:
 
@@ -117,7 +117,7 @@ opens a new one.
 
 Twelve commands, no nested subcommands, every option long-form. The whole
 inventory, with the defaults and the four asymmetries between them, is in
-[reference/cli](https://angular-native.dev/reference/cli/).
+[reference/cli](https://angular-native.github.io/reference/cli/).
 
 It all goes through one binary. There is no `.xcodeproj` and no Gradle: `an`
 drives `ngc`, esbuild, `cargo`, `swiftc`, `aapt2`, `javac`, `d8` and
@@ -144,19 +144,19 @@ spot.
 
 Each platform's page says which primitives it does not have and why, and every
 one of those reasons is the SDK's rather than an opinion. The matrix in one
-piece is [reference/components](https://angular-native.dev/reference/components/).
+piece is [reference/components](https://angular-native.github.io/reference/components/).
 
 Two of them are worth knowing before you write a template for them:
 
 - **On the TV nothing is touched.** You navigate with the remote and the focus
   engine, and a control that cannot take focus cannot be pressed. That is not an
   implementation detail, it is the platform, and it changes what a template may
-  assume. [platforms/tvos](https://angular-native.dev/platforms/tvos/)
+  assume. [platforms/tvos](https://angular-native.github.io/platforms/tvos/)
 - **The Apple watch is the one host that is not a view hierarchy.** watchOS has
   no `UIView` to add subviews to, so the tree Rust maintains is mirrored into a
   model SwiftUI redraws. Everything else — the TV, the headset, the Android
   watch, the desktop — reuses the phone's host with different classes.
-  [platforms/watchos](https://angular-native.dev/platforms/watchos/)
+  [platforms/watchos](https://angular-native.github.io/platforms/watchos/)
 
 ## What is in it
 
@@ -210,7 +210,7 @@ with its Swift and its Java inside; the app declares it as a dependency and `an`
 compiles and registers its part when it assembles the `.app` or the APK. If a
 plugin does not cover the platform being built, the build stops and says so
 rather than leaving a method that swallows the call.
-[extending/plugins](https://angular-native.dev/extending/plugins/)
+[extending/plugins](https://angular-native.github.io/extending/plugins/)
 
 ## Verification without a device
 
@@ -347,7 +347,7 @@ apps the checks drive.
   call that returns a promise — but not a new primitive that mounts in the tree:
   that means opening the core's `NodeKind` to names it does not know at compile
   time and teaching every host to build a view that is not its own.
-  [extending/plugins](https://angular-native.dev/extending/plugins/)
+  [extending/plugins](https://angular-native.github.io/extending/plugins/)
 
 - **Hot refresh does not reach the framework.** Changing a component of the app
   keeps its state; changing `packages/` or a dependency forces a restart,
@@ -356,13 +356,13 @@ apps the checks drive.
 
 Every platform keeps its own list of what is missing there, with the reason,
 and those lists are the ones kept honest by the checks:
-[tvOS](https://angular-native.dev/platforms/tvos/) ·
-[visionOS](https://angular-native.dev/platforms/visionos/) ·
-[watchOS](https://angular-native.dev/platforms/watchos/) ·
-[Wear OS](https://angular-native.dev/platforms/wearos/) ·
-[macOS](https://angular-native.dev/platforms/macos/) ·
-[iOS](https://angular-native.dev/platforms/ios/) ·
-[Android](https://angular-native.dev/platforms/android/)
+[tvOS](https://angular-native.github.io/platforms/tvos/) ·
+[visionOS](https://angular-native.github.io/platforms/visionos/) ·
+[watchOS](https://angular-native.github.io/platforms/watchos/) ·
+[Wear OS](https://angular-native.github.io/platforms/wearos/) ·
+[macOS](https://angular-native.github.io/platforms/macos/) ·
+[iOS](https://angular-native.github.io/platforms/ios/) ·
+[Android](https://angular-native.github.io/platforms/android/)
 
 ## Development
 

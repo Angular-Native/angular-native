@@ -492,7 +492,7 @@ fn read_dict(
             bail!(
                 "{}: {key_path}[{key:?}] is {value}; only strings, booleans, \
                  numbers and lists of strings are accepted. A nested dictionary is not merged \
-                 yet. See https://angular-native.dev/extending/plugins/.",
+                 yet. See https://angular-native.github.io/extending/plugins/.",
                 manifest.display()
             );
         }
@@ -565,7 +565,7 @@ fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<Ma
             }
             other => bail!(
                 "{}: angularNative.android.manifest knows nothing about {other:?}; for now only \
-                 \"uses-permission\" and \"uses-feature\" are contributed. See https://angular-native.dev/extending/plugins/.",
+                 \"uses-permission\" and \"uses-feature\" are contributed. See https://angular-native.github.io/extending/plugins/.",
                 manifest.display()
             ),
         }
@@ -791,7 +791,7 @@ pub fn sources(plugin: &Plugin, platform: Platform) -> Result<Vec<String>> {
         // files in it.
         bail!(
             "{}: {} carries Kotlin sources and those are not compiled yet; the Android half \
-             of a plugin is Java. See https://angular-native.dev/extending/plugins/.",
+             of a plugin is Java. See https://angular-native.github.io/extending/plugins/.",
             plugin.package,
             native.sources.display()
         );

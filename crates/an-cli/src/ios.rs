@@ -521,7 +521,7 @@ fn device_entitlements(
 /// simulator.
 ///
 /// A real device would need the other route —identity and profile— and that is
-/// not here: `an` installs on the simulator. See https://angular-native.dev/extending/plugins/.
+/// not here: `an` installs on the simulator. See https://angular-native.github.io/extending/plugins/.
 fn write_entitlements(
     plugins: &[Plugin],
     bundle_id: &str,

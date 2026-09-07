@@ -494,7 +494,7 @@ const GITIGNORE: [(&str, &[&str]); 2] = [
         &["/.angular-native/build/"],
     ),
     (
-        "# Signing credentials. None of these belongs in a repository: a keystore is the\n         # app's identity on Play, and a .p12 carries a certificate's private key.\n         # See https://angular-native.dev/guide/signing-and-distribution/.",
+        "# Signing credentials. None of these belongs in a repository: a keystore is the\n         # app's identity on Play, and a .p12 carries a certificate's private key.\n         # See https://angular-native.github.io/guide/signing-and-distribution/.",
         &["*.keystore", "*.jks", "*.p12", "*.mobileprovision"],
     ),
 ];

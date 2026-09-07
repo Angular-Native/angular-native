@@ -34,12 +34,12 @@ pub fn absent_note() -> String {
     if names.is_empty() {
         return "this .app carries no plugins, so only the modules compiled into the core exist \
                 here. A plugin is an npm dependency of the app: declare it and `an` links its \
-                Swift in. See https://angular-native.dev/extending/plugins/"
+                Swift in. See https://angular-native.github.io/extending/plugins/"
             .to_owned();
     }
     format!(
         "the plugins in this .app are {}, and only those plus the modules compiled into the core \
-         exist here. See https://angular-native.dev/extending/plugins/",
+         exist here. See https://angular-native.github.io/extending/plugins/",
         names.join(", ")
     )
 }

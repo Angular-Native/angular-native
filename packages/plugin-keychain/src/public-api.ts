@@ -119,7 +119,7 @@ export interface KeychainBacking {
  * there is no keychain —Android has no API that stores secrets for you—, so the
  * honest equivalent is: an AES key in the **Android key store**, which never
  * leaves it, encrypting a preferences file private to the app. What it protects
- * and what it does not is at `https://angular-native.dev/extending/plugins/`, and it is
+ * and what it does not is at `https://angular-native.github.io/extending/plugins/`, and it is
  * worth reading before storing anything here.
  *
  * **This is not a database.** These are short strings: a session token, an API

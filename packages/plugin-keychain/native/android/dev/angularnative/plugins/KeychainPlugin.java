@@ -46,7 +46,7 @@ import javax.crypto.spec.GCMParameterSpec;
  * there is no Gradle in this repo, the Android dependencies are brought in one by one, and this is
  * eighty lines.
  *
- * <p><b>What it protects and what it does not</b> is at {@code https://angular-native.dev/extending/plugins/}, and it is the important part.
+ * <p><b>What it protects and what it does not</b> is at {@code https://angular-native.github.io/extending/plugins/}, and it is the important part.
  * The summary: uninstalling the app makes both pieces disappear; the backup may take the encrypted
  * file but never the key, so restored on another device it cannot be opened; and on a phone with no
  * secure hardware the key is kept by the system in software, which is less.

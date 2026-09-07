@@ -2,22 +2,23 @@
 # That everything pointing at the documentation points at the same place.
 #
 # The site's address is written out in four languages: Markdown links in the
-# README, `homepage` fields in eight package manifests, Rust string literals in
+# README, `homepage` fields in the package manifests, Rust string literals in
 # the messages the CLI prints when it wants to send somebody to a page, and a
-# Javadoc comment in a plugin. None of them can read a variable from the other,
+# Javadoc comment in a plugin. None of them can read a variable from the others,
 # so the address is duplicated — and a stale one is worse than no link at all,
 # because it takes the reader somewhere that is not ours.
 #
 # `DOCS_URL` at the root is the one place it is decided. Astro reads that file
-# directly; everything else is checked against it here, and rewritten by
-# `--fix`. Moving the site is: edit `DOCS_URL`, run this with `--fix`.
+# directly, and derives the `CNAME` from it; everything else is checked against
+# it here and rewritten by `--fix`. Moving the site is: edit `DOCS_URL`, run
+# this with `--fix`.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 python3 - "$ROOT" "${1:-}" <<'PY'
-import pathlib, re, subprocess, sys
+import pathlib, re, sys
 
 root, flag = pathlib.Path(sys.argv[1]), sys.argv[2]
 fix = flag == '--fix'
@@ -26,38 +27,53 @@ if flag and not fix:
     sys.exit(1)
 
 canonical = (root / 'DOCS_URL').read_text().strip()
+bare = canonical.split('//', 1)[1]
 
-# Only the project's own host. `github.com/Angular-Native` is a different thing
-# and keeps its capital A, so the lowercase hostname does not reach it.
-host = re.compile(r'https://angular-native\.[A-Za-z0-9.-]+')
+# The project's own host, with or without the scheme — one shell check asserts
+# on the bare hostname inside a message. `github.com/Angular-Native` is a
+# different thing and keeps its capital A, so this never reaches it.
+host = re.compile(r'(?<![\w/.-])(https://)?angular-native\.[A-Za-z0-9.-]+')
 
-# The generated and vendored trees are not sources of truth, and `DOCS_URL`
-# itself is the answer rather than a copy of it.
-skip = ('.git', 'node_modules', 'build', 'vendor', 'target', 'dist', '.astro')
-files = subprocess.run(
-    ['git', 'ls-files'], cwd=root, capture_output=True, text=True, check=True
-).stdout.split()
+
+def is_site(match, text):
+    # `angular-native.json` and `angular-native.entitlements` are file names the
+    # CLI writes, and they look exactly like a bare host. What tells them apart
+    # is that an address is either introduced by its scheme or followed by the
+    # path it points at.
+    return bool(match.group(1)) or text[match.end():match.end() + 1] == '/'
+
+
+def replace(match, text):
+    if not is_site(match, text):
+        return match.group(0)
+    return canonical if match.group(1) else bare
+
+
+# Generated, vendored and installed trees are not sources of truth, and
+# `DOCS_URL` itself is the answer rather than a copy of it.
+skip = {'.git', 'node_modules', 'build', 'vendor', 'target', 'dist',
+        '.astro', '.angular-native', 'DOCS_URL'}
 
 stale, seen = [], 0
-for name in files:
-    if name == 'DOCS_URL' or any(part in skip for part in pathlib.Path(name).parts):
+for path in sorted(root.rglob('*')):
+    rel = path.relative_to(root)
+    if skip.intersection(rel.parts) or path.is_symlink() or not path.is_file():
         continue
-    path = root / name
     try:
         text = path.read_text()
-    except (UnicodeDecodeError, FileNotFoundError):
+    except (UnicodeDecodeError, OSError):
         continue
-    found = host.findall(text)
-    if not found:
+    matches = [m for m in host.finditer(text) if is_site(m, text)]
+    if not matches:
         continue
-    seen += len(found)
-    wrong = [url for url in found if url != canonical]
+    seen += len(matches)
+    wrong = [m.group(0) for m in matches if m.group(0) not in (canonical, bare)]
     if not wrong:
         continue
     if fix:
-        path.write_text(host.sub(canonical, text))
+        path.write_text(host.sub(lambda m: replace(m, text), text))
     else:
-        stale.append((name, sorted(set(wrong))))
+        stale.append((rel.as_posix(), sorted(set(wrong))))
 
 if stale:
     for name, urls in stale:

@@ -70,7 +70,7 @@ use crate::workspace::Workspace;
 
 /// The documentation page every one of these errors points at. It is one page,
 /// and it is the one that says what to ask Apple and Google for.
-pub const DOCS: &str = "https://angular-native.dev/guide/signing-and-distribution/";
+pub const DOCS: &str = "https://angular-native.github.io/guide/signing-and-distribution/";
 
 // ---------------------------------------------------------------------------
 // The raw settings

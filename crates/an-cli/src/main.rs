@@ -52,7 +52,7 @@ enum Command {
         ///
         /// It needs the signing settings: a development certificate in the
         /// keychain and a provisioning profile that lists this device. See
-        /// https://angular-native.dev/guide/signing-and-distribution/.
+        /// https://angular-native.github.io/guide/signing-and-distribution/.
         #[arg(long)]
         physical: bool,
         /// Builds a signed `.xcarchive` and the `.ipa` that comes out of it,

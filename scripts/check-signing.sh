@@ -122,7 +122,7 @@ contains "$output" 'signing\.ios' 'an ios --physical with no settings names sign
 contains "$output" '"profile": "ios/profiles/development\.mobileprovision"' \
   'and shows the block to paste, not just the name of it'
 contains "$output" 'AN_IOS_PROFILE' 'and the environment variable, for CI'
-contains "$output" 'angular-native.dev/guide/signing-and-distribution' \
+contains "$output" 'angular-native.github.io/guide/signing-and-distribution' \
   'and points at the page that says what to ask Apple for'
 
 output="$(must_fail in_app "$AN" android --sign)"
