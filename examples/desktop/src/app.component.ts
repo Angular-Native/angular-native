@@ -113,6 +113,19 @@ import type { NativeCursor, NativeHoverEvent } from '@angular-native/primitives'
           [borderTopRightRadius]="20"></an-view>
       </an-view>
 
+      <!-- Letter spacing, measured and not only drawn. The two say the same
+           word; the boxes are sized by their content, so the spaced one has to
+           come out wider. Measuring without the kerning made them the same
+           width and the spaced text ran past its own box. -->
+      <an-view [style.flexDirection]="'row'" [style.gap]="'12'" [style.alignItems]="'flex-start'">
+        <an-view [backgroundColor]="'#6ee7b7'" [style.alignSelf]="'flex-start'">
+          <an-text [fontSize]="17" [color]="'#0b1020'">WIDE</an-text>
+        </an-view>
+        <an-view [backgroundColor]="'#6ee7b7'" [style.alignSelf]="'flex-start'">
+          <an-text [fontSize]="17" [letterSpacing]="8" [color]="'#0b1020'">WIDE</an-text>
+        </an-view>
+      </an-view>
+
       <!-- Swiping. Two fingers on the trackpad, with the system threshold. -->
       <an-text [fontSize]="15" [fontWeight]="600" [color]="'#cbd5e1'">swipe</an-text>
       <an-view

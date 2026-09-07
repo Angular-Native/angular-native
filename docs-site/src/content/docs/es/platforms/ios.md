@@ -262,9 +262,6 @@ el siguiente. Las orientaciones soportadas son vertical y las dos horizontales.
   [El área segura y el teclado](/es/guide/safe-area-and-keyboard/). Lo que no
   hay forma de pedir es la barra de encima: un botón Hecho, una flecha al
   siguiente campo, cualquier cosa para la que sirve `inputAccessoryView`.
-- **`letterSpacing` no se mide.** Forma parte de la clave de la caché de
-  medición pero no se pasa ningún atributo de kerning, así que el layout
-  dimensiona el texto como si fuera cero.
 - **Los detentes de la hoja no se pueden elegir** (arriba).
 - **Seis sitios que avisan una vez, todos en accesibilidad**: un rol
   desconocido, una clave de estado desconocida, un rol para el que UIKit no

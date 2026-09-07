@@ -243,6 +243,44 @@ else
   echo "  skipped the corner radii: ffmpeg is not installed, so the pixels cannot be read"
 fi
 
+# Letter spacing, measured and not only drawn.
+#
+# `letterSpacing` was in the measurement cache key and in nothing else: the
+# host applied it when painting and the measurer did not, so layout reserved a
+# box for text without kerning and the label drew text with it. The two labels
+# say the same four-letter word in boxes sized by their content, so the spaced
+# one has to be exactly `4 * 8` points wider — an arithmetic the check can do
+# rather than a threshold somebody picked.
+if command -v ffmpeg >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  WIDTHS="$(python3 - "$SHOT_STILL" <<'PYEOF'
+import subprocess, sys
+raw = subprocess.run(
+    ["ffmpeg", "-v", "error", "-i", sys.argv[1], "-vf", "crop=720:1:0:562",
+     "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+    capture_output=True).stdout
+green, runs, start = (110, 231, 183), [], None
+for x in range(720):
+    pixel = tuple(raw[x * 3:x * 3 + 3])
+    if pixel == green and start is None:
+        start = x
+    elif pixel != green and start is not None:
+        runs.append(x - start)
+        start = None
+print(" ".join(str(run) for run in runs))
+PYEOF
+)"
+  set -- $WIDTHS
+  if [ "$#" -eq 2 ] && [ "$(( $2 - $1 ))" -eq 32 ]; then
+    echo "  ok   letter spacing reaches the measurement: the spaced label is 4x8 points wider ($1 -> $2)"
+  else
+    echo "  FAIL letter spacing is drawn but not measured: label widths [$WIDTHS], expected the"
+    echo "       second to be 32 points wider than the first"
+    fail=1
+  fi
+else
+  echo "  skipped the letter spacing: it needs ffmpeg and python3 to read the pixels"
+fi
+
 # A hover only happens if the window is actually under the pointer, and that
 # needs the app to win the front. With a simulator or an emulator open, macOS
 # hands the front to whoever asked last and this check would fail for a reason

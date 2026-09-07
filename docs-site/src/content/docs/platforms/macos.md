@@ -309,6 +309,14 @@ out **empty**, with no error, no trace, nothing to look at. It shows up the
 moment a label lands in a box its exact size — that is, in any
 `align-items: center`, which is where it appeared.
 
+Letter spacing is measured and not only drawn. It was in the measurement cache
+key and in nothing else, so the host painted with the kerning and the measurer
+sized without it: positive spacing came out wider than the box layout had
+reserved and wrapped a word early or was cut, negative spacing left a gap
+nobody asked for, and the one direction that looked right was zero. The
+attribute goes in only when there is any — an empty `kern` and no `kern` are
+not quite the same thing to Core Text.
+
 The measurement is asked of the system at startup, on the main thread, alongside
 the natural size of every other control, instead of being written down: it is an
 AppKit measurement and it changes with the version and with the accessibility

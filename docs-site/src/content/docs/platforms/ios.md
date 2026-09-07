@@ -255,9 +255,6 @@ orientations are portrait and both landscapes.
   [The safe area and the keyboard](/guide/safe-area-and-keyboard/). What there
   is no way to ask for is the bar above it: a Done button, a next-field arrow,
   anything `inputAccessoryView` is for.
-- **`letterSpacing` is not measured.** It is part of the measurement cache key
-  but no kerning attribute is passed, so layout sizes the text as if it were
-  zero.
 - **Sheet detents cannot be chosen** (above).
 - **Six warn-once sites, all in accessibility**: an unknown role, an unknown
   state key, a role UIKit has no trait for, `checked: 'mixed'` — UIKit only

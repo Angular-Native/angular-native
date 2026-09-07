@@ -131,10 +131,32 @@ impl TextMeasurer for AppKitMeasurer {
             return *hit;
         }
 
+        // The kerning goes into the measurement because it goes into the
+        // drawing. `letter_spacing` was in this cache key and in nothing else:
+        // the host applied it when painting and the measurer did not, so
+        // layout reserved a box for text without it and the label drew text
+        // with it. Positive spacing came out wider than the box it was given
+        // and wrapped a word early, or was cut; negative spacing left a gap
+        // nobody asked for. The one direction that looked fine was zero.
+        //
+        // It is only added when there is any, so text that asks for none is
+        // measured with exactly the attributes it was measured with before —
+        // an empty `kern` and no `kern` are not quite the same to Core Text.
         let nsfont = Self::nsfont(font);
         let font_ref: &objc2::runtime::AnyObject = &nsfont;
+        let kern = objc2_foundation::NSNumber::new_f64(font.letter_spacing as f64);
+        let kern_ref: &objc2::runtime::AnyObject = &kern;
         let attrs: Retained<NSDictionary<NSAttributedStringKey, _>> =
-            NSDictionary::from_slices(&[unsafe { NSFontAttributeName }], &[font_ref]);
+            if font.letter_spacing == 0.0 {
+                NSDictionary::from_slices(&[unsafe { NSFontAttributeName }], &[font_ref])
+            } else {
+                NSDictionary::from_slices(
+                    &[unsafe { NSFontAttributeName }, unsafe {
+                        objc2_app_kit::NSKernAttributeName
+                    }],
+                    &[font_ref, kern_ref],
+                )
+            };
         // SAFETY: the dictionary carries an `NSFont` under
         // `NSFontAttributeName`, which is the type that attribute expects.
         let attributed = unsafe {

@@ -322,6 +322,15 @@ El texto no se recorta: sale **vacío**, sin error, sin rastro, sin nada que
 mirar. Aparece en el momento en que una etiqueta cae en una caja de su tamaño
 exacto — es decir, en cualquier `align-items: center`, que es donde apareció.
 
+El espaciado entre letras se mide y no solo se dibuja. Estaba en la clave de la
+caché de medición y en ningún otro sitio, así que el host pintaba con el
+kerning y el medidor dimensionaba sin él: un espaciado positivo salía más ancho
+que la caja que había reservado el layout y partía una palabra antes de tiempo
+o se cortaba, uno negativo dejaba un hueco que nadie pidió, y la única
+dirección que parecía correcta era el cero. El atributo se añade solo cuando
+hay alguno — un `kern` vacío y ningún `kern` no son exactamente lo mismo para
+Core Text.
+
 La medida se le pide al sistema al arrancar, en el hilo principal, junto al
 tamaño natural de todos los demás controles, en lugar de escribirla: es una
 medida de AppKit y cambia con la versión y con los ajustes de accesibilidad,
