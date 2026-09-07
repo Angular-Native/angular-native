@@ -125,12 +125,31 @@ else
   # without it the wildcard would reach `javac` as it stands and the check would
   # fail for a reason that has nothing to do with the code.
   find packages -path '*/native/android/*' -name '*.java' >"$CLASSES/sources.txt"
+  # The same classpath the real build gives them, not `android.jar` alone.
+  # A plugin is compiled into the shell's own `javac` invocation, which carries
+  # Material and everything androidx it drags in — the shell itself uses
+  # `androidx.core.content.FileProvider` — so checking against a narrower one
+  # fails code that builds perfectly well, which is a check that costs more
+  # than it is worth. `classpath.txt` is what `prepare-android-deps.py` leaves
+  # and what `crates/an-cli/src/android.rs` reads.
+  CP="$ANDROID_JAR"
+  DEPS="vendor/android/build/classpath.txt"
+  if [ -f "$DEPS" ]; then
+    CP="$CP:$(tr '\n' ':' <"$DEPS" | sed 's/:$//')"
+  fi
   if javac -nowarn -implicit:none -source 17 -target 17 \
-      -classpath "$ANDROID_JAR" \
+      -classpath "$CP" \
       -sourcepath shells/android/java \
       -d "$CLASSES" \
       @"$CLASSES/sources.txt" >"$CLASSES/javac.log" 2>&1; then
-    ok 'javac compiles the Android side of the plugins against android.jar'
+    if [ -f "$DEPS" ]; then
+      ok 'javac compiles the Android side of the plugins against the build classpath'
+    else
+      # Said rather than passed quietly: without the dependencies this proves
+      # less than it looks, and `fetch-android-deps.py` is what brings them.
+      ok 'javac compiles the Android side of the plugins against android.jar alone
+       (vendor/android/build/classpath.txt is missing, so androidx went unchecked)'
+    fi
   else
     ko 'the Android side of some plugin does not compile'
     tail -20 "$CLASSES/javac.log"

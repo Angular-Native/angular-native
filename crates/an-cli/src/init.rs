@@ -214,23 +214,40 @@ fn ensure_compiler(root: &Path) -> Result<()> {
     if has_ngc(root) {
         return Ok(());
     }
-    eprintln!("==> @angular/compiler-cli is missing; installing it");
-    npm(root, &["install", "--save-dev", "--no-audit", "--no-fund", "@angular/compiler-cli"])
+    let manager = PackageManager::detect(root);
+    eprintln!("==> @angular/compiler-cli is missing; installing it with {}", manager.program());
+    let args = manager.add_dev(&["@angular/compiler-cli".to_owned()]);
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    crate::build::run_in(root, manager.program(), &argv, &format!("{} failed", manager.program()))
         .context("@angular/compiler-cli could not be installed")?;
     if !has_ngc(root) {
-        bail!("npm finished fine but there is still no reachable node_modules/.bin/ngc");
+        bail!(
+            "{} finished fine but there is still no reachable node_modules/.bin/ngc",
+            manager.program()
+        );
     }
     Ok(())
 }
 
 fn has_ngc(from: &Path) -> bool {
+    find_ngc(from).is_some()
+}
+
+/// Where the `ngc` that will be run actually is.
+///
+/// The same climb as `has_ngc`, and it is a climb for the reason
+/// `ensure_compiler` gives: in a workspace the binaries are at the top and not
+/// in the package. Answering the path rather than a yes/no is what lets the
+/// compile step run it without going through a package manager to find it.
+fn find_ngc(from: &Path) -> Option<std::path::PathBuf> {
     let mut dir = from.to_owned();
     loop {
-        if dir.join("node_modules/.bin/ngc").exists() {
-            return true;
+        let candidate = dir.join("node_modules/.bin/ngc");
+        if candidate.exists() {
+            return Some(candidate);
         }
         if !dir.pop() {
-            return false;
+            return None;
         }
     }
 }
@@ -291,8 +308,24 @@ fn install_packages(sdk: &Path, root: &Path, force: bool) -> Result<()> {
 
         eprintln!("==> compiling {name}");
         std::fs::write(destination.join("tsconfig.json"), package_tsconfig(&source, &staging))?;
-        npm(root, &["exec", "--", "ngc", "-p", &destination.join("tsconfig.json").to_string_lossy()])
-            .with_context(|| format!("{name} could not be compiled"))?;
+        // The binary out of the project's own `node_modules`, not
+        // `npm exec`: all four managers write `node_modules/.bin`, so this is
+        // the one way of saying "the project's ngc" that does not first have
+        // to know which of them wrote it. It is also the same ngc `npm exec`
+        // would have found, so nothing about the compilation changes.
+        let ngc = find_ngc(root).with_context(|| {
+            format!(
+                "there is no reachable node_modules/.bin/ngc, so there is nothing to compile \
+                 {name} with: the project's dependencies are not installed"
+            )
+        })?;
+        crate::build::run_in(
+            root,
+            &ngc.to_string_lossy(),
+            &["-p", &destination.join("tsconfig.json").to_string_lossy()],
+            "ngc failed",
+        )
+        .with_context(|| format!("{name} could not be compiled"))?;
         let api = destination.join("dist/public-api.js");
         if !api.is_file() {
             bail!("`ngc` finished fine but left no {}", api.display());
@@ -302,6 +335,12 @@ fn install_packages(sdk: &Path, root: &Path, force: bool) -> Result<()> {
         // `npm pack` writes the file's name on standard output, and that is the
         // only place the version lives: putting it together by hand here would
         // be guesswork.
+        //
+        // This one stays npm's whatever the project uses, and unlike the
+        // install above that is safe: packing turns a directory outside
+        // `node_modules` into a tarball and never reads or writes the tree
+        // another manager laid out, which is the only thing they disagree
+        // about. npm is there wherever Node is.
         let output = capture(
             root,
             "npm",
@@ -328,15 +367,31 @@ fn install_packages(sdk: &Path, root: &Path, force: bool) -> Result<()> {
         tarballs.push(format!("file:.angular-native/vendor/{file_name}"));
     }
 
-    eprintln!("==> npm install {}", tarballs.join(" "));
-    let mut args: Vec<&str> = vec!["install", "--save", "--save-exact", "--no-audit", "--no-fund"];
-    args.extend(tarballs.iter().map(String::as_str));
-    npm(root, &args).context("the framework packages could not be installed")?;
+    // Whatever wrote this `node_modules` is what writes into it now. See
+    // `PackageManager::detect`: getting this wrong does not produce a message
+    // about getting it wrong.
+    let manager = PackageManager::detect(root);
+    let args = manager.add(&tarballs);
+    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+    eprintln!("==> {} {}", manager.program(), args.join(" "));
+    crate::build::run_in(
+        root,
+        manager.program(),
+        &argv,
+        &format!("{} failed", manager.program()),
+    )
+    .with_context(|| {
+        format!(
+            "the framework packages could not be installed with {}, which is what this \
+             project's lockfile says laid out its node_modules",
+            manager.program()
+        )
+    })?;
 
     for (name, _) in PACKAGES {
         let dir = root.join("node_modules").join(name);
         if !dir.join("package.json").is_file() {
-            bail!("npm finished fine but {name} is not installed");
+            bail!("{} finished fine but {name} is not installed", manager.program());
         }
     }
     Ok(())
@@ -785,8 +840,106 @@ fn slug(name: &str) -> String {
     name.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_lowercase()
 }
 
-fn npm(cwd: &Path, args: &[&str]) -> Result<()> {
-    crate::build::run_in(cwd, "npm", args, "npm failed")
+/// Which tool puts things in this project's `node_modules`.
+///
+/// It matters because `node_modules` is not a format the four of them agree
+/// about, and running the wrong one over a tree another one laid out does not
+/// produce a message about that. npm over bun's tree dies with
+///
+/// ```text
+/// npm error Cannot read properties of null (reading 'isDescendantOf')
+/// ```
+///
+/// which names neither npm's problem nor bun, and its only clue is the
+/// `node_modules/.bun/…` paths buried in the peer-dependency warnings above
+/// it. That is a long afternoon for somebody whose only mistake was to run
+/// `bun install` before `an init`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum PackageManager {
+    Npm,
+    Bun,
+    Pnpm,
+    Yarn,
+}
+
+impl PackageManager {
+    /// The lockfile decides, and it is looked for **upwards**.
+    ///
+    /// A project inside a repository that was installed with bun has no
+    /// lockfile of its own and its `node_modules` is bun's all the same:
+    /// resolution walks up, so the tree that will be written to is the one up
+    /// there. Looking only at the project root is what made `an init` fail on
+    /// any app kept inside this very repository.
+    ///
+    /// With no lockfile anywhere it is npm, which is what a fresh
+    /// `npx @angular/cli new` leaves behind.
+    fn detect(root: &Path) -> PackageManager {
+        for dir in root.ancestors() {
+            // Ordered, because a project can carry more than one: a `bun.lock`
+            // next to a stale `package-lock.json` is a project that moved to
+            // bun and did not delete the old one, and bun is what wrote the
+            // tree. npm is last for the same reason.
+            for (file, manager) in [
+                ("bun.lock", PackageManager::Bun),
+                ("bun.lockb", PackageManager::Bun),
+                ("pnpm-lock.yaml", PackageManager::Pnpm),
+                ("yarn.lock", PackageManager::Yarn),
+                ("package-lock.json", PackageManager::Npm),
+            ] {
+                if dir.join(file).is_file() {
+                    return manager;
+                }
+            }
+        }
+        PackageManager::Npm
+    }
+
+    fn program(self) -> &'static str {
+        match self {
+            PackageManager::Npm => "npm",
+            PackageManager::Bun => "bun",
+            PackageManager::Pnpm => "pnpm",
+            PackageManager::Yarn => "yarn",
+        }
+    }
+
+    /// Installing a tarball as an exact dependency, in each one's words.
+    ///
+    /// npm and bun are the two that have been run. pnpm's and yarn's lines are
+    /// written from their documentation and have never been executed by
+    /// anybody working on this — the same admission the signing paths make.
+    /// They are here rather than absent because a good-faith line somebody can
+    /// correct beats a refusal to try.
+    /// The same, for a dependency the app builds with rather than ships.
+    fn add_dev(self, specs: &[String]) -> Vec<String> {
+        let mut args: Vec<String> = match self {
+            PackageManager::Npm => ["install", "--save-dev", "--no-audit", "--no-fund"]
+                .iter()
+                .map(|a| (*a).to_owned())
+                .collect(),
+            PackageManager::Bun => vec!["add".into(), "--dev".into()],
+            PackageManager::Pnpm => vec!["add".into(), "--save-dev".into()],
+            PackageManager::Yarn => vec!["add".into(), "--dev".into()],
+        };
+        args.extend(specs.iter().cloned());
+        args
+    }
+
+    fn add(self, specs: &[String]) -> Vec<String> {
+        let mut args: Vec<String> = match self {
+            PackageManager::Npm => {
+                ["install", "--save", "--save-exact", "--no-audit", "--no-fund"]
+                    .iter()
+                    .map(|a| (*a).to_owned())
+                    .collect()
+            }
+            PackageManager::Bun => vec!["add".into(), "--exact".into()],
+            PackageManager::Pnpm => vec!["add".into(), "--save-exact".into()],
+            PackageManager::Yarn => vec!["add".into(), "--exact".into()],
+        };
+        args.extend(specs.iter().cloned());
+        args
+    }
 }
 
 fn capture(cwd: &Path, program: &str, args: &[&str]) -> Result<String> {
