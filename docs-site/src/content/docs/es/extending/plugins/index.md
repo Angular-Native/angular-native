@@ -490,7 +490,7 @@ El módulo de plugins del CLI hace todo lo demás:
 
 | Paso | Qué hace |
 |---|---|
-| Descubrir | Lee las `dependencies` del `package.json` de la app, resuelve cada una en `node_modules` —primero las de la app, luego las de la raíz, como hace Node— y se queda con las que traen `angularNative`. |
+| Descubrir | Lee las `dependencies` del `package.json` de la app, resuelve cada una en `node_modules` como hace Node —subiendo desde el paquete que la pide— y se queda con las que traen `angularNative`. Camina **a través** de los plugins que encuentra, así que un plugin que dependa de otro se lo trae; las dependencias de una librería normal no se siguen, porque nada detrás de una puede ser un plugin que esta app haya decidido llevar. |
 | Validar | Un nombre de módulo único y bien formado, un `entry` que existe, directorios de fuentes que existen y no están vacíos. |
 | Exigir | Que todos ellos cubran la plataforma que se está compilando. |
 | Compilar | Añade sus `.swift` a la línea de `swiftc` y sus `.java` a la de `javac`, junto a los del shell. |
@@ -545,7 +545,5 @@ dentro.
   llamada y no llama ni a `resolve` ni a `reject` deja la promesa esperando.
   Querría un tiempo límite por llamada —una cámara tarda minutos, leer el
   portapapeles no— y no lo hay.
-- **Dependencias de dependencias.** Solo se leen las `dependencies` directas de
-  la app. Un plugin que a su vez dependa de otro plugin no arrastra al segundo.
 - **Recursos.** Claves de plist, derechos y entradas de manifiesto un plugin
   *sí* puede aportar. Ficheros propios no.

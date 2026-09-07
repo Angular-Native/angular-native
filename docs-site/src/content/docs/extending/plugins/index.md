@@ -484,7 +484,7 @@ The CLI's plugin module does everything else:
 
 | Step | What it does |
 |---|---|
-| Discover | Reads the app's `package.json` `dependencies`, resolves each in `node_modules` — the app's first, then the root's, the way Node does — and keeps the ones carrying `angularNative`. |
+| Discover | Reads the app's `package.json` `dependencies`, resolves each in `node_modules` the way Node does — climbing from the package that wants it — and keeps the ones carrying `angularNative`. It walks **through** the plugins it finds, so a plugin that depends on another plugin brings it along; an ordinary library's dependencies are not followed, because nothing behind one can be a plugin this app decided to carry. |
 | Validate | A unique, well-formed module name, an `entry` that exists, source directories that exist and are not empty. |
 | Require | That every one of them covers the platform being built. |
 | Compile | Adds their `.swift` to the `swiftc` line and their `.java` to the `javac` line, next to the shell's. |
@@ -537,8 +537,5 @@ A method with no canned answer is rejected too, with the method's name in it.
   object and calls neither `resolve` nor `reject` leaves the promise waiting. It
   would want a per-call timeout — a camera takes minutes, reading the clipboard
   does not — and there is none.
-- **Dependencies of dependencies.** Only the app's direct `dependencies` are
-  read. A plugin that itself depends on another plugin does not drag the second
-  one in.
 - **Assets.** Plist keys, entitlements and manifest entries a plugin *can*
   contribute. Files of its own it cannot.

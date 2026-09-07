@@ -14,7 +14,7 @@
 //! cover the platform being compiled stops the build. An app never ships with a
 //! method that swallows the call.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -215,46 +215,100 @@ pub fn discover(workspace: &Workspace, app: &Path) -> Result<Vec<Plugin>> {
         .with_context(|| format!("{} is not valid JSON", manifest.display()))?;
 
     let mut by_module: BTreeMap<String, Plugin> = BTreeMap::new();
-    let dependencies = parsed.get("dependencies").and_then(Value::as_object);
-    for name in dependencies.into_iter().flatten().map(|(name, _)| name) {
-        let Some(dir) = resolve_package(workspace, &app_dir, name) else {
+    // Breadth first from the app's own dependencies, and **through** the
+    // plugins found on the way: a plugin may depend on another one, and the app
+    // that installs the first gets the second in its `node_modules` without
+    // ever naming it. Reading only the app's direct dependencies meant that
+    // second plugin was compiled into nothing and rejected at run time, which
+    // looks exactly like a plugin that does not work.
+    //
+    // Only a plugin's dependencies are walked. An ordinary npm library has
+    // dependencies of its own by the dozen and none of them can be a plugin
+    // that this app is using — a plugin has native sources compiled into the
+    // app, so something has to have decided to carry it, and that decision is
+    // the chain of plugins from the app downwards.
+    let mut queue: VecDeque<(String, PathBuf)> = parsed
+        .get("dependencies")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .map(|(name, _)| (name.clone(), app_dir.clone()))
+        .collect();
+    // By package name, not by directory: two names resolving to one directory
+    // is npm's business, and a cycle between two plugins is a `package.json`
+    // somebody wrote, not something to fall over.
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    while let Some((name, from)) = queue.pop_front() {
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+        let Some(dir) = resolve_package(workspace, &from, &name) else {
             // A missing ordinary dependency is not our business: `ngc` will say
             // so. Only the ones that exist and are plugins matter here.
             continue;
         };
-        let Some(plugin) = read_manifest(name, &dir)? else {
+        let Some(plugin) = read_manifest(&name, &dir)? else {
             continue;
         };
-        if let Some(previous) = by_module.insert(plugin.module.clone(), plugin) {
-            let module = previous.module;
+        // A plugin, so its own dependencies are in the chain too. Resolved from
+        // its directory and not the app's, which is where Node would look.
+        if let Ok(text) = std::fs::read_to_string(dir.join("package.json"))
+            && let Ok(manifest) = serde_json::from_str::<Value>(&text)
+        {
+            for dependency in
+                manifest.get("dependencies").and_then(Value::as_object).into_iter().flatten()
+            {
+                queue.push_back((dependency.0.clone(), dir.clone()));
+            }
+        }
+        let module = plugin.module.clone();
+        if let Some(previous) = by_module.insert(module.clone(), plugin) {
             bail!(
-                "two plugins claim to be called {module:?}: {} and another one. \
-                 The module name has to be unique within the app.",
-                previous.package
+                "two plugins claim to be called {module:?}: {} and {}. The module name has to \
+                 be unique within the app, and it is what JS calls the plugin by, so one of \
+                 the two would answer for both.",
+                previous.package,
+                name
             );
         }
     }
     Ok(by_module.into_values().collect())
 }
 
-/// Resolves a package the way Node would: the app's `node_modules` first, then
-/// the root's —which is where npm puts the workspace ones—.
+/// Resolves a package the way Node would: `node_modules` in the directory that
+/// wants it, then in its parent, and up.
 ///
-/// The root only counts inside the monorepo. For a project from outside, the
-/// SDK's `node_modules` is not a place its app can depend on: linking a plugin
-/// from there that its `package.json` does not declare would be linking
-/// something that is not on the machine next door.
-fn resolve_package(workspace: &Workspace, app_dir: &Path, name: &str) -> Option<PathBuf> {
-    let mut bases: Vec<&Path> = vec![app_dir];
-    if workspace.project.is_none() {
-        bases.push(workspace.root.as_path());
-    }
-    for base in bases {
+/// The climb is not decoration. npm hoists a dependency two packages share up
+/// to the top, so a plugin that depends on another plugin almost never has it
+/// nested underneath — it is up in the app's `node_modules`, several levels
+/// above the package that asked. Looking only where the asking package sits
+/// finds it exactly when npm happened not to hoist it, which is the version of
+/// this that works on one machine and not the next.
+///
+/// Where the climb **stops** is the interesting half. Inside the monorepo it is
+/// the SDK's root, which is where npm puts the workspace packages. For a
+/// project from outside it is that project's root, and not one directory
+/// further: the SDK's `node_modules` is not a place somebody else's app can
+/// depend on, and linking a plugin out of it that their `package.json` never
+/// declared would be linking something that is not on the machine next door.
+fn resolve_package(workspace: &Workspace, from: &Path, name: &str) -> Option<PathBuf> {
+    let boundary = match &workspace.project {
+        Some(project) => project.root.as_path(),
+        None => workspace.root.as_path(),
+    };
+    for base in from.ancestors() {
+        // `node_modules/node_modules` is not a thing Node looks in either.
+        if base.file_name().is_some_and(|name| name == "node_modules") {
+            continue;
+        }
         let candidate = base.join("node_modules").join(name);
         if candidate.join("package.json").is_file() {
             // npm's workspaces are links; what matters is the real directory,
             // the one inside the repo and the one `ngc` compiles.
             return candidate.canonicalize().ok().or(Some(candidate));
+        }
+        if base == boundary {
+            break;
         }
     }
     None
@@ -1045,4 +1099,132 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workspace::Workspace;
+
+    /// Writes a `package.json` and returns the directory it went in.
+    fn package(dir: &Path, body: &str) -> PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("package.json"), body).unwrap();
+        dir.to_owned()
+    }
+
+    /// A plugin that depends on another plugin, which is what npm installs when
+    /// somebody adds the first: the app never names the second and gets it all
+    /// the same.
+    ///
+    /// Before discovery walked through plugins, the second one was found by
+    /// nobody — not compiled, not registered, and rejected at run time with a
+    /// message saying the module does not exist. From the outside that is
+    /// indistinguishable from a plugin that does not work.
+    #[test]
+    fn a_plugin_that_another_plugin_depends_on_is_found() {
+        let root = std::env::temp_dir().join(format!("an-discover-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let app = root.join("app");
+        package(&app, r#"{"name":"app","dependencies":{"@x/outer":"1"}}"#);
+        let outer = app.join("node_modules/@x/outer");
+        package(
+            &outer,
+            r#"{"name":"@x/outer","dependencies":{"@x/inner":"1","left-pad":"1"},
+                "angularNative":{"module":"outer"}}"#,
+        );
+        // Nested, the way npm lays one out when the versions do not hoist.
+        package(
+            &outer.join("node_modules/@x/inner"),
+            r#"{"name":"@x/inner","angularNative":{"module":"inner"}}"#,
+        );
+
+        let workspace = Workspace { root: root.clone(), project: None };
+        let found = discover(&workspace, Path::new("app")).unwrap();
+        let modules: Vec<&str> = found.iter().map(|p| p.module.as_str()).collect();
+        assert_eq!(modules, vec!["inner", "outer"], "the nested plugin has to come too");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An ordinary library's dependencies are not walked, and that is the point
+    /// of walking only through plugins: a package with no `angularNative` may
+    /// have a hundred of them and none can be a plugin this app decided to
+    /// carry.
+    #[test]
+    fn an_ordinary_dependency_is_not_walked_through() {
+        let root = std::env::temp_dir().join(format!("an-discover-plain-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let app = root.join("app");
+        package(&app, r#"{"name":"app","dependencies":{"plain":"1"}}"#);
+        let plain = app.join("node_modules/plain");
+        package(&plain, r#"{"name":"plain","dependencies":{"@x/hidden":"1"}}"#);
+        package(
+            &plain.join("node_modules/@x/hidden"),
+            r#"{"name":"@x/hidden","angularNative":{"module":"hidden"}}"#,
+        );
+
+        let workspace = Workspace { root: root.clone(), project: None };
+        let found = discover(&workspace, Path::new("app")).unwrap();
+        assert!(found.is_empty(), "a plugin behind a plain library is not this app's");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Two plugins claiming one module name is an error, and now that the graph
+    /// is transitive it can happen without the app naming either of them. The
+    /// message has to name both packages: "one of these two" is not something
+    /// anybody can act on.
+    #[test]
+    fn two_plugins_with_one_module_name_say_which_two() {
+        let root = std::env::temp_dir().join(format!("an-discover-clash-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let app = root.join("app");
+        package(&app, r#"{"name":"app","dependencies":{"@x/one":"1","@x/two":"1"}}"#);
+        package(
+            &app.join("node_modules/@x/one"),
+            r#"{"name":"@x/one","angularNative":{"module":"same"}}"#,
+        );
+        package(
+            &app.join("node_modules/@x/two"),
+            r#"{"name":"@x/two","angularNative":{"module":"same"}}"#,
+        );
+
+        let workspace = Workspace { root: root.clone(), project: None };
+        // `Plugin` is not `Debug`, so the error is taken out by hand rather
+        // than through `unwrap_err`.
+        let error = match discover(&workspace, Path::new("app")) {
+            Err(error) => error.to_string(),
+            Ok(_) => panic!("two plugins claiming one module name has to be an error"),
+        };
+        assert!(error.contains("@x/one"), "{error}");
+        assert!(error.contains("@x/two"), "{error}");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A cycle between two plugins is a `package.json` somebody wrote, not
+    /// something to hang on.
+    #[test]
+    fn two_plugins_depending_on_each_other_do_not_loop() {
+        let root = std::env::temp_dir().join(format!("an-discover-cycle-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let app = root.join("app");
+        package(&app, r#"{"name":"app","dependencies":{"@x/a":"1"}}"#);
+        package(
+            &app.join("node_modules/@x/a"),
+            r#"{"name":"@x/a","dependencies":{"@x/b":"1"},"angularNative":{"module":"a"}}"#,
+        );
+        package(
+            &app.join("node_modules/@x/b"),
+            r#"{"name":"@x/b","dependencies":{"@x/a":"1"},"angularNative":{"module":"b"}}"#,
+        );
+
+        let workspace = Workspace { root: root.clone(), project: None };
+        let found = discover(&workspace, Path::new("app")).unwrap();
+        let modules: Vec<&str> = found.iter().map(|p| p.module.as_str()).collect();
+        assert_eq!(modules, vec!["a", "b"]);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
