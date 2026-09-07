@@ -5,7 +5,9 @@ import { Camera } from '@angular-native/plugin-camera'
 import { Clipboard } from '@angular-native/plugin-clipboard'
 import { Geolocation } from '@angular-native/plugin-geolocation'
 import { Keychain } from '@angular-native/plugin-keychain'
+import { Notifications } from '@angular-native/plugin-notifications'
 import { Preferences } from '@angular-native/plugin-preferences'
+import { Updater } from '@angular-native/plugin-updater'
 
 /**
  * Every plugin in the repository, in one app.
@@ -48,7 +50,7 @@ interface Row {
                 (press)="run(row)">
                 <an-text [fontSize]="15" [color]="'#f4f7ff'">{{ row.name }}</an-text>
                 <an-text [fontSize]="13" [color]="'#8a93a6'">
-                  {{ said()[row.name] ?? 'tap to call it' }}
+                  {{ said()[row.name] || 'tap to call it' }}
                 </an-text>
               </an-view>
             }
@@ -64,7 +66,9 @@ export class AppComponent {
   private readonly clipboard = inject(Clipboard)
   private readonly geolocation = inject(Geolocation)
   private readonly keychain = inject(Keychain)
+  private readonly notifications = inject(Notifications)
   private readonly preferences = inject(Preferences)
+  private readonly updater = inject(Updater)
 
   protected readonly said = signal<Record<string, string>>({})
 
@@ -86,7 +90,13 @@ export class AppComponent {
     { name: 'geolocation', run: async () =>
         `permission: ${await this.geolocation.permission()}` },
     { name: 'camera', run: async () =>
-        `permission: ${await this.camera.permission()}` }
+        `permission: ${await this.camera.permission()}` },
+    { name: 'notifications', run: async () =>
+        `permission: ${await this.notifications.permission()}` },
+    { name: 'updater', run: async () => {
+        const running = await this.updater.current()
+        return `${running.version} (${running.status})`
+      } }
   ]
 
   protected async run(row: Row): Promise<void> {

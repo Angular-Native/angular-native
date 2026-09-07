@@ -101,6 +101,13 @@
         "@angular-native/plugin-updater": "*",
       },
     },
+    "examples/plugins-apple": {
+      "name": "@angular-native/example-plugins-apple",
+      "version": "0.0.1",
+      "dependencies": {
+        "@angular-native/plugin-barcode": "*",
+      },
+    },
     "examples/preferences": {
       "name": "@angular-native/example-preferences",
       "version": "0.0.1",
@@ -141,6 +148,13 @@
     },
     "packages/platform-native": {
       "name": "@angular-native/platform",
+      "version": "0.0.1",
+      "peerDependencies": {
+        "@angular/core": ">=22.0.0",
+      },
+    },
+    "packages/plugin-barcode": {
+      "name": "@angular-native/plugin-barcode",
       "version": "0.0.1",
       "peerDependencies": {
         "@angular/core": ">=22.0.0",
@@ -251,6 +265,8 @@
 
     "@angular-native/example-plugins": ["@angular-native/example-plugins@workspace:examples/plugins"],
 
+    "@angular-native/example-plugins-apple": ["@angular-native/example-plugins-apple@workspace:examples/plugins-apple"],
+
     "@angular-native/example-preferences": ["@angular-native/example-preferences@workspace:examples/preferences"],
 
     "@angular-native/example-router": ["@angular-native/example-router@workspace:examples/router"],
@@ -266,6 +282,8 @@
     "@angular-native/example-web": ["@angular-native/example-web@workspace:examples/web"],
 
     "@angular-native/platform": ["@angular-native/platform@workspace:packages/platform-native"],
+
+    "@angular-native/plugin-barcode": ["@angular-native/plugin-barcode@workspace:packages/plugin-barcode"],
 
     "@angular-native/plugin-biometrics": ["@angular-native/plugin-biometrics@workspace:packages/plugin-biometrics"],
 

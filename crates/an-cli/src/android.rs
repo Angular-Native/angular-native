@@ -159,7 +159,7 @@ pub fn assemble(
     let form = packaging.form;
     // Before compiling anything: if some plugin does not bring its Android
     // half, the build stops here and says which one.
-    plugins::require(plugins, Platform::Android)?;
+    plugins::require(plugins, Platform::Android, &std::collections::BTreeSet::new())?;
     let sdk = Sdk::discover()?;
     let root = &workspace.root;
     let profile = if release { "release" } else { "debug" };

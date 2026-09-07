@@ -61,7 +61,7 @@ pub struct Package {
 /// checked: it used to be "there is a plugin", and now it is "there is a plugin
 /// with no Mac half".
 pub fn require_plugins(plugins: &[Plugin]) -> Result<()> {
-    plugins::require(plugins, Platform::Macos)
+    plugins::require(plugins, Platform::Macos, &std::collections::BTreeSet::new())
 }
 
 /// `signing` decides how the `.app` is signed at the end. `None` is ad hoc,
@@ -234,7 +234,9 @@ pub fn assemble(
 /// The shell's own plist outranks the plugin, and not silently: what was ignored
 /// and whose it was gets said.
 fn write_plist(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result<()> {
-    let contributed = plugins::plist_entries(plugins, Platform::Macos)?;
+    let settled: std::collections::BTreeSet<String> =
+        plist_keys(base)?.keys().cloned().collect();
+    let contributed = plugins::plist_entries(plugins, Platform::Macos, &settled)?;
     std::fs::copy(base, destination)?;
     if contributed.is_empty() {
         return Ok(());

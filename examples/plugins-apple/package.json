@@ -1,0 +1,9 @@
+{
+  "name": "@angular-native/example-plugins-apple",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@angular-native/plugin-barcode": "*"
+  }
+}

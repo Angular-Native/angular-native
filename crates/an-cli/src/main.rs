@@ -300,7 +300,9 @@ fn main() -> anyhow::Result<()> {
             let found = plugins::discover(&workspace, &app)?;
             plugins::list(&workspace, &found);
             match platform {
-                Some(platform) => plugins::require(&found, platform.into()),
+                Some(platform) => {
+                    plugins::require(&found, platform.into(), &std::collections::BTreeSet::new())
+                }
                 None => Ok(()),
             }
         }

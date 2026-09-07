@@ -38,7 +38,7 @@ use crate::workspace::Workspace;
 /// `an-watch` grew a registry. What is refused now is narrower and truer — the
 /// plugin that cannot run on a watch, by name, with its own sentence about why.
 pub fn require_plugins(plugins: &[Plugin]) -> Result<()> {
-    plugins::require(plugins, Platform::Watchos)
+    plugins::require(plugins, Platform::Watchos, &std::collections::BTreeSet::new())
 }
 
 const APP_NAME: &str = "AngularNativeWatch";
@@ -273,7 +273,9 @@ fn find_device(name: &str) -> Result<String> {
 /// the permission is evaluated and says nothing about the key. The app's own
 /// plist outranks the plugin, and what was ignored gets said out loud.
 fn write_plist(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result<()> {
-    let contributed = plugins::plist_entries(plugins, Platform::Watchos)?;
+    let settled: std::collections::BTreeSet<String> =
+        plist_keys(base)?.keys().cloned().collect();
+    let contributed = plugins::plist_entries(plugins, Platform::Watchos, &settled)?;
     std::fs::copy(base, destination)?;
     if contributed.is_empty() {
         return Ok(());

@@ -622,7 +622,15 @@ fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<Ma
 /// This is the rule that gives the rest its point. An iOS plugin dropped into an
 /// APK must not end up as a method that returns `undefined` and a screen that
 /// does nothing: the build stops and says what is missing and in which package.
-pub fn require(plugins: &[Plugin], platform: Platform) -> Result<()> {
+/// `settled` are the keys the app's own `Info.plist` already declares, when the
+/// caller has it in hand. A check that runs before the build must not be
+/// stricter than the build: without this it refused a clash the app had already
+/// resolved, and the build never got the chance to say so.
+pub fn require(
+    plugins: &[Plugin],
+    platform: Platform,
+    settled: &BTreeSet<String>,
+) -> Result<()> {
     let missing: Vec<&Plugin> = plugins
         .iter()
         .filter(|plugin| plugin.native(platform).is_none())
@@ -634,7 +642,7 @@ pub fn require(plugins: &[Plugin], platform: Platform) -> Result<()> {
         // only to say the same thing.
         match platform {
             Platform::Ios | Platform::Macos | Platform::Watchos => {
-                plist_entries(plugins, platform)?;
+                plist_entries(plugins, platform, settled)?;
                 entitlement_entries(plugins, platform)?;
             }
             Platform::Android => {
@@ -691,11 +699,18 @@ pub fn require(plugins: &[Plugin], platform: Platform) -> Result<()> {
 }
 
 /// Merges the `Info.plist` keys all the plugins ask for, for one Apple platform.
+/// `settled` are the keys the app's own `Info.plist` already declares.
+///
+/// Two plugins wanting the same key with different values is a clash the build
+/// stops on — except when the app has already decided, which is the resolution
+/// the error itself offers. Without this parameter that offer was a lie: an app
+/// could write the key, and the build would still refuse before it ever looked.
 pub fn plist_entries(
     plugins: &[Plugin],
     platform: Platform,
+    settled: &BTreeSet<String>,
 ) -> Result<BTreeMap<String, Contributed>> {
-    merge_dicts(plugins, platform, "the Info.plist", |plist, _| plist)
+    merge_dicts(plugins, platform, "the Info.plist", settled, |plist, _| plist)
 }
 
 /// Merges the entitlements all the plugins ask for.
@@ -709,7 +724,9 @@ pub fn entitlement_entries(
     plugins: &[Plugin],
     platform: Platform,
 ) -> Result<BTreeMap<String, Contributed>> {
-    merge_dicts(plugins, platform, "the entitlements", |_, entitlements| entitlements)
+    merge_dicts(plugins, platform, "the entitlements", &BTreeSet::new(), |_, entitlements| {
+        entitlements
+    })
 }
 
 /// The merge both of them share.
@@ -723,6 +740,7 @@ fn merge_dicts<'a>(
     plugins: &'a [Plugin],
     platform: Platform,
     what: &str,
+    settled: &BTreeSet<String>,
     pick: fn(
         &'a BTreeMap<String, Value>,
         &'a BTreeMap<String, Value>,
@@ -733,6 +751,12 @@ fn merge_dicts<'a>(
         let Some(native) = plugin.native(platform) else { continue };
         let Contributions::Apple { plist, entitlements } = &native.contributes else { continue };
         for (key, value) in pick(plist, entitlements) {
+            if settled.contains(key) {
+                // The app declares this one itself, so whatever the plugins
+                // disagree about is moot: its value is the one that gets
+                // written, and `write_plist` says whose was ignored.
+                continue;
+            }
             if let Some(previous) = merged.get(key) {
                 if &previous.value != value {
                     bail!(clash(

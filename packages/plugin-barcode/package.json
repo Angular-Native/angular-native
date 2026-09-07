@@ -1,0 +1,76 @@
+{
+  "name": "@angular-native/plugin-barcode",
+  "version": "0.0.1",
+  "description": "Reading a barcode with the camera, full screen, through AVFoundation — as an angular-native plugin.",
+  "type": "module",
+  "main": "src/public-api.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/public-api.d.ts",
+      "default": "./dist/public-api.js"
+    }
+  },
+  "types": "dist/public-api.d.ts",
+  "files": [
+    "dist",
+    "native",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "keywords": [
+    "angular",
+    "native",
+    "ios",
+    "android",
+    "rust",
+    "no-webview",
+    "angular-native",
+    "plugin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Angular-Native/angular-native.git",
+    "directory": "packages/plugin-barcode"
+  },
+  "license": "MIT",
+  "author": "Néstor García Bou",
+  "homepage": "https://angular-native.github.io",
+  "bugs": {
+    "url": "https://github.com/Angular-Native/angular-native/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "dist/public-api.js",
+    "module": "dist/public-api.js"
+  },
+  "peerDependencies": {
+    "@angular/core": ">=22.0.0"
+  },
+  "angularNative": {
+    "module": "barcode",
+    "entry": "src/public-api.ts",
+    "ios": {
+      "sources": "native/apple",
+      "register": "AnBarcodePlugin",
+      "plist": {
+        "NSCameraUsageDescription": "To read a barcode."
+      }
+    },
+    "macos": {
+      "sources": "native/apple",
+      "register": "AnBarcodePlugin",
+      "plist": {
+        "NSCameraUsageDescription": "To read a barcode."
+      },
+      "entitlements": {
+        "com.apple.security.device.camera": true
+      }
+    },
+    "android": {
+      "unsupported": "Android ships no barcode API. The usual answer is ML Kit, which lives in Google Play Services and is a Gradle dependency; this toolchain has no Gradle, and bundling the Play-backed variant would make an app that cannot be installed on a device without Play Services. The alternative is embedding a decoder such as ZXing in the shell, which is a decision about what every angular-native app carries and not one a plugin can make on its own."
+    },
+    "watchos": {
+      "unsupported": "a watch has no camera. AVFoundation's capture classes are not in the watchOS SDK at all."
+    }
+  }
+}

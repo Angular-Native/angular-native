@@ -241,7 +241,15 @@ pub fn assemble(
     // Swift uses something that only exists on the phone, the link step stops
     // with swiftc's error, which says which symbol and on which line. The
     // warning comes first so that error does not arrive as a surprise.
-    plugins::require(plugins, Platform::Ios)?;
+    // The app's own Info.plist is resolved first so the check can be told what
+    // the app already settles. A check that runs before the build must not be
+    // stricter than the build.
+    let plist = workspace
+        .overlay(family.slug(), "Info.plist")
+        .unwrap_or_else(|| workspace.root.join(family.resources()).join("Info.plist"));
+    let settled: std::collections::BTreeSet<String> =
+        plist_keys(&plist).map(|keys| keys.keys().cloned().collect()).unwrap_or_default();
+    plugins::require(plugins, Platform::Ios, &settled)?;
     if family != Family::Ios && !plugins.is_empty() {
         eprintln!(
             "==> warning: the plugins are compiled with their iOS sources, which is all they \
@@ -262,9 +270,6 @@ pub fn assemble(
     // the user. It is checked before anything is compiled: that is half a minute
     // of `cargo` and `swiftc` there is no reason to burn only to say the name
     // does not line up.
-    let plist = workspace
-        .overlay(family.slug(), "Info.plist")
-        .unwrap_or_else(|| root.join(family.resources()).join("Info.plist"));
     check_plist(&plist, &app_name, &bundle_id, family, workspace)?;
 
     eprintln!("==> core Rust ({profile}, {})", family.target(to));
@@ -590,12 +595,15 @@ fn substitute(value: &serde_json::Value, bundle_id: &str) -> serde_json::Value {
 /// it and from then on it is untouched—, so if it already declares the key, its
 /// own stays; but not silently: it says which one was ignored and whose it was.
 fn write_plist(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result<()> {
-    let contributed_keys = plugins::plist_entries(plugins, Platform::Ios)?;
+    // What the app already says is passed in, so a key two plugins disagree
+    // about is not a clash when the app has settled it.
+    let already_there = plist_keys(base)?;
+    let settled: std::collections::BTreeSet<String> = already_there.keys().cloned().collect();
+    let contributed_keys = plugins::plist_entries(plugins, Platform::Ios, &settled)?;
     std::fs::copy(base, destination)?;
     if contributed_keys.is_empty() {
         return Ok(());
     }
-    let already_there = plist_keys(base)?;
     for (key, contributed) in &contributed_keys {
         if let Some(current) = already_there.get(key) {
             if current != &contributed.value {
