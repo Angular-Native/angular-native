@@ -53,7 +53,11 @@
       "sources": "native/apple",
       "register": "AnGeolocationPlugin",
       "plist": {
-        "NSLocationWhenInUseUsageDescription": "To show you what is around you."
+        "NSLocationWhenInUseUsageDescription": "To show you what is around you.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "To keep following the route while the app is in the background.",
+        "UIBackgroundModes": [
+          "location"
+        ]
       }
     },
     "macos": {
@@ -72,10 +76,20 @@
       "manifest": {
         "uses-permission": [
           "android.permission.ACCESS_COARSE_LOCATION",
-          "android.permission.ACCESS_FINE_LOCATION"
+          "android.permission.ACCESS_FINE_LOCATION",
+          "android.permission.ACCESS_BACKGROUND_LOCATION",
+          "android.permission.FOREGROUND_SERVICE",
+          "android.permission.FOREGROUND_SERVICE_LOCATION",
+          "android.permission.POST_NOTIFICATIONS"
         ],
         "uses-feature": {
           "android.hardware.location": false
+        },
+        "service": {
+          "dev.angularnative.plugins.GeolocationService": {
+            "android:exported": "false",
+            "android:foregroundServiceType": "location"
+          }
         }
       }
     },

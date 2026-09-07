@@ -81,12 +81,33 @@ final class AnGeolocationPlugin: NSObject, AnPlugin, CLLocationManagerDelegate {
             // miss a movement or keep the radio awake for nothing.
             let metres = (args["minMetres"] as? Double) ?? 0
             manager.distanceFilter = metres > 0 ? metres : kCLDistanceFilterNone
+
+            #if os(iOS)
+                if (args["background"] as? Bool) == true {
+                    // Both of these, or the stream stops the moment the app
+                    // leaves the screen — in silence, which is the part that
+                    // makes it hard to debug. The background mode has to be in
+                    // the Info.plist too, and the manifest puts it there.
+                    manager.allowsBackgroundLocationUpdates = true
+                    // iOS pauses updates on its own when it decides the device
+                    // has settled, and never resumes without being asked. For a
+                    // route that is a gap in the middle of the walk.
+                    manager.pausesLocationUpdatesAutomatically = false
+                    manager.showsBackgroundLocationIndicator = true
+                } else {
+                    manager.allowsBackgroundLocationUpdates = false
+                }
+            #endif
+
             watching = true
             manager.startUpdatingLocation()
             respond.resolve()
 
         case "unwatch":
             watching = false
+            #if os(iOS)
+                manager.allowsBackgroundLocationUpdates = false
+            #endif
             manager.stopUpdatingLocation()
             respond.resolve()
 

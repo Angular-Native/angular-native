@@ -17,6 +17,31 @@ export interface Position {
   timestamp: number
 }
 
+export interface WatchOptions {
+  /** How far the device has to move before the next fix. Zero means every one. */
+  minMetres?: number
+  /**
+   * Keep going once the app is no longer on screen.
+   *
+   * This is a different thing from a watch, not a flag on one, and both systems
+   * treat it that way:
+   *
+   * - **iOS** needs the `location` background mode, a second usage string, and
+   *   the person choosing *Always* rather than *While Using*. `request()` asks
+   *   for what a foreground watch needs; a background one may be refused even
+   *   after that, and the fixes simply stop when the app is backgrounded.
+   * - **Android** needs a foreground service, which means **a notification the
+   *   person can see for as long as it runs**. That is not a detail to work
+   *   around: the platform requires it precisely so that an app cannot follow
+   *   somebody quietly.
+   *
+   * Battery is the real cost. A background watch keeps the location hardware
+   * awake, and on a phone that is measured in percentage points per hour. Ask
+   * for the largest `minMetres` your feature can live with.
+   */
+  background?: boolean
+}
+
 /** What the person has decided about this app and their location. */
 export type LocationPermission = 'granted' | 'denied' | 'prompt' | 'restricted'
 
@@ -100,10 +125,11 @@ export class Geolocation {
    * destroyed; outside one, that is yours to do.
    *
    * @param onFix called with each new position.
-   * @param minMetres how far the device has to move before the next fix. Zero
-   *   means every fix the platform produces.
+   * @param options `minMetres` is how far the device has to move before the
+   *   next fix; zero means every fix the platform produces. `background` keeps
+   *   the stream alive once the app leaves the screen — see below.
    */
-  watch(onFix: (position: Position) => void, minMetres = 0): () => void {
+  watch(onFix: (position: Position) => void, options: WatchOptions = {}): () => void {
     const off = this.modules.on<Position>('geolocation', 'position', onFix)
     let stopped = false
     const stop = () => {
@@ -117,7 +143,10 @@ export class Geolocation {
         // reaching the app: the caller asked for it to be off, and it is off.
       })
     }
-    void this.modules.call<void>('geolocation', 'watch', { minMetres }).catch((error) => {
+    void this.modules.call<void>('geolocation', 'watch', {
+      minMetres: options.minMetres ?? 0,
+      background: options.background ?? false
+    }).catch((error) => {
       stop()
       throw error
     })

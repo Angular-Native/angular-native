@@ -3,6 +3,7 @@ package dev.angularnative.plugins;
 import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
@@ -54,6 +55,9 @@ public final class GeolocationPlugin implements AnPlugin {
     /** The stream's own listener, kept apart from the one-shot's: a `current()`
      *  that finishes must not tear down a watch that is still running. */
     private LocationListener watcher;
+
+    /** Whether the stream is being served by the foreground service. */
+    private boolean background;
 
     @Override
     public void attach(Activity host) {
@@ -246,10 +250,30 @@ public final class GeolocationPlugin implements AnPlugin {
         }
         unwatch();
 
+        if (args.optBoolean("background", false)) {
+            // Android stops delivering to a backgrounded process, and the only
+            // supported way to carry on is a foreground service — with a
+            // notification the person can see for as long as it runs.
+            Intent service = new Intent(host, GeolocationService.class);
+            service.putExtra(GeolocationService.EXTRA_MIN_METRES, metresOf(args));
+            try {
+                if (Build.VERSION.SDK_INT >= 26) {
+                    host.startForegroundService(service);
+                } else {
+                    host.startService(service);
+                }
+                background = true;
+                respond.resolve();
+            } catch (RuntimeException refused) {
+                respond.reject("geolocation.watch could not start its background service: " + refused);
+            }
+            return;
+        }
+
         // A distance filter rather than a timer: the platform already knows the
         // device has not moved, and polling would either miss a movement or keep
         // the radio awake for nothing.
-        float metres = (float) args.optDouble("minMetres", 0);
+        float metres = metresOf(args);
         watcher =
                 new LocationListener() {
                     @Override
@@ -291,7 +315,15 @@ public final class GeolocationPlugin implements AnPlugin {
         }
     }
 
+    private static float metresOf(JSONObject args) {
+        return (float) args.optDouble("minMetres", 0);
+    }
+
     private void unwatch() {
+        if (background && host != null) {
+            host.stopService(new Intent(host, GeolocationService.class));
+            background = false;
+        }
         if (watcher == null || host == null) {
             return;
         }

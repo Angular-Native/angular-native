@@ -115,11 +115,19 @@ pub struct ManifestEntries {
     /// the `required`. Here there can be a clash: two plugins asking for the
     /// same feature, one required and one not, are not saying the same thing.
     pub features: BTreeMap<String, bool>,
+    /// `<service android:name="…" …/>`, from the class to its attributes.
+    ///
+    /// A plugin that has to keep working with the app in the background needs
+    /// one — Android has no other way of staying alive — and without this it
+    /// could ship the Java and never be able to start it. The attributes are
+    /// written as they come, so `android:foregroundServiceType` and the rest do
+    /// not each need a key of their own here.
+    pub services: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 impl ManifestEntries {
     pub fn is_empty(&self) -> bool {
-        self.permissions.is_empty() && self.features.is_empty()
+        self.permissions.is_empty() && self.features.is_empty() && self.services.is_empty()
     }
 }
 
@@ -563,9 +571,45 @@ fn read_manifest_entries(declared: Option<&Value>, manifest: &Path) -> Result<Ma
                     entries.features.insert(name.clone(), required);
                 }
             }
+            "service" => {
+                let object = value.as_object().with_context(|| {
+                    format!(
+                        "{}: angularNative.android.manifest[\"service\"] has to be an object \
+                         from the class name to its attributes",
+                        manifest.display()
+                    )
+                })?;
+                for (name, attributes) in object {
+                    let attributes = attributes.as_object().with_context(|| {
+                        format!(
+                            "{}: service[{name:?}] has to be an object of attributes, even if \
+                             it is empty",
+                            manifest.display()
+                        )
+                    })?;
+                    let mut written = BTreeMap::new();
+                    for (key, value) in attributes {
+                        // Strings, booleans and numbers only, exactly as the
+                        // plist side accepts: an attribute is one value, and a
+                        // nested object here would have nothing to become.
+                        let text = match value {
+                            Value::String(text) => text.clone(),
+                            Value::Bool(flag) => flag.to_string(),
+                            Value::Number(number) => number.to_string(),
+                            other => bail!(
+                                "{}: service[{name:?}][{key:?}] is {other}; an attribute is a \
+                                 string, a boolean or a number",
+                                manifest.display()
+                            ),
+                        };
+                        written.insert(key.clone(), text);
+                    }
+                    entries.services.insert(name.clone(), written);
+                }
+            }
             other => bail!(
-                "{}: angularNative.android.manifest knows nothing about {other:?}; for now only \
-                 \"uses-permission\" and \"uses-feature\" are contributed. See https://angular-native.github.io/extending/plugins/.",
+                "{}: angularNative.android.manifest knows nothing about {other:?}; only \
+                 \"uses-permission\", \"uses-feature\" and \"service\" are contributed. See https://angular-native.github.io/extending/plugins/.",
                 manifest.display()
             ),
         }
@@ -747,6 +791,27 @@ pub fn manifest_entries(plugins: &[Plugin]) -> Result<ManifestEntries> {
                 continue;
             }
             merged.features.insert(name.clone(), *required);
+            owners.insert(name.clone(), plugin.package.clone());
+        }
+        for (name, attributes) in &entries.services {
+            if let Some(previous) = merged.services.get(name) {
+                if previous != attributes {
+                    // Two plugins shipping a class of the same name with
+                    // different attributes cannot both be right, and silently
+                    // keeping one would make the other's service behave in a way
+                    // its own author never wrote.
+                    let owner = owners.get(name).map(String::as_str).unwrap_or("another plugin");
+                    bail!(clash(
+                        &format!("the service {name:?} of the AndroidManifest.xml"),
+                        owner,
+                        &format!("{previous:?}"),
+                        &plugin.package,
+                        &format!("{attributes:?}"),
+                    ));
+                }
+                continue;
+            }
+            merged.services.insert(name.clone(), attributes.clone());
             owners.insert(name.clone(), plugin.package.clone());
         }
     }

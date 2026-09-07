@@ -819,6 +819,45 @@ fn write_manifest(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result
         ));
     }
 
+    // A service goes *inside* `<application>` and not before it, so it is built
+    // separately and injected at the other end.
+    let mut services = String::new();
+    for (name, attributes) in &entries.services {
+        if text.contains(&format!("android:name=\"{name}\"")) {
+            eprintln!("==> AndroidManifest.xml: {name} is already declared by the app; the app's one stays");
+            continue;
+        }
+        eprintln!("==> AndroidManifest.xml: service {name}");
+        services.push_str(&format!("        <service android:name=\"{name}\""));
+        for (key, value) in attributes {
+            services.push_str(&format!(" {key}=\"{value}\""));
+        }
+        services.push_str(" />\n");
+    }
+
+    let text = if services.is_empty() {
+        text
+    } else {
+        // Immediately after the `<application …>` opening tag: a service is a
+        // child of it, and putting it beside the permissions would produce a
+        // manifest `aapt2` refuses.
+        let open = text.find("<application").with_context(|| {
+            format!(
+                "{}: I cannot find <application>, and that is what a service goes inside",
+                base.display()
+            )
+        })?;
+        let close = text[open..].find('>').map(|at| open + at + 1).with_context(|| {
+            format!("{}: <application> is never closed", base.display())
+        })?;
+        format!(
+            "{}\n        <!-- From the plugins. Written by `an` when it puts the APK together. -->\n{}{}",
+            &text[..close],
+            services.trim_end(),
+            &text[close..]
+        )
+    };
+
     let output = if lines.is_empty() {
         text
     } else {
