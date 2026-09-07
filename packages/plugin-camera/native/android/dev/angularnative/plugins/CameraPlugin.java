@@ -38,7 +38,16 @@ import java.io.InputStream;
  */
 public final class CameraPlugin implements AnPlugin {
 
-    private static final String AUTHORITY = "dev.angularnative.anfiles";
+    /**
+     * Must match {@code android:authorities} in the manifest, after the application id — the same
+     * suffix {@code AnShare} uses, and for the same provider.
+     *
+     * <p>It is a suffix and not the whole thing because a provider authority is unique across the
+     * device rather than the app: a literal one would mean two angular-native apps could not be
+     * installed at once. The manifest writes it as {@code ${applicationId}.anfiles} and {@code an}
+     * substitutes it, so the only thing that can be said here is the half that does not change.
+     */
+    private static final String AUTHORITY_SUFFIX = ".anfiles";
     private static final int PERMISSION_REQUEST = 7311;
 
     private Activity host;
@@ -125,7 +134,9 @@ public final class CameraPlugin implements AnPlugin {
                 return;
             }
             target = new File(directory, "an-camera-" + System.currentTimeMillis() + ".jpg");
-            Uri destination = FileProvider.getUriForFile(host, AUTHORITY, target);
+            Uri destination =
+                    FileProvider.getUriForFile(
+                            host, host.getPackageName() + AUTHORITY_SUFFIX, target);
             Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
             intent.putExtra(MediaStore.EXTRA_OUTPUT, destination);
             // Without this the camera app cannot write to the URI it was given,

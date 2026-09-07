@@ -260,6 +260,16 @@ The app id can differ from the shell's package: the manifest package is renamed
 at link time while the classes stay put, which is why launching qualifies the
 activity as `<applicationId>/dev.angularnative.MainActivity`.
 
+**`${applicationId}` in the manifest is substituted**, and it is the only
+placeholder there is. Renaming the package rewrites the package and qualifies
+relative class names; it leaves every attribute value exactly as it found it,
+and one attribute cannot survive that. A `<provider>` authority is unique
+across the whole **device**, so the shell's `FileProvider` — the one `share`
+hands files through — cannot carry a fixed name: two angular-native apps would
+both claim it and the second to be installed would fail with
+`INSTALL_FAILED_CONFLICTING_PROVIDER`. It is written
+`${applicationId}.anfiles` and comes out as the app's own.
+
 A plugin's `<uses-permission>` and `<uses-feature>` entries are merged into a
 copy of the manifest, never into yours. A duplicate permission is skipped —
 asking twice is asking once — and a feature the app already declares with a

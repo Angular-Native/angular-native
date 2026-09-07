@@ -94,10 +94,19 @@
 
           `@xml/an_file_paths` says which directories may be handed over, and it
           is only the two the `files` module owns.
+
+          The authority is built from the application id rather than written
+          out. A provider authority is unique across the whole device and not
+          within the app, so two angular-native apps both claiming one fixed
+          name cannot be installed side by side: the second one fails with
+          INSTALL_FAILED_CONFLICTING_PROVIDER. `an` fills it in when it writes
+          the manifest aapt2 sees, because renaming the manifest package
+          rewrites the package and qualifies relative class names and leaves
+          every attribute value exactly as it found it.
         -->
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="dev.angularnative.anfiles"
+            android:authorities="${applicationId}.anfiles"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

@@ -273,6 +273,16 @@ se renombra en el enlazado mientras las clases se quedan donde están, y por eso
 al lanzar se cualifica la activity como
 `<applicationId>/dev.angularnative.MainActivity`.
 
+**`${applicationId}` en el manifiesto se sustituye**, y es el único marcador que
+hay. Renombrar el paquete reescribe el paquete y cualifica los nombres de clase
+relativos; deja el valor de cada atributo exactamente como lo encontró, y hay un
+atributo que no sobrevive a eso. La autoridad de un `<provider>` es única en
+todo el **dispositivo**, así que el `FileProvider` del shell —por el que `share`
+entrega los ficheros— no puede llevar un nombre fijo: dos apps de
+angular-native lo reclamarían y la segunda en instalarse fallaría con
+`INSTALL_FAILED_CONFLICTING_PROVIDER`. Se escribe `${applicationId}.anfiles` y
+sale como el de la propia app.
+
 Las entradas `<uses-permission>` y `<uses-feature>` de un plugin se funden en
 una copia del manifiesto, nunca en el tuyo. Un permiso duplicado se salta
 —pedirlo dos veces es pedirlo una— y una característica que la app ya declara

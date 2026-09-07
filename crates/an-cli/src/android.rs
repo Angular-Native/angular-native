@@ -267,8 +267,12 @@ pub fn assemble(
     check_manifest(&manifest, packaging.aab)?;
     // And the one handed to `aapt2` is the project's plus whatever the plugins
     // ask for. The original is left alone: it is the user's.
-    let manifest =
-        write_manifest(&manifest, &out.join("AndroidManifest.merged.xml"), plugins)?;
+    let manifest = write_manifest(
+        &manifest,
+        &out.join("AndroidManifest.merged.xml"),
+        plugins,
+        &application_id,
+    )?;
     let mut link: Vec<String> = vec![
         "link".into(),
         "-I".into(),
@@ -780,11 +784,20 @@ fn application_id(workspace: &Workspace) -> String {
 /// Anything the app already declares is not repeated: `aapt2` accepts two
 /// identical `<uses-permission>`s, but a manifest with the same line twice is a
 /// manifest nobody can read.
-fn write_manifest(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result<PathBuf> {
+fn write_manifest(
+    base: &Path,
+    destination: &Path,
+    plugins: &[Plugin],
+    application_id: &str,
+) -> Result<PathBuf> {
     let entries = plugins::manifest_entries(plugins)?;
     let text = std::fs::read_to_string(base)
         .with_context(|| format!("{} could not be read", base.display()))?;
-    if entries.is_empty() {
+    let text = substitute_application_id(&text, application_id);
+    // With nothing to merge and nothing to substitute the original is used as
+    // it stands: a copy that is byte for byte the same is a file somebody will
+    // one day edit by mistake.
+    if entries.is_empty() && text == std::fs::read_to_string(base)? {
         return Ok(base.to_owned());
     }
 
@@ -887,6 +900,24 @@ fn write_manifest(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result
     std::fs::write(destination, output)
         .with_context(|| format!("{} could not be written", destination.display()))?;
     Ok(destination.to_owned())
+}
+
+/// The one placeholder a manifest may carry.
+///
+/// `${applicationId}` is Gradle's spelling and this understands the same one,
+/// because an Android manifest is the one file in this project people arrive at
+/// already knowing. There is no general templating here and there will not be:
+/// a manifest full of substitutions is a manifest whose meaning depends on a
+/// build nobody is reading at the time.
+///
+/// It exists for exactly one thing. A `<provider>` authority is unique across
+/// the whole **device**, not the app, so a literal one in a shell every app
+/// shares means the second angular-native app to be installed fails with
+/// `INSTALL_FAILED_CONFLICTING_PROVIDER`. `--rename-manifest-package` does not
+/// help: it rewrites the package and qualifies relative class names, and leaves
+/// every attribute value exactly as it found it.
+fn substitute_application_id(text: &str, application_id: &str) -> String {
+    text.replace("${applicationId}", application_id)
 }
 
 /// The `android:name`s of one kind of manifest element, with their
@@ -1219,6 +1250,68 @@ mod tests {
         assert!(declares_version(
             r#"<manifest package="dev.angularnative" android:versionCode="7">"#
         ));
+    }
+
+    #[test]
+    fn the_application_id_reaches_the_provider_authority() {
+        let manifest = r#"<provider android:authorities="${applicationId}.anfiles" />"#;
+        assert_eq!(
+            substitute_application_id(manifest, "com.example.notes"),
+            r#"<provider android:authorities="com.example.notes.anfiles" />"#
+        );
+        // And a manifest without it is handed back untouched, which is what
+        // lets the merged copy be skipped entirely when there is nothing to do.
+        let plain = r#"<provider android:authorities="com.example.notes.anfiles" />"#;
+        assert_eq!(substitute_application_id(plain, "com.other"), plain);
+    }
+
+    /// A literal authority in a shell every app shares is the bug this is here
+    /// to stop coming back: it installs, it runs, and the second angular-native
+    /// app on the device is the one that cannot be installed. `AnShare` asks
+    /// for `getPackageName() + ".anfiles"`, so a literal one is also simply
+    /// wrong for any app whose id is not the shell's.
+    #[test]
+    fn neither_shell_manifest_hardcodes_the_provider_authority() {
+        for manifest in [Form::Phone.manifest(), Form::Watch.manifest()] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(manifest);
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|_| panic!("{} could not be read", path.display()));
+            for line in text.lines().filter(|l| l.contains("android:authorities")) {
+                assert!(
+                    line.contains("${applicationId}"),
+                    "{manifest}: {} is a literal authority; it has to be \
+                     ${{applicationId}}-based or two apps cannot be installed at once",
+                    line.trim()
+                );
+            }
+        }
+    }
+
+    /// `--` cannot appear inside an XML comment, and a manifest is the one file
+    /// here whose comments are long enough for somebody to write one by
+    /// accident — spelling a command-line flag is all it takes. What comes back
+    /// is `aapt2` saying `not well-formed (invalid token)` and a line number,
+    /// which is true and says nothing about why.
+    #[test]
+    fn no_shell_manifest_comment_carries_a_double_hyphen() {
+        for manifest in [Form::Phone.manifest(), Form::Watch.manifest()] {
+            let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(manifest);
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|_| panic!("{} could not be read", path.display()));
+            let mut rest = text.as_str();
+            while let Some(open) = rest.find("<!--") {
+                let body = &rest[open + 4..];
+                let close = body.find("-->").unwrap_or_else(|| {
+                    panic!("{manifest}: a comment is never closed");
+                });
+                assert!(
+                    !body[..close].contains("--"),
+                    "{manifest}: a comment contains `--`, which XML does not allow:\n{}",
+                    &body[..close]
+                );
+                rest = &body[close + 3..];
+            }
+        }
     }
 
     /// The shells ship one. Without this, the manifests in the repository could
