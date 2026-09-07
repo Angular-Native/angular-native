@@ -280,10 +280,12 @@ Serves the bundle on `127.0.0.1:8420` — `--port` changes it — and watches fo
 changes. The port is bound *before* anything is built, so a second `an dev`
 fails immediately instead of after a two-minute build.
 
-The app is given the server's URL at build time: `127.0.0.1` for everything
-Apple, including the watch, which shares the Mac's network, and including macOS,
-where the app is not inside anything at all — it runs on the machine serving the
-bundle; `10.0.2.2` for the Android and Wear emulators.
+The app is given the server's URL at build time, and it is `127.0.0.1` for
+every target. On the Apple ones that is true on its own: the watch shares the
+Mac's network and a Mac app is not inside anything at all. On Android it is made
+true — `adb reverse` opens the port on the device pointing back here, which
+works on an emulator and on a phone over USB alike, and replaced the `10.0.2.2`
+that only ever meant anything inside an emulator.
 
 `--android` wins over `--wearos`, which wins over `--watchos`, `--tvos`,
 `--visionos`, `--macos`, and iOS is what you get with none of them. They are not

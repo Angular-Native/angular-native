@@ -285,7 +285,10 @@ inmediato en vez de después de dos minutos de compilación.
 A la app se le da la URL del servidor en tiempo de compilación: `127.0.0.1` para
 todo lo de Apple, el reloj incluido, que comparte la red del Mac, y macOS
 incluido, donde la app no está dentro de nada: corre en la máquina que sirve el
-bundle. `10.0.2.2` para los emuladores de Android y de Wear.
+bundle. En Android se hace cierta: `adb reverse` abre el puerto en el
+dispositivo apuntando aquí, lo que funciona igual en un emulador y en un
+teléfono por USB, y sustituyó al `10.0.2.2` que solo significaba algo dentro de
+un emulador.
 
 `--android` gana a `--wearos`, que gana a `--watchos`, `--tvos`, `--visionos` y
 `--macos`, y iOS es lo que sale sin ninguna. No están declaradas como mutuamente

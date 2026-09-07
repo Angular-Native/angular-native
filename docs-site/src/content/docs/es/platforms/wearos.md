@@ -278,8 +278,9 @@ guardar, el bundle nuevo se cose encima del que corre: el cambio se ve sin
 perder la pantalla ni el estado. Su `--device` es una serie de `adb`, no un
 nombre de simulador.
 
-El emulador ve al Mac en `10.0.2.2`, igual que el del teléfono, así que el
-servidor no cambia. A diferencia de los shells de Apple, que usan un WebSocket,
+La dirección es `127.0.0.1` y el puerto se abre en el dispositivo con
+`adb reverse`, igual que el del teléfono — así que esto funciona en un reloj
+puesto en una muñeca y no solo en el emulador. A diferencia de los shells de Apple, que usan un WebSocket,
 el shell de Android hace long-polling contra el servidor de desarrollo.
 
 Lo primero que hizo fue dejar la pantalla en negro, y de ahí salieron dos fallos

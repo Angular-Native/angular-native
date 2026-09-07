@@ -306,8 +306,14 @@ required, and `--device` on `an wearos` is refused if the shape is wrong. Every
 are attached — and if the other one is unauthorised it does not even refuse, it
 sends the watch's APK to the phone.
 
-One emulator assumption remains: `an dev --android` bakes `10.0.2.2` into the
-app as the server's address, so hot refresh against a real handset does not
-reach it. The dev client **long-polls over HTTP** rather than using a WebSocket,
-because the platform ships no WebSocket client and pulling in a whole HTTP
-library for this is not worth it.
+Hot refresh reaches a real handset. The address baked into the app used to be
+`10.0.2.2` — the host machine seen from inside the emulator, and nothing at all
+from anywhere else — so a phone over USB polled somewhere that was not there
+and said nothing, because nothing had failed. `an dev --android` now opens the
+port on the device with `adb reverse` and bakes plain `127.0.0.1`, the same
+address every other target uses. A device that turns the reverse down still
+gets the app, and is told that saving will change nothing on screen.
+
+The dev client **long-polls over HTTP** rather than using a WebSocket, because
+the platform ships no WebSocket client and pulling in a whole HTTP library for
+this is not worth it.

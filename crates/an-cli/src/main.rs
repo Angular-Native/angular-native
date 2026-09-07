@@ -488,7 +488,14 @@ fn main() -> anyhow::Result<()> {
                 println!("{}", artefact.display());
                 return Ok(());
             }
-            android::install_and_launch(&workspace, &artefact, android::Form::Phone, device.as_deref())
+            // No dev server: `an android` installs and runs, it does not watch.
+            android::install_and_launch(
+                &workspace,
+                &artefact,
+                android::Form::Phone,
+                device.as_deref(),
+                None,
+            )
         }
         Command::Wearos { app, release, no_launch, device, sign, aab } => {
             // Same as on the Apple watch: the default example cannot be the
@@ -519,6 +526,7 @@ fn main() -> anyhow::Result<()> {
                 &artefact,
                 android::Form::Watch,
                 device.as_deref(),
+                None,
             )
         }
         Command::Dev {

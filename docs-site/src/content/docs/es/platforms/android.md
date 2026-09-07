@@ -319,8 +319,15 @@ la forma no cuadra. Todas las llamadas a `adb` llevan `-s`: sin eso `adb` se
 niega a actuar en cuanto hay dos dispositivos conectados — y si el otro no está
 autorizado ni siquiera se niega, le manda el APK del reloj al teléfono.
 
-Queda una suposición de emulador: `an dev --android` cuece `10.0.2.2` en la app
-como dirección del servidor, así que la recarga en caliente contra un teléfono
-real no llega. El cliente de desarrollo hace **long-polling sobre HTTP** en
-lugar de usar un WebSocket, porque la plataforma no trae cliente de WebSocket y
-arrastrar una librería HTTP entera para esto no compensa.
+La recarga en caliente llega a un teléfono real. La dirección que se cocía en
+la app era `10.0.2.2` —la máquina anfitriona vista desde dentro del emulador, y
+nada en absoluto desde cualquier otro sitio—, así que un teléfono por USB
+sondeaba un sitio que no estaba y no decía nada, porque no había fallado nada.
+`an dev --android` abre ahora el puerto en el dispositivo con `adb reverse` y
+cuece `127.0.0.1` a secas, la misma dirección que usan todos los demás targets.
+Un dispositivo que rechace el reverse recibe igualmente la app, y se le dice que
+guardar no va a cambiar nada en pantalla.
+
+El cliente de desarrollo hace **long-polling sobre HTTP** en lugar de usar un
+WebSocket, porque la plataforma no trae cliente de WebSocket y arrastrar una
+librería HTTP entera para esto no compensa.

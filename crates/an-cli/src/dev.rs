@@ -79,8 +79,11 @@ pub fn run(
     let (reloads, _) = broadcast::channel(8);
     let server = Server { bundle: Arc::new(tokio::sync::RwLock::new(source)), reloads };
 
-    // The Android emulator cannot see `localhost`: the host machine is 10.0.2.2
-    // from in there.
+    // One address for everything now. The Android targets used to need
+    // `10.0.2.2` — the host machine seen from inside the emulator — and
+    // `adb reverse` makes that unnecessary: the port is opened on the device,
+    // pointing back here, so a phone over USB reaches the server exactly as an
+    // emulator does. See `android::reverse_dev_port`.
     let url = match target {
         // The watch simulator shares the Mac's network the same way the
         // phone's does, so the same address works for it. And the Mac needs no
@@ -95,7 +98,7 @@ pub fn run(
             format!("http://127.0.0.1:{port}")
         }
         Target::Android | Target::Wear { .. } => {
-            format!("http://{}:{port}", crate::android::EMULATOR_HOST)
+            format!("http://127.0.0.1:{port}")
         }
     };
 
@@ -198,7 +201,7 @@ pub fn run(
                     // every time a file is saved.
                     crate::android::Packaging { form, signing: None, aab: false, bundletool: None },
                 )?;
-                crate::android::install_and_launch(&workspace, &apk, form, device)?;
+                crate::android::install_and_launch(&workspace, &apk, form, device, Some(port))?;
             }
         }
     }

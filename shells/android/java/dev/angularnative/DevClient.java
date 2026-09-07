@@ -19,7 +19,10 @@ import java.nio.charset.StandardCharsets;
  * bundle is downloaded. It costs the same as a WebSocket and adds no
  * dependencies.
  *
- * From the emulator, the host machine is 10.0.2.2.
+ * The address is `127.0.0.1` and it is the device's own: `an dev` opens the port
+ * back towards the machine serving the bundle with `adb reverse` before it
+ * installs. That is why there is no emulator translation here any more, and why
+ * a phone plugged in over USB reaches the server exactly as an emulator does.
  */
 final class DevClient {
 

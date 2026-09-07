@@ -278,8 +278,9 @@ the new bundle is stitched over the running one: the change shows without losing
 the screen or the state. Its `--device` is an `adb` serial, not a simulator
 name.
 
-The emulator sees the Mac at `10.0.2.2`, the same as the phone one, so the
-server does not change. Unlike the Apple shells, which use a WebSocket, the
+The address is `127.0.0.1` and the port is opened on the device with
+`adb reverse`, the same as the phone's — so this works on a watch strapped to a
+wrist and not only on the emulator. Unlike the Apple shells, which use a WebSocket, the
 Android shell long-polls the dev server.
 
 The first thing it did was leave the screen black, and out of that came two bugs

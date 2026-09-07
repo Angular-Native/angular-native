@@ -145,8 +145,39 @@ fn newest_dir(parent: &Path) -> Option<PathBuf> {
     entries.pop()
 }
 
-/// From inside the emulator, the host machine is not `localhost`.
-pub const EMULATOR_HOST: &str = "10.0.2.2";
+/// Opens the dev server's port on the device, back towards this machine.
+///
+/// It replaces a special case rather than adding one. The address used to be
+/// `10.0.2.2`, which is the host machine seen from inside the Android
+/// emulator and means nothing anywhere else: baked into the APK, hot refresh
+/// reached an emulator and silently never arrived on a phone plugged in over
+/// USB — the client polled an address that was not there and said nothing,
+/// because nothing had failed.
+///
+/// `adb reverse` works on both, so every Android target now uses the same
+/// `127.0.0.1` the Mac and the simulators use, and the translation is gone.
+///
+/// It is not fatal. A device that refuses it — an old `adb`, a reverse already
+/// held by something else — still gets the app; what it does not get is hot
+/// refresh, and that is said here rather than discovered as a save that never
+/// arrives.
+fn reverse_dev_port(adb: &Path, serial: &str, port: u16) -> Result<()> {
+    let spec = format!("tcp:{port}");
+    let output = Command::new(adb)
+        .args(["-s", serial, "reverse", &spec, &spec])
+        .output()
+        .context("adb could not be run")?;
+    if output.status.success() {
+        eprintln!("==> adb reverse {spec} (the dev server, from the device)");
+        return Ok(());
+    }
+    eprintln!(
+        "==> warning: `adb reverse {spec}` was turned down by {serial}, so the app will not \
+         reach the development server and saving will change nothing on screen.\n    {}",
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    Ok(())
+}
 
 pub fn assemble(
     workspace: &Workspace,
@@ -1220,6 +1251,10 @@ pub fn install_and_launch(
     apk: &Path,
     form: Form,
     device: Option<&str>,
+    // The dev server's port, when there is one. It is opened back towards this
+    // machine on the device that was picked — which is why it lives here and
+    // not where the APK is assembled: the device is not known until now.
+    dev_port: Option<u16>,
 ) -> Result<()> {
     let sdk = Sdk::discover()?;
     let adb = sdk.adb();
@@ -1233,6 +1268,9 @@ pub fn install_and_launch(
         Some(asked_for) => check_device(&adb, asked_for, form)?,
         None => pick_device(&adb, form)?,
     };
+    if let Some(port) = dev_port {
+        reverse_dev_port(&adb, &serial, port)?;
+    }
     eprintln!("==> installing on {serial}");
     // Same reason as on iOS: installing over a running app does not reload the
     // new bundle.

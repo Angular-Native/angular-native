@@ -104,9 +104,10 @@ while [ ! -s "$URL_FILE" ]; do
 done
 echo "  ok   the .app is built with the server's address inside it"
 
-# 3. And the address is this machine's. A Mac app is not in an emulator: there
-#    is no host to translate, and 10.0.2.2 —which is what Android needs— would
-#    point at nothing at all from here.
+# 3. And the address is this machine's. It is `127.0.0.1` on every target now —
+#    Android reaches it through `adb reverse` rather than through a translated
+#    host — but a Mac app is the one that could never have needed anything else:
+#    it is not inside anything, it runs on the machine serving the bundle.
 URL="$(cat "$URL_FILE")"
 [ "$URL" = "http://127.0.0.1:$PORT" ] && r=0 || r=1
 check $r "the URL is plain 127.0.0.1, with no emulator translation ($URL)"
