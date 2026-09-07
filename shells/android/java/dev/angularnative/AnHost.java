@@ -368,11 +368,6 @@ public final class AnHost {
         }
     }
 
-    /** The Activity consults it to decide things of its own. */
-    public boolean isWatch() {
-        return watch;
-    }
-
     public void attachRuntime(AnRuntime runtime) {
         this.runtime = runtime;
     }

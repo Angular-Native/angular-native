@@ -310,11 +310,6 @@ Both were bugs on every platform. The watch is what found them.
   from the system the way watchOS's do, where having focus is enough. Here the
   focus and the axis would have to be carried to them, and that is the
   primitive's job.
-- **An app cannot tell it is on Wear.** `Device.info().platform` returns
-  `"android"` on a watch: the Java side hard-codes it, and nothing anywhere
-  produces `"wearos"`, even though `NativePlatform` declares it.
-- **`AnHost.isWatch()` has no callers.** The accessor documented as the one the
-  Activity consults is currently dead code.
 - **Ambient mode.** A real watch drops to a black-and-white 1 Hz screen when the
   wrist goes down. Today the app simply closes, which is what Wear OS does with
   an app that does not declare it. There is no `AmbientModeSupport`, no

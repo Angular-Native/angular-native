@@ -238,14 +238,17 @@ type NativePlatform =
 ```
 
 Siete declarados. Cuatro se producen de verdad en ejecución —`ios`, `tvos`,
-`visionos` y `android`— y tres no:
+`visionos` y `android`— y los siete se producen. Cada host responde con el suyo,
+y los dos que se podrían haber adivinado mal merecen decirse en voz alta:
 
-- **`macos` y `watchos`** porque ninguno de los dos hosts registra `device`
-  siquiera.
-- **`wearos`** porque Wear OS es el host de Android, y el lado de Android tiene
-  fijo `"android"`. Una app de Wear no puede saber que está en un reloj por este
-  módulo. Si necesitas saberlo, pregunta por la pantalla: el margen redondo llega
-  por `an-safe-area`.
+- **`watchos`** es la palabra del propio host del reloj y no algo que le entregue
+  su shell, al contrario que los otros cuatro campos de `Device.info()`, que son
+  de `WKInterfaceDevice`. Ese host no puede estar corriendo en otro sitio que un
+  reloj, así que preguntárselo a otro solo sería sitio para equivocarse.
+- **`wearos`** sale de `PackageManager.FEATURE_WATCH`, que es el **dispositivo**
+  respondiendo y no el paquete. Importa cuál: el APK del teléfono se instala en
+  un reloj sin quejarse, y allí un manifiesto diría teléfono mientras quien lo
+  lleva está mirando un reloj.
 
 El ejecutor de tests headless produce un quinto valor, `headless`, que no está en
 la unión: un `switch` escrito contra el tipo no tiene rama para él.

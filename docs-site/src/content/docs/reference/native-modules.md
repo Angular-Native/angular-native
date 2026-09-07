@@ -236,14 +236,17 @@ type NativePlatform =
   | 'ios' | 'tvos' | 'visionos' | 'macos' | 'watchos' | 'android' | 'wearos'
 ```
 
-Seven declared. Four are actually produced at runtime — `ios`, `tvos`,
-`visionos` and `android` — and three are not:
+Seven declared and seven produced. Each host answers with its own, and the two
+that could have been guessed wrong are worth saying out loud:
 
-- **`macos` and `watchos`** because neither host registers `device` at all.
-- **`wearos`** because Wear OS is the Android host, and the Android side
-  hard-codes `"android"`. A Wear app cannot tell it is on a watch through this
-  module. If you need to know, ask about the screen instead — the round inset
-  arrives through `an-safe-area`.
+- **`watchos`** is the watch host's own word and not something its shell hands
+  over, unlike the other four fields of `Device.info()`, which are
+  `WKInterfaceDevice`'s. That host cannot be running anywhere but a watch, so
+  asking somebody else would only be room to get it wrong.
+- **`wearos`** comes from `PackageManager.FEATURE_WATCH`, which is the
+  **device** answering rather than the package. It matters which: the phone APK
+  installs on a watch without complaint, and there a manifest would say phone
+  while the wearer is looking at a watch.
 
 The headless test runner produces a fifth value, `headless`, which is not in the
 union at all: a `switch` written against the type has no branch for it.

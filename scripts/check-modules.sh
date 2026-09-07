@@ -62,10 +62,17 @@ fi
 # appears on nearly every line.
 ANDROID_INFO="$(awk '/public String deviceInfo\(\)/,/^    \}/' "$ANDROID_HOST")"
 
-# The one value with no producer. Wear OS reports itself as a phone: `deviceInfo`
-# hard-codes the platform, so an app on a watch cannot tell it is on one. It is a
-# real hole and it is named here rather than quietly left out of the loop; take
-# the word off this line and the check below turns it into a failure.
+# Values allowed to have no producer, and there are none. It is kept as an empty
+# list rather than deleted because it is what makes the loop below say something
+# when a platform is added to the type ahead of the host that answers for it:
+# naming the exception is how a hole stays visible, and having none to name is
+# the state worth being able to see.
+#
+# It last held `wearos`, back when `deviceInfo` hard-coded the platform and an
+# app on a watch could not tell it was on one. It comes from
+# `PackageManager.FEATURE_WATCH` now — the device answering rather than the
+# package, which matters because the phone APK installs on a watch without
+# complaint and a manifest would say phone there.
 KNOWN_MISSING=""
 
 produced_by() {
