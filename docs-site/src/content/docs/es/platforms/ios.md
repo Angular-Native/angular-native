@@ -265,8 +265,6 @@ el siguiente. Las orientaciones soportadas son vertical y las dos horizontales.
 - **`letterSpacing` no se mide.** Forma parte de la clave de la caché de
   medición pero no se pasa ningún atributo de kerning, así que el layout
   dimensiona el texto como si fuera cero.
-- **`an-navigation-bar` no tiene tamaño natural.** Su tamaño de control no se
-  registra nunca, así que mide 0×0 salvo que la plantilla le dé una altura.
 - **Los detentes de la hoja no se pueden elegir** (arriba).
 - **Seis sitios que avisan una vez, todos en accesibilidad**: un rol
   desconocido, una clave de estado desconocida, un rol para el que UIKit no

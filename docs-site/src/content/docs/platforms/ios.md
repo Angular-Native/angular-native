@@ -258,8 +258,6 @@ orientations are portrait and both landscapes.
 - **`letterSpacing` is not measured.** It is part of the measurement cache key
   but no kerning attribute is passed, so layout sizes the text as if it were
   zero.
-- **`an-navigation-bar` has no natural size.** Its control size is never
-  recorded, so it measures 0×0 unless the template gives it a height.
 - **Sheet detents cannot be chosen** (above).
 - **Six warn-once sites, all in accessibility**: an unknown role, an unknown
   state key, a role UIKit has no trait for, `checked: 'mixed'` — UIKit only

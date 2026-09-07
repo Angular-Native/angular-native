@@ -191,15 +191,6 @@ porque JNI no tiene tipo opción.
 
 ## Lo que falta
 
-- **Seis controles miden cero.** El tamaño natural de un control se mide
-  construyendo una sonda desechable — pero solo se manejan seis nombres: switch,
-  slider, indicador de actividad, barra de progreso, botón y tab bar. El core
-  pide trece. Así que `an-segmented-control`, `an-stepper`, `an-search-bar`,
-  `an-select`, `an-date-picker` y `an-navigation-bar` miden todos **0×0**, y son
-  invisibles salvo que la plantilla les dé un tamaño. `an-icon` está en la misma
-  situación y escapa solo porque su directiva fija el ancho y el alto desde
-  `[size]`. **De esto no se emite ningún aviso**, lo que lo convierte en lo más
-  afilado de esta página.
 - **`lineHeight` y `letterSpacing` se dibujan pero no se miden.** Los dos se
   aplican al renderizar y ninguno se pasa a la medición, así que el layout
   reserva la caja equivocada. iOS al menos mide `lineHeight`.

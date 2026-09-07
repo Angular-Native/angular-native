@@ -182,15 +182,6 @@ travels as `-1`, because JNI has no option type.
 
 ## What is missing
 
-- **Six controls measure zero.** The natural size of a control is measured by
-  building a throwaway probe — but only six names are handled: switch, slider,
-  activity indicator, progress bar, button and tab bar. The core asks for
-  thirteen. So `an-segmented-control`, `an-stepper`, `an-search-bar`,
-  `an-select`, `an-date-picker` and `an-navigation-bar` all measure **0×0**, and
-  are invisible unless the template gives them a size. `an-icon` is in the same
-  position and escapes it only because its directive pins width and height from
-  `[size]`. **No warning is emitted for this**, which makes it the sharpest
-  thing on this page.
 - **`lineHeight` and `letterSpacing` are drawn but not measured.** Both are
   applied when rendering and neither is passed to the measurement, so layout
   reserves the wrong box. iOS at least measures `lineHeight`.
