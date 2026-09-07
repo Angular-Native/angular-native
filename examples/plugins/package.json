@@ -9,6 +9,7 @@
     "@angular-native/plugin-clipboard": "*",
     "@angular-native/plugin-geolocation": "*",
     "@angular-native/plugin-keychain": "*",
+    "@angular-native/plugin-notifications": "*",
     "@angular-native/plugin-preferences": "*"
   }
 }

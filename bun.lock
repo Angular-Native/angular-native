@@ -96,6 +96,7 @@
         "@angular-native/plugin-clipboard": "*",
         "@angular-native/plugin-geolocation": "*",
         "@angular-native/plugin-keychain": "*",
+        "@angular-native/plugin-notifications": "*",
         "@angular-native/plugin-preferences": "*",
       },
     },
@@ -174,6 +175,13 @@
     },
     "packages/plugin-keychain": {
       "name": "@angular-native/plugin-keychain",
+      "version": "0.0.1",
+      "peerDependencies": {
+        "@angular/core": ">=22.0.0",
+      },
+    },
+    "packages/plugin-notifications": {
+      "name": "@angular-native/plugin-notifications",
       "version": "0.0.1",
       "peerDependencies": {
         "@angular/core": ">=22.0.0",
@@ -260,6 +268,8 @@
     "@angular-native/plugin-geolocation": ["@angular-native/plugin-geolocation@workspace:packages/plugin-geolocation"],
 
     "@angular-native/plugin-keychain": ["@angular-native/plugin-keychain@workspace:packages/plugin-keychain"],
+
+    "@angular-native/plugin-notifications": ["@angular-native/plugin-notifications@workspace:packages/plugin-notifications"],
 
     "@angular-native/plugin-preferences": ["@angular-native/plugin-preferences@workspace:packages/plugin-preferences"],
 
