@@ -54,10 +54,11 @@ menos los plugins.
 
 ## Qué dibuja macOS
 
-Los veinticinco primitivos montables. Veintidós son un control del sistema, dos
-están ensamblados con vistas del sistema, y el que queda —la cabecera de
-navegación— macOS lo pone donde lo guarda: fuera del árbol de vistas. El
-inventario vive en `crates/an-macos/src/support.rs`, como una tabla en lugar de
+Los veintiséis primitivos montables. Veintidós son un control del sistema, dos
+están ensamblados con vistas del sistema, uno —la cabecera de navegación— macOS
+lo pone donde lo guarda, fuera del árbol de vistas, y uno no le toca construirlo
+a este crate en absoluto: `an-custom` es el agujero por el que un **plugin**
+monta su propia `NSView`. El inventario vive en `crates/an-macos/src/support.rs`, como una tabla en lugar de
 disperso por el match de `create`, para poder leerlo de una vez;
 `scripts/check-macos.py` lo compara con el enum del core para que no pueda
 quedarse atrás.
@@ -136,10 +137,13 @@ Lo que la barra de título no tiene es botón de atrás. `[showsBack]` y
 vuelve atrás con el menú o con un botón propio de la app, no con una flecha en
 la cabecera.
 
-Por eso el inventario tiene una cuarta categoría junto a «control del sistema»,
-«ensamblado con vistas del sistema» y «macOS no lo tiene»: `Elsewhere` —se honra,
-pero no con una vista. Hoy solo la usa la cabecera, y ningún primitivo está
-`Missing`. Si alguien declara alguno alguna vez, `check-macos.py` lo dice y pide
+Por eso el inventario tiene dos categorías más junto a «control del sistema»,
+«ensamblado con vistas del sistema» y «macOS no lo tiene». `Elsewhere` —se
+honra, pero no con una vista— es la que usa la cabecera, y es la única que la
+usa. `Plugin` es `an-custom`: una `NSView` de verdad, pero de una clase de la
+que este crate no ha oído hablar nunca, así que no es ni un `Native` (el nombre
+sería mentira) ni un `Assembled` (no se ensambla nada — la vista llega hecha).
+Ningún primitivo está `Missing`. Si alguien declara alguno alguna vez, `check-macos.py` lo dice y pide
 que se vuelva a escribir el camino del aviso: un nodo que se monta como una caja
 vacía en silencio es exactamente lo que este repositorio no permite.
 
@@ -371,6 +375,12 @@ Mira [Firma y distribución](/es/guide/signing-and-distribution/).
 - **`(scroll)` no se entrega.** Es un nombre de evento conocido e iOS lo
   implementa; este host no, así que suscribirse a él recibe el aviso genérico de
   «no puedo entregarlo». Es un hueco real, no una decisión.
+- **Una vista de plugin no se mide por su contenido.** `<an-custom>` monta lo
+  que un plugin registró con `AnPluginViews.register`, llenando la caja que el
+  layout le dio al nodo — y un nodo sin tamaño sale a cero, lo que parece un
+  plugin que no funciona. Un nombre que nadie registró no monta nada y lo dice
+  una vez, nombrando el nombre. Mira
+  [una vista que trae un plugin](/es/extending/plugins/#una-vista-que-trae-un-plugin).
 - **Los entitlements de un plugin necesitan una firma real.** El host carga
   plugins, pero un `.app` firmado ad-hoc que lleve un entitlement respaldado por
   un perfil lo mata el sistema al lanzarse, así que una compilación sin firmar

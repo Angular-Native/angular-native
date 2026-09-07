@@ -260,7 +260,7 @@ simulator, and it is what most of those scripts drive.
 | `packages/plugin-camera` | The camera and the photo library, presented by the system |
 | `packages/plugin-notifications` | Local notifications, and the tap that launched the app |
 | `packages/plugin-updater` | New JavaScript without a store release, with a bad bundle costing one launch |
-| `packages/plugin-barcode` | `AVCaptureMetadataOutput`, full screen. Apple only, and it says why |
+| `packages/plugin-barcode` | `AVCaptureMetadataOutput`, full screen or as a live `<an-custom>` preview. Apple only, and it says why |
 
 The Swift and Java shells are in `shells/` — `ios`, `tvos`, `visionos`,
 `watchos`, `macos`, `android` and a `shared` one; Wear OS has none of its own,
@@ -343,16 +343,19 @@ apps the checks drive.
   get at most an `.exe` linked with mingw, and a binary nobody has watched start
   is not a supported platform. It is waiting on a machine to try it on.
 
-- **No plugins on macOS or on the Apple watch.** Neither host has a plugin
-  registry, so `an macos` and `an watchos` refuse to build an app that depends on
-  one rather than shipping an app whose every call would be rejected at runtime.
-  The `device` module is not a plugin — it is compiled into every host, and
-  `Device.info()` resolves on both.
+- **No plugins on the Apple watch.** That host has no plugin registry, so
+  `an watchos` refuses to build an app that depends on one rather than shipping
+  an app whose every call would be rejected at runtime. The `device` module is
+  not a plugin — it is compiled into every host, and `Device.info()` resolves
+  there too.
 
-- **A plugin contributes methods, not views.** It can add a native module — a
-  call that returns a promise — but not a new primitive that mounts in the tree:
-  that means opening the core's `NodeKind` to names it does not know at compile
-  time and teaching every host to build a view that is not its own.
+- **A plugin contributes methods, and exactly one kind of view.** A native
+  module — a call that returns a promise — is the normal case. The one thing it
+  can put in the tree is a view mounted through `<an-custom>`, which is not a
+  primitive: it is never measured by its content, it does not exist on watchOS,
+  and it has no props of its own beyond the box the layout gives it. The core's
+  `NodeKind` stays a closed enum with frozen byte codes; the plugin's name
+  travels as a prop.
   [extending/plugins](https://angular-native.github.io/extending/plugins/)
 
 - **Hot refresh does not reach the framework.** Changing a component of the app

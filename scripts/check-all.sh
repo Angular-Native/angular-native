@@ -76,6 +76,12 @@ echo
 "$ROOT/scripts/check-plugins-hosts.sh"
 
 echo
+# The one thing a plugin contributes that is not a method. It goes after both
+# of the above because it builds the same example, and its last step reads the
+# tree that build produces.
+"$ROOT/scripts/check-plugin-views.sh"
+
+echo
 # What is not a plugin: the module every host is supposed to have compiled in.
 "$ROOT/scripts/check-modules.sh"
 

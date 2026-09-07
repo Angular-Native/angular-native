@@ -46,6 +46,9 @@ final class RootViewController: NSViewController {
         // both kinds — the plugins an app depends on, and the built-ins, which
         // are not plugins and ship whether an app asks for them or not.
         AnPluginRegistry.install(host: self)
+        // After the registry and before the runtime: a plugin registers its
+        // views from `attach`, which the line above is what calls.
+        AnPluginViews.install()
         AnBuiltinHost.view = view
         AnBuiltinModules.install()
 

@@ -29,6 +29,13 @@ pub enum Support {
     Assembled(&'static str),
     /// macOS does not ship it and it is not imitated. The text explains why.
     Missing(&'static str),
+    /// The view is not this crate's to build: a plugin registers it and the
+    /// shell hands it over by name. The text says which hole it comes through.
+    ///
+    /// It is its own answer and not a `Native` because the class is unknown
+    /// here — it is whatever the plugin wrote — and not an `Assembled` because
+    /// nothing is assembled: the view arrives finished.
+    Plugin(&'static str),
     /// What the primitive asks for is honoured, but not with a view in the
     /// tree: macOS puts it somewhere else. The text says where.
     ///
@@ -90,6 +97,14 @@ pub const SUPPORT: &[(NodeKind, Support)] = &[
     // tree as one more view. Showing where you are does ask for permission,
     // and that is `showsUser`.
     (NodeKind::MapView, Support::Native("MKMapView")),
+    // The one kind this crate does not build. `an:view` names a factory the
+    // shell registered, the plugin's `NSView` goes inside this node, and a
+    // name nobody registered says so once instead of mounting an empty box.
+    // See `plugin_views.rs`.
+    (
+        NodeKind::Custom,
+        Support::Plugin("the NSView a plugin registers under the name in [view]"),
+    ),
     // AppKit does have a video view, which UIKit does not: `AVPlayerView`
     // **is** an `NSView` and brings the system's controls with it. It works
     // out cheaper than on iOS, where an `AVPlayerViewController` has to be

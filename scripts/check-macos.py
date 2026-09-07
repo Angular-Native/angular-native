@@ -72,9 +72,11 @@ if not missing and not extra and from_core:
     assembled = len(re.findall(r'Support::Assembled\(', support))
     absent = len(re.findall(r'Support::Missing\(', support))
     elsewhere = len(re.findall(r'Support::Elsewhere\(', support))
+    plugin = len(re.findall(r'Support::Plugin\(', support))
     oks.append(
         f'  ok   the {len(from_core)} mountable primitives are in the inventory '
         f'({native} with a system control, {assembled} assembled, '
+        f'{plugin} a plugin brings, '
         f'{elsewhere} that macOS puts outside the tree, {absent} it does not ship)'
     )
     # A primitive declared absent has to report itself when mounted. There is

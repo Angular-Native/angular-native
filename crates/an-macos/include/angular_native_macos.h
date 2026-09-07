@@ -56,6 +56,16 @@ int32_t an_plugin_resolve(uint64_t id, const char *json);
 /// Rejects a call. 0 if the call was waiting, -1 if it was not.
 int32_t an_plugin_reject(uint64_t id, const char *message);
 
+/// Installs the factory that turns the name in `<an-custom [view]>` into a view.
+///
+/// The shell hands back a `+1` reference — `Unmanaged.passRetained` — and the
+/// core takes ownership of it. Returning NULL means no plugin registers that
+/// name, and the core says so once rather than mounting an empty box.
+///
+/// The symbol is the phone's: the two never end up in the same binary, and a
+/// plugin covering both writes the same Swift twice.
+void an_plugin_view_set_factory(void *(*factory)(const char *name));
+
 /// Emits an event from a plugin, under the module's own name. Unlike an answer
 /// this belongs to no call: it may arrive at any time, or never, and nothing on
 /// the JS side is waiting for it. Returns 0 if the module is registered.

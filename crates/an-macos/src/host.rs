@@ -27,7 +27,7 @@ use objc2::{AnyThread, MainThreadMarker, Message};
 use objc2_app_kit::{
     NSAnimationContext, NSBezelStyle, NSButton, NSControl, NSControlStateValueOff,
     NSControlStateValueOn, NSDatePicker, NSDatePickerMode, NSFont, NSForegroundColorAttributeName,
-    NSImageView, NSKernAttributeName, NSMutableParagraphStyle, NSParagraphStyleAttributeName,
+    NSAutoresizingMaskOptions, NSImageView, NSKernAttributeName, NSMutableParagraphStyle, NSParagraphStyleAttributeName,
     NSPopUpButton, NSProgressIndicator, NSProgressIndicatorStyle, NSScrollView, NSScrollerStyle,
     NSSearchField, NSSegmentedControl, NSSlider, NSStepper, NSStrikethroughStyleAttributeName,
     NSSwitch, NSTextAlignment, NSTextField, NSTextView, NSUnderlineStyleAttributeName,
@@ -1010,6 +1010,39 @@ impl HostRenderer for AppKitHost {
             // this host drops them at a glance without having to know what
             // they are.
             _ if key.starts_with("ios:") || key.starts_with("android:") => {}
+
+            // The name of the view a plugin brings. It arrives on the same
+            // frame the node was created on, which is why `create` mounts an
+            // empty container: a plugin cannot be asked for a view before the
+            // tree has said which one.
+            "an:view" => {
+                let Some(name) = text.as_deref() else { return };
+                let Some(brought) = crate::plugin_views::make(name) else {
+                    // Once per name and not once per node: a list of five
+                    // hundred rows with the same missing view is one mistake,
+                    // not five hundred.
+                    let name = name.to_owned();
+                    self.warn_once(format!("plugin-view:{name}"), || {
+                        eprintln!(
+                            "angular-native: no plugin registers a view called {name:?}, so \
+                             <an-custom [view]=\"{name}\"> mounts nothing. The name is the one \
+                             the plugin passes to AnPluginViews.register."
+                        );
+                    });
+                    return;
+                };
+                // It fills the node, whose size layout decided: a plugin view
+                // is never measured by its content, so the frame is the answer
+                // and not a starting point.
+                brought.setFrame(native.bounds());
+                unsafe {
+                    brought.setAutoresizingMask(
+                        NSAutoresizingMaskOptions::ViewWidthSizable
+                            | NSAutoresizingMaskOptions::ViewHeightSizable,
+                    );
+                }
+                native.addSubview(&brought);
+            }
 
             "backgroundColor" | "background-color" => {
                 let color = text.as_deref().and_then(crate::color::to_nscolor);

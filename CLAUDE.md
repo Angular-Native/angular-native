@@ -156,9 +156,12 @@ it is the fastest way to find out which:
   monorepo they coincide; outside, the SDK is this repo and the project is the
   user's. The rest of the CLI asks for `workspace.root` for SDK files and
   `workspace.build_dir()` for output and never learns which world it is in.
-- **A plugin contributes methods, not views**, and there is no plugin registry
-  gap left: `an macos`/`an watchos` refuse to build an app depending on a plugin
-  they cannot cover rather than shipping silent no-ops.
+- **A plugin contributes methods, plus one kind of view.** `NodeKind::Custom`
+  (code 26) is the single hole: the kind means "ask the host's plugin-view
+  registry" and `an:view` says which name. Not a way to add a primitive — never
+  measured by its content, absent on watchOS. `an watchos` still refuses to
+  build an app depending on a plugin it cannot cover rather than shipping
+  silent no-ops.
 - **Hot refresh does not reach the framework.** Editing `packages/` or a
   dependency forces a restart; only app components keep their state.
 

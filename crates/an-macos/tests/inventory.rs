@@ -23,6 +23,7 @@ fn what_is_not_native_comes_with_its_reason() {
             Support::Native(name) => name,
             Support::Assembled(reason)
             | Support::Missing(reason)
+            | Support::Plugin(reason)
             | Support::Elsewhere(reason) => reason,
         };
         assert!(!text.trim().is_empty(), "{kind:?} does not say what is behind it");

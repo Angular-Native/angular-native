@@ -51,9 +51,11 @@ minus the plugins.
 
 ## What macOS draws
 
-All twenty-five mountable primitives. Twenty-two are a system control, two are
-assembled from system views, and the remaining one — the navigation header —
-macOS puts where it keeps it: outside the view tree. The inventory lives in
+All twenty-six mountable primitives. Twenty-two are a system control, two are
+assembled from system views, one — the navigation header — macOS puts where it
+keeps it, outside the view tree, and one is not this crate's to build at all:
+`an-custom` is the hole a **plugin** mounts its own `NSView` through. The
+inventory lives in
 `crates/an-macos/src/support.rs`, as a table rather than scattered through the
 `create` match, so it can be read in one go; `scripts/check-macos.py` compares it
 against the core's enum so it cannot fall behind.
@@ -129,10 +131,13 @@ What the title bar does not have is a back button. `[showsBack]` and
 on a Mac you go back with the menu or with a button of the app's own, not with
 an arrow in the header.
 
-That is why the inventory has a fourth category beside "system control",
-"assembled from system views" and "macOS does not have it": `Elsewhere` — it is
-honoured, but not with a view. Only the header uses it today, and no primitive
-is `Missing`. If anyone ever declares one, `check-macos.py` says so and asks for
+That is why the inventory has two more categories beside "system control",
+"assembled from system views" and "macOS does not have it". `Elsewhere` — it is
+honoured, but not with a view — is what the header uses, and it is the only one
+that does. `Plugin` is `an-custom`: a real `NSView`, but one whose class this
+crate has never heard of, so it is neither a `Native` (the name would be a lie)
+nor an `Assembled` (nothing is assembled — the view arrives finished). No
+primitive is `Missing`. If anyone ever declares one, `check-macos.py` says so and asks for
 the warning path to be written again: a node that mounts as an empty box in
 silence is exactly what this repository does not allow.
 
@@ -359,6 +364,12 @@ need a paid Developer ID certificate and have never been run. See
 - **`(scroll)` is not delivered.** It is a known event name and iOS implements
   it; this host does not, so subscribing to it gets the generic "cannot deliver"
   warning. It is a real gap, not a decision.
+- **A plugin view is not measured by its content.** `<an-custom>` mounts what a
+  plugin registered with `AnPluginViews.register`, filling the box the layout
+  gave the node — and a node given no size comes out at zero, which looks like
+  a plugin that does not work. A name nobody registered mounts nothing and says
+  so once, naming the name. See
+  [a view a plugin brings](/extending/plugins/#a-view-a-plugin-brings).
 - **A plugin's entitlements need a real signature.** The host loads plugins, but
   an ad-hoc-signed `.app` carrying a profile-backed entitlement is killed at
   launch by the system, so an unsigned build drops those keys and warns naming

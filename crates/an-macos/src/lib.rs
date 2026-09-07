@@ -59,6 +59,8 @@ mod measure;
 #[cfg(target_os = "macos")]
 mod modules;
 #[cfg(target_os = "macos")]
+mod plugin_views;
+#[cfg(target_os = "macos")]
 mod video;
 #[cfg(target_os = "macos")]
 mod web;
