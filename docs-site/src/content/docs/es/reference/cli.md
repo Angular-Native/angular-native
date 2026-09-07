@@ -76,15 +76,20 @@ que ya exista se deja en paz y se reporta como tal.
 an add <PLATAFORMA>
 ```
 
-La plataforma es obligatoria, y hay exactamente cuatro: **`ios`, `tvos`,
-`visionos`, `android`**. No hay `an add macos`, ni `an add watchos`, ni
-`an add wearos`.
+La plataforma es obligatoria, y hay exactamente cinco: **`ios`, `tvos`,
+`visionos`, `macos`, `android`**. No hay `an add watchos` ni `an add wearos`.
 
 Cada uno crea un directorio con exactamente un fichero dentro —`ios/Info.plist`,
-`tvos/Info.plist`, `visionos/Info.plist`, `android/AndroidManifest.xml`— derivado
-del del shell, con el nombre y el id de bundle sustituidos. Si el fichero ya
-está, se deja en paz; en cualquier caso la plataforma queda anotada en
-`angular-native.json`.
+`tvos/Info.plist`, `visionos/Info.plist`, `macos/Info.plist`,
+`android/AndroidManifest.xml`— derivado del del shell, con el nombre y el id de
+bundle sustituidos. Si el fichero ya está, se deja en paz; en cualquier caso la
+plataforma queda anotada en `angular-native.json`.
+
+`macos` decora los dos igual que `tvos` y `visionos`: una app llamada `MyApp`
+pasa a ser `MyAppMac` con `.mac` al final de su identificador. Un mismo proyecto
+compila para el teléfono y para el escritorio desde el mismo manifiesto, y dos
+bundles que comparten identificador son una sola app para el sistema — un
+contenedor, unos ajustes, una partición de llavero.
 
 Dos cosas que conviene saber:
 

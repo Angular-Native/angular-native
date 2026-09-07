@@ -132,9 +132,14 @@ pub fn add(workspace: &Workspace, platform: &str) -> Result<()> {
             "AndroidManifest.xml",
             android_manifest(workspace, &project.name)?,
         ),
+        "macos" => (
+            "macos",
+            "Info.plist",
+            macos_plist(workspace, &project.name, &project.bundle_id)?,
+        ),
         other => bail!(
-            "I do not know how to add {other:?}. `an add` knows ios, tvos, visionos and android; \
-             the other platforms have nothing yet the project needs to keep."
+            "I do not know how to add {other:?}. `an add` knows ios, tvos, visionos, macos and \
+             android; the other platforms have nothing yet the project needs to keep."
         ),
     };
 
@@ -737,6 +742,38 @@ fn plist(
         ],
     )?;
     // The comment goes after the XML declaration, which has to come first.
+    Ok(prepend(&text, PLIST_HEADER))
+}
+
+/// The project's macOS `Info.plist`, taken from the shell's.
+///
+/// It is the iOS one without the family decoration: a Mac app has no `-tv` or
+/// `-vision` sibling to keep apart, so the name and the identifier go in as the
+/// project wrote them.
+///
+/// The executable's name is the app's, and that is not cosmetic on this
+/// platform: `CFBundleExecutable` has to match the file actually sitting in
+/// `Contents/MacOS`, and a `.app` where they disagree is one the Finder opens
+/// and `open` turns down without saying why.
+fn macos_plist(workspace: &Workspace, name: &str, bundle_id: &str) -> Result<String> {
+    let source = workspace.root.join("shells/macos/Resources/Info.plist");
+    let text = std::fs::read_to_string(&source)
+        .with_context(|| format!("{} could not be read", source.display()))?;
+    // The same decoration the shell's own plist carries, and the same one
+    // `an macos` will look for: one project builds for the phone and for the
+    // desktop, and two bundles sharing an identifier are one app to the system.
+    let text = substitute(
+        &text,
+        &source,
+        &[
+            ("<string>AngularNativeMac</string>", &format!("<string>{name}Mac</string>"), 1),
+            (
+                "<string>dev.angularnative.playground.mac</string>",
+                &format!("<string>{bundle_id}.mac</string>"),
+                1,
+            ),
+        ],
+    )?;
     Ok(prepend(&text, PLIST_HEADER))
 }
 

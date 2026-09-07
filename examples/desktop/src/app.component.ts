@@ -69,6 +69,29 @@ import type { NativeCursor, NativeHoverEvent } from '@angular-native/primitives'
         (hover)="buttonHovered.set($event.hovered)"
         (press)="presses.set(presses() + 1)"></an-button>
 
+      <!-- Scrolling. AppKit has no scroll delegate: the clip view posts a
+           notification, and only once postsBoundsChangedNotifications has been
+           turned on. The offset counts downwards, the same as iOS sends.
+
+           The size is min and max and not height: the core gives every
+           scrollable node flex-basis 0 so that one inside a column takes the
+           space left over instead of the height of its content, and a
+           flex-basis wins over a height on the main axis. So a height on a
+           scroll view does nothing at all, in silence. -->
+      <an-text [fontSize]="15" [fontWeight]="600" [color]="'#cbd5e1'">scroll</an-text>
+      <an-scroll-view
+        [style.minHeight]="'80'"
+        [style.maxHeight]="'80'"
+        [style.overflow]="'scroll'"
+        [borderRadius]="12"
+        [backgroundColor]="'#111a2e'"
+        (scroll)="onScroll($event)">
+        @for (row of rows; track row) {
+          <an-text [style.height]="26" [fontSize]="13" [color]="'#94a3b8'">{{ row }}</an-text>
+        }
+      </an-scroll-view>
+      <an-text [fontSize]="12" [color]="'#6ee7b7'">offset: {{ offset() }}</an-text>
+
       <!-- Swiping. Two fingers on the trackpad, with the system threshold. -->
       <an-text [fontSize]="15" [fontWeight]="600" [color]="'#cbd5e1'">swipe</an-text>
       <an-view
@@ -104,6 +127,11 @@ export class AppComponent {
     { name: 'not-allowed', cursor: 'not-allowed' }
   ]
 
+  /** Enough rows that the box has somewhere to scroll to. */
+  readonly rows = Array.from({ length: 12 }, (_, index) => `row ${index + 1}`)
+
+  readonly offset = signal('0')
+
   readonly hovered = signal<string | null>(null)
   readonly buttonHovered = signal(false)
   readonly presses = signal(0)
@@ -124,6 +152,16 @@ export class AppComponent {
       // The point arrives in view coordinates, just like a (press) one.
       console.log(`[hover] inside ${name} at ${Math.round(event.x)},${Math.round(event.y)}`)
     }
+  }
+
+  /**
+   * The same payload iOS sends — `{ x, y }` in points, counting downwards — so
+   * a component listening for this needs to know nothing about which desktop
+   * it is on.
+   */
+  onScroll(event: { x: number; y: number }): void {
+    this.offset.set(String(Math.round(event.y)))
+    console.log(`[scroll] y ${Math.round(event.y)}`)
   }
 
   onSwipe(direction: string, arrow: string): void {

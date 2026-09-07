@@ -97,6 +97,27 @@ enum Screenshot {
         return (CGPoint(x: parts[0], y: parts[1]), parts[2], parts[3])
     }
 
+    /// Where to scroll and by how much, for `AN_SCREENSHOT_SCROLL=x,y,dy`.
+    ///
+    /// A synthetic scroll wheel `CGEvent` is not used here, unlike the swipe.
+    /// A wheel event is only a *request*: AppKit decides whether the view under
+    /// the pointer takes it, how far its elasticity carries it and over how
+    /// many frames, so a check built on one measures the system's scrolling
+    /// rather than whether the notification reaches the template. Moving the
+    /// clip view is what a real scroll does at the end of all that, and it is
+    /// what posts `NSViewBoundsDidChange`.
+    static var scroll: (point: CGPoint, dy: Double)? {
+        guard let raw = ProcessInfo.processInfo.environment["AN_SCREENSHOT_SCROLL"] else {
+            return nil
+        }
+        let parts = raw.split(separator: ",").compactMap { Double($0) }
+        guard parts.count == 3 else {
+            NSLog("angular-native: AN_SCREENSHOT_SCROLL is written x,y,deltaY")
+            return nil
+        }
+        return (CGPoint(x: parts[0], y: parts[1]), parts[2])
+    }
+
     /// Photograph the whole window, title bar included.
     ///
     /// The normal screenshot is of the content, which is what the core mounts.
@@ -308,6 +329,31 @@ enum Screenshot {
         target.swipe(with: event)
     }
 
+    /// Scrolls the `NSScrollView` under the point.
+    ///
+    /// `scroll(to:)` on the clip view plus `reflectScrolledClipView:` is what
+    /// the scroll view itself ends up doing, and between them they post the
+    /// bounds notification `(scroll)` is subscribed to. Nothing here reaches
+    /// into the host: if the notification is not posted, or nobody is
+    /// listening, the template's offset stays at zero and the check says so.
+    static func sendScroll(in view: NSView) {
+        guard let (point, dy) = scroll else { return }
+        let hit = view.hitTest(view.convert(point, to: view.superview))
+        // The hit is a label or the document view, never the scroll view
+        // itself, so the one that owns them is looked for upwards.
+        var candidate: NSView? = hit
+        while let current = candidate, !(current is NSScrollView) {
+            candidate = current.superview
+        }
+        guard let scrollView = candidate as? NSScrollView else {
+            NSLog("angular-native: AN_SCREENSHOT_SCROLL found no NSScrollView under \(point)")
+            return
+        }
+        let clip = scrollView.contentView
+        clip.scroll(to: NSPoint(x: clip.bounds.origin.x, y: clip.bounds.origin.y + dy))
+        scrollView.reflectScrolledClipView(clip)
+    }
+
     /// How many distinct colours there are in the bitmap.
     ///
     /// One pixel in four is sampled by rows and by columns: that is sixteen
@@ -399,6 +445,7 @@ enum Screenshot {
             }
             if frames == max(1, Screenshot.graceFrames / 3) {
                 Screenshot.sendSwipe(in: view)
+                Screenshot.sendScroll(in: view)
             }
             if frames == max(1, Screenshot.graceFrames / 2) {
                 Screenshot.placePointer(in: view)

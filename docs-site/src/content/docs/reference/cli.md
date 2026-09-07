@@ -76,15 +76,21 @@ already exists is left alone and reported as such.
 an add <PLATFORM>
 ```
 
-The platform is required, and there are exactly four: **`ios`, `tvos`,
-`visionos`, `android`**. There is no `an add macos`, no `an add watchos` and no
+The platform is required, and there are exactly five: **`ios`, `tvos`,
+`visionos`, `macos`, `android`**. There is no `an add watchos` and no
 `an add wearos`.
 
 Each creates a directory with exactly one file in it — `ios/Info.plist`,
-`tvos/Info.plist`, `visionos/Info.plist`, `android/AndroidManifest.xml` — derived
-from the shell's, with the name and the bundle id substituted in. If the file is
-already there it is left alone; either way the platform is recorded in
-`angular-native.json`.
+`tvos/Info.plist`, `visionos/Info.plist`, `macos/Info.plist`,
+`android/AndroidManifest.xml` — derived from the shell's, with the name and the
+bundle id substituted in. If the file is already there it is left alone; either
+way the platform is recorded in `angular-native.json`.
+
+`macos` decorates both the way `tvos` and `visionos` do: an app called `MyApp`
+becomes `MyAppMac` with `.mac` on the end of its identifier. One project builds
+for the phone and for the desktop from the same manifest, and two bundles
+sharing an identifier are one app as far as the system is concerned — one
+container, one set of defaults, one keychain partition.
 
 Two things worth knowing:
 

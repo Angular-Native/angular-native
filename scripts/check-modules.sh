@@ -111,11 +111,16 @@ done
 
 # 3. The watch's module, over the real registry: registered under `device`,
 #    answering `info`, and with the platform put in by Rust and not by the shell.
-if cargo test --quiet -p an-watch modules:: >/dev/null 2>&1; then
+# The output is kept rather than thrown away. A `>/dev/null 2>&1` here
+# cannot tell a test that failed from a build that did, and this line has
+# already cost two investigations of a failure that reproduces nowhere
+# else: what a check hides is what somebody pays for later.
+CARGO_LOG="$(mktemp)"
+if cargo test --quiet -p an-watch modules:: >"$CARGO_LOG" 2>&1; then
   echo "  ok   the watch's device module answers through the module registry"
 else
   echo "  FAIL the an-watch module tests do not pass"
-  cargo test -p an-watch modules:: 2>&1 | tail -20
+  tail -30 "$CARGO_LOG"
   fail=1
 fi
 

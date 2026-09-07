@@ -43,7 +43,8 @@ use objc2_app_kit::{
     NSClickGestureRecognizer, NSControl, NSCursor, NSDatePicker, NSEvent, NSGestureRecognizer,
     NSGestureRecognizerState, NSMagnificationGestureRecognizer, NSPanGestureRecognizer,
     NSControlTextEditingDelegate, NSPopUpButton, NSPressGestureRecognizer,
-    NSRotationGestureRecognizer, NSSegmentedControl, NSSlider, NSStepper, NSSwitch, NSTextField,
+    NSRotationGestureRecognizer, NSScrollView, NSSegmentedControl, NSSlider, NSStepper, NSSwitch,
+    NSTextField,
     NSTextFieldDelegate, NSTrackingArea, NSTrackingAreaOptions, NSView,
 };
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
@@ -470,6 +471,65 @@ impl HoverTarget {
     }
 }
 
+/// A scroll view's offset, on its way to `(scroll)`.
+///
+/// On iOS this is a delegate method. AppKit has no scroll delegate: an
+/// `NSScrollView` reports movement by posting `NSViewBoundsDidChange` from its
+/// **clip view**, and only if that clip view has been asked to
+/// (`postsBoundsChangedNotifications`, which is off by default — the one line
+/// whose absence makes this look like AppKit simply not telling anyone).
+///
+/// The offset is the clip view's `bounds.origin`, and it counts downwards
+/// because the document view is flipped, the same as `crates/an-macos/src/flipped.rs`
+/// explains for everything else this host mounts. So the numbers reaching a
+/// template are the ones iOS sends, and a component listening to `(scroll)`
+/// needs to know nothing about which desktop it is on.
+pub struct ScrollIvars {
+    node: NodeId,
+    queue: EventQueue,
+    clip: Retained<NSView>,
+}
+
+define_class!(
+    // SAFETY: the same as GestureTarget.
+    #[unsafe(super(objc2_foundation::NSObject))]
+    #[thread_kind = MainThreadOnly]
+    #[name = "AnMacScrollTarget"]
+    #[ivars = ScrollIvars]
+    pub struct ScrollTarget;
+
+    unsafe impl NSObjectProtocol for ScrollTarget {}
+
+    impl ScrollTarget {
+        #[unsafe(method(boundsDidChange:))]
+        fn bounds_did_change(&self, _notification: &objc2_foundation::NSNotification) {
+            let ivars = self.ivars();
+            let origin = ivars.clip.bounds().origin;
+            emit(
+                &ivars.queue,
+                ivars.node,
+                "scroll",
+                vec![
+                    ("x".to_owned(), PropValue::Number(origin.x)),
+                    ("y".to_owned(), PropValue::Number(origin.y)),
+                ],
+            );
+        }
+    }
+);
+
+impl ScrollTarget {
+    fn new(
+        mtm: objc2::MainThreadMarker,
+        node: NodeId,
+        queue: EventQueue,
+        clip: Retained<NSView>,
+    ) -> Retained<Self> {
+        let this = Self::alloc(mtm).set_ivars(ScrollIvars { node, queue, clip });
+        unsafe { msg_send![super(this), init] }
+    }
+}
+
 /// The pointer's shape over a view.
 ///
 /// This too owns an `NSTrackingArea`, and for the same reason: setting a
@@ -594,6 +654,10 @@ pub enum AttachedListener {
     /// on the view's class (see `flipped.rs`); what is kept is who has to be
     /// told and which direction stops being listened for on release.
     Swipe { view: Retained<crate::flipped::FlippedView>, bit: u8 },
+    /// A scroll view's offset. What is kept is the observer, because the
+    /// notification centre holds it **unowned**: dropping it without removing
+    /// it first leaves the centre posting to freed memory.
+    Scroll { _target: Retained<ScrollTarget>, clip: Retained<NSView> },
 }
 
 impl AttachedListener {
@@ -612,6 +676,14 @@ impl AttachedListener {
             }
             AttachedListener::Hover { area, .. } => view.removeTrackingArea(area),
             AttachedListener::Swipe { view, bit } => view.unlisten_swipe(*bit),
+            AttachedListener::Scroll { _target, clip } => unsafe {
+                objc2_foundation::NSNotificationCenter::defaultCenter()
+                    .removeObserver_name_object(
+                        &**_target,
+                        Some(objc2_app_kit::NSViewBoundsDidChangeNotification),
+                        Some(clip),
+                    );
+            },
         }
     }
 }
@@ -669,6 +741,29 @@ pub fn attach(
                 .setDelegate(Some(objc2::runtime::ProtocolObject::from_ref(&*target)));
         }
         return Some(AttachedListener::FieldDelegate { _target: target });
+    }
+
+    // Scrolling. AppKit has no delegate for it: the clip view posts a
+    // notification, and only once it has been told to.
+    if kind == NodeKind::ScrollView && event == "scroll" {
+        let scroll: *const NSView = view;
+        let scroll = scroll.cast::<NSScrollView>();
+        let clip = unsafe { (*scroll).contentView() };
+        // Off by default. Without it nothing is ever posted and the whole
+        // subscription is silence with no error anywhere.
+        unsafe { clip.setPostsBoundsChangedNotifications(true) };
+        let clip: Retained<NSView> = Retained::into_super(clip);
+        let target = ScrollTarget::new(mtm, node, queue, clip.clone());
+        unsafe {
+            objc2_foundation::NSNotificationCenter::defaultCenter()
+                .addObserver_selector_name_object(
+                    &*target,
+                    sel!(boundsDidChange:),
+                    Some(objc2_app_kit::NSViewBoundsDidChangeNotification),
+                    Some(&clip),
+                );
+        }
+        return Some(AttachedListener::Scroll { _target: target, clip });
     }
 
     // The pointer hovering. It goes before the gestures because it is not one

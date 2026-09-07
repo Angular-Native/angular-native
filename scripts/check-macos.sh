@@ -40,11 +40,16 @@ fi
 
 # 1. The inventory, from the inside. It opens no window: `support.rs` is outside
 #    `cfg(target_os = "macos")` so it can be looked at from here.
-if cargo test --quiet -p an-macos >/dev/null 2>&1; then
+# The output is kept rather than thrown away. A `>/dev/null 2>&1` here
+# cannot tell a test that failed from a build that did, and this line has
+# already cost two investigations of a failure that reproduces nowhere
+# else: what a check hides is what somebody pays for later.
+CARGO_LOG="$(mktemp)"
+if cargo test --quiet -p an-macos >"$CARGO_LOG" 2>&1; then
   echo "  ok   the inventory of primitives holds up"
 else
   echo "  FAIL the an-macos tests do not pass"
-  cargo test -p an-macos 2>&1 | tail -20
+  tail -30 "$CARGO_LOG"
   fail=1
 fi
 
@@ -61,6 +66,20 @@ else
   exit 1
 fi
 rm -f "$BUILD_LOG"
+
+# Where the `.app` goes. `an macos` wrote into the SDK's `build/` whatever
+# project it was run from, so an app built from somebody else's project landed
+# inside this repository and two projects sharing one SDK overwrote each
+# other's bundle. `check-external.sh` already demands that `an build` writes
+# nothing into the SDK; this is the same rule and this was the last path
+# breaking it. A grep and not a build: the alternative is a full swiftc run
+# inside the external check, which costs a minute to prove a path join.
+if grep -qE 'root\.join\("build' "$ROOT/crates/an-cli/src/macos.rs"; then
+  echo "  FAIL an macos writes into the SDK's build/ instead of the project's"
+  fail=1
+else
+  echo "  ok   the .app goes to the project's build directory, not the SDK's"
+fi
 
 APP="$ROOT/build/macos/AngularNativeMac.app"
 
@@ -164,7 +183,8 @@ DESK_LOG="$(mktemp)"
 HOVER_LOG="$(mktemp)"
 
 AN_SCREENSHOT="$SHOT_STILL" AN_SCREENSHOT_FRAMES=150 \
-  AN_SCREENSHOT_SWIPE=360,600,-1,0 "$BIN" >"$DESK_LOG" 2>&1 || true
+  AN_SCREENSHOT_SWIPE=360,650,-1,0 AN_SCREENSHOT_SCROLL=360,380,90 \
+  "$BIN" >"$DESK_LOG" 2>&1 || true
 
 # The sign comes from `NSEvent.h`: "-1 for swipe right". If this line stops
 # adding up, somebody changed the mapping, not that the gesture fails to arrive.
@@ -180,6 +200,18 @@ fi
 # moved here.
 AN_SCREENSHOT="$SHOT_HOVER" AN_SCREENSHOT_FRAMES=150 \
   AN_SCREENSHOT_HOVER=97,200 "$BIN" >"$HOVER_LOG" 2>&1 || true
+
+# AppKit has no scroll delegate: an `NSScrollView` reports movement by posting
+# `NSViewBoundsDidChange` from its clip view, and only once that clip view has
+# been told to post at all. Forgetting that one line is a subscription that
+# never fires, with no error anywhere, so what is asserted is the number: the
+# clip view is moved by 90 points and the template has to say 90.
+if grep -q "\[scroll\] y 90" "$DESK_LOG"; then
+  echo "  ok   a 90-point scroll reaches the template as 90, counting downwards"
+else
+  echo "  FAIL the (scroll) offset never reached the template"
+  fail=1
+fi
 
 # A hover only happens if the window is actually under the pointer, and that
 # needs the app to win the front. With a simulator or an emulator open, macOS

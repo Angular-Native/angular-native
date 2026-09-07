@@ -21,6 +21,12 @@ que encontrar, ni `.xcodeproj`. Sin argumento de app, `an macos` compila
 `examples/controls`. El bundle acaba en `build/macos/AngularNativeMac.app`, y
 `--release` y `--no-launch` funcionan los dos.
 
+`an add macos` le da al proyecto su propio `macos/Info.plist`, y a partir de ahí
+el nombre y el identificador son suyos: `MyApp` pasa a ser `MyAppMac`, con
+`.mac` al final del identificador, la misma decoración que aplican
+`an add tvos` y `an add visionos`. El `.app` va al directorio de build del
+proyecto y no al del SDK, como todo lo demás que produce `an`.
+
 La app va **firmada ad-hoc** — `codesign --force --sign -` — y ese paso no es
 opcional. Sin firmar, macOS mata el proceso en el primer `mmap` de código
 generado, que es exactamente lo que hace QuickJS, con un `Killed: 9` y ninguna
@@ -248,6 +254,28 @@ dedo no tiene forma. `check-wrapper.sh` los declara como tales y exige que el
 host de escritorio *sí* los lea. Mira
 [Props y el envoltorio nativo](/es/guide/native-wrapper/).
 
+### El scroll no tiene delegate
+
+`(scroll)` llega con el mismo `{ x, y }` que envía iOS, contando hacia abajo,
+así que un componente que lo escuche no necesita saber en qué escritorio está.
+Llegar hasta ahí no es lo mismo, eso sí. UIKit tiene `UIScrollViewDelegate`;
+AppKit no tiene nada parecido. Una `NSScrollView` informa del movimiento
+publicando `NSViewBoundsDidChange` desde su **clip view**, y solo si a esa clip
+view se le ha pedido — `postsBoundsChangedNotifications` está apagado por
+defecto, y su ausencia es una suscripción que no dispara nunca, sin ningún
+error por ninguna parte.
+
+El desplazamiento es el `bounds.origin` de la clip view, y cuenta hacia abajo
+por el mismo motivo que todo lo demás aquí: la vista de documento está
+invertida.
+
+`scripts/check-macos.sh` mueve la clip view 90 puntos en una ventana en marcha
+y exige que la plantilla diga 90. Un evento sintético de rueda no serviría: un
+evento de rueda es una *petición*, y hasta dónde lo lleva el sistema, en cuántos
+fotogramas y con qué elasticidad es cosa de AppKit, así que una comprobación
+montada sobre uno mide el scroll del sistema en lugar de si llega la
+notificación.
+
 ### El menú es el del sistema
 
 En un teléfono no hay menú. En un Mac siempre lo hay, vive en la barra de arriba
@@ -372,9 +400,6 @@ Mira [Firma y distribución](/es/guide/signing-and-distribution/).
 
 ## Lo que falta
 
-- **`(scroll)` no se entrega.** Es un nombre de evento conocido e iOS lo
-  implementa; este host no, así que suscribirse a él recibe el aviso genérico de
-  «no puedo entregarlo». Es un hueco real, no una decisión.
 - **Una vista de plugin no se mide por su contenido.** `<an-custom>` monta lo
   que un plugin registró con `AnPluginViews.register`, llenando la caja que el
   layout le dio al nodo — y un nodo sin tamaño sale a cero, lo que parece un
@@ -387,9 +412,6 @@ Mira [Firma y distribución](/es/guide/signing-and-distribution/).
   deja fuera esas claves y avisa nombrando la clave, el plugin y el flag que las
   devuelve. Mira
   [Plugins en el Mac y en el reloj](/es/extending/plugins-on-the-mac-and-the-watch/).
-- **No hay `an add macos`.** No hay `Info.plist` por proyecto ni id de bundle
-  por proyecto: el plist del shell se copia tal cual, y el id es
-  `dev.angularnative.playground.mac`.
 - **Los radios de esquina desiguales colapsan.** Una `CALayer` tiene un solo
   radio, así que las cuatro esquinas redondeadas toman el mayor de ellos, con un
   aviso una vez.

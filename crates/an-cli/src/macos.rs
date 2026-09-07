@@ -35,8 +35,23 @@ use crate::plugins::{self, Platform, Plugin};
 use crate::signing::{self, Macos};
 use crate::workspace::Workspace;
 
-const APP_NAME: &str = "AngularNativeMac";
-const BUNDLE_ID: &str = "dev.angularnative.playground.mac";
+/// What the shell's own plist says, and therefore what the monorepo builds as.
+/// A project from outside overrides it through `an add macos`; see `assemble`.
+///
+/// The identifier that went with it is gone from here on purpose: it is in the
+/// plist and nowhere else now, so there is one place to change and no second
+/// copy to disagree with it.
+/// What gets appended to the app's name and to its identifier, exactly as the
+/// three Apple simulator families do it in `ios.rs`.
+///
+/// The Mac has the same reason they do. One project builds for the phone and
+/// for the desktop from the same `angular-native.json`, and two bundles that
+/// share an identifier are one app as far as the system is concerned: one
+/// container, one set of defaults, one keychain partition. The shell's own
+/// plist has carried `Mac` and `.mac` since before this was configurable, so
+/// this is not a new convention, it is the existing one written down where the
+/// build can use it.
+const SUFFIX: (&str, &str) = ("Mac", ".mac");
 const TARGET: &str = "aarch64-apple-darwin";
 /// Sonoma is the oldest one where `NSView.displayLink(target:selector:)` exists,
 /// and that is the clock the shell uses: on a Mac with several screens at
@@ -81,7 +96,21 @@ pub fn assemble(
     require_plugins(plugins)?;
     let root = &workspace.root;
     let profile = if release { "release" } else { "debug" };
-    let app_dir = root.join("build/macos").join(format!("{APP_NAME}.app"));
+    // Inside the monorepo these are the shell's own; from a project they are
+    // that project's, which is what `an add macos` writes into its plist. This
+    // host used to ignore both, so every Mac app anybody built was called
+    // AngularNativeMac and identified as the playground — two apps from two
+    // projects were one app as far as the system was concerned, sharing a
+    // container and replacing each other in the Dock.
+    let app_name = format!("{}{}", workspace.app_name(), SUFFIX.0);
+    let bundle_id = format!("{}{}", workspace.bundle_id(), SUFFIX.1);
+    // The project's build directory and not the SDK's. `an macos` used to
+    // write into `build/macos` under the SDK whoever ran it, so an app built
+    // from somebody's project landed inside this repository — and two projects
+    // built from one SDK overwrote each other's `.app`. `check-external.sh`
+    // already demands that `an build` writes nothing into the SDK; this is the
+    // same rule, and this path was the one place still breaking it.
+    let app_dir = workspace.build_dir().join("macos").join(format!("{app_name}.app"));
     // A macOS `.app` is not flat the way iOS's is: the executable goes in
     // `Contents/MacOS`, the `Info.plist` in `Contents` and the resources in
     // `Contents/Resources`. Dropping an iPhone `.app` on a Mac as-is gives a
@@ -156,7 +185,7 @@ pub fn assemble(
         "-Xclang-linker".into(),
         sdk,
         "-o".into(),
-        macos_dir.join(APP_NAME).to_string_lossy().into_owned(),
+        macos_dir.join(&app_name).to_string_lossy().into_owned(),
     ];
     // The frameworks the host uses, named here and not only in the Rust.
     //
@@ -181,11 +210,13 @@ pub fn assemble(
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     run(workspace, "xcrun", &borrowed, "the shell link step failed")?;
 
-    write_plist(
-        &root.join("shells/macos/Resources/Info.plist"),
-        &contents.join("Info.plist"),
-        plugins,
-    )?;
+    // The project's plist if it has one — `an add macos` writes it and from
+    // then on it is theirs — and the shell's otherwise.
+    let plist = workspace
+        .overlay("macos", "Info.plist")
+        .unwrap_or_else(|| root.join("shells/macos/Resources/Info.plist"));
+    check_plist(&plist, &app_name, &bundle_id, workspace)?;
+    write_plist(&plist, &contents.join("Info.plist"), plugins)?;
     std::fs::copy(bundle, resources.join("main.js"))?;
     match dev_server {
         Some(url) => std::fs::write(resources.join("dev-server.txt"), url)?,
@@ -198,7 +229,7 @@ pub fn assemble(
     // plugins' keys, and a plugin that only got them on the signed path would
     // work for whoever ships the app and fail for whoever develops it, which is
     // the wrong way round.
-    let entitlements = write_entitlements(&app_dir, plugins, BUNDLE_ID, signing.is_some())?;
+    let entitlements = write_entitlements(&app_dir, plugins, &bundle_id, signing.is_some())?;
     match signing {
         // Unsigned, macOS kills the app on the first `mmap` of generated code
         // —which is what QuickJS does— with a `Killed: 9` and no explanation.
@@ -448,6 +479,49 @@ fn needs_profile(key: &str) -> bool {
         || key.starts_with("com.apple.developer.")
 }
 
+/// That the plist and `angular-native.json` say the same thing.
+///
+/// It is iOS's check without the family decoration, and it matters more here
+/// than it looks: `CFBundleExecutable` has to name the file that is actually in
+/// `Contents/MacOS`, and a `.app` where those two disagree is one the Finder
+/// shows and `open` turns down with nothing said. It runs before anything is
+/// compiled, because half a minute of cargo and swiftc is not worth burning to
+/// find out that a name does not line up.
+fn check_plist(
+    plist: &Path,
+    app_name: &str,
+    bundle_id: &str,
+    workspace: &Workspace,
+) -> Result<()> {
+    for (key, expected) in [("CFBundleExecutable", app_name), ("CFBundleIdentifier", bundle_id)] {
+        let read = capture(
+            "plutil",
+            &["-extract", key, "raw", "-o", "-", &plist.to_string_lossy()],
+        )
+        .with_context(|| format!("{}: {key} could not be read", plist.display()))?;
+        if read.trim() == expected {
+            continue;
+        }
+        // Outside the monorepo and with no overlay, what is being compared is
+        // the SDK's plist against somebody else's app name: they never match,
+        // and the way out is not editing a file that is not theirs.
+        let way_out = if workspace.project.is_some()
+            && workspace.overlay("macos", "Info.plist").is_none()
+        {
+            "This project has not got one of its own yet: run `an add macos`.".to_owned()
+        } else {
+            "Either the plist is fixed or angular-native.json is; with the two of them \
+             different the .app is one Finder shows and `open` turns down."
+                .to_owned()
+        };
+        bail!(
+            "{}: {key} is {read:?} and angular-native.json says {expected:?}.\n{way_out}",
+            plist.display()
+        );
+    }
+    Ok(())
+}
+
 /// Swaps `$(BUNDLE_ID)` for this app's identifier.
 ///
 /// It is the only substitution there is, and it exists because the value that is
@@ -570,7 +644,7 @@ pub fn dmg(package: &Package, macos: Option<&Macos>, notarising: bool) -> Result
         .dir
         .file_stem()
         .map(|stem| stem.to_string_lossy().into_owned())
-        .unwrap_or_else(|| APP_NAME.to_owned());
+        .unwrap_or_else(|| format!("{}{}", crate::workspace::DEFAULT_APP_NAME, SUFFIX.0));
     let dmg = package.dir.with_extension("dmg");
     let _ = std::fs::remove_file(&dmg);
     eprintln!("==> hdiutil create {}", dmg.display());
@@ -637,7 +711,9 @@ pub fn dmg(package: &Package, macos: Option<&Macos>, notarising: bool) -> Result
 pub fn launch(package: &Package) -> Result<()> {
     // If there is already an instance, `open` would bring the old one to the
     // front and the change would look as though it had never landed.
-    let _ = Command::new("killall").args(["-9", APP_NAME]).output();
+    let _ = Command::new("killall")
+        .args(["-9", &package.dir.file_stem().unwrap_or_default().to_string_lossy()])
+        .output();
 
     eprintln!("==> launching {}", package.dir.display());
     let launched = Command::new("open")
@@ -648,7 +724,6 @@ pub fn launch(package: &Package) -> Result<()> {
     if !launched.success() {
         bail!("the launch failed");
     }
-    let _ = BUNDLE_ID;
     Ok(())
 }
 

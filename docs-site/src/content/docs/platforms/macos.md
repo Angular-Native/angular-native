@@ -21,6 +21,12 @@ the SDK ships with Xcode. There is no simulator to boot, no device to find, no
 bundle lands at `build/macos/AngularNativeMac.app`, and `--release` and
 `--no-launch` both work.
 
+`an add macos` gives a project its own `macos/Info.plist`, and from then on the
+name and the identifier are the project's: `MyApp` becomes `MyAppMac`, with
+`.mac` on the end of the identifier, the same decoration `an add tvos` and
+`an add visionos` apply. The `.app` goes to the project's build directory and
+not to the SDK's, like everything else `an` produces.
+
 The app is **ad-hoc signed** — `codesign --force --sign -` — and that step is
 not optional. Unsigned, macOS kills the process on the first `mmap` of generated
 code, which is exactly what QuickJS does, with a `Killed: 9` and no explanation.
@@ -238,6 +244,25 @@ a finger has no shape. `check-wrapper.sh` declares them as such and demands that
 the desktop host *does* read them. See
 [Props and the native wrapper](/guide/native-wrapper/).
 
+### Scrolling has no delegate
+
+`(scroll)` arrives with the same `{ x, y }` iOS sends, counting downwards, so a
+component listening for it needs to know nothing about which desktop it is on.
+Getting there is not the same, though. UIKit has `UIScrollViewDelegate`; AppKit
+has nothing of the sort. An `NSScrollView` reports movement by posting
+`NSViewBoundsDidChange` from its **clip view**, and only if that clip view has
+been asked to — `postsBoundsChangedNotifications` is off by default, and its
+absence is a subscription that never fires with no error anywhere.
+
+The offset is the clip view's `bounds.origin`, and it counts downwards for the
+same reason everything else here does: the document view is flipped.
+
+`scripts/check-macos.sh` moves the clip view by 90 points on a running window
+and asserts the template says 90. A synthetic scroll-wheel event would not do:
+a wheel event is a *request*, and how far the system carries it, over how many
+frames and with what elasticity is AppKit's business, so a check built on one
+measures the system's scrolling rather than whether the notification arrives.
+
 ### The menu is the system's
 
 On a phone there is no menu. On a Mac there always is, it lives in the bar at
@@ -361,9 +386,6 @@ need a paid Developer ID certificate and have never been run. See
 
 ## What is missing
 
-- **`(scroll)` is not delivered.** It is a known event name and iOS implements
-  it; this host does not, so subscribing to it gets the generic "cannot deliver"
-  warning. It is a real gap, not a decision.
 - **A plugin view is not measured by its content.** `<an-custom>` mounts what a
   plugin registered with `AnPluginViews.register`, filling the box the layout
   gave the node — and a node given no size comes out at zero, which looks like
@@ -375,9 +397,6 @@ need a paid Developer ID certificate and have never been run. See
   launch by the system, so an unsigned build drops those keys and warns naming
   the key, the plugin and the flag that restores them. See
   [Plugins on the Mac and the watch](/extending/plugins-on-the-mac-and-the-watch/).
-- **No `an add macos`.** There is no per-project `Info.plist` and no per-project
-  bundle id: the shell's plist is copied verbatim, and the id is
-  `dev.angularnative.playground.mac`.
 - **Unequal corner radii collapse.** A `CALayer` has one radius, so all four
   rounded corners take the largest of them, warned once.
 - **`enabled` on anything that is not an `NSControl`** does nothing: AppKit has

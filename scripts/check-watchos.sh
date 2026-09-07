@@ -31,11 +31,19 @@ check() { # <0 if good, 1 if bad> <what was being checked>
 
 # 1. The model. It runs on the Mac and needs neither a simulator nor nightly: the
 #    host applies MountOp to a data structure, and that is what is checked here.
-if cargo test --quiet -p an-watch >/dev/null 2>&1; then
+# The output is kept rather than thrown away. A `>/dev/null 2>&1` here
+# cannot tell a test that failed from a build that did, and this line has
+# already cost two investigations of a failure that reproduces nowhere
+# else: what a check hides is what somebody pays for later.
+CARGO_LOG="$(mktemp)"
+if cargo test --quiet -p an-watch >"$CARGO_LOG" 2>&1; then
   echo "  ok   the model SwiftUI sees is built as it should be"
 else
   echo "  FAIL the an-watch tests do not pass"
-  cargo test -p an-watch 2>&1 | tail -20
+  # What the run that failed said, not what a fresh one says. Re-running was
+  # hiding the cause: the second attempt passes, so the tail printed a wall of
+  # green under the word FAIL and the real reason was never seen.
+  tail -30 "$CARGO_LOG"
   fail=1
 fi
 

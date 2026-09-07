@@ -222,8 +222,43 @@ output="$(cd "$APP" && must_fail "$AN" add windows)"
 # knows: it is the first thing read by whoever gets the name wrong, and one
 # missing from it is one nobody is going to try.
 #
-contains "$output" 'ios, tvos, visionos and android' \
+contains "$output" 'ios, tvos, visionos, macos and android' \
   'an add of a platform that does not exist says which ones it knows'
+
+# ── macOS, which used to be the one platform a project could not name ───────
+#
+# `an macos` ignored the project's name and identifier outright: every Mac app
+# anybody built came out called AngularNativeMac and identified as the
+# playground, so two apps from two projects were one app as far as the system
+# was concerned — one container, one Dock entry, each replacing the other.
+output="$(cd "$APP" && "$AN" add macos 2>&1)"
+exists "$APP/macos/Info.plist" 'an add macos: creates the project Info.plist'
+plist_value() {
+  plutil -extract "$1" raw -o - "$APP/macos/Info.plist" 2>/dev/null | tr -d '\n'
+}
+if [ "$(plist_value CFBundleExecutable)" = "MyAppMac" ]; then
+  ok "an add macos: the executable is the app's name plus Mac, like tvOS's plus TV"
+else
+  ko "an add macos: the executable is the app's name plus Mac, like tvOS's plus TV"
+fi
+if [ "$(plist_value CFBundleIdentifier)" = "dev.angularnative.myapp.mac" ]; then
+  ok "an add macos: the identifier comes from the manifest"
+else
+  ko "an add macos: the identifier comes from the manifest"
+fi
+contains "$(cat "$APP/angular-native.json")" '"macos"' \
+  'an add macos: it is noted down in the manifest'
+# The same rule the other platforms have, checked the same way: something the
+# user wrote has to survive. A `$(cat)` will not do here — it eats the trailing
+# newline and the comparison then fails on a file nobody touched.
+echo "<!-- the user added this -->" >>"$APP/macos/Info.plist"
+fingerprint="$(shasum "$APP/macos/Info.plist")"
+(cd "$APP" && "$AN" add macos >/dev/null 2>&1)
+if [ "$fingerprint" = "$(shasum "$APP/macos/Info.plist")" ]; then
+  ok "an add macos repeated: it does not trample the user's plist"
+else
+  ko "an add macos repeated: it does not trample the user's plist"
+fi
 
 # ---------------------------------------------------------------------------
 # an build
