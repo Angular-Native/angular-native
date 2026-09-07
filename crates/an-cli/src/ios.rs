@@ -34,7 +34,7 @@ use anyhow::{bail, Context, Result};
 use crate::build::{run, run_in};
 use crate::plugins::{self, Platform, Plugin};
 use crate::signing::{self, Apple};
-use crate::workspace::Workspace;
+use crate::workspace::{Appearance, Workspace};
 
 /// The families built on `UIView` with absolute frames.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -389,6 +389,7 @@ pub fn assemble(
     run(workspace, "xcrun", &borrowed, "the shell link step failed")?;
 
     write_plist(&plist, &app_dir.join("Info.plist"), plugins)?;
+    write_appearance(&app_dir.join("Info.plist"), workspace.appearance())?;
     std::fs::copy(bundle, app_dir.join("main.js"))?;
     match dev_server {
         Some(url) => std::fs::write(app_dir.join("dev-server.txt"), url)?,
@@ -630,6 +631,43 @@ fn write_plist(base: &Path, destination: &Path, plugins: &[Plugin]) -> Result<()
         )?;
     }
     Ok(())
+}
+
+/// `UIUserInterfaceStyle`, which is Apple's name for `app.appearance`.
+///
+/// `system` is the absence of the key rather than a value of it: with it
+/// missing the app follows the device, which is what UIKit does by default, and
+/// writing `Automatic` would be saying the same thing in a way somebody has to
+/// look up. It is removed and not merely skipped, because a project's plist may
+/// have carried `Dark` from an earlier build and the value in
+/// `angular-native.json` is the one that decides.
+///
+/// It goes in **after** the plugins, so it wins: an appearance is the app's own
+/// declaration and no plugin has any business having an opinion about it.
+pub fn write_appearance(plist: &Path, appearance: Appearance) -> Result<()> {
+    let style = match appearance {
+        Appearance::System => {
+            // Not having the key is the ordinary case, and `plutil -remove`
+            // treats that as an error and says so on stderr. Run through
+            // `output()` rather than `run_in` so the complaint does not reach
+            // somebody who did nothing wrong: what is being asked for is "make
+            // sure it is not there", and it not being there is that.
+            let _ = Command::new("plutil")
+                .args(["-remove", "UIUserInterfaceStyle"])
+                .arg(plist)
+                .output();
+            return Ok(());
+        }
+        Appearance::Light => "Light",
+        Appearance::Dark => "Dark",
+    };
+    eprintln!("==> Info.plist: UIUserInterfaceStyle {style} (app.appearance)");
+    run_in(
+        plist.parent().unwrap_or(plist),
+        "plutil",
+        &["-replace", "UIUserInterfaceStyle", "-string", style, &plist.to_string_lossy()],
+        "app.appearance could not be written into the Info.plist",
+    )
 }
 
 /// The top-level keys of an `Info.plist`, actually read.

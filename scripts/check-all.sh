@@ -42,6 +42,10 @@ echo
 # measures when nobody gives it a size. A name missing from a host is a control
 # laid out 0x0 and invisible.
 "$ROOT/scripts/check-control-sizes.sh"
+
+echo
+# One word in `angular-native.json` and three platform idioms underneath.
+"$ROOT/scripts/check-appearance.sh"
 "$ROOT/scripts/check-publish.sh"
 "$ROOT/scripts/check-plugin-sources.sh"
 "$ROOT/scripts/check-router.sh"

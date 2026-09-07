@@ -217,6 +217,10 @@ pub fn assemble(
         .unwrap_or_else(|| root.join("shells/macos/Resources/Info.plist"));
     check_plist(&plist, &app_name, &bundle_id, workspace)?;
     write_plist(&plist, &contents.join("Info.plist"), plugins)?;
+    // The Mac reads the same key. AppKit does not act on `UIUserInterfaceStyle`
+    // itself — that one is UIKit's — so the shell reads it back and sets
+    // `NSApp.appearance`, which is the AppKit way of saying the same thing.
+    crate::ios::write_appearance(&contents.join("Info.plist"), workspace.appearance())?;
     std::fs::copy(bundle, resources.join("main.js"))?;
     match dev_server {
         Some(url) => std::fs::write(resources.join("dev-server.txt"), url)?,

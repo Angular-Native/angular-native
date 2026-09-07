@@ -20,18 +20,63 @@ import java.nio.charset.StandardCharsets;
  */
 public final class MainActivity extends androidx.appcompat.app.AppCompatActivity {
 
-    static {
-        // The Material components follow the system, and the apps here paint
-        // their colours by hand: with the system in light mode a white
-        // navigation bar came out underneath a dark screen.
-        //
-        // Dark is forced until the appearance is something the app declares. It
-        // should be: it is the app's decision, not the shell's.
-        androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(
-                androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES);
-    }
-
     private static final String TAG = "angular-native";
+
+    /** Where `an` leaves `app.appearance`. Written by `crates/an-cli/src/android.rs`. */
+    private static final String APPEARANCE_KEY = "dev.angularnative.appearance";
+
+    /**
+     * What the app looks like, and it is the app that decides.
+     *
+     * <p>This used to be a static block forcing {@code MODE_NIGHT_YES} on every app built with
+     * this shell. The reason was real — an example painting a dark background under a system in
+     * light mode came out with a white navigation bar — but the fix took the choice away from
+     * everybody to cure a symptom that belonged to the bars, not to the theme. The bars are
+     * handled where they live now, in {@code AnHost}, and this reads what the app asked for.
+     *
+     * <p>It is what the Material components follow: dialogs, date pickers, the text selection
+     * handles. It is not what paints the screen — that is the app's own background — so an app
+     * that wants to follow the device has to paint with the device too, and one that pins itself
+     * to {@code dark} should paint dark.
+     */
+    private void applyAppearance() {
+        String appearance = "system";
+        try {
+            android.content.pm.ApplicationInfo info =
+                    getPackageManager()
+                            .getApplicationInfo(getPackageName(),
+                                    android.content.pm.PackageManager.GET_META_DATA);
+            if (info.metaData != null) {
+                appearance = info.metaData.getString(APPEARANCE_KEY, "system");
+            }
+        } catch (android.content.pm.PackageManager.NameNotFoundException error) {
+            // Cannot happen: it is this app asking about itself. Said rather
+            // than swallowed, because if it ever does the appearance silently
+            // stops being the app's.
+            Log.e(TAG, "this app cannot find its own manifest, so the appearance is the default");
+        }
+        int mode;
+        switch (appearance) {
+            case "light":
+                mode = androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_NO;
+                break;
+            case "dark":
+                mode = androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_YES;
+                break;
+            case "system":
+                mode = androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM;
+                break;
+            default:
+                // Only reachable if the CLI and this file disagree about the
+                // vocabulary, which is what `check-android-appearance.sh` is
+                // for. It is said, not guessed at.
+                Log.e(TAG, "appearance \"" + appearance + "\" is not one this shell knows;"
+                        + " following the system");
+                mode = androidx.appcompat.app.AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM;
+                break;
+        }
+        androidx.appcompat.app.AppCompatDelegate.setDefaultNightMode(mode);
+    }
 
     private AnRuntime runtime;
     /** The viewport the engine has been told about, so it is only told changes. */
@@ -43,6 +88,10 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        // Before `super`: `AppCompatActivity` reads the night mode while it is
+        // being created, and setting it afterwards costs the activity a
+        // recreation on the very first frame.
+        applyAppearance();
         super.onCreate(savedInstanceState);
 
         AnViewGroup container = new AnViewGroup(this);

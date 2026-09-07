@@ -203,8 +203,6 @@ porque JNI no tiene tipo opción.
   el marco visible de la ventana— solo informa de algo si se deja redimensionar
   la ventana, y este shell pide que no, precisamente para que el layout que
   calculó el core sea el que se dibuja.
-- **El modo oscuro se fuerza para todo el proceso**, y el código dice que no
-  debería: la apariencia es decisión de la app, no del shell.
 - **Atrás es el callback obsoleto.** No hay atrás predictivo.
 - **Solo se compila `arm64-v8a`.** Ni imagen x86-64 de emulador ni ABI de 32
   bits.
@@ -221,6 +219,36 @@ de TypeScript y la del host se han separado; `expanded` en una vista sin
 `(press)`, ya que en Android expandir es una *acción* y sin ella un lector
 anunciaría algo que no se puede hacer. Qué se aplica y qué se rechaza está en
 [Accesibilidad en Android](/es/accessibility/android/).
+
+## Qué aspecto tiene la app
+
+`app.appearance` en `angular-native.json` acepta `system`, `light` o `dark`, y
+`system` es el valor por defecto: teléfono en claro, app en claro.
+
+```json
+"app": { "name": "MyApp", "bundleId": "com.example.myapp", "appearance": "system" }
+```
+
+`an` lo escribe en el manifiesto fundido como una entrada `<meta-data>` y la
+Activity lo lee antes de `super.onCreate` — después, `AppCompatActivity` ya ha
+leído el modo nocturno y se recrearía en el primer fotograma. Lo que lo sigue
+es Material: diálogos, selectores de fecha, los tiradores de selección de
+texto. **No** es lo que pinta la pantalla; eso es el fondo de la propia app, así
+que una app que siga al dispositivo tiene que pintar con él.
+
+Esto antes se forzaba. El shell llamaba a `setDefaultNightMode(MODE_NIGHT_YES)`
+en un bloque estático, en todas las apps compiladas con él, y el motivo era
+real: con el sistema en claro salía una barra de navegación blanca debajo de
+una pantalla que la app había pintado oscura. Aquello curaba un síntoma que era
+de las barras quitándole la decisión a todo el mundo.
+
+Las barras se resuelven ahora donde viven. La ventana ya dibuja de borde a
+borde, así que son transparentes y lo que se ve detrás es el fondo de la propia
+app; sus iconos se eligen por la luminancia de ese fondo — la relativa de sRGB,
+porque el ojo es unas siete veces más sensible al verde que al azul y un azul
+saturado que promedia «claro» se lee como oscuro. Por debajo de la API 30 no
+hay `WindowInsetsController` y los iconos se quedan los del tema, lo cual se
+dice una vez en lugar de saltárselo en silencio.
 
 ## A Google Play
 

@@ -5,7 +5,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
     private var root: RootViewController?
 
+    /// What the app looks like, as `app.appearance` asked for it.
+    ///
+    /// The value is in the `Info.plist` under `UIUserInterfaceStyle`, which is
+    /// UIKit's key: AppKit does not read it, so the Mac reads it back itself
+    /// and says the same thing in AppKit's words. It is one key across the
+    /// Apple platforms rather than two spellings of one idea, and `an` writes
+    /// it in one place.
+    ///
+    /// A missing key means follow the machine, which is what `nil` does — and
+    /// it is `nil` and not `.aqua`, because `.aqua` would pin the app to light
+    /// and look identical until somebody switched their Mac to dark.
+    private func applyAppearance() {
+        let style = Bundle.main.object(forInfoDictionaryKey: "UIUserInterfaceStyle") as? String
+        switch style {
+        case "Light": NSApp.appearance = NSAppearance(named: .aqua)
+        case "Dark": NSApp.appearance = NSAppearance(named: .darkAqua)
+        default: NSApp.appearance = nil
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Before the window: an appearance set afterwards redraws everything
+        // that is already on screen, and the first frame would be the wrong
+        // colour for as long as that takes.
+        applyAppearance()
         let controller = RootViewController()
         // A desktop window can be resized, and that is the case a phone does
         // not have: the viewport changes while somebody drags the corner, not

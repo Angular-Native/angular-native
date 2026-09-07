@@ -248,6 +248,32 @@ else
 fi
 contains "$(cat "$APP/angular-native.json")" '"macos"' \
   'an add macos: it is noted down in the manifest'
+
+# ── What the app looks like ─────────────────────────────────────────────────
+#
+# One word in the manifest, three platform idioms underneath. What is worth
+# checking from out here is that the word travels at all, and that a word none
+# of them knows stops the build: the Android shell used to force dark on every
+# app built with it, so the failure this replaces is a setting that is read,
+# written, and quietly means nothing.
+contains "$(cat "$APP/angular-native.json")" '"appearance": "system"' \
+  'an init: the manifest says what the app looks like, and it follows the device'
+
+appearance() {
+  node -e '
+    const fs = require("fs"), path = process.argv[1];
+    const manifest = JSON.parse(fs.readFileSync(path, "utf8"));
+    manifest.app.appearance = process.argv[2];
+    fs.writeFileSync(path, JSON.stringify(manifest, null, 2) + "\n");
+  ' "$APP/angular-native.json" "$1"
+}
+
+appearance midnight
+output="$(cd "$APP" && must_fail "$AN" build)"
+contains "$output" 'app.appearance is "midnight"' \
+  'a word none of the platforms knows stops the build rather than meaning system'
+contains "$output" '"light"' 'and the refusal lists the three that do work'
+appearance system
 # The same rule the other platforms have, checked the same way: something the
 # user wrote has to survive. A `$(cat)` will not do here — it eats the trailing
 # newline and the comparison then fails on a file nobody touched.

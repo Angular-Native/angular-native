@@ -99,6 +99,36 @@ Two things worth knowing:
   `an add` never creates it: write it by hand, or let the build fall back to the
   shell's. `an add android` is what creates the directory it goes in.
 
+## `app.appearance`
+
+One word in `angular-native.json`, and every platform is told in its own:
+
+```json
+"app": { "name": "MyApp", "bundleId": "com.example.myapp", "appearance": "system" }
+```
+
+| | |
+|---|---|
+| `system` | Follow the device. Light phone, light app. **The default.** |
+| `light` | Always light, whatever the system says. |
+| `dark` | Always dark. |
+
+| Platform | How it is told |
+|---|---|
+| Android, Wear OS | `<meta-data>` in the merged manifest; the Activity turns it into `setDefaultNightMode` before `super.onCreate`. |
+| iOS, tvOS, visionOS | `UIUserInterfaceStyle` in the `Info.plist` — `system` is the key's **absence**, which is what UIKit already does. |
+| macOS | The same plist key, read back by the shell into `NSApp.appearance`, because AppKit does not act on a UIKit key by itself. |
+| watchOS | Ignored. A watch has no light mode worth having: the screen is OLED and what is not painted draws no power. |
+
+A word that is none of the three stops the build and names the three that are
+not — a typo that silently meant `system` would be a setting that does nothing
+for a reason nobody can see.
+
+What it does **not** do is paint the screen. That is the app's own background,
+and the appearance is what the system's own controls follow: dialogs, date
+pickers, selection handles. An app that follows the device has to paint with
+the device too.
+
 ## The build-and-run commands
 
 They all share the same shape.

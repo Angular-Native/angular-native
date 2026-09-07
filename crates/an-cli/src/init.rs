@@ -512,7 +512,8 @@ fn write_project_manifest(
   "app": {{
     "name": "{name}",
     "bundleId": "{bundle_id}",
-    "entry": "{entry}"
+    "entry": "{entry}",
+    "appearance": "system"
   }},
   "platforms": [{platforms_list}]
 }}

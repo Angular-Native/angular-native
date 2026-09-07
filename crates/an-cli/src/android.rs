@@ -13,7 +13,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::plugins::{self, Platform, Plugin};
 use crate::signing;
-use crate::workspace::Workspace;
+use crate::workspace::{Appearance, Workspace};
 
 /// The shell's Java package. It does not change: it is the one in
 /// `shells/android/java`, written out in every `package dev.angularnative;`.
@@ -277,6 +277,7 @@ pub fn assemble(
         &out.join("AndroidManifest.merged.xml"),
         plugins,
         &application_id,
+        workspace.appearance(),
     )?;
     let mut link: Vec<String> = vec![
         "link".into(),
@@ -794,17 +795,18 @@ fn write_manifest(
     destination: &Path,
     plugins: &[Plugin],
     application_id: &str,
+    appearance: Appearance,
 ) -> Result<PathBuf> {
     let entries = plugins::manifest_entries(plugins)?;
     let text = std::fs::read_to_string(base)
         .with_context(|| format!("{} could not be read", base.display()))?;
     let text = substitute_application_id(&text, application_id);
-    // With nothing to merge and nothing to substitute the original is used as
-    // it stands: a copy that is byte for byte the same is a file somebody will
-    // one day edit by mistake.
-    if entries.is_empty() && text == std::fs::read_to_string(base)? {
-        return Ok(base.to_owned());
-    }
+    // What the app looks like, in the one place an Android app can be told
+    // something at build time and read it at run time. It goes in always —
+    // there is no "no appearance", the default is to follow the device — so
+    // unlike the plugin entries it is not a reason to skip the copy, it is one
+    // to always make it.
+    let text = with_appearance(&text, appearance)?;
 
     let mut lines = String::new();
     let existing_permissions = declared_names(&text, "uses-permission");
@@ -924,6 +926,43 @@ fn write_manifest(
 fn substitute_application_id(text: &str, application_id: &str) -> String {
     text.replace("${applicationId}", application_id)
 }
+
+/// Puts `app.appearance` into the manifest as `<meta-data>`.
+///
+/// It has to reach the shell at run time and the shell is compiled once for
+/// every app, so it cannot be a constant. `<meta-data>` is where Android puts
+/// exactly this kind of thing: a build-time value the app reads back through
+/// its own `PackageManager`.
+///
+/// It replaces the entry rather than adding a second one, because this runs on
+/// a copy that may already carry it — the shell's own manifest ships the key so
+/// that the monorepo has something to read too.
+fn with_appearance(text: &str, appearance: Appearance) -> Result<String> {
+    let element = format!(
+        "        <meta-data android:name=\"{APPEARANCE_KEY}\" android:value=\"{}\" />",
+        appearance.as_str()
+    );
+    if let Some(at) = text.find(&format!("android:name=\"{APPEARANCE_KEY}\"")) {
+        // Rewrite the line it is on, whatever it said.
+        let start = text[..at].rfind('\n').map(|n| n + 1).unwrap_or(0);
+        let end = text[at..].find('\n').map(|n| at + n).unwrap_or(text.len());
+        return Ok(format!("{}{element}{}", &text[..start], &text[end..]));
+    }
+    // Inside `<application>`, like a service: `aapt2` turns down a `<meta-data>`
+    // that is a sibling of it rather than a child.
+    let open = text
+        .find("<application")
+        .context("the manifest has no <application>, and that is what meta-data goes inside")?;
+    let close = text[open..]
+        .find('>')
+        .map(|at| open + at + 1)
+        .context("the manifest's <application> is never closed")?;
+    Ok(format!("{}\n{element}{}", &text[..close], &text[close..]))
+}
+
+/// The name the shell looks the appearance up under. Written here and read in
+/// `MainActivity`; `check-android-appearance.sh` keeps the two the same.
+pub const APPEARANCE_KEY: &str = "dev.angularnative.appearance";
 
 /// An `android:authorities` that will not be the app's, if the manifest has one.
 ///

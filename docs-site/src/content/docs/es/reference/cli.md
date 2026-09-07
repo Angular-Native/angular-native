@@ -98,6 +98,37 @@ Dos cosas que conviene saber:
   `an add` no lo crea nunca: escríbelo a mano, o deja que la compilación caiga al
   del shell. `an add android` es lo que crea el directorio donde va.
 
+## `app.appearance`
+
+Una palabra en `angular-native.json`, y a cada plataforma se le dice en la
+suya:
+
+```json
+"app": { "name": "MyApp", "bundleId": "com.example.myapp", "appearance": "system" }
+```
+
+| | |
+|---|---|
+| `system` | Sigue al dispositivo. Teléfono en claro, app en claro. **Por defecto.** |
+| `light` | Siempre claro, diga lo que diga el sistema. |
+| `dark` | Siempre oscuro. |
+
+| Plataforma | Cómo se le dice |
+|---|---|
+| Android, Wear OS | `<meta-data>` en el manifiesto fundido; la Activity lo convierte en `setDefaultNightMode` antes de `super.onCreate`. |
+| iOS, tvOS, visionOS | `UIUserInterfaceStyle` en el `Info.plist` — `system` es la **ausencia** de la clave, que es lo que UIKit ya hace. |
+| macOS | La misma clave del plist, releída por el shell hacia `NSApp.appearance`, porque AppKit no actúa por su cuenta sobre una clave de UIKit. |
+| watchOS | Se ignora. Un reloj no tiene modo claro que merezca la pena: la pantalla es OLED y lo que no se pinta no gasta. |
+
+Una palabra que no sea ninguna de las tres para la compilación y nombra las
+tres que sí — una errata que significara `system` en silencio sería un ajuste
+que no hace nada por un motivo que nadie puede ver.
+
+Lo que **no** hace es pintar la pantalla. Eso es el fondo de la propia app, y
+la apariencia es lo que siguen los controles del sistema: diálogos, selectores
+de fecha, los tiradores de selección. Una app que siga al dispositivo tiene que
+pintar con el dispositivo también.
+
 ## Los comandos de compilar y ejecutar
 
 Todos comparten la misma forma.

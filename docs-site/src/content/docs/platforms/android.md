@@ -193,8 +193,6 @@ travels as `-1`, because JNI has no option type.
   trick — watching the window's visible frame shrink — only reports anything if
   the window is allowed to resize, and this shell asks it not to precisely so
   that the layout the core computed is the one that gets drawn.
-- **Dark mode is forced process-wide**, and the code says it should not be:
-  appearance is the app's decision, not the shell's.
 - **Back is the deprecated callback.** There is no predictive back.
 - **Only `arm64-v8a` is built.** No x86-64 emulator image and no 32-bit ABI.
 - **`flush` runs twice per productive frame** — once from the core's mount side
@@ -210,6 +208,36 @@ have drifted apart; `expanded` on a view with no `(press)`, since on Android
 expanding is an *action* and without one a reader would announce something that
 cannot be done. What is set and what is refused is in
 [Accessibility on Android](/accessibility/android/).
+
+## What the app looks like
+
+`app.appearance` in `angular-native.json` takes `system`, `light` or `dark`,
+and `system` is the default: light phone, light app.
+
+```json
+"app": { "name": "MyApp", "bundleId": "com.example.myapp", "appearance": "system" }
+```
+
+`an` writes it into the merged manifest as a `<meta-data>` entry and the
+Activity reads it back before `super.onCreate` — after it, `AppCompatActivity`
+has already read the night mode and would recreate itself on the first frame.
+What follows it is Material: dialogs, date pickers, the text selection handles.
+It is **not** what paints the screen; that is the app's own background, so an
+app that follows the device has to paint with it.
+
+This used to be forced. The shell called `setDefaultNightMode(MODE_NIGHT_YES)`
+in a static block, on every app built with it, and the reason was real: with
+the system in light mode a white navigation bar came out underneath a screen
+the app had painted dark. That cured a symptom belonging to the bars by taking
+the choice away from everybody.
+
+The bars are handled where they live now. The window already draws edge to
+edge, so they are transparent and what shows behind them is the app's own
+background; their icons are chosen from that background's luminance — the
+sRGB relative one, because the eye is some seven times more sensitive to green
+than to blue and a saturated blue that averages "light" reads as dark. Below
+API 30 there is no `WindowInsetsController` and the icons keep the theme's,
+which is said once rather than silently skipped.
 
 ## Into Google Play
 

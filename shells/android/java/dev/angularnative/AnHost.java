@@ -157,6 +157,11 @@ public final class AnHost {
         androidx.appcompat.app.AlertDialog presented;
     }
 
+    /** The node the tree hangs off, so its background can dress the system bars. */
+    private int rootId = -1;
+    /** Said once: below API 30 the bar icons cannot be recoloured. */
+    private boolean warnedNoBarController;
+
     private AnRuntime runtime;
     /**
      * Default font size, in dp. It has to be the same as `FontSpec::default()`'s
@@ -832,10 +837,74 @@ public final class AnHost {
         if (view == null || view.getParent() != null) {
             return;
         }
+        rootId = id;
         container.addView(view);
     }
 
+    /**
+     * Makes the status and navigation bars show the app's own background, and picks the colour of
+     * their icons to suit it.
+     *
+     * <p>This is the bug that made the shell force dark mode on every app it built. The window
+     * already draws edge to edge — {@code setDecorFitsSystemWindows(false)}, so that the layout the
+     * core computed is the one that gets drawn — but the bars kept the theme's own background, and
+     * a system in light mode put a white navigation bar under an app painting a dark screen. The
+     * fix at the time was to force the theme dark, which cured the symptom by taking the choice
+     * away from every app.
+     *
+     * <p>Transparent is the honest answer: the app is already drawing there. What cannot be left
+     * to a theme is the icons, because they have to contrast with whatever the app painted, and
+     * only the app knows that. Their luminance is the sRGB relative one, which is worth using
+     * rather than a plain average: the eye is roughly seven times more sensitive to green than to
+     * blue, so a saturated blue that averages "light" reads as dark and would take dark icons that
+     * nobody could see.
+     *
+     * <p>Below API 30 there is no {@code WindowInsetsController}, so the bars keep the theme's
+     * colours. Said once rather than silently skipped.
+     */
+    private void dressSystemBars(int background) {
+        if (!(context instanceof android.app.Activity)) {
+            return;
+        }
+        android.view.Window window = ((android.app.Activity) context).getWindow();
+        window.setStatusBarColor(android.graphics.Color.TRANSPARENT);
+        window.setNavigationBarColor(android.graphics.Color.TRANSPARENT);
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
+            if (warnedNoBarController) {
+                return;
+            }
+            warnedNoBarController = true;
+            android.util.Log.w(
+                    "angular-native",
+                    "below API 30 the system bar icons cannot be recoloured, so they keep the"
+                            + " theme's; on a light bar over a dark app they may be hard to read");
+            return;
+        }
+        android.view.WindowInsetsController controller = window.getInsetsController();
+        if (controller == null) {
+            return;
+        }
+        // Rec. 709, the same weights `an-core` uses to decide a contrasting
+        // colour. Light background, dark icons.
+        double luminance =
+                (0.2126 * android.graphics.Color.red(background)
+                                + 0.7152 * android.graphics.Color.green(background)
+                                + 0.0722 * android.graphics.Color.blue(background))
+                        / 255.0;
+        int wanted =
+                luminance > 0.5
+                        ? android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                                | android.view.WindowInsetsController
+                                        .APPEARANCE_LIGHT_NAVIGATION_BARS
+                        : 0;
+        controller.setSystemBarsAppearance(
+                wanted,
+                android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                        | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+    }
+
     public void clearAll() {
+        rootId = -1;
         container.removeAllViews();
         for (int i = 0; i < crowns.size(); i++) {
             crowns.valueAt(i).detach();
@@ -1394,9 +1463,16 @@ public final class AnHost {
                 break;
             }
             case "backgroundColor":
-            case "background-color":
-                applyBackground(view, parseColor(value), null);
+            case "background-color": {
+                Integer colour = parseColor(value);
+                applyBackground(view, colour, null);
+                // The system bars sit over the root, so whatever it paints is
+                // what shows behind them. See `dressSystemBars`.
+                if (id == rootId && colour != null) {
+                    dressSystemBars(colour);
+                }
                 break;
+            }
             case "borderRadius":
             case "border-radius": {
                 Float radius = parseFloat(value);

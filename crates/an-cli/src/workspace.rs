@@ -49,6 +49,52 @@ pub struct Project {
     pub entry: PathBuf,
     /// The platforms added with `an add`.
     pub platforms: Vec<String>,
+    /// Light, dark, or whatever the device is set to.
+    pub appearance: Appearance,
+}
+
+/// What the app looks like, and who decides.
+///
+/// It is the app's decision and not the shell's, which is the whole reason
+/// this exists: the Android shell used to force dark on every app built with
+/// it, process-wide, because an example painting a dark background under a
+/// system in light mode came out with a white navigation bar. That fixed the
+/// symptom by taking the choice away from everybody.
+///
+/// It is declared once, in `angular-native.json`, and each platform is told in
+/// its own words — `UIUserInterfaceStyle` on the Apple ones, `setDefaultNightMode`
+/// on Android. A key only one platform honoured would be worse than no key.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Appearance {
+    /// Follow the device. Light phone, light app.
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl Appearance {
+    /// The word as it is written in the manifest, and as it travels to a
+    /// platform that wants a string.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Appearance::System => "system",
+            Appearance::Light => "light",
+            Appearance::Dark => "dark",
+        }
+    }
+
+    /// `None` for a word that is none of the three. The caller says so rather
+    /// than quietly picking one: a typo that silently means `system` is a
+    /// setting that does nothing for a reason nobody can see.
+    pub fn parse(word: &str) -> Option<Appearance> {
+        match word {
+            "system" => Some(Appearance::System),
+            "light" => Some(Appearance::Light),
+            "dark" => Some(Appearance::Dark),
+            _ => None,
+        }
+    }
 }
 
 impl Project {
@@ -80,6 +126,16 @@ impl Project {
             format!("{}: app.bundleId is missing; run `an init` again", path.display())
         })?;
         let entry = read("entry").unwrap_or_else(|| "src/main.native.ts".to_owned());
+        let appearance = match read("appearance") {
+            Some(word) => Appearance::parse(&word).with_context(|| {
+                format!(
+                    "{}: app.appearance is {word:?}, and it has to be \"system\", \"light\" or \
+                     \"dark\". \"system\" follows the device, which is the default.",
+                    path.display()
+                )
+            })?,
+            None => Appearance::default(),
+        };
         let platforms = parsed
             .get("platforms")
             .and_then(Value::as_array)
@@ -94,6 +150,7 @@ impl Project {
             bundle_id,
             entry: PathBuf::from(entry),
             platforms,
+            appearance,
         })
     }
 }
@@ -241,6 +298,15 @@ impl Workspace {
         match &self.project {
             Some(project) => project.name.clone(),
             None => DEFAULT_APP_NAME.to_owned(),
+        }
+    }
+
+    /// What the app looks like. In the monorepo there is no manifest to read,
+    /// so it is the default: follow the machine.
+    pub fn appearance(&self) -> Appearance {
+        match &self.project {
+            Some(project) => project.appearance,
+            None => Appearance::default(),
         }
     }
 
