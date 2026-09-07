@@ -42,6 +42,17 @@ final class AnPluginCall {
         send(json: Self.encode(object))
     }
 
+    /// For returning a list. The elements have to be serialisable to JSON:
+    /// strings, numbers, booleans, arrays and dictionaries.
+    ///
+    /// Android's side of the same protocol has had `resolve(JSONArray)` from the
+    /// start; this was simply missing, so a plugin with a list to hand back had
+    /// to wrap it in an object with one key, or serialise it by hand and return
+    /// a string the caller then had to parse.
+    func resolve(_ array: [Any]) {
+        send(json: Self.encode(array))
+    }
+
     func reject(_ message: String) {
         lock.lock()
         let first = !answered
@@ -161,5 +172,43 @@ enum AnPluginRegistry {
     private static func text(_ pointer: UnsafePointer<CChar>?) -> String {
         guard let pointer else { return "" }
         return String(cString: pointer)
+    }
+}
+
+/// How a plugin says something nobody asked for.
+///
+/// An `AnPluginCall` answers one call, once. This is the other road: a position
+/// while walking, a notification being tapped, a socket's messages. None of
+/// those is the answer to anything, and a promise cannot carry them.
+///
+/// It can be called from any thread. The event goes into a mailbox and reaches
+/// JS at the top of the next frame, in the order it was emitted.
+///
+/// The module name is the one in the plugin's `angularNative.module`. Emitting
+/// under a name nobody registered is logged rather than dropped in silence: it
+/// is a typo, and typos that vanish are the expensive kind.
+///
+/// ```swift
+/// AnEvents.emit("geolocation", "position", ["latitude": fix.coordinate.latitude])
+/// ```
+enum AnEvents {
+    /// `payload` has to be serialisable to JSON: a dictionary, an array, a
+    /// string, a number, a boolean, or nil for an event that carries nothing.
+    static func emit(_ module: String, _ event: String, _ payload: Any? = nil) {
+        let json: String
+        if let payload {
+            guard
+                let data = try? JSONSerialization.data(
+                    withJSONObject: payload, options: [.fragmentsAllowed]),
+                let text = String(data: data, encoding: .utf8)
+            else {
+                NSLog("angular-native: \(module).\(event) was emitted with something that is not JSON")
+                return
+            }
+            json = text
+        } else {
+            json = "null"
+        }
+        _ = an_plugin_emit(module, event, json)
     }
 }

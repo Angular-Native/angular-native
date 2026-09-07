@@ -151,6 +151,36 @@ pub extern "system" fn Java_dev_angularnative_AnRuntime_nativePluginResolve(
     .resolve::<LogErrorAndDefault>()
 }
 
+/// Emits an event from a plugin, under the module's own name.
+///
+/// Unlike an answer, this belongs to no call: it can arrive at any time,
+/// including never, and nothing on the JS side is waiting for it. It reaches
+/// whoever subscribed with `NativeModules.on(module, event, …)` at the top of
+/// the next frame. Returns 0 if the module is registered.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_angularnative_AnRuntime_nativePluginEmit(
+    mut env: EnvUnowned,
+    _class: JClass,
+    module: JString,
+    event: JString,
+    json: JString,
+) -> jint {
+    env.with_env(|env| -> Result<jint, jni::errors::Error> {
+        let (Ok(module), Ok(event)) = (env.get_string(&module), env.get_string(&event)) else {
+            eprintln!("angular-native: a plugin emitted with an invalid module or event name");
+            return Ok(-1);
+        };
+        let module: String = module.into();
+        let event: String = event.into();
+        let payload: String = match env.get_string(&json) {
+            Ok(text) => text.into(),
+            Err(_) => "null".to_owned(),
+        };
+        Ok(report(bridge().emit(&module, &event, &payload)))
+    })
+    .resolve::<LogErrorAndDefault>()
+}
+
 /// Rejects a call. Returns 0 if the call existed and -1 if it did not.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_angularnative_AnRuntime_nativePluginReject(

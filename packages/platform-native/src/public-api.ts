@@ -1,7 +1,7 @@
 export { bootstrapNativeApplication, platformNative } from './platform'
 export { NATIVE_LOCATION_PROVIDERS, NativePlatformLocation } from './location'
 export { globalHotState, hotState } from './hot-state'
-export { callNative, Device, NativeModules } from './native-modules'
+export { callNative, Device, NativeModules, onNative } from './native-modules'
 // The built-in modules: one typed service per name in `BUILTIN_MODULES`, on the
 // Rust side. Every host has all of them; where a platform cannot do something,
 // it is in the type as an exclusion and in the rejection as a sentence.

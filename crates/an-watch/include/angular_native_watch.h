@@ -83,6 +83,11 @@ int32_t an_watch_plugin_resolve(uint64_t id, const char *json);
 
 /// Rejects a call. 0 if the call was waiting, -1 if it was not.
 int32_t an_watch_plugin_reject(uint64_t id, const char *message);
+
+/// Emits an event from a plugin, under the module's own name. Unlike an answer
+/// this belongs to no call: it may arrive at any time, or never, and nothing on
+/// the JS side is waiting for it. Returns 0 if the module is registered.
+int32_t an_watch_plugin_emit(const char *module, const char *event, const char *json);
 // ── Built-in modules ────────────────────────────────────────────────────────
 //
 // The modules the framework brings: files, share, network status and haptics.

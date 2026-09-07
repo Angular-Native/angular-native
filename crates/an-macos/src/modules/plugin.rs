@@ -147,6 +147,33 @@ pub unsafe extern "C" fn an_plugin_reject(id: u64, message: *const c_char) -> i3
     report(bridge().reject(id, &text))
 }
 
+/// Emits an event from a plugin, under the module's own name.
+///
+/// Unlike an answer, this belongs to no call: it can arrive at any time,
+/// including never, and nothing on the JS side is waiting for it. It reaches
+/// whoever subscribed with `NativeModules.on(module, event, …)` at the top of
+/// the next frame.
+///
+/// Returns 0 if the module is registered and -1 if it is not — a name nobody
+/// registered is a typo in a plugin, and it says so rather than dropping the
+/// event in silence.
+///
+/// # Safety
+/// All three have to be valid, nul-terminated C strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn an_plugin_emit(
+    module: *const c_char,
+    event: *const c_char,
+    json: *const c_char,
+) -> i32 {
+    let (Some(module), Some(event)) = (unsafe { read(module) }, unsafe { read(event) }) else {
+        eprintln!("angular-native: a plugin emitted with an invalid module or event name");
+        return -1;
+    };
+    let payload = unsafe { read(json) }.unwrap_or_else(|| "null".to_owned());
+    report(bridge().emit(&module, &event, &payload))
+}
+
 /// # Safety
 /// `text` has to be null or a valid C string.
 unsafe fn read(text: *const c_char) -> Option<String> {

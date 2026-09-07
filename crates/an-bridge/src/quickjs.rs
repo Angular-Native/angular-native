@@ -201,6 +201,31 @@ impl QuickJsRuntime {
         })
     }
 
+    /// Hands JS the module events that are already in.
+    ///
+    /// Events go out **after** the answers of the same frame. If a module both
+    /// resolves a `start()` call and emits its first event in one go, the call
+    /// has to settle first — otherwise the event arrives before the code that
+    /// subscribes to it has run.
+    fn deliver_module_events(&mut self) -> Result<(), JsError> {
+        let events = self.modules.borrow_mut().drain_events();
+        if events.is_empty() {
+            return Ok(());
+        }
+        self.context.with(|ctx| -> Result<(), JsError> {
+            let deliver: Function = ctx
+                .globals()
+                .get("__an_module_event")
+                .map_err(|e| exception_message(&ctx, e))?;
+            for (module, event, payload) in events {
+                deliver
+                    .call::<_, ()>((module, event, payload.to_string()))
+                    .map_err(|e| exception_message(&ctx, e))?;
+            }
+            Ok(())
+        })
+    }
+
     /// Empties the microtask queue. A promise resolved during the frame lands
     /// in that very frame, not the next one.
     fn drain_microtasks(&mut self) -> Result<(), JsError> {
@@ -342,8 +367,12 @@ impl JsRuntime for QuickJsRuntime {
         })?;
 
         // Module answers go in before the microtasks are drained, so that
-        // whatever depends on them resolves in this very frame.
+        // whatever depends on them resolves in this very frame. Events follow
+        // the answers for the same reason in reverse: a `start()` that resolves
+        // and immediately emits has to settle before its first event lands, or
+        // the event arrives ahead of the code that subscribes to it.
         self.settle_module_calls()?;
+        self.deliver_module_events()?;
         self.drain_microtasks()?;
 
         self.context.with(|ctx| -> Result<(), JsError> {

@@ -60,6 +60,13 @@ pub struct PluginBridge {
     /// keeps the promise on the JS side alive; if the mailbox is destroyed, its
     /// `Drop` rejects them instead of leaving them hanging for ever.
     waiting: Mutex<HashMap<u64, Responder>>,
+    /// One emitter per registered plugin, by the name JS calls it by.
+    ///
+    /// The shell emits by name — it has a string from Swift or Java and nothing
+    /// else — and this is what turns that string back into the right module's
+    /// emitter. A name nobody registered is an error and not a silent drop: it
+    /// is a typo in a plugin, and typos that vanish are the expensive kind.
+    emitters: Mutex<HashMap<String, crate::modules::Emitter>>,
 }
 
 impl PluginBridge {
@@ -95,6 +102,32 @@ impl PluginBridge {
 
     pub fn reject(&self, id: u64, message: &str) -> Result<(), String> {
         self.take_waiting(id)?.reject(message.to_owned());
+        Ok(())
+    }
+
+    /// Remembers how to emit under a plugin's name. Called as it registers.
+    pub fn attach_emitter(&self, module: &str, emitter: crate::modules::Emitter) {
+        self.emitters
+            .lock()
+            .expect("the plugin mailbox is poisoned")
+            .insert(module.to_owned(), emitter);
+    }
+
+    /// An event from a plugin, on its way to whoever subscribed in JS.
+    ///
+    /// `json` is the payload already serialised, because on the other side
+    /// there is Swift or Java and not serde. Unlike an answer, this belongs to
+    /// no call: it may arrive at any time, including never, and nothing on the
+    /// JS side is waiting for it.
+    pub fn emit(&self, module: &str, event: &str, json: &str) -> Result<(), String> {
+        let payload = serde_json::from_str::<Value>(json).map_err(|error| {
+            format!("{module}.{event} was emitted with something that is not valid JSON: {error}")
+        })?;
+        let emitters = self.emitters.lock().expect("the plugin mailbox is poisoned");
+        let emitter = emitters
+            .get(module)
+            .ok_or_else(|| format!("no plugin called {module:?} is registered, so {event:?} has nowhere to go"))?;
+        emitter.emit(event.to_owned(), payload);
         Ok(())
     }
 
@@ -142,6 +175,12 @@ impl HostPlugin {
 }
 
 impl NativeModule for HostPlugin {
+    /// A plugin's emitter is handed straight to the mailbox the shell talks to,
+    /// so the shell can emit with nothing but a name and a payload.
+    fn connect(&mut self, emitter: crate::modules::Emitter) {
+        self.bridge.attach_emitter(self.name, emitter);
+    }
+
     fn name(&self) -> &'static str {
         self.name
     }

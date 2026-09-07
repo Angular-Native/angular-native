@@ -476,8 +476,34 @@
         }
         pendingCalls.set(id, { resolve, reject })
       })
+    },
+
+    /// Subscribes to what a module says without being asked.
+    ///
+    /// A call has one answer; an event has none or a thousand, so it needs a
+    /// road of its own. Several handlers may listen to the same event and each
+    /// gets its own unsubscriber — a module has no idea who is listening, and
+    /// one component unsubscribing must not deafen another.
+    on(module, event, handler) {
+      const key = module + '\u0000' + event
+      let handlers = moduleListeners.get(key)
+      if (!handlers) {
+        handlers = new Set()
+        moduleListeners.set(key, handlers)
+      }
+      handlers.add(handler)
+      return function off() {
+        const current = moduleListeners.get(key)
+        if (!current) return
+        current.delete(handler)
+        if (current.size === 0) moduleListeners.delete(key)
+      }
     }
   }
+
+  /// Keyed by module and event name together. A `Set` per key, so subscribing
+  /// twice with the same function is idempotent and unsubscribing is cheap.
+  const moduleListeners = new Map()
 
   global.__an_settle = function (id, ok, payload) {
     const pending = pendingCalls.get(id)
@@ -558,6 +584,31 @@
       handler(payload || {})
     } catch (error) {
       console.error(`uncaught ${name} handler:`, error)
+    }
+  }
+
+  /// An event from a native module, at the top of a frame.
+  ///
+  /// A handler that throws is reported and the rest still run: one component's
+  /// bug is not a reason for every other subscriber to miss the event. The list
+  /// is copied before iterating, because a handler is allowed to unsubscribe
+  /// itself — which is exactly what a "once" wrapper does.
+  global.__an_module_event = function (module, event, payload) {
+    const handlers = moduleListeners.get(module + '\u0000' + event)
+    if (!handlers || handlers.size === 0) return
+    let value
+    try {
+      value = JSON.parse(payload)
+    } catch (error) {
+      console.error(`unreadable event payload from ${module}.${event}: ${payload}`)
+      return
+    }
+    for (const handler of [...handlers]) {
+      try {
+        handler(value)
+      } catch (error) {
+        console.error(`uncaught ${module}.${event} handler:`, error)
+      }
     }
   }
 

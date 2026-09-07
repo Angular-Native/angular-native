@@ -115,13 +115,13 @@ pub fn absent_note() -> String {
         return "this watch .app carries no plugins, so only the modules compiled into the core \
                 exist here. A plugin has to declare a watchOS half —angularNative.watchos in its \
                 package.json— and not every one can: there is no pasteboard on a watch and no \
-                biometric sensor. See https://angular-native.dev/extending/plugins/"
+                biometric sensor. See https://angular-native.github.io/extending/plugins/"
             .to_owned();
     }
     format!(
         "the plugins in this watch .app are {}, and only those plus the modules compiled into the \
          core exist here. A plugin that works on the phone is not here unless it declared a \
-         watchOS half. See https://angular-native.dev/extending/plugins/",
+         watchOS half. See https://angular-native.github.io/extending/plugins/",
         names.join(", ")
     )
 }
@@ -171,6 +171,29 @@ pub unsafe extern "C" fn an_watch_plugin_resolve(id: u64, json: *const c_char) -
 ///
 /// # Safety
 /// `message` has to be a valid, nul-terminated C string.
+/// Emits an event from a plugin, under the module's own name.
+///
+/// Unlike an answer, this belongs to no call: it can arrive at any time,
+/// including never, and nothing on the JS side is waiting for it. It reaches
+/// whoever subscribed with `NativeModules.on(module, event, …)` at the top of
+/// the next frame.
+///
+/// # Safety
+/// All three have to be valid, nul-terminated C strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn an_watch_plugin_emit(
+    module: *const c_char,
+    event: *const c_char,
+    json: *const c_char,
+) -> i32 {
+    let (Some(module), Some(event)) = (unsafe { read(module) }, unsafe { read(event) }) else {
+        eprintln!("angular-native: a plugin emitted with an invalid module or event name");
+        return -1;
+    };
+    let payload = unsafe { read(json) }.unwrap_or_else(|| "null".to_owned());
+    report(bridge().emit(&module, &event, &payload))
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn an_watch_plugin_reject(id: u64, message: *const c_char) -> i32 {
     let text = unsafe { read(message) }.unwrap_or_else(|| "the plugin failed".to_owned());

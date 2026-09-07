@@ -93,6 +93,17 @@ public final class AnRuntime {
         nativePluginReject(id, message);
     }
 
+    /**
+     * Emits an event from a plugin, under the module's own name.
+     *
+     * <p>Unlike an answer this belongs to no call: it may arrive at any time, or never, and
+     * nothing on the JS side is waiting for it. It reaches whoever subscribed with {@code
+     * NativeModules.on(module, event, …)} at the top of the next frame.
+     */
+    static void pluginEmit(String module, String event, String json) {
+        nativePluginEmit(module, event, json);
+    }
+
     // ── Built-in modules ───────────────────────────────────────────────────
     //
     // The four the framework brings. They carry no `handle` for the same reason
@@ -146,6 +157,8 @@ public final class AnRuntime {
     private static native int nativePluginResolve(long id, String json);
 
     private static native int nativePluginReject(long id, String message);
+
+    private static native int nativePluginEmit(String module, String event, String json);
 
     private static native void nativeSetBuiltinModules(AnBuiltinModules modules);
 

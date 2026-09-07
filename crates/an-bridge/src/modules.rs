@@ -20,6 +20,41 @@ pub type CallId = u64;
 /// disk— and that is precisely why it exists.
 type Outbox = Arc<Mutex<Vec<(CallId, ModuleResult)>>>;
 
+/// The events mailbox: what a module has to say that nobody asked for.
+///
+/// It is deliberately a second mailbox rather than a special kind of answer.
+/// An answer belongs to a call and is delivered once; an event belongs to
+/// nothing, arrives whenever the platform has something, and may arrive a
+/// thousand times or never. Squeezing the second through the first would mean
+/// inventing a call that is never made.
+type Events = Arc<Mutex<Vec<(&'static str, String, Value)>>>;
+
+/// A module's way of speaking without being spoken to.
+///
+/// A module is handed one at registration and may keep it, clone it and send it
+/// to another thread: a location manager delivering fixes, a socket, a
+/// subscription to something the system publishes. Emitting from a background
+/// thread is the normal case, not the exception, which is why this is an `Arc`
+/// over a lock like the answers mailbox next to it.
+///
+/// Emitting into a runtime that has gone away is not an error. The app is
+/// closing, the last thing anybody wants is a crash in a callback, and the
+/// event has nowhere useful to go.
+#[derive(Clone)]
+pub struct Emitter {
+    module: &'static str,
+    events: Events,
+}
+
+impl Emitter {
+    /// Queues an event. It reaches JS at the top of the next frame, in order,
+    /// alongside the answers.
+    pub fn emit(&self, event: impl Into<String>, payload: Value) {
+        let Ok(mut queue) = self.events.lock() else { return };
+        queue.push((self.module, event.into(), payload));
+    }
+}
+
 /// What a module answers with. It can be resolved on the spot or held onto and
 /// resolved later; if it is dropped without an answer, the promise on the JS
 /// side is rejected instead of hanging around for ever.
@@ -59,6 +94,13 @@ impl Drop for Responder {
 }
 
 pub trait NativeModule {
+    /// Handed the module's emitter, once, as it is registered.
+    ///
+    /// A module that only answers calls implements nothing. One that has
+    /// something to say on its own keeps this and emits through it later,
+    /// from whatever thread the platform calls it back on.
+    fn connect(&mut self, _emitter: Emitter) {}
+
     /// The name JS calls it by.
     fn name(&self) -> &'static str;
 
@@ -70,6 +112,7 @@ pub trait NativeModule {
 pub struct ModuleRegistry {
     modules: Vec<Box<dyn NativeModule>>,
     outbox: Outbox,
+    events: Events,
     next_id: CallId,
     /// Why a name that is not here may still be a name somebody wrote in good
     /// faith. See `explain_absent`.
@@ -81,7 +124,12 @@ impl ModuleRegistry {
         Self::default()
     }
 
-    pub fn register(&mut self, module: Box<dyn NativeModule>) {
+    pub fn register(&mut self, mut module: Box<dyn NativeModule>) {
+        // The emitter is handed over here rather than asked for later, so a
+        // module cannot be in the registry without having had the chance to
+        // take one, and cannot take one bound to a name that is not its own.
+        let emitter = self.emitter(module.name());
+        module.connect(emitter);
         self.modules.push(module);
     }
 
@@ -137,6 +185,19 @@ impl ModuleRegistry {
     /// closes the frame.
     pub fn drain(&mut self) -> Vec<(CallId, ModuleResult)> {
         std::mem::take(&mut *self.outbox.lock().expect("the mailbox is poisoned"))
+    }
+
+    /// A handle a module keeps in order to emit events under its own name.
+    ///
+    /// The name is not a parameter of `emit`: it is bound here, so a module
+    /// cannot emit under somebody else's name, by accident or otherwise.
+    pub fn emitter(&self, module: &'static str) -> Emitter {
+        Emitter { module, events: self.events.clone() }
+    }
+
+    /// Events that came in since last time, in the order they were emitted.
+    pub fn drain_events(&mut self) -> Vec<(&'static str, String, Value)> {
+        std::mem::take(&mut *self.events.lock().expect("the mailbox is poisoned"))
     }
 }
 
@@ -210,4 +271,75 @@ macro_rules! native_module {
             }
         }
     };
+}
+
+#[cfg(test)]
+mod event_tests {
+    use super::*;
+    use serde_json::json;
+
+    struct Talker;
+
+    impl NativeModule for Talker {
+        fn name(&self) -> &'static str {
+            "talker"
+        }
+        fn call(&mut self, _method: &str, _args: Value, respond: Responder) {
+            respond.resolve(json!("ok"));
+        }
+    }
+
+    /// An emitter is bound to its module's name, so nothing can emit under
+    /// somebody else's.
+    #[test]
+    fn an_event_carries_the_name_of_the_module_that_emitted_it() {
+        let mut registry = ModuleRegistry::new();
+        registry.register(Box::new(Talker));
+        let emitter = registry.emitter("talker");
+
+        assert!(registry.drain_events().is_empty(), "nothing has been emitted yet");
+
+        emitter.emit("position", json!({ "latitude": 43.36 }));
+        let events = registry.drain_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, "talker");
+        assert_eq!(events[0].1, "position");
+        assert_eq!(events[0].2, json!({ "latitude": 43.36 }));
+
+        // Draining empties: an event is delivered once, not once a frame for
+        // ever after.
+        assert!(registry.drain_events().is_empty());
+    }
+
+    /// The whole reason for a second mailbox: emitting is not answering, and a
+    /// module with nothing to answer can still have something to say.
+    #[test]
+    fn events_and_answers_do_not_share_a_queue() {
+        let mut registry = ModuleRegistry::new();
+        registry.register(Box::new(Talker));
+        let emitter = registry.emitter("talker");
+
+        emitter.emit("tick", json!(1));
+        registry.invoke("talker", "anything", json!(null));
+
+        assert_eq!(registry.drain().len(), 1, "the call was answered");
+        assert_eq!(registry.drain_events().len(), 1, "and the event is still its own");
+    }
+
+    /// A module keeps its emitter and uses it from wherever the platform calls
+    /// back, which is nearly always another thread.
+    #[test]
+    fn an_emitter_can_be_moved_to_another_thread() {
+        let mut registry = ModuleRegistry::new();
+        registry.register(Box::new(Talker));
+        let emitter = registry.emitter("talker");
+
+        std::thread::spawn(move || emitter.emit("from-a-thread", json!(true)))
+            .join()
+            .expect("the thread finished");
+
+        let events = registry.drain_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].1, "from-a-thread");
+    }
 }

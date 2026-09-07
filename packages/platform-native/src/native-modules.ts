@@ -2,6 +2,7 @@ import { inject, Injectable, NgZone } from '@angular/core'
 
 declare const __an_native: {
   call(module: string, method: string, args: unknown): Promise<unknown>
+  on(module: string, event: string, handler: (payload: unknown) => void): () => void
 }
 
 /**
@@ -19,11 +20,46 @@ export class NativeModules {
   call<T>(module: string, method: string, args?: unknown): Promise<T> {
     return __an_native.call(module, method, args) as Promise<T>
   }
+
+  /**
+   * Listens to what a module says without being asked.
+   *
+   * A call has exactly one answer, which is why `call` returns a promise. A
+   * position while walking, a notification being tapped, a socket's messages:
+   * those have none or a thousand, and a promise cannot carry them. This is the
+   * road for those, and it is the reason a module can be a source rather than
+   * only a service.
+   *
+   * Events arrive at the top of a frame, in the order they were emitted, and
+   * after that frame's answers — so a `start()` that resolves and immediately
+   * emits settles before its first event lands.
+   *
+   * ```ts
+   * const stop = modules.on<Position>('geolocation', 'position', (where) => …)
+   * inject(DestroyRef).onDestroy(stop)
+   * ```
+   *
+   * @returns the unsubscriber. Calling it twice is harmless. **A subscription
+   * that is never stopped keeps the handler, and whatever it closes over,
+   * alive for the life of the app.**
+   */
+  on<T>(module: string, event: string, handler: (payload: T) => void): () => void {
+    return __an_native.on(module, event, handler as (payload: unknown) => void)
+  }
 }
 
 /** Outside an injection context. */
 export function callNative<T>(module: string, method: string, args?: unknown): Promise<T> {
   return __an_native.call(module, method, args) as Promise<T>
+}
+
+/** The same, for listening outside an injection context. */
+export function onNative<T>(
+  module: string,
+  event: string,
+  handler: (payload: T) => void
+): () => void {
+  return __an_native.on(module, event, handler as (payload: unknown) => void)
 }
 
 /**
