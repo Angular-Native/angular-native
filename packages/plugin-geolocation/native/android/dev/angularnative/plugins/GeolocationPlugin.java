@@ -39,8 +39,13 @@ public final class GeolocationPlugin implements AnPlugin {
     private static final String FINE = Manifest.permission.ACCESS_FINE_LOCATION;
     private static final String COARSE = Manifest.permission.ACCESS_COARSE_LOCATION;
 
+    private static final int PERMISSION_REQUEST = 4242;
+
     private Activity host;
     private final Handler main = new Handler(Looper.getMainLooper());
+
+    /** The call waiting for the person to answer the permission dialog. */
+    private AnPluginCall asking;
 
     private AnPluginCall pending;
     private Runnable timeout;
@@ -56,6 +61,23 @@ public final class GeolocationPlugin implements AnPlugin {
     }
 
     @Override
+    public void onPermissionResult(String[] permissions, int[] granted) {
+        if (asking == null) {
+            return;
+        }
+        // Every plugin hears every permission answer, so this one only takes the
+        // ones it asked for. Anything else belongs to somebody else.
+        for (String permission : permissions) {
+            if (FINE.equals(permission) || COARSE.equals(permission)) {
+                AnPluginCall waiting = asking;
+                asking = null;
+                waiting.resolve(permission());
+                return;
+            }
+        }
+    }
+
+    @Override
     public void call(String method, JSONObject args, AnPluginCall respond) {
         if (host == null) {
             respond.reject("the geolocation plugin has no Android context");
@@ -67,15 +89,19 @@ public final class GeolocationPlugin implements AnPlugin {
                 return;
 
             case "request":
-                // On Android the grant is a system dialog owned by the Activity,
-                // and its result comes back through onRequestPermissionsResult.
-                // Until the shell forwards that, asking would show the dialog and
-                // then never hear the answer — so the standing state is returned
-                // and the app is told where the switch is.
-                if ("prompt".equals(permission())) {
-                    host.requestPermissions(new String[] {FINE, COARSE}, 4242);
+                // The dialog is owned by the Activity and its answer comes back
+                // through onRequestPermissionsResult, which the shell now
+                // forwards. So this waits for the real answer instead of
+                // returning the state it had before asking.
+                if (!"prompt".equals(permission())) {
+                    respond.resolve(permission());
+                    return;
                 }
-                respond.resolve(permission());
+                if (asking != null) {
+                    asking.reject("geolocation.request was already waiting for an answer");
+                }
+                asking = respond;
+                host.requestPermissions(new String[] {FINE, COARSE}, PERMISSION_REQUEST);
                 return;
 
             case "current":

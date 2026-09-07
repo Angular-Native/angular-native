@@ -51,11 +51,15 @@ export class Geolocation {
   }
 
   /**
-   * Asks, if there is anything to ask.
+   * Asks, if there is anything to ask, and waits for the answer.
    *
    * Already answered means no dialog and the standing answer comes straight
-   * back: the system only shows the prompt once, and asking again from an app is
-   * how you get an app that nags.
+   * back: both systems show the prompt once, and asking again from an app is how
+   * you get an app that nags.
+   *
+   * On Android the dialog belongs to the Activity and its result arrives on a
+   * callback, so this promise settles when the person has actually chosen — not
+   * with whatever the state was before they were asked.
    */
   request(): Promise<LocationPermission> {
     return this.modules.call<LocationPermission>('geolocation', 'request')

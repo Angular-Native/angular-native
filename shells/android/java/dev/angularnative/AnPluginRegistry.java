@@ -1,6 +1,7 @@
 package dev.angularnative;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.util.Log;
 
 import org.json.JSONObject;
@@ -22,6 +23,17 @@ public final class AnPluginRegistry {
     private static final AnPluginRegistry INSTANCE = new AnPluginRegistry();
 
     private final Map<String, AnPlugin> plugins = new HashMap<>();
+
+    /**
+     * Which plugin is waiting for which request code.
+     *
+     * <p>The built-in modules have had this from the start; the plugins did not, so a plugin that
+     * opened a camera or a picker had no way of hearing the answer. The codes start high enough
+     * not to collide with the built-ins', which count up from zero.
+     */
+    private final Map<Integer, AnPlugin> byRequestCode = new HashMap<>();
+
+    private int nextRequestCode = 9000;
 
     private Activity host;
 
@@ -49,6 +61,39 @@ public final class AnPluginRegistry {
         plugin.attach(INSTANCE.host);
         INSTANCE.plugins.put(name, plugin);
         AnRuntime.registerPlugin(name);
+    }
+
+    /**
+     * Hands a plugin its own request code, so {@link #onActivityResult} can find it again.
+     *
+     * <p>Call it once, from {@code attach}: the number has to be stable for the life of the
+     * process, because the Activity may be recreated while the chooser is on screen and the
+     * result comes back to whatever is standing there afterwards.
+     */
+    public static int reserveRequestCode(AnPlugin plugin) {
+        int code = INSTANCE.nextRequestCode++;
+        INSTANCE.byRequestCode.put(code, plugin);
+        return code;
+    }
+
+    /** Forwarded by {@link MainActivity}. Returns whether it belonged to a plugin. */
+    public static boolean onActivityResult(int requestCode, int resultCode, Intent data) {
+        AnPlugin plugin = INSTANCE.byRequestCode.get(requestCode);
+        if (plugin == null) {
+            return false;
+        }
+        plugin.onActivityResult(resultCode, data);
+        return true;
+    }
+
+    /**
+     * Forwarded by {@link MainActivity}. Every plugin hears it, because a permission dialog is
+     * not addressed to one: two plugins can want the camera, and the answer is the same answer.
+     */
+    public static void onPermissionResult(String[] permissions, int[] granted) {
+        for (AnPlugin plugin : INSTANCE.plugins.values()) {
+            plugin.onPermissionResult(permissions, granted);
+        }
     }
 
     /** Rust calls in here from the UI thread, inside the frame. */

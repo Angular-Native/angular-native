@@ -140,13 +140,25 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
     }
 
     @Override
+    public void onRequestPermissionsResult(
+            int requestCode, String[] permissions, int[] granted) {
+        super.onRequestPermissionsResult(requestCode, permissions, granted);
+        // Nothing used to listen to this, which is why a plugin could show a
+        // permission dialog and never learn what the person chose. Every plugin
+        // hears it: a permission is not addressed to one of them, and two can
+        // be waiting on the same answer.
+        AnPluginRegistry.onPermissionResult(permissions, granted);
+    }
+
+    @Override
     @SuppressWarnings("deprecation")
     protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
         // A built-in that opened a system chooser is waiting for this: without
         // it the promise behind `files.pick()` would never be answered. What
         // does not belong to one is passed on, so the runtime does not swallow
         // results the app itself asked for.
-        if (!AnBuiltinModules.onActivityResult(requestCode, resultCode, data)) {
+        if (!AnBuiltinModules.onActivityResult(requestCode, resultCode, data)
+                && !AnPluginRegistry.onActivityResult(requestCode, resultCode, data)) {
             super.onActivityResult(requestCode, resultCode, data);
         }
     }

@@ -33,4 +33,25 @@ public interface AnPlugin {
      * not ignored.
      */
     void call(String method, JSONObject args, AnPluginCall respond);
+
+    /**
+     * The result of something this plugin started with {@code startActivityForResult}.
+     *
+     * <p>A plugin that opens a camera, a photo picker or a chooser cannot answer inside {@code
+     * call}: the answer arrives here, on the Activity, some seconds later. Reserve a request code
+     * with {@link AnPluginRegistry#reserveRequestCode} and the shell will route it back.
+     *
+     * <p>Whoever starts nothing implements nothing.
+     */
+    default void onActivityResult(int resultCode, android.content.Intent data) {}
+
+    /**
+     * The person's answer to a permission dialog this plugin asked for.
+     *
+     * <p>Android grants at run time through a dialog owned by the Activity, and its result comes
+     * back here. Without this a plugin could show the dialog and never learn what was chosen,
+     * which is why {@code geolocation.request()} used to return the standing state rather than
+     * the answer.
+     */
+    default void onPermissionResult(String[] permissions, int[] granted) {}
 }
