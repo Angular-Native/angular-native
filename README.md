@@ -252,9 +252,15 @@ simulator, and it is what most of those scripts drive.
 | `packages/runtime` | JS prelude: console, timers, `AbortController`, the command buffer |
 | `packages/platform-native` | `Renderer2`, the platform, `PlatformLocation`, navigation, modules |
 | `packages/primitives` | Every primitive, control and composite |
+| `packages/plugin-preferences` | `UserDefaults` and `SharedPreferences`, in a store of their own |
 | `packages/plugin-clipboard` | The reference plugin: the clipboard, in Swift and in Java |
 | `packages/plugin-biometrics` | Face ID, Touch ID and `BiometricPrompt` |
 | `packages/plugin-keychain` | The keychain and the Android keystore |
+| `packages/plugin-geolocation` | `CLLocationManager` and `LocationManager`, foreground and background |
+| `packages/plugin-camera` | The camera and the photo library, presented by the system |
+| `packages/plugin-notifications` | Local notifications, and the tap that launched the app |
+| `packages/plugin-updater` | New JavaScript without a store release, with a bad bundle costing one launch |
+| `packages/plugin-barcode` | `AVCaptureMetadataOutput`, full screen. Apple only, and it says why |
 
 The Swift and Java shells are in `shells/` — `ios`, `tvos`, `visionos`,
 `watchos`, `macos`, `android` and a `shared` one; Wear OS has none of its own,

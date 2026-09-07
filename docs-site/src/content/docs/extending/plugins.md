@@ -90,9 +90,33 @@ Four lines:
 The `plist`, `entitlements` and `manifest` sections have a page of their own:
 [Permissions a plugin needs](/extending/plugin-permissions/).
 
-The reference plugins are `packages/plugin-clipboard`,
-`packages/plugin-biometrics` and `packages/plugin-keychain`; the last two are
-also written up in [Biometrics and keychain](/extending/biometrics-and-keychain/).
+## What ships
+
+Eight plugins live in this repository. They are published like any other, and
+they are also the worked examples: each one is a real answer to a real platform
+question rather than a stub, and where a platform cannot do the thing, the
+refusal says why.
+
+| Plugin | What it is | Where it works |
+|---|---|:--|
+| `plugin-preferences` | `UserDefaults` and `SharedPreferences`, in a store of their own | iOS · Android · macOS · watchOS |
+| `plugin-clipboard` | `UIPasteboard` and `ClipboardManager` | iOS · Android · macOS |
+| `plugin-keychain` | The keychain and the Android key store | iOS · Android · macOS · watchOS |
+| `plugin-biometrics` | Face ID, Touch ID and `BiometricPrompt` | iOS · Android · macOS |
+| `plugin-geolocation` | `CLLocationManager` and the platform's `LocationManager`, foreground and background | iOS · Android · macOS |
+| `plugin-camera` | The camera and the photo library, presented | iOS · Android · macOS |
+| `plugin-notifications` | Local notifications, and the tap that launched the app | iOS · Android · macOS · watchOS |
+| `plugin-updater` | New JavaScript without a store release | iOS · Android · macOS |
+| `plugin-barcode` | `AVCaptureMetadataOutput`, full screen | iOS · macOS |
+
+Four of them refuse a platform outright, and the reasons are worth reading
+because they are the shape of every gap in this project: a watch has no camera
+and no pasteboard; a scanner on Android would need Play Services or a decoder
+bundled into every app; a background fix on a watch is a different feature with
+a different lifecycle rather than the same call on a smaller screen.
+
+`plugin-keychain` and `plugin-biometrics` are written up together in
+[Biometrics and keychain](/extending/biometrics-and-keychain/).
 
 ## Writing one end to end
 
