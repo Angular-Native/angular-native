@@ -4,14 +4,21 @@
 //! with `http`/`https` is fetched over the network. Either way the real size
 //! comes back as a `load` event, because the layout cannot place something
 //! whose size it does not know.
+//!
+//! A bundle resource that is not in the bundle is said out loud. It used to be
+//! the one failure this host was silent about — `imageNamed:` returns nil and
+//! the view stays empty, which looks exactly like an image that is still
+//! loading, a colour that matches the background, or a frame of zero height.
+//! The name is printed once, with the directory it should have come from.
 
 use an_core::{NodeId, PropValue};
 use an_host::{push_event, EventQueue, HostEvent};
 use block2::RcBlock;
+use objc2::rc::Retained;
 use objc2::{AnyThread, MainThreadMarker, Message};
 use objc2_app_kit::{NSImage, NSImageScaling, NSImageView};
 use objc2_foundation::{
-    NSData, NSError, NSOperationQueue, NSString, NSURL, NSURLResponse, NSURLSession,
+    NSBundle, NSData, NSError, NSOperationQueue, NSString, NSURL, NSURLResponse, NSURLSession,
 };
 
 /// Starts loading `source` into the view. It returns immediately: if there is
@@ -28,10 +35,16 @@ pub fn load(
         return;
     }
     if !source.starts_with("http://") && !source.starts_with("https://") {
-        // A bundle resource. `imageNamed:` already caches it.
-        let name = NSString::from_str(source);
-        if let Some(image) = NSImage::imageNamed(&name) {
-            apply(view, &image, node, &queue);
+        match bundled(source) {
+            Some(image) => apply(view, &image, node, &queue),
+            None => warn_once(
+                source,
+                &format!(
+                    "{source} is not in the app. A [source] with no scheme is a file that \
+                     travelled with the app; put it in the project's resources/ directory, \
+                     which `an` copies into Contents/Resources under the name it has there."
+                ),
+            ),
         }
         return;
     }
@@ -89,4 +102,36 @@ pub fn image_scaling(mode: &str) -> NSImageScaling {
         "center" => NSImageScaling::ScaleNone,
         _ => NSImageScaling::ScaleProportionallyUpOrDown,
     }
+}
+
+/// The image a schemeless `source` names, from inside the `.app`.
+///
+/// Two lookups and they are not the same one. `imageNamed:` covers the asset
+/// catalogue and the system's own names, and it caches what it finds, so it
+/// goes first. What it does not cover is a path: `resources/icons/logo.png`
+/// arrives in the bundle as `icons/logo.png`, and a name with a slash in it is
+/// not a name `imageNamed:` knows how to resolve. That one is found by asking
+/// the bundle where its resources are and reading the file.
+fn bundled(source: &str) -> Option<Retained<NSImage>> {
+    if let Some(image) = NSImage::imageNamed(&NSString::from_str(source)) {
+        return Some(image);
+    }
+    let resources = unsafe { NSBundle::mainBundle().resourcePath() }?;
+    let path = NSString::from_str(&format!("{}/{source}", resources));
+    NSImage::initWithContentsOfFile(NSImage::alloc(), &path)
+}
+
+/// What has already been said. The core resends `source` on every change of the
+/// node, so a missing file without this is a line per frame. Same shape as
+/// `measure.rs`'s.
+fn warn_once(key: &str, message: &str) {
+    thread_local! {
+        static SAID: std::cell::RefCell<std::collections::HashSet<String>> =
+            std::cell::RefCell::new(std::collections::HashSet::new());
+    }
+    SAID.with(|said| {
+        if said.borrow_mut().insert(key.to_owned()) {
+            eprintln!("angular-native: {message}");
+        }
+    });
 }

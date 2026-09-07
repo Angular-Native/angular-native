@@ -148,13 +148,41 @@ reconoce se ignora en silencio, deliberadamente: una plantilla puede llevar un
 `(click)` heredado de la web, y eso no es motivo para hacer ruido. Los avisos al
 suscribirse son todos de tvOS y visionOS.
 
-## `[sheet]` en un modal
+## La hoja de un modal, y dónde descansa
 
-`[sheet]` da un `pageSheet` con tirador y exactamente dos detentes, medio y
-grande. **Están fijados en el código** — no hay ninguna prop para elegirlos.
-Cualquier otra cosa se presenta como `overFullScreen` con una cobertura
-vertical, elegida porque el core ya ha maquetado el contenido a pantalla
-completa, así que no hay que recolocar nada.
+`[presentation]="'sheet'"` da un `pageSheet` con tirador. Dónde puede descansar
+lo dice `[ios].detents`, y va en el objeto de iOS porque un detente es idea de
+UIKit: el `Dialog` de Android mide lo que mide su contenido y no hay ninguna
+lista de paradas que darle.
+
+```html
+<an-modal [visible]="open()" [presentation]="'sheet'" [ios]="{ detents: [180, 'large'] }" />
+```
+
+La lista admite los tres de UIKit y ninguno más: `'medium'` es `.medium()`,
+`'large'` es `.large()`, y un número es `.custom(resolver:)` — una altura en
+puntos, medida desde abajo, de iOS 16 en adelante. Una altura mayor de lo que la
+hoja puede llegar a ser se baja hasta ese máximo en lugar de tirarla, porque al
+resolver se le pregunta otra vez en cada rotación y «600 puntos» en un móvil
+tumbado significa «hasta arriba». El orden es el tuyo y se respeta.
+
+No decir nada sigue siendo medio y grande, que es lo que sugiere el sistema. Una
+entrada que no es ninguno de los dos nombres ni una altura mayor que cero se
+descarta **con un aviso en el log**, una vez por valor: el tipo de la plantilla
+ya las rechaza, así que llegar ahí significa un objeto montado en tiempo de
+ejecución. Una lista vacía no se le pasa a UIKit, que responde a eso lanzando.
+
+Una lista atada a una señal se vuelve a aplicar sobre una hoja que ya está
+levantada, así que se puede añadir o quitar un detente sin cerrarla.
+
+Cualquier cosa que no sea una hoja se presenta como `overFullScreen` con una
+cobertura vertical, elegida porque el core ya ha maquetado el contenido a
+pantalla completa, así que no hay que recolocar nada. Por eso mismo una hoja
+que descansa en un detente pequeño enseña la *parte de arriba* de una maqueta a
+pantalla completa: el contenido no se vuelve a maquetar a la altura de la hoja.
+
+En tvOS no hay detentes: `UISheetPresentationController` está marcado
+`API_UNAVAILABLE(tvos)`, y pedirlos lo dice una vez en el log.
 
 ## Medición del texto
 
@@ -212,6 +240,52 @@ simulador, el SDK es `iphonesimulator`, y el camino de lanzamiento es `simctl`
 de punta a punta. Un dispositivo real necesita la otra ruta —una identidad y un
 perfil— y esa no está aquí.
 
+## Recursos dentro del bundle
+
+Un `<an-image [source]="'logo.png'">` —una ruta sin esquema— es un fichero que
+ha viajado con la app, y sale de `resources/`, en el proyecto:
+
+```text
+mi-app/
+  ios/Info.plist        lo escribe an add ios; tuyo a partir de ahí
+  resources/logo.png    tuyo también; se copia al bundle con este mismo nombre
+  src/
+```
+
+Está al lado de `ios/` y no dentro de `src/assets/` ni de `public/` por un
+motivo: esos dos son de la compilación web, `angular.json` decide qué va en
+ellos, y `an` ha prometido no tocar nunca `angular.json`. Además metería en un
+binario de teléfono —que no tiene navegador que las necesite— todas las
+favicons y todas las fuentes web. Dentro del monorepo el mismo directorio cuelga
+del ejemplo: `examples/controls/resources/logo.png`, que es de donde sale la `A`
+rosa de arriba de la captura de los controles.
+
+`an ios` copia el árbol entero a la raíz del `.app`, junto a `main.js`, y
+conserva los subdirectorios: `resources/icons/logo.png` se pide como
+`icons/logo.png`. Los ficheros ocultos se saltan, así que el `.DS_Store` que el
+Finder deja en cualquier directorio que se haya abierto no llega nunca a un
+bundle firmado. La copia va **antes** de la firma, porque una firma cubre todos
+los ficheros del bundle y uno añadido después es uno que `installd` rechaza.
+
+Dos cosas pueden salir mal, y ninguna de las dos es silenciosa:
+
+- Un recurso cuyo nombre es uno de los que escribe la propia compilación
+  —`main.js`, `Info.plist`, `dev-server.txt`, el ejecutable— **para la
+  compilación**, diciendo qué fichero. Si no, la copia reemplazaría el código de
+  la app y en el dispositivo no habría nada que explicara por qué arrancó a
+  ninguna parte.
+- Un nombre sin nada detrás se **avisa una vez en el dispositivo**, con el
+  nombre y con el sitio del que tendría que haber salido. No puede ser una
+  comprobación de compilación: solo el dispositivo sabe qué cadenas ha
+  producido de verdad una plantilla, y la mitad son calculadas. Lo que no puede
+  ser es un `an-image` vacío, que se parece exactamente a una imagen que aún
+  está cargando, a un color igual que el fondo o a un marco de altura cero.
+
+La búsqueda es primero `UIImage(named:)` —así siguen funcionando un catálogo de
+assets y los nombres del propio sistema, y UIKit cachea lo que encuentra— y
+después el fichero bajo la ruta de recursos del bundle, que es lo que hace que
+un nombre con una barra dentro se resuelva siquiera.
+
 ## A un iPhone de verdad, y a la tienda
 
 ```bash
@@ -262,7 +336,6 @@ el siguiente. Las orientaciones soportadas son vertical y las dos horizontales.
   [El área segura y el teclado](/es/guide/safe-area-and-keyboard/). Lo que no
   hay forma de pedir es la barra de encima: un botón Hecho, una flecha al
   siguiente campo, cualquier cosa para la que sirve `inputAccessoryView`.
-- **Los detentes de la hoja no se pueden elegir** (arriba).
 - **Seis sitios que avisan una vez, todos en accesibilidad**: un rol
   desconocido, una clave de estado desconocida, un rol para el que UIKit no
   tiene rasgo, `checked: 'mixed'` —UIKit solo conoce marcado y sin marcar, así

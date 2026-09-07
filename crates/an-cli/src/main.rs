@@ -11,6 +11,7 @@ mod init;
 mod ios;
 mod macos;
 mod plugins;
+mod resources;
 mod signing;
 mod watchos;
 mod workspace;
@@ -337,6 +338,7 @@ fn main() -> anyhow::Result<()> {
                 let bundle = build::bundle(&workspace, &app, release, &found)?;
                 let package = ios::assemble(
                     &workspace,
+                    &app,
                     ios::Family::Ios,
                     &bundle,
                     release,
@@ -368,6 +370,7 @@ fn main() -> anyhow::Result<()> {
             let bundle = build::bundle(&workspace, &app, release || archive, &found)?;
             let package = ios::assemble(
                 &workspace,
+                &app,
                 ios::Family::Ios,
                 &bundle,
                 release || archive,
@@ -402,8 +405,16 @@ fn main() -> anyhow::Result<()> {
             let app = workspace.app(Some(app.as_deref().unwrap_or("examples/hello-vision")))?;
             let found = plugins::discover(&workspace, &app)?;
             let bundle = build::bundle(&workspace, &app, release, &found)?;
-            let package =
-                ios::assemble(&workspace, ios::Family::VisionOs, &bundle, release, None, &found, None)?;
+            let package = ios::assemble(
+                &workspace,
+                &app,
+                ios::Family::VisionOs,
+                &bundle,
+                release,
+                None,
+                &found,
+                None,
+            )?;
             if no_launch {
                 println!("{}", package.dir.display());
                 return Ok(());
@@ -423,8 +434,16 @@ fn main() -> anyhow::Result<()> {
             let app = workspace.app(Some(app.as_deref().unwrap_or("examples/hello-tv")))?;
             let found = plugins::discover(&workspace, &app)?;
             let bundle = build::bundle(&workspace, &app, release, &found)?;
-            let package =
-                ios::assemble(&workspace, ios::Family::TvOs, &bundle, release, None, &found, None)?;
+            let package = ios::assemble(
+                &workspace,
+                &app,
+                ios::Family::TvOs,
+                &bundle,
+                release,
+                None,
+                &found,
+                None,
+            )?;
             if no_launch {
                 println!("{}", package.dir.display());
                 return Ok(());
@@ -450,8 +469,15 @@ fn main() -> anyhow::Result<()> {
                 None
             };
             let bundle = build::bundle(&workspace, &app, release, &found)?;
-            let package =
-                macos::assemble(&workspace, &bundle, release, None, &found, identity.as_ref())?;
+            let package = macos::assemble(
+                &workspace,
+                &app,
+                &bundle,
+                release,
+                None,
+                &found,
+                identity.as_ref(),
+            )?;
             if notarize {
                 macos::notarize(&package, identity.as_ref().expect("--notarize implies --sign"))?;
             }
@@ -526,6 +552,7 @@ fn main() -> anyhow::Result<()> {
             let bundle = build::bundle(&workspace, &app, release, &found)?;
             let artefact = android::assemble(
                 &workspace,
+                &app,
                 &bundle,
                 release,
                 None,
@@ -561,6 +588,7 @@ fn main() -> anyhow::Result<()> {
             let bundle = build::bundle(&workspace, &app, release, &found)?;
             let artefact = android::assemble(
                 &workspace,
+                &app,
                 &bundle,
                 release,
                 None,

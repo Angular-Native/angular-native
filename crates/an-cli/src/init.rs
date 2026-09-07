@@ -95,6 +95,13 @@ pub fn init(dir: Option<&str>, name: Option<&str>, id: Option<&str>, force: bool
     eprintln!("  an dev            the same, reloading when you save");
     eprintln!();
     eprintln!(
+        "Anything the app carries besides its code —a PNG an <an-image> asks for by name, a\n\
+         font, a JSON— goes in resources/ at the root of the project, beside ios/ and macos/.\n\
+         `an` copies that directory into every bundle it builds, under the names it has in\n\
+         there; it is yours the same way the plists are.",
+    );
+    eprintln!();
+    eprintln!(
         "The native app starts at {} and its root component is src/app/app-native.ts.\n\
          Your web app stays as it was: the templates are not shared, because one of them is\n\
          HTML and the other one is native views.",

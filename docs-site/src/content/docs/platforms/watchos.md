@@ -97,7 +97,7 @@ bring the haptics, the highlight and the crown behaviour watchOS gives them.
 
 | Primitive | What it is on the watch |
 |---|---|
-| `an-view` | `ZStack(alignment: .topLeading)` — background, corners, opacity and whatever gestures the template asks for. |
+| `an-view` | `ZStack(alignment: .topLeading)` — background, corners (one radius or four), border, opacity and whatever gestures the template asks for. |
 | `an-text` | `Text`. Font, weight, italic, family, `letterSpacing`, underline and strikethrough, alignment and `numberOfLines`. Measured with the real `UIFont`. |
 | `an-button` | `Button` with `.buttonStyle(.plain)`: the highlight and the haptics are the system's, the background is the app's. |
 | `an-scroll-view` | `ScrollView(.vertical)`. The crown scrolls it because SwiftUI scrolls it — that is not something worth imitating. |
@@ -302,12 +302,20 @@ locked, and Simulator stays in the foreground while the script runs.
 
 ## Nothing fails in silence
 
-Three warnings, each once per case and never once per frame — at 30 Hz, one
+Four warnings, each once per case and never once per frame — at 30 Hz, one
 warning per frame is an unreadable log:
 
 - **A prop nobody reads.** The per-kind allow-list is in `reads()`, next to the
-  code that uses it; `borderWidth` is one of the props that lands here today.
-  The `ios:` and `android:` prefixes and `ng-version` are exempt.
+  code that uses it; `[cursor]`, which only the desktop host has a pointer for,
+  is one of the props that lands here today. The `ios:` and `android:` prefixes
+  and `ng-version` are exempt.
+- **A prop that cannot be painted**, with the reason, in `unpaintable()`. It is
+  deliberately not the same message as the one above: "nobody reads this yet" is
+  a gap somebody can close and "there is nothing here to draw on" is not, and an
+  app author who cannot tell them apart waits for a release that is never
+  coming. A `[borderWidth]` on an `an-alert` is the case that exists today — the
+  system presents the dialog and the app hands it a title, a message and
+  buttons, not a frame.
 - **An event that cannot be delivered**, warned once per kind and event name.
 - **A primitive that is not drawn**, with the SDK's reason.
 
@@ -346,14 +354,19 @@ answering an object with holes in it that would read as real data.
   `http` URL does work — checked in the simulator against a PNG served from the
   Mac — which is why `examples/watch-controls` carries no image: an example in
   this repository cannot be made to depend on a URL. The place to fix it is
-  `watchos.rs::assemble`, and iOS has the same problem.
+  `watchos.rs::assemble`, and it is the only host left with the hole: iOS,
+  macOS and Android copy an app's `resources/` directory into the bundle now.
 - **Animation and transforms.** `[animate]`, `translateX`, `scale`, `rotate`.
   In SwiftUI these are `withAnimation` and `.offset`/`.scaleEffect`, but the
   model is rebuilt whole on every snapshot and an animation needs to know where
   it came from. The stack view already animates its screens in and out, which is
   the most visible case.
-- **Per-side borders and per-corner radii.** `borderWidth`, `borderColor` and
-  the four radii arrive and are warned as unread.
+- **Per-side borders.** There are none, here or anywhere else in the project.
+  `[borderWidth]` is one number and it is drawn; `borderTopWidth` and its three
+  siblings are *layout* styles — taffy resolves them, they inset the children
+  and they never reach a host as something to paint. SwiftUI has no shape for
+  them either, so drawing them on the watch alone would mean butting four
+  rectangles together and having the watch show an edge the phone does not.
 - **The whole snapshot instead of the mutations.** Every changed frame
   serialises the whole tree. For ten or fifteen nodes it does not show. When a
   long list turns up, the ops will have to be sent on their own, and what

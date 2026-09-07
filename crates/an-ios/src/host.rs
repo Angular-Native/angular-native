@@ -2417,6 +2417,17 @@ impl HostRenderer for UikitHost {
                     self.dirty_modals.push(id);
                 }
             }
+            // Only a sheet has anywhere to rest, and it is UIKit's idea:
+            // Android's `Dialog` is as tall as its content and has no list of
+            // stops to be given. Hence the prefix.
+            "ios:detents" if self.modals.contains_key(&id) => {
+                if let Some(state) = self.modals.get_mut(&id) {
+                    state.set_detents(text.as_deref());
+                }
+                if !self.dirty_modals.contains(&id) {
+                    self.dirty_modals.push(id);
+                }
+            }
             "visible" if self.modals.contains_key(&id) => {
                 if let Some(state) = self.modals.get_mut(&id) {
                     state.visible = matches!(value, PropValue::Bool(true));

@@ -273,7 +273,7 @@ gives you.
 | `an-navigation-bar` | `title`, `showsBack`, `backTitle`; output `(back)` |
 | `an-progress-bar` | `progress`, `color` |
 | `an-activity-indicator` | `animating`, `color` |
-| `an-modal` | `visible`, `presentation` `fullScreen\|sheet`; output `(dismiss)` |
+| `an-modal` | `visible`, `presentation` `fullScreen\|sheet`, `[ios].detents`; output `(dismiss)` |
 | `an-alert` | `visible`, `title`, `message`, `buttons`, `sheet`; output `(select)` |
 | `an-web-view` | `url`, `html` |
 | `an-map-view` | `latitude`, `longitude`, `zoom` (12), `showsUser` |

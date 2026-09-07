@@ -87,11 +87,12 @@ APP="$ROOT/build/macos/AngularNativeMac.app"
 #    badly built one is opened by the Finder and rejected by `open` without
 #    saying why.
 missing=()
-for piece in Contents/Info.plist Contents/MacOS/AngularNativeMac Contents/Resources/main.js; do
+for piece in Contents/Info.plist Contents/MacOS/AngularNativeMac Contents/Resources/main.js \
+             Contents/Resources/logo.png; do
   [ -e "$APP/$piece" ] || missing+=("$piece")
 done
 if [ "${#missing[@]}" -eq 0 ]; then
-  echo "  ok   the bundle has its Info.plist, its executable and its main.js"
+  echo "  ok   the bundle has its Info.plist, its executable, its main.js and its resources"
 else
   echo "  FAIL the bundle is missing: ${missing[*]}"
   fail=1
@@ -126,6 +127,48 @@ if [ -s "$SHOT" ] && [ -n "$colours" ] && [ "$colours" -gt 16 ]; then
 else
   echo "  FAIL the screenshot came out blank or was not written"
   fail=1
+fi
+
+# 5b. And that the bundled PNG is one of those colours.
+#
+# `examples/controls/resources/logo.png` is the only file in that example that
+# is not code, and the whole point of it is that a `[source]` with no scheme
+# finds a file the build put inside the `.app`. The `-e` above proves the build
+# copied it; this proves the host found it and drew it, which is a different
+# claim — `imageNamed:` returning nil leaves an empty view and says nothing on
+# screen.
+#
+# What is counted is the mark's exact pink in the top-left corner *and* the
+# white of the letter inside it. Both, on purpose: pink on its own would also be
+# an `NSImageView` with a background colour and no image in it, and the letter
+# is what says the PNG was decoded.
+if command -v ffmpeg >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  MARK="$(python3 - "$SHOT" <<'PYEOF'
+import subprocess, sys
+raw = subprocess.run(
+    ["ffmpeg", "-v", "error", "-i", sys.argv[1], "-vf", "crop=100:100:0:0",
+     "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+    capture_output=True).stdout
+pink = white = 0
+for i in range(0, 100 * 100 * 3, 3):
+    pixel = tuple(raw[i:i + 3])
+    if pixel == (255, 45, 149):
+        pink += 1
+    elif pixel == (255, 255, 255):
+        white += 1
+print(pink, white)
+PYEOF
+)"
+  set -- $MARK
+  if [ "${1:-0}" -gt 800 ] && [ "${2:-0}" -gt 100 ]; then
+    echo "  ok   the bundled logo.png is drawn ($1 pixels of its pink, $2 of the letter)"
+  else
+    echo "  FAIL the resource in the .app never reached the screen: pink=${1:-none} white=${2:-none}"
+    echo "       an <an-image> with a schemeless [source] has to find the file the build copied"
+    fail=1
+  fi
+else
+  echo "  skipped the bundled image: it needs ffmpeg and python3 to read the pixels"
 fi
 
 # 6. The noisy path, which is what holds up the house rule. The controls example

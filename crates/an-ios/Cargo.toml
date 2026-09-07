@@ -39,6 +39,10 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
   "NSNotification",
   "NSURL", "NSURLSession", "NSURLRequest", "NSData", "NSOperation", "NSError", "NSURLResponse",
   "NSArray", "block2", "objc2-core-foundation",
+  # A resource with no scheme is looked for inside the `.app`, and the bundle is
+  # the only thing that knows where that is: the working directory of an app the
+  # system launched is `/`, not the bundle.
+  "NSBundle",
 ] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGColor"] }
 objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "CALayer", "CAShapeLayer", "objc2-core-foundation", "objc2-core-graphics"] }

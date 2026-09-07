@@ -34,6 +34,11 @@ struct AnNodeView: View {
     var body: some View {
         content
             .frame(width: node.width, height: node.height)
+            // The outline goes here, on the frame taffy gave and before the
+            // node is placed, for the same reason accessibility does: a border
+            // belongs to every node and not to a kind. `AnBorder` is what says
+            // why there is one width and not four.
+            .anBorder(node)
             .position(x: node.x + node.width / 2, y: node.y + node.height / 2)
             // Accessibility goes here and not in every `case` of `content`
             // for the same reason the frame does: it belongs to every node,
@@ -82,7 +87,7 @@ struct AnNodeView: View {
         children
             .frame(width: node.width, height: node.height, alignment: .topLeading)
             .background(background)
-            .clipShape(RoundedRectangle(cornerRadius: node.borderRadius ?? 0))
+            .clipShape(node.anCornerShape)
             .opacity(node.opacity ?? 1)
             .anGestures(node, dispatch: dispatch)
             .anCrown(node, controls: controls, dispatch: dispatch, focus: crownFocus)
@@ -121,7 +126,10 @@ struct AnNodeView: View {
         }
         .frame(width: node.width, height: node.height, alignment: .topLeading)
         .background(background)
-        .clipped()
+        // `.clipShape` and not `.clipped()`: with four zero radii it is the very
+        // same rectangle, and it is the only way a screen sliding in stops at
+        // the stack's rounded corner instead of squaring it off.
+        .clipShape(node.anCornerShape)
         .animation(.easeOut(duration: 0.25), value: node.children?.last?.id)
     }
 
@@ -156,7 +164,7 @@ struct AnNodeView: View {
         }
         .frame(width: node.width, height: node.height)
         .background(background)
-        .clipShape(RoundedRectangle(cornerRadius: node.borderRadius ?? 0))
+        .clipShape(node.anCornerShape)
     }
 
     // ------------------------------------------------------------------- text
@@ -202,7 +210,7 @@ struct AnNodeView: View {
         .buttonStyle(.plain)
         .disabled(node.disabled == true)
         .background(background)
-        .clipShape(RoundedRectangle(cornerRadius: node.borderRadius ?? 0))
+        .clipShape(node.anCornerShape)
         .opacity(node.opacity ?? 1)
         .anGestures(node, dispatch: dispatch, ownsTheTap: true)
     }
@@ -218,7 +226,7 @@ struct AnNodeView: View {
     private var imageView: some View {
         AnImageView(node: node, dispatch: dispatch)
             .frame(width: node.width, height: node.height)
-            .clipShape(RoundedRectangle(cornerRadius: node.borderRadius ?? 0))
+            .clipShape(node.anCornerShape)
             .opacity(node.opacity ?? 1)
             .anGestures(node, dispatch: dispatch)
     }

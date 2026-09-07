@@ -2442,9 +2442,10 @@ public final class AnHost {
     /**
      * Line height and letter spacing.
      *
-     * The core already measured with both and the host drew without them: the
-     * layout reserved a gap the text did not fill. The spacing goes in ems, so
-     * it depends on the font size and has to be redone when that changes.
+     * The spacing goes in ems, so it depends on the font size and has to be
+     * redone when that changes. Whatever this does to the drawn box,
+     * {@link #measureText} has to do to the measured one — the two are one
+     * pair, and a change here that stops there is a box the text overflows.
      */
     private void applyTextMetrics(int id, TextView text) {
         FontState state = fontStateOf(id);
@@ -3824,6 +3825,12 @@ public final class AnHost {
     /**
      * Returns width and height packed into a long, in hundredths of a point: two
      * JNI calls per measurement would cost twice as much and gain nothing.
+     *
+     * `letterSpacingDp` and `lineHeightDp` are here because {@link
+     * #applyTextMetrics} puts them on the view: everything that changes the
+     * drawn box has to change the measured one, or the layout reserves a box
+     * the text does not fit. A negative `lineHeightDp` means there is none —
+     * JNI has no `Optional` and a real line height is never below zero.
      */
     public long measureText(
             String text,
@@ -3832,7 +3839,9 @@ public final class AnHost {
             boolean italic,
             String family,
             float maxWidthDp,
-            int maxLines) {
+            int maxLines,
+            float letterSpacingDp,
+            float lineHeightDp) {
         measurePaint.setTextSize(sizeDp * density);
         int style = (weight >= 600 ? Typeface.BOLD : Typeface.NORMAL)
                 | (italic ? Typeface.ITALIC : Typeface.NORMAL);
@@ -3840,6 +3849,19 @@ public final class AnHost {
                 family == null || family.isEmpty()
                         ? Typeface.defaultFromStyle(style)
                         : Typeface.create(family, style));
+
+        // The core carries letter spacing in points and `Paint` wants it in
+        // ems, which is what the size is worth: that is the whole reason for
+        // the division, and it is the same one `applyTextMetrics` does before
+        // drawing. Getting it wrong is not visible as a wrong number, only as
+        // text that drifts further from its box the larger the font is.
+        //
+        // It is set on every call, including to zero, because `measurePaint`
+        // is shared by every measurement there is. Setting it only when there
+        // is spacing would leave the previous node's ems on the paint and
+        // widen the next node's text for no reason anyone could find.
+        float sizePx = measurePaint.getTextSize();
+        measurePaint.setLetterSpacing(sizePx > 0 ? letterSpacingDp * density / sizePx : 0f);
 
         int limitPx =
                 maxWidthDp < 0
@@ -3852,6 +3874,22 @@ public final class AnHost {
                         .setIncludePad(false);
         if (maxLines > 0) {
             builder.setMaxLines(maxLines);
+        }
+        if (lineHeightDp >= 0) {
+            // `TextView.setLineHeight(px)` is `setLineSpacing(px - fontHeight,
+            // 1f)` and nothing else, so that is what the measurement does —
+            // including the clamp at zero that `applyTextMetrics` uses before
+            // API 28, where there is no line height, only what is added to the
+            // font's own. Mirroring the drawing branch for branch is the point:
+            // a measurement that split the difference would disagree with the
+            // drawing on exactly the old devices nobody has to hand.
+            int px = Math.round(lineHeightDp * density);
+            int natural = measurePaint.getFontMetricsInt(null);
+            builder.setLineSpacing(
+                    android.os.Build.VERSION.SDK_INT >= 28
+                            ? px - natural
+                            : Math.max(0, px - natural),
+                    1f);
         }
         StaticLayout layout = builder.build();
 

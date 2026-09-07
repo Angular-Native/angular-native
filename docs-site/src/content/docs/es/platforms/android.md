@@ -192,16 +192,31 @@ nada.
 cosa es normal. Eso es mucho más grueso que el mapa de nueve pasos que usan los
 hosts de Apple, y conviene saberlo cuando un diseño se apoya en 500 o en 300.
 
-La caché vive en Rust y no en Java, con la misma clave que las de Apple, y por
-el mismo motivo más uno: aquí cada consulta cruza JNI, que es bastante más caro
-que un envío de mensaje de Objective-C. El ancho infinito viaja como `-1`,
-porque JNI no tiene tipo opción.
+La caché vive en Rust y no en Java, con una clave que lleva todo aquello de lo
+que depende la respuesta —el texto, la tipografía, el espaciado, la altura de
+línea, el límite de ancho—, por el motivo que tienen los hosts de Apple más
+uno: aquí cada consulta cruza JNI, que es bastante más caro que un envío de
+mensaje de Objective-C. El ancho infinito viaja como `-1`, porque JNI no tiene
+tipo opción.
+
+La altura de línea y el espaciado entre letras se miden y no solo se dibujan.
+Los dos se aplicaban al `TextView` y ninguno cruzaba JNI, así que el layout
+reservaba una caja para un texto sin ellos y el host dibujaba el texto con
+ellos: un espaciado positivo se salía de su caja o partía una palabra antes de
+tiempo, y una `lineHeight` mayor que la propia de la fuente no la reservaba
+nadie, con lo que las líneas se metían encima de lo que viniera detrás. Viajan
+como dos flotantes más en la misma llamada. `Paint.setLetterSpacing` quiere
+emes donde el core lleva puntos, así que el valor se divide por el tamaño del
+texto —la misma división que hace el lado que dibuja, y el motivo por el que
+hay que volver a aplicar el espaciado cada vez que cambia el tamaño—. La altura
+de línea se convierte en `setLineSpacing(lineHeight - fontHeight, 1f)`, que es
+todo lo que hace `setLineHeight`, con el mismo tope en cero que usa el host por
+debajo de la API 28, donde no hay altura de línea, solo lo que se le suma a la
+que ya trae la fuente. La ausencia de altura de línea viaja como `-1`, igual
+que el ancho infinito.
 
 ## Lo que falta
 
-- **`lineHeight` y `letterSpacing` se dibujan pero no se miden.** Los dos se
-  aplican al renderizar y ninguno se pasa a la medición, así que el layout
-  reserva la caja equivocada. iOS al menos mide `lineHeight`.
 - **Sin inset de teclado por debajo de la API 30.** Desde la API 30 el IME
   llega como cualquier otro inset, y llega *en movimiento*:
   `WindowInsetsAnimation.Callback` lo da una vez por fotograma, así que el

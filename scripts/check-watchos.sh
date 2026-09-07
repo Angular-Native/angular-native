@@ -121,6 +121,7 @@ done
 # Without the comments: this file explains why it does not use them, and
 # explaining it cannot count as using it.
 LAY_OUT="$(grep -vE '^\s*(//|\*)' shells/watchos/Sources/AnNodeView.swift shells/watchos/Sources/AnOverlays.swift \
+  shells/watchos/Sources/AnBorder.swift \
   | grep -nE '\b(VStack|HStack|LazyVStack|LazyHStack|Spacer\(\)|\.padding\()' || true)"
 [ -z "$LAY_OUT" ] && r=0 || r=1
 check $r "the shell lays nothing out: no VStack, no HStack, no padding"

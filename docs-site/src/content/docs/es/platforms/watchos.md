@@ -98,7 +98,7 @@ hápticas, el resaltado y el comportamiento de la corona que watchOS les da.
 
 | Primitivo | Qué es en el reloj |
 |---|---|
-| `an-view` | `ZStack(alignment: .topLeading)` — fondo, esquinas, opacidad y los gestos que pida la plantilla. |
+| `an-view` | `ZStack(alignment: .topLeading)` — fondo, esquinas (un radio o cuatro), borde, opacidad y los gestos que pida la plantilla. |
 | `an-text` | `Text`. Fuente, peso, cursiva, familia, `letterSpacing`, subrayado y tachado, alineación y `numberOfLines`. Medido con la `UIFont` de verdad. |
 | `an-button` | `Button` con `.buttonStyle(.plain)`: el resaltado y las hápticas son del sistema, el fondo es de la app. |
 | `an-scroll-view` | `ScrollView(.vertical)`. La corona lo desplaza porque SwiftUI lo desplaza — eso no es algo que merezca la pena imitar. |
@@ -305,12 +305,20 @@ script.
 
 ## Nada falla en silencio
 
-Tres avisos, cada uno una vez por caso y nunca una vez por fotograma — a 30 Hz,
-un aviso por fotograma es un log ilegible:
+Cuatro avisos, cada uno una vez por caso y nunca una vez por fotograma — a
+30 Hz, un aviso por fotograma es un log ilegible:
 
 - **Una prop que nadie lee.** La lista blanca por tipo está en `reads()`, junto
-  al código que la usa; `borderWidth` es una de las props que aterrizan aquí
-  hoy. Los prefijos `ios:` y `android:` y `ng-version` están exentos.
+  al código que la usa; `[cursor]`, para el que solo el host de escritorio tiene
+  un puntero, es una de las props que aterrizan aquí hoy. Los prefijos `ios:` y
+  `android:` y `ng-version` están exentos.
+- **Una prop que no se puede pintar**, con el motivo, en `unpaintable()`. A
+  propósito no es el mismo mensaje que el anterior: «esto todavía no lo lee
+  nadie» es un hueco que alguien puede cerrar y «aquí no hay nada sobre lo que
+  dibujar» no lo es, y quien no pueda distinguirlos se queda esperando una
+  versión que no va a llegar. El caso que existe hoy es un `[borderWidth]` sobre
+  un `an-alert`: el diálogo lo presenta el sistema y la app le entrega un
+  título, un mensaje y unos botones, no un marco.
 - **Un evento que no se puede entregar**, avisado una vez por tipo y nombre de
   evento.
 - **Un primitivo que no se dibuja**, con el motivo del SDK.
@@ -352,14 +360,20 @@ datos reales.
   funciona —comprobado en el simulador contra un PNG servido desde el Mac— y por
   eso `examples/watch-controls` no lleva ninguna imagen: un ejemplo de este
   repositorio no puede depender de una URL. El sitio donde arreglarlo es
-  `watchos.rs::assemble`, y iOS tiene el mismo problema.
+  `watchos.rs::assemble`, y es el único host al que le queda el hueco: iOS,
+  macOS y Android ya copian el directorio `resources/` de la app al bundle.
 - **Animación y transformaciones.** `[animate]`, `translateX`, `scale`,
   `rotate`. En SwiftUI esto es `withAnimation` y `.offset`/`.scaleEffect`, pero
   el modelo se reconstruye entero en cada foto y una animación necesita saber de
   dónde venía. La stack view ya anima la entrada y la salida de sus pantallas,
   que es el caso más visible.
-- **Bordes por lado y radios por esquina.** `borderWidth`, `borderColor` y los
-  cuatro radios llegan y se avisan como no leídos.
+- **Bordes por lado.** No los hay, ni aquí ni en ninguna otra parte del
+  proyecto. `[borderWidth]` es un número y se dibuja; `borderTopWidth` y sus
+  tres hermanos son estilos *de layout* — los resuelve taffy, meten hacia dentro
+  a los hijos y no llegan a ningún host como algo que pintar. SwiftUI tampoco
+  tiene una forma para ellos, así que dibujarlos solo en el reloj sería juntar
+  cuatro rectángulos y hacer que el reloj enseñe un borde que el teléfono no
+  enseña.
 - **La foto entera en lugar de las mutaciones.** Cada fotograma cambiado
   serializa el árbol entero. Con diez o quince nodos no se nota. Cuando aparezca
   una lista larga habrá que mandar las ops por su cuenta, y lo que cambia es

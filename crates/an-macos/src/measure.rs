@@ -32,6 +32,14 @@ struct Key {
     italic: bool,
     family: Option<String>,
     spacing_bits: u32,
+    /// Both of these change the answer — the height that comes back is
+    /// `lines * line_height` — and neither was here. A key that leaves out
+    /// something the result depends on is the worst kind of wrong: it is right
+    /// the first time and wrong every time after, and which way round depends
+    /// on which text happened to be laid out first. A 40-point line asked for
+    /// behind an 18-point one came back as 18.
+    line_height_bits: Option<u32>,
+    max_lines: Option<u32>,
     max_width_eighths: Option<i32>,
 }
 
@@ -123,6 +131,8 @@ impl TextMeasurer for AppKitMeasurer {
             italic: font.italic,
             family: font.family.clone(),
             spacing_bits: font.letter_spacing.to_bits(),
+            line_height_bits: font.line_height.map(f32::to_bits),
+            max_lines: font.max_lines,
             max_width_eighths: max_width
                 .filter(|w| w.is_finite())
                 .map(|w| (w * 8.0).round() as i32),

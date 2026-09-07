@@ -63,6 +63,18 @@ pub struct Node {
     pub color: Option<[f32; 4]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub border_radius: Option<f32>,
+    /// The four corners, and only when the template did not give them all the
+    /// same radius. See `corner_radii_of`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border_radii: Option<[f32; 4]>,
+    /// One width for the whole outline. There is no per-side border here and
+    /// there is none on any other host either: `borderTopWidth` and its three
+    /// siblings are layout styles, they never leave taffy, and what they do is
+    /// inset the children.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border_width: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border_color: Option<[f32; 4]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub opacity: Option<f32>,
     /// Only travels when the template switches it off: a control being live
@@ -315,6 +327,33 @@ fn number_of(host: &WatchHost, id: NodeId, key: &str) -> Option<f32> {
     host.node(id)?.props.get(key)?.as_f32()
 }
 
+/// The four corner radii, and only when they are not all the same.
+///
+/// Nearly every rounded node has one radius for the four corners, and for that
+/// `border_radius` on its own is enough; sending an array as well would add a
+/// key to every node in the snapshot to say what the number already said. The
+/// four only travel when the template really set them apart. It is the same
+/// call `an-ios` makes before reaching for a mask layer, and for the same
+/// reason: the cheap path covers almost everything.
+///
+/// The order is the one the props are written in —top left, top right, bottom
+/// right, bottom left— and not SwiftUI's leading/trailing. Renaming them on the
+/// way across would mean the shell reading position 0 had to remember it was no
+/// longer the top left, and the prop names are the ones an app author sees.
+fn corner_radii_of(host: &WatchHost, id: NodeId) -> Option<[f32; 4]> {
+    // A per-corner radius overrides `borderRadius` on that corner alone: that
+    // is what `[borderRadius]="8" [borderTopLeftRadius]="0"` has to mean, and
+    // it is what `set_corner` does on iOS.
+    let all = number_of(host, id, "borderRadius").unwrap_or(0.0);
+    let radii = [
+        number_of(host, id, "borderTopLeftRadius").unwrap_or(all),
+        number_of(host, id, "borderTopRightRadius").unwrap_or(all),
+        number_of(host, id, "borderBottomRightRadius").unwrap_or(all),
+        number_of(host, id, "borderBottomLeftRadius").unwrap_or(all),
+    ];
+    radii.iter().any(|r| *r != radii[0]).then_some(radii)
+}
+
 fn f64_of(host: &WatchHost, id: NodeId, key: &str) -> Option<f64> {
     match host.node(id)?.props.get(key)? {
         PropValue::Number(n) => Some(*n),
@@ -399,6 +438,12 @@ fn node(host: &WatchHost, id: NodeId, overlays: &mut Vec<Node>) -> Option<Node> 
     listens.sort();
     warn_unheard(name, &listens);
 
+    // Whether this kind has an edge to draw on. `unpaintable` is the one place
+    // that decides it, and it is asked here so the snapshot cannot promise the
+    // shell a border on the very node the host has just refused one on: a field
+    // in the snapshot is a promise something will be drawn with it.
+    let outline = unpaintable(kind, "borderWidth").is_none();
+
     let built = Node {
         id,
         kind: name,
@@ -409,7 +454,14 @@ fn node(host: &WatchHost, id: NodeId, overlays: &mut Vec<Node>) -> Option<Node> 
         unsupported,
         background: color_of(host, id, "backgroundColor"),
         color: color_of(host, id, "color"),
-        border_radius: number_of(host, id, "borderRadius"),
+        border_radius: outline.then(|| number_of(host, id, "borderRadius")).flatten(),
+        border_radii: outline.then(|| corner_radii_of(host, id)).flatten(),
+        // A zero-width border is no border: sending it would make the shell
+        // stroke a hairline SwiftUI still antialiases into a visible edge.
+        border_width: outline
+            .then(|| number_of(host, id, "borderWidth").filter(|w| *w > 0.0))
+            .flatten(),
+        border_color: outline.then(|| color_of(host, id, "borderColor")).flatten(),
         opacity: number_of(host, id, "opacity"),
         // A switched-off control is the exception, not the rule: only the
         // `false` travels.
@@ -696,6 +748,16 @@ fn warn_unread(host: &WatchHost, id: NodeId, kind: NodeKind) {
     let Some(node) = host.node(id) else { return };
     let name = kind_name(kind);
     for key in node.props.keys() {
+        // The reason first, when there is one: "nobody reads this" and "this
+        // cannot be drawn here" are different pieces of news, and only the
+        // second one tells whoever is reading the log to stop looking for a
+        // version of the SDK where it works.
+        if let Some(reason) = unpaintable(kind, key) {
+            let said =
+                format!("<{name}> got [{key}], and it cannot be painted on watchOS: {reason}");
+            warn_once(name, key, &said);
+            continue;
+        }
         if reads(kind, key) {
             continue;
         }
@@ -703,10 +765,65 @@ fn warn_unread(host: &WatchHost, id: NodeId, kind: NodeKind) {
     }
 }
 
+/// Props that arrive on a kind that can never paint them, and why.
+///
+/// The distinction this draws is the whole point of it: `reads()` says "no host
+/// code looks at this yet", which is a gap somebody can close, and this says
+/// "there is nothing here to draw on", which nobody can. Sending the same
+/// sentence for both would have an app author waiting for a release that is
+/// never coming.
+///
+/// It is the third of these lists —`unsupported` rules out a whole primitive,
+/// `unheard` an event— and it is a function rather than a table for the same
+/// reason they are: the reason has to be written next to the decision.
+pub(crate) fn unpaintable(kind: NodeKind, key: &str) -> Option<&'static str> {
+    // Only the outline family, and only where there is no outline to draw. A
+    // kind the watch does not paint at all has already said so wholesale
+    // through `unsupported`, and repeating it per prop would bury it.
+    if !matches!(
+        key,
+        "borderWidth"
+            | "borderColor"
+            | "borderRadius"
+            | "borderTopLeftRadius"
+            | "borderTopRightRadius"
+            | "borderBottomRightRadius"
+            | "borderBottomLeftRadius"
+    ) {
+        return None;
+    }
+    match kind {
+        NodeKind::Alert | NodeKind::Modal => Some(
+            "the system presents a dialog and a sheet, and the app hands it a title, a \
+             message and buttons — not a frame. There is no edge of ours to round or to \
+             stroke, and drawing one would mean painting a lookalike in front of the \
+             real one",
+        ),
+        _ => None,
+    }
+}
+
 /// Whether the watch does anything with that prop on that kind of node.
-fn reads(kind: NodeKind, key: &str) -> bool {
-    // Common to everything that gets painted.
-    if matches!(key, "backgroundColor" | "borderRadius" | "opacity" | "testID" | "enabled") {
+pub(crate) fn reads(kind: NodeKind, key: &str) -> bool {
+    // Common to everything that gets painted. The outline goes here and not
+    // per kind because on the watch it is not a property of a view —there are
+    // no views— but a shape stroked around the frame taffy gave, and every node
+    // has one of those. Where there is no frame to stroke, `unpaintable` has
+    // already said so with the reason before this list is ever consulted.
+    if matches!(
+        key,
+        "backgroundColor"
+            | "borderRadius"
+            | "borderTopLeftRadius"
+            | "borderTopRightRadius"
+            | "borderBottomRightRadius"
+            | "borderBottomLeftRadius"
+            | "borderWidth"
+            | "borderColor"
+            | "opacity"
+            | "testID"
+            | "enabled"
+    ) {
         return true;
     }
     // The six accessibility ones hold on any node: the contract puts them on

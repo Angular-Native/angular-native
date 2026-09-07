@@ -46,3 +46,63 @@ if ! grep -q "setViewport" "$ACTIVITY"; then
   exit 1
 fi
 echo "  ok   the viewport follows the container, so a rotation relays out"
+
+# That what the host draws on the text, it also measures.
+#
+# `call_java_long` clears the exception and answers `None` when Rust's
+# descriptor does not name a real Java method, and the measurer then falls back
+# to a zero width. So a signature that drifts does not crash and does not log:
+# text just measures zero, on the device, later. The descriptor is lined up
+# against the declaration here, where it costs nothing, and the two font props
+# that were drawn without ever being measured are required to appear in both.
+python3 - "$ROOT" <<'PY'
+import pathlib, re, sys
+
+root = pathlib.Path(sys.argv[1])
+rust = (root / 'crates/an-android/src/measure.rs').read_text()
+java = (root / 'shells/android/java/dev/angularnative/AnHost.java').read_text()
+failures = []
+
+descriptor = re.search(r'"measureText",\s*\n\s*"\(([^)]*)\)J"', rust)
+declaration = re.search(r'public long measureText\(([^)]*)\)', java)
+if not descriptor or not declaration:
+    failures.append('  FAIL measureText could not be read out of one of the two sides')
+else:
+    JVM = {'F': 'float', 'I': 'int', 'Z': 'boolean', 'Ljava/lang/String;': 'String'}
+    wanted, rest = [], descriptor.group(1)
+    while rest:
+        token = next((t for t in JVM if rest.startswith(t)), None)
+        if token is None:
+            failures.append(f'  FAIL the JNI descriptor uses a type this check cannot read: {rest}')
+            break
+        wanted.append(JVM[token])
+        rest = rest[len(token):]
+    got = [p.split()[-2] for p in declaration.group(1).split(',')]
+    if wanted != got:
+        failures.append(
+            '  FAIL measureText: Rust calls (' + ', '.join(wanted)
+            + ') and AnHost declares (' + ', '.join(got) + ')'
+        )
+    else:
+        print(f'  ok   measureText crosses JNI with the {len(got)} arguments AnHost declares')
+
+# Drawn and measured are one pair; the second half is what was missing.
+body = java[java.index('public long measureText('):]
+body = body[: body.index('\n    }')]
+for prop, drawn, measured in [
+    ('letterSpacing', 'setLetterSpacing', 'setLetterSpacing'),
+    ('lineHeight', 'setLineSpacing', 'setLineSpacing'),
+]:
+    if measured not in body:
+        failures.append(
+            f'  FAIL {prop} is applied to the view by {drawn} and never to the measurement;'
+            ' the layout would reserve a box the text does not fit'
+        )
+if not failures:
+    print('  ok   letter spacing and line height reach the StaticLayout, not only the TextView')
+
+for line in failures:
+    print(line)
+if failures:
+    sys.exit(1)
+PY

@@ -27,14 +27,28 @@ import { NATIVE_PRIMITIVES, SafeArea } from '@angular-native/primitives'
         [showsScrollIndicator]="false"
         [ios]="{ pagingEnabled: false, keyboardDismissMode: 'onDrag' }">
       <an-view [style.flexGrow]="'1'" [style.padding]="'16'" [style.gap]="'18'">
-        <an-text
-          [fontSize]="24"
-          [fontWeight]="'bold'"
-          [letterSpacing]="2"
-          [lineHeight]="34"
-          [color]="'#f4f7ff'">
-          {{ tabTitles[tab()] }}
-        </an-text>
+        <!--
+          The one file in this example that is not code. resources/logo.png
+          sits beside src/, and an copies it into the app under that same
+          name: no scheme, no URL, no network. Every example here used to point
+          [source] at a CDN because a bundled file could not reach the app at
+          all, which made the case people write first the one nothing proved.
+        -->
+        <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'12'">
+          <an-image
+            [source]="'logo.png'"
+            [resizeMode]="'contain'"
+            [style.width]="'44'"
+            [style.height]="'44'" />
+          <an-text
+            [fontSize]="24"
+            [fontWeight]="'bold'"
+            [letterSpacing]="2"
+            [lineHeight]="34"
+            [color]="'#f4f7ff'">
+            {{ tabTitles[tab()] }}
+          </an-text>
+        </an-view>
 
         <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'12'">
           <an-text [fontSize]="16" [color]="'#9fb0d4'" [style.flexGrow]="'1'">Notifications</an-text>

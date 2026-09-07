@@ -391,6 +391,27 @@ One consequence of `ActiveInActiveApp`: the hover assertion is **skipped**, and
 says so, when the app cannot be brought to the front. A skip is reported and is
 not a pass.
 
+## Resources in the bundle
+
+The same as on iOS, one directory over. An `<an-image [source]="'logo.png'">`
+comes from `resources/` in the project — beside `macos/Info.plist`, not under
+`src/assets/`, for the reasons on the
+[iOS page](/platforms/ios/#resources-in-the-bundle) — and `an macos` copies the
+tree into `Contents/Resources`, next to `main.js`, which is the directory
+`NSImage(named:)` searches. Subdirectories are kept, dotfiles are skipped, and
+the copy happens before the ad-hoc signature that this platform cannot run
+without.
+
+Only two names are reserved here rather than iOS's four: the executable lives in
+`Contents/MacOS` and the `Info.plist` in `Contents`, so a resource cannot
+collide with either. A resource called `main.js` or `dev-server.txt` still stops
+the build. A `[source]` naming a file that is not there is warned once, by name
+— `images.rs`, same shape as the measurement warnings — rather than leaving an
+empty `NSImageView` that reads as an image still loading.
+
+`examples/controls` carries one, so `scripts/check-macos.sh` screenshots a
+window with a real bundled PNG in it.
+
 ## Shipping it to another Mac
 
 ```bash

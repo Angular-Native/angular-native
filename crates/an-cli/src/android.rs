@@ -12,6 +12,7 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 
 use crate::plugins::{self, Platform, Plugin};
+use crate::resources;
 use crate::signing;
 use crate::workspace::{Appearance, Workspace};
 
@@ -278,6 +279,7 @@ fn reverse_dev_port(adb: &Path, serial: &str, port: u16) -> Result<()> {
 
 pub fn assemble(
     workspace: &Workspace,
+    app: &Path,
     bundle: &Path,
     release: bool,
     dev_server: Option<&str>,
@@ -361,6 +363,21 @@ pub fn assemble(
     if let Some(url) = dev_server {
         std::fs::write(staging.join("assets/dev-server.txt"), url)?;
     }
+    // The app's own files. `assets/` is where they go because that is what
+    // `AnHost.loadImage` already opens for a `[source]` with no scheme — the
+    // one host of the three that could read a bundled file before the build
+    // learned to put one there.
+    //
+    // The three reserved names are the three written just above. The dev
+    // server's is reserved whether or not this build writes it: a resource
+    // called `dev-server.txt` would turn every release build into one that
+    // tries to reach a machine that is not there.
+    let carried = resources::copy(
+        workspace,
+        app,
+        &staging.join("assets"),
+        &["main.js", "material-symbols.ttf", "material-symbols.codepoints", "dev-server.txt"],
+    )?;
 
     // The Android libraries —Material and everything it drags along— arrive
     // resolved and with their resources already compiled by
@@ -584,6 +601,11 @@ pub fn assemble(
     if dev_server.is_some() {
         entries.push("assets/dev-server.txt".to_owned());
     }
+    // `zip` is given the list of files and not the directory, so anything not
+    // named here is simply absent from the APK — which is exactly how the
+    // resources used to be absent. The `.aab` path does not need this: it
+    // copies `assets/` whole.
+    entries.extend(carried.iter().map(|name| format!("assets/{name}")));
     let mut zip_args: Vec<String> = vec![
         "-q".into(),
         "-X".into(),

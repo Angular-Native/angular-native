@@ -85,6 +85,7 @@ pub fn require_plugins(plugins: &[Plugin]) -> Result<()> {
 /// is what another Mac will open.
 pub fn assemble(
     workspace: &Workspace,
+    app: &Path,
     bundle: &Path,
     release: bool,
     dev_server: Option<&str>,
@@ -228,6 +229,14 @@ pub fn assemble(
             let _ = std::fs::remove_file(resources.join("dev-server.txt"));
         }
     }
+    // The app's own files, into `Contents/Resources` beside `main.js`, which is
+    // the directory `NSImage(named:)` searches. Before the signature, because
+    // the signature covers them.
+    //
+    // Two reserved names and not iOS's four: the executable lives in
+    // `Contents/MacOS` and the `Info.plist` in `Contents`, so neither of them
+    // can be collided with from in here.
+    crate::resources::copy(workspace, app, &resources, &["main.js", "dev-server.txt"])?;
 
     // One entitlements file for both signing paths. It is what carries the
     // plugins' keys, and a plugin that only got them on the signed path would

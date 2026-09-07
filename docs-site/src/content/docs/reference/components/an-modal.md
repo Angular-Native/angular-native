@@ -31,7 +31,7 @@ button — as opposed to `[visible]` going false because your code said so.
 | Prop | Type | Default | |
 |---|---|---|---|
 | `visible` | `boolean \| null` | `false` |  |
-| `presentation` | `'fullScreen' \| 'sheet' \| null` | `null` | `fullScreen` covers the screen; `sheet` comes up from the bottom with the system's grabber and detents. |
+| `presentation` | `'fullScreen' \| 'sheet' \| null` | `null` | `fullScreen` covers the screen; `sheet` comes up from the bottom with the system's grabber, resting where `[ios].detents` says. |
 
 ## Outputs
 
@@ -39,10 +39,20 @@ button — as opposed to `[visible]` going false because your code said so.
 |---|---|---|
 | `(dismiss)` | — | It closed. |
 
+### `[ios]` — what UIKit has and the others do not
+
+| Key | Type | |
+|---|---|---|
+| `detents` | `readonly ('medium' \| 'large' \| number)[]` | Where the sheet is allowed to rest, in the order UIKit is given them. `UISheetPresentationController.detents`. `'medium'` and `'large'` are UIKit's own; a number is `.custom(resolver:)`, a height in points measured from the bottom. Without it, the two the system suggests. Only read when `presentation` is `sheet`. Android has no equivalent to ask for: its `Dialog` is as tall as its content, and `BottomSheetBehavior` is Material's, not the platform's. |
+
 ## Example
 
 ```html
-<an-modal [visible]="editing()" [presentation]="'sheet'" (dismiss)="editing.set(false)">
+<an-modal
+  [visible]="editing()"
+  [presentation]="'sheet'"
+  [ios]="{ detents: ['medium', 'large'] }"
+  (dismiss)="editing.set(false)">
   <an-safe-area [edges]="['top', 'bottom']" [padding]="20" [style.gap]="'12'">
     <an-text [fontSize]="20">Edit note</an-text>
     <an-textarea [value]="draft()" (change)="draft.set($event.value)" />

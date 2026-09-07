@@ -34,6 +34,9 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
   "std", "NSString", "NSAttributedString", "NSDictionary", "NSValue", "NSGeometry",
   "NSURL", "NSURLSession", "NSURLRequest", "NSData", "NSOperation", "NSError",
   "NSURLResponse", "NSArray", "NSDate", "NSRange", "block2", "objc2-core-foundation",
+  # A resource with no scheme is looked for inside the `.app`, and the bundle is
+  # the only thing that knows where that is.
+  "NSBundle",
   # The device module: the system's version and the preferred language.
   "NSProcessInfo", "NSLocale",
 ] }

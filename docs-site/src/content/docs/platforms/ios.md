@@ -145,12 +145,41 @@ recognise is ignored in silence, deliberately: a template may carry a `(click)`
 inherited from the web, and that is not a reason to make noise. The
 subscribe-time warnings all belong to tvOS and visionOS.
 
-## `[sheet]` on a modal
+## A modal's sheet, and where it rests
 
-`[sheet]` gives a `pageSheet` with a grabber and exactly two detents, medium and
-large. **They are hard-coded** — there is no prop to choose them. Anything else
-is presented `overFullScreen` with a vertical cover, chosen because the core has
-already laid the content out full screen, so nothing has to be repositioned.
+`[presentation]="'sheet'"` gives a `pageSheet` with a grabber. Where it may rest
+is `[ios].detents`, and it is in the iOS object because a detent is UIKit's
+idea: Android's `Dialog` is as tall as its content and has no list of stops to
+be handed.
+
+```html
+<an-modal [visible]="open()" [presentation]="'sheet'" [ios]="{ detents: [180, 'large'] }" />
+```
+
+The list takes UIKit's three and no more: `'medium'` is `.medium()`, `'large'`
+is `.large()`, and a number is `.custom(resolver:)` — a height in points,
+measured from the bottom, iOS 16 and up. A height taller than the sheet can be
+is brought down to that maximum rather than thrown away, because the resolver is
+asked again on every rotation and "600 points" on a phone lying down means "all
+the way up". The order is yours and is kept.
+
+Saying nothing is still medium and large, which is what the system suggests. An
+entry that is neither name nor a height above zero is dropped **with a warning
+in the log**, once per value: the template's type already refuses those, so
+getting there means an object assembled at run time. An empty list is not
+passed on to UIKit, which answers one by throwing.
+
+A list bound to a signal is re-applied to a sheet that is already up, so a
+detent can be added or taken away without closing it.
+
+Anything that is not a sheet is presented `overFullScreen` with a vertical
+cover, chosen because the core has already laid the content out full screen, so
+nothing has to be repositioned. That is also why a sheet resting at a small
+detent shows the *top* of a full-screen layout: the content is not re-laid out
+to the sheet's height.
+
+On tvOS there are no detents at all — `UISheetPresentationController` is marked
+`API_UNAVAILABLE(tvos)`, and asking for them says so once in the log.
 
 ## Text measurement
 
@@ -205,6 +234,51 @@ simulator's, the SDK is `iphonesimulator`, and the launch path is `simctl` end
 to end. A real device needs the other route — an identity and a profile — and
 that is not here.
 
+## Resources in the bundle
+
+An `<an-image [source]="'logo.png'">` — a path with no scheme — is a file that
+travelled with the app, and it comes from `resources/` in the project:
+
+```text
+my-app/
+  ios/Info.plist        an add ios writes it; yours from then on
+  resources/logo.png    yours too; copied into the bundle under this name
+  src/
+```
+
+It sits beside `ios/` and not under `src/assets/` or `public/` for a reason:
+those two belong to the web build, `angular.json` decides what goes in them, and
+`an` has promised never to touch `angular.json`. It would also put every favicon
+and web font into a phone binary that has no browser to need them. Inside the
+monorepo the same directory hangs off the example —
+`examples/controls/resources/logo.png` — which is where the pink `A` at the top
+of the controls screenshot comes from.
+
+`an ios` copies the tree whole into the root of the `.app`, next to `main.js`,
+keeping subdirectories: `resources/icons/logo.png` is asked for as
+`icons/logo.png`. Dotfiles are skipped, so the `.DS_Store` the Finder leaves in
+any directory it has opened never reaches a signed bundle. The copy happens
+**before** the signature, because a signature covers every file in the bundle
+and one added afterwards is one `installd` refuses.
+
+Two things can go wrong, and neither of them is silent:
+
+- A resource whose name is one the build writes itself — `main.js`,
+  `Info.plist`, `dev-server.txt`, the executable — **stops the build**, naming
+  the file. The copy would otherwise replace the app's own code, and nothing on
+  the device would say why it launched into nothing.
+- A name with nothing behind it is **warned once on the device**, with the name
+  and where the file should have come from. It cannot be a build check: only the
+  device knows which strings a template really produced, and half of them are
+  computed. What it must not be is an empty `an-image`, which looks exactly like
+  an image still loading, a colour that matches the background, or a frame of
+  zero height.
+
+The lookup is `UIImage(named:)` first — so an asset catalogue and the system's
+own names go on working, and UIKit caches what it finds — and the file under the
+bundle's resource path second, which is what makes a name with a slash in it
+resolve at all.
+
 ## Onto a real iPhone, and into the store
 
 ```bash
@@ -255,7 +329,6 @@ orientations are portrait and both landscapes.
   [The safe area and the keyboard](/guide/safe-area-and-keyboard/). What there
   is no way to ask for is the bar above it: a Done button, a next-field arrow,
   anything `inputAccessoryView` is for.
-- **Sheet detents cannot be chosen** (above).
 - **Six warn-once sites, all in accessibility**: an unknown role, an unknown
   state key, a role UIKit has no trait for, `checked: 'mixed'` — UIKit only
   knows checked and unchecked, so the value is left empty rather than rounded —

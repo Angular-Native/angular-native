@@ -434,7 +434,9 @@ thread_local! {
     static SAID: RefCell<HashSet<String>> = RefCell::new(HashSet::new());
 }
 
-fn warn_once(key: &str, message: &str) {
+/// Shared with `modal.rs`: the same "say it once and let the log be readable"
+/// applies to a detent nobody can turn into a height.
+pub(crate) fn warn_once(key: &str, message: &str) {
     SAID.with(|said| {
         if said.borrow_mut().insert(key.to_owned()) {
             eprintln!("angular-native: {message}");

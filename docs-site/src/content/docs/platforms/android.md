@@ -182,16 +182,28 @@ nothing.
 That is much coarser than the nine-step map the Apple hosts use, and it is worth
 knowing when a design leans on 500 or 300.
 
-The cache lives in Rust rather than Java, keyed the same way as the Apple ones,
-and for the same reason plus one more: every query here crosses JNI, which is a
-good deal more expensive than an Objective-C message send. Infinite width
-travels as `-1`, because JNI has no option type.
+The cache lives in Rust rather than Java, keyed on everything the answer
+depends on — the text, the font, the spacing, the line height, the width limit
+— for the reason the Apple hosts have one plus one more: every query here
+crosses JNI, which is a good deal more expensive than an Objective-C message
+send. Infinite width travels as `-1`, because JNI has no option type.
+
+Line height and letter spacing are measured and not only drawn. Both were
+applied to the `TextView` and neither crossed JNI, so the layout reserved a box
+for text without them and the host drew the text with them: positive spacing
+ran past its box or wrapped a word early, and a `lineHeight` above the font's
+own was reserved by nobody, so the lines ran into whatever came after them.
+They travel as two more floats on the same call. `Paint.setLetterSpacing` wants
+ems where the core carries points, so the value is divided by the text size —
+the same division the drawing side does, and the reason the spacing has to be
+reapplied whenever the size changes. The line height becomes
+`setLineSpacing(lineHeight - fontHeight, 1f)`, which is all `setLineHeight` is,
+with the same clamp at zero the host uses below API 28 where there is no line
+height at all, only what is added to the font's own. No line height travels as
+`-1`, the way an infinite width does.
 
 ## What is missing
 
-- **`lineHeight` and `letterSpacing` are drawn but not measured.** Both are
-  applied when rendering and neither is passed to the measurement, so layout
-  reserves the wrong box. iOS at least measures `lineHeight`.
 - **No keyboard inset below API 30.** From API 30 the IME arrives like any
   other inset and it arrives *moving*: `WindowInsetsAnimation.Callback` gives
   it once per frame, so the form travels with the keyboard. Before that,

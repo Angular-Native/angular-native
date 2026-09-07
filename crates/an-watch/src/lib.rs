@@ -332,6 +332,115 @@ mod tests {
         assert_eq!(root.listens, vec!["crown", "longPress", "swipeLeft"]);
     }
 
+    /// The outline: one width, one colour, and four corners that only travel
+    /// when they are not all the same.
+    ///
+    /// The cheap case is the one worth pinning down. Almost every rounded node
+    /// has a single `[borderRadius]`, and for that the snapshot must not grow an
+    /// array saying again what the number already said — the shell builds the
+    /// same shape out of either.
+    #[test]
+    fn the_outline_travels_and_the_four_corners_only_when_they_differ() {
+        let mut tree = ShadowTree::new();
+        tree.create_node(1, NodeKind::View).unwrap();
+        tree.set_style(1, "width", "176").unwrap();
+        tree.set_style(1, "height", "223").unwrap();
+        tree.set_root(1).unwrap();
+
+        // One radius for the four corners, plus a border.
+        tree.create_node(2, NodeKind::View).unwrap();
+        tree.set_style(2, "height", "40").unwrap();
+        tree.set_prop(2, "borderRadius", PropValue::Number(8.0)).unwrap();
+        tree.set_prop(2, "borderWidth", PropValue::Number(2.0)).unwrap();
+        tree.set_prop(2, "borderColor", PropValue::Str("#ff0000".into())).unwrap();
+        tree.insert_child(1, 2, 0).unwrap();
+
+        // A per-corner radius on top of the common one: it overrides that
+        // corner and leaves the other three alone.
+        tree.create_node(3, NodeKind::View).unwrap();
+        tree.set_style(3, "height", "40").unwrap();
+        tree.set_prop(3, "borderRadius", PropValue::Number(8.0)).unwrap();
+        tree.set_prop(3, "borderTopLeftRadius", PropValue::Number(0.0)).unwrap();
+        tree.insert_child(1, 3, 1).unwrap();
+
+        // And a width of zero, which is no border: stroking it would leave a
+        // hairline SwiftUI antialiases into something visible.
+        tree.create_node(4, NodeKind::View).unwrap();
+        tree.set_style(4, "height", "40").unwrap();
+        tree.set_prop(4, "borderWidth", PropValue::Number(0.0)).unwrap();
+        tree.insert_child(1, 4, 2).unwrap();
+
+        let mut mount = MountSide::new(WatchHost::new(new_event_queue()));
+        let measurer = WatchMeasurer::new(Default::default());
+        mount.apply(&tree.commit((176.0, 223.0), &measurer).unwrap());
+        let root = crate::snapshot::snapshot(mount.host()).root.unwrap();
+
+        let uniform = &root.children[0];
+        assert_eq!(uniform.border_radius, Some(8.0));
+        assert_eq!(uniform.border_radii, None, "four equal corners say nothing new");
+        assert_eq!(uniform.border_width, Some(2.0));
+        assert_eq!(uniform.border_color, Some([1.0, 0.0, 0.0, 1.0]));
+
+        // Clockwise from the top left, which is the order the props are named
+        // in and not SwiftUI's leading/trailing.
+        assert_eq!(root.children[1].border_radii, Some([0.0, 8.0, 8.0, 8.0]));
+        assert_eq!(root.children[2].border_width, None);
+    }
+
+    /// A dialog and a sheet are presented by the system, so an outline on them
+    /// is not a gap somebody can close later: there is no edge of ours to draw
+    /// on. The host has to say that, and say it differently from "nobody reads
+    /// this yet".
+    #[test]
+    fn an_outline_on_a_dialog_is_refused_with_the_reason() {
+        for kind in [NodeKind::Alert, NodeKind::Modal] {
+            for key in [
+                "borderWidth",
+                "borderColor",
+                "borderRadius",
+                "borderTopLeftRadius",
+                "borderTopRightRadius",
+                "borderBottomRightRadius",
+                "borderBottomLeftRadius",
+            ] {
+                assert!(
+                    crate::snapshot::unpaintable(kind, key).is_some(),
+                    "{kind:?} has no frame to put a [{key}] on and has to say so"
+                );
+            }
+        }
+        // And on a node that does have a frame it is drawn, so there is nothing
+        // to refuse: a prop cannot be painted and impossible at the same time.
+        for key in ["borderWidth", "borderColor", "borderTopLeftRadius"] {
+            assert!(crate::snapshot::unpaintable(NodeKind::View, key).is_none());
+            assert!(crate::snapshot::reads(NodeKind::View, key));
+        }
+        // A primitive the watch does not paint at all has already said so
+        // wholesale, by its kind: repeating it prop by prop would bury it.
+        assert!(crate::snapshot::unpaintable(NodeKind::WebView, "borderWidth").is_none());
+
+        // And what was refused does not travel anyway. A field in the snapshot
+        // is a promise the shell will draw with it, and one it cannot keep is
+        // worse than the missing key.
+        let mut tree = ShadowTree::new();
+        tree.create_node(1, NodeKind::View).unwrap();
+        tree.set_style(1, "width", "208").unwrap();
+        tree.set_style(1, "height", "248").unwrap();
+        tree.set_root(1).unwrap();
+        tree.create_node(2, NodeKind::Alert).unwrap();
+        tree.set_prop(2, "visible", PropValue::Bool(true)).unwrap();
+        tree.set_prop(2, "borderWidth", PropValue::Number(2.0)).unwrap();
+        tree.set_prop(2, "borderRadius", PropValue::Number(12.0)).unwrap();
+        tree.insert_child(1, 2, 0).unwrap();
+
+        let mut mount = MountSide::new(WatchHost::new(new_event_queue()));
+        let measurer = WatchMeasurer::new(Default::default());
+        mount.apply(&tree.commit((208.0, 248.0), &measurer).unwrap());
+        let alert = &crate::snapshot::snapshot(mount.host()).overlays[0];
+        assert_eq!(alert.border_width, None);
+        assert_eq!(alert.border_radius, None);
+    }
+
     /// Every primitive is either painted by the watch or says why it is not.
     /// What there cannot be is a third answer: a gap nobody accounted for.
     #[test]

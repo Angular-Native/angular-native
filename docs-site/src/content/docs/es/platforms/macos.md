@@ -407,6 +407,28 @@ Una consecuencia de `ActiveInActiveApp`: la aserción del hover se **salta**, y
 lo dice, cuando no se puede traer la app al frente. Un salto se informa y no es
 un aprobado.
 
+## Recursos dentro del bundle
+
+Lo mismo que en iOS, un directorio más allá. Un
+`<an-image [source]="'logo.png'">` sale de `resources/`, en el proyecto —al lado
+de `macos/Info.plist`, no dentro de `src/assets/`, por los motivos de la
+[página de iOS](/es/platforms/ios/#recursos-dentro-del-bundle)— y `an macos`
+copia el árbol a `Contents/Resources`, junto a `main.js`, que es el directorio
+donde busca `NSImage(named:)`. Se conservan los subdirectorios, se saltan los
+ficheros ocultos, y la copia va antes de la firma ad-hoc sin la que esta
+plataforma no arranca.
+
+Aquí hay dos nombres reservados y no los cuatro de iOS: el ejecutable vive en
+`Contents/MacOS` y el `Info.plist` en `Contents`, así que un recurso no puede
+chocar con ninguno de los dos. Un recurso llamado `main.js` o `dev-server.txt`
+sigue parando la compilación. Un `[source]` que nombra un fichero que no está se
+avisa una vez, por su nombre —`images.rs`, con la misma forma que los avisos de
+medición—, en lugar de dejar un `NSImageView` vacío que se lee como una imagen
+que aún está cargando.
+
+`examples/controls` lleva uno, así que `scripts/check-macos.sh` fotografía una
+ventana con un PNG del bundle de verdad dentro.
+
 ## Llevarlo a otro Mac
 
 ```bash

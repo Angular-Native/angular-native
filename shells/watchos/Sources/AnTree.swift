@@ -88,6 +88,12 @@ struct AnNode: Decodable, Identifiable, Equatable {
     let background: [Double]?
     let color: [Double]?
     let borderRadius: Double?
+    /// The four corners clockwise from the top left, and only when they are not
+    /// all the same. `AnNode.anCornerShape` is what turns either of the two into
+    /// the one shape the clip and the border share.
+    let borderRadii: [Double]?
+    let borderWidth: Double?
+    let borderColor: [Double]?
     let opacity: Double?
     let disabled: Bool?
     let testId: String?

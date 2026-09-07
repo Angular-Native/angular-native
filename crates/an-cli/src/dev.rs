@@ -127,6 +127,7 @@ pub fn run(
             Target::Ios { device } => {
                 let package = ios::assemble(
                     &workspace,
+                    &app,
                     ios::Family::Ios,
                     &bundle_path,
                     false,
@@ -142,6 +143,7 @@ pub fn run(
             Target::TvOs { device } => {
                 let package = ios::assemble(
                     &workspace,
+                    &app,
                     ios::Family::TvOs,
                     &bundle_path,
                     false,
@@ -157,6 +159,7 @@ pub fn run(
             Target::VisionOs { device } => {
                 let package = ios::assemble(
                     &workspace,
+                    &app,
                     ios::Family::VisionOs,
                     &bundle_path,
                     false,
@@ -179,8 +182,15 @@ pub fn run(
             // front and the change looks as though it never landed— and opens
             // the new one. See `macos.rs`.
             Target::MacOs => {
-                let package =
-                    macos::assemble(&workspace, &bundle_path, false, Some(&url), &plugins, None)?;
+                let package = macos::assemble(
+                    &workspace,
+                    &app,
+                    &bundle_path,
+                    false,
+                    Some(&url),
+                    &plugins,
+                    None,
+                )?;
                 macos::launch(&package)?;
             }
             Target::Android | Target::Wear { .. } => {
@@ -192,6 +202,7 @@ pub fn run(
                 };
                 let apk = crate::android::assemble(
                     &workspace,
+                    &app,
                     &bundle_path,
                     false,
                     Some(&url),

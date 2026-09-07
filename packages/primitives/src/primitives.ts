@@ -319,7 +319,14 @@ export abstract class NativeVisual {
         continue
       }
       sent.add(key)
-      this.set(`${where.platform}:${key}`, raw)
+      // The wire's value type is a number, a boolean or a string, so a list
+      // travels as JSON and the host takes it apart — the same treatment
+      // `[items]` and `[buttons]` get, and for the same reason. Doing it here
+      // and not in the directive keeps every platform key going through one
+      // path: `set()` would otherwise turn the array into whatever
+      // `String(value)` felt like, which is a comma-joined string that happens
+      // to work until a value contains a comma.
+      this.set(`${where.platform}:${key}`, Array.isArray(raw) ? JSON.stringify(raw) : raw)
     }
     // A key that was set and is no longer there has to go back to its factory
     // value: the control does not work out on its own that it has been taken
@@ -1575,6 +1582,36 @@ export class Icon extends NativeVisual {
 }
 
 /**
+ * One of the heights a sheet is allowed to rest at.
+ *
+ * The two names are UIKit's own —`.medium()` is about half the screen and
+ * `.large()` is the full sheet— and a number is `.custom(resolver:)` in points,
+ * measured from the bottom. A height taller than the sheet can be is brought
+ * down to that maximum instead of throwing the detent away, which is what UIKit
+ * does with a resolver that oversteps.
+ */
+export type IosSheetDetent = 'medium' | 'large' | number
+
+/** What a sheet on iOS has and a dialog on Android does not. */
+export type IosModalProps = {
+  /**
+   * Where the sheet is allowed to rest, in the order UIKit is given them.
+   * `UISheetPresentationController.detents`. Without it, the two the system
+   * suggests: medium and large.
+   *
+   * Android has no equivalent to ask for. Its `Dialog` has no resting heights
+   * at all —it is as tall as its content— and the closest thing on the platform
+   * is `BottomSheetBehavior`, which lives in Material, not in the framework,
+   * and which speaks of a peek height and an expanded state rather than of a
+   * list of stops. A common `[detents]` would be a name Android could only
+   * pretend to honour.
+   */
+  detents?: readonly IosSheetDetent[]
+}
+
+const MODAL_IOS = platformKeys('an-modal', 'ios', ['detents'])
+
+/**
  * Content presented on top of everything.
  *
  * It really is presented: a `UIViewController` on iOS and a `Dialog` on Android,
@@ -1591,15 +1628,22 @@ export class Modal extends NativeVisual {
       visible: this.visible,
       presentation: this.presentation
     })
+    this.pushPlatform(MODAL_IOS, this.ios)
   }
 
   readonly visible = input<boolean | null>(false)
 
   /**
    * `fullScreen` covers the screen; `sheet` comes up from the bottom with the
-   * system's grabber and detents.
+   * system's grabber, resting where `[ios].detents` says.
    */
   readonly presentation = input<'fullScreen' | 'sheet' | null>(null)
+
+  /**
+   * Only read when `presentation` is `sheet`: a modal that covers the screen
+   * has nowhere to rest.
+   */
+  readonly ios = input<IosModalProps | null>(null)
 
   /**
    * It closed.

@@ -18,6 +18,15 @@ struct Key {
     weight: u16,
     italic: bool,
     family: Option<String>,
+    /// Bit patterns and not floats: `f32` is not `Hash`, and the two are only
+    /// ever compared for having arrived identical.
+    spacing_bits: u32,
+    line_height_bits: Option<u32>,
+    /// It reaches `StaticLayout.Builder.setMaxLines`, so it changes the height
+    /// that comes back and belongs here with the rest. Leaving it out made the
+    /// clamp invisible through the cache: the same paragraph asked for with a
+    /// limit and without came back the same height, whichever was asked first.
+    max_lines: Option<u32>,
     max_width_eighths: Option<i32>,
 }
 
@@ -68,6 +77,9 @@ impl TextMeasurer for JniMeasurer {
             weight: font.weight,
             italic: font.italic,
             family: font.family.clone(),
+            spacing_bits: font.letter_spacing.to_bits(),
+            line_height_bits: font.line_height.map(f32::to_bits),
+            max_lines: font.max_lines,
             max_width_eighths: max_width
                 .filter(|w| w.is_finite())
                 .map(|w| (w * 8.0).round() as i32),
@@ -89,7 +101,7 @@ impl TextMeasurer for JniMeasurer {
                     env,
                     self.host.as_obj(),
                     "measureText",
-                    "(Ljava/lang/String;FIZLjava/lang/String;FI)J",
+                    "(Ljava/lang/String;FIZLjava/lang/String;FIFF)J",
                     &[
                         JValue::Object(&text_ref),
                         JValue::Float(font.size),
@@ -98,6 +110,19 @@ impl TextMeasurer for JniMeasurer {
                         JValue::Object(&family_ref),
                         JValue::Float(limit),
                         JValue::Int(font.max_lines.unwrap_or(0) as i32),
+                        // Both of these are drawn by `applyTextMetrics`, so
+                        // both have to be measured: the host painted with them
+                        // and the measurer sized without, and the layout
+                        // reserved a box for text that is not the text there.
+                        // Positive spacing ran past its box or wrapped a word
+                        // early, and a `lineHeight` above the font's own was
+                        // reserved by nobody, so consecutive lines overlapped
+                        // whatever came after them.
+                        JValue::Float(font.letter_spacing),
+                        // No line height travels as -1, the way an infinite
+                        // width does: JNI has no Option, and a real one is
+                        // never negative.
+                        JValue::Float(font.line_height.unwrap_or(-1.0)),
                     ],
                 ))
             })

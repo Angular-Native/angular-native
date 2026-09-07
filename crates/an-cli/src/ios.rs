@@ -33,6 +33,7 @@ use anyhow::{bail, Context, Result};
 
 use crate::build::{run, run_in};
 use crate::plugins::{self, Platform, Plugin};
+use crate::resources;
 use crate::signing::{self, Apple};
 use crate::workspace::{Appearance, Workspace};
 
@@ -222,6 +223,7 @@ pub struct Package {
 /// signature over the lot.
 pub fn assemble(
     workspace: &Workspace,
+    app: &Path,
     family: Family,
     bundle: &Path,
     release: bool,
@@ -397,6 +399,20 @@ pub fn assemble(
             let _ = std::fs::remove_file(app_dir.join("dev-server.txt"));
         }
     }
+    // The app's own files, at the root of the bundle beside `main.js`, because
+    // that is where `UIImage(named:)` looks. Before signing, and not after: a
+    // signature covers every file in the bundle, and one added afterwards is
+    // one `installd` rejects.
+    //
+    // The four reserved names are the four this function has just written. The
+    // executable is among them because an iOS `.app` is flat — on the Mac it is
+    // two directories away from the resources and cannot collide.
+    resources::copy(
+        workspace,
+        app,
+        &app_dir,
+        &["main.js", "Info.plist", "dev-server.txt", &app_name],
+    )?;
 
     if let Some(apple) = signing {
         sign(&app_dir, &bundle_id, apple, plugins, &out)?;
