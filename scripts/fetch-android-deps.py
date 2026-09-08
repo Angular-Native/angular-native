@@ -12,6 +12,7 @@ sophisticated strategy —it keeps the first one it sees, which is the one neare
 the root, the same as Gradle does— and it does not touch the test `scope`s.
 """
 
+import io
 import pathlib
 import re
 import shutil
@@ -44,6 +45,39 @@ BUNDLETOOL_URL = (
     "https://github.com/google/bundletool/releases/download/"
     f"{BUNDLETOOL}/bundletool-all-{BUNDLETOOL}.jar"
 )
+# The Kotlin compiler, for plugins whose Android half is Kotlin. It is in the
+# same boat as bundletool and for the same reason: not in the Android SDK, not
+# in the JDK, pulled in by Gradle, and there is no Gradle here.
+#
+# The version is written out rather than followed: it has to be no newer than
+# the `kotlin-stdlib` the resolution below brings, because that stdlib —and not
+# this one— is what ends up in the APK, and a class compiled by a newer compiler
+# than the stdlib it runs against fails at run time, not at build time. `main`
+# checks the two against each other at the end.
+#
+# Six of the fifty-odd jars in the distribution are taken, and they are not a
+# choice: `kotlin-compiler.jar` is not self-contained, and its manifest names the
+# five it expects to find beside it as its `Class-Path`. Take fewer and the
+# compiler dies on a `NoClassDefFoundError` in the middle of parsing its own
+# command line. 60 MB instead of 80, and none of the six reaches the app — the
+# `kotlin-stdlib` the APK carries is the one the resolution below brings.
+#
+# `an` does not repeat this list: it puts every jar in the directory on the
+# classpath, so what is written here is the whole of the decision.
+KOTLIN = "1.8.22"
+KOTLIN_URL = (
+    "https://github.com/JetBrains/kotlin/releases/download/"
+    f"v{KOTLIN}/kotlin-compiler-{KOTLIN}.zip"
+)
+KOTLIN_JARS = [
+    "kotlin-compiler.jar",
+    "annotations-13.0.jar",
+    "kotlin-stdlib.jar",
+    "kotlin-reflect.jar",
+    "kotlin-script-runtime.jar",
+    "trove4j.jar",
+]
+
 NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 
 # What is asked for. The rest comes out of this.
@@ -213,10 +247,55 @@ def fetch_bundletool() -> None:
     print(f"  {jar.name} ({len(data) // 1024} KB)")
 
 
+def fetch_kotlin() -> None:
+    """Leaves the two jars that run `kotlinc` in `vendor/android/tools/kotlinc`."""
+    home = TOOLS / "kotlinc"
+    home.mkdir(parents=True, exist_ok=True)
+    if all((home / jar).exists() for jar in KOTLIN_JARS):
+        return
+    print(f"==> the Kotlin compiler {KOTLIN}")
+    data = download(KOTLIN_URL)
+    if data is None:
+        print(
+            f"  warning: {KOTLIN_URL} could not be downloaded.\n"
+            "  `an android` will say so when an app depends on a plugin written in "
+            "Kotlin; everything else works without it.",
+            file=sys.stderr,
+        )
+        return
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        for jar in KOTLIN_JARS:
+            (home / jar).write_bytes(archive.read(f"kotlinc/lib/{jar}"))
+            print(f"  {jar} ({(home / jar).stat().st_size // 1024} KB)")
+
+
+def check_kotlin(artefacts: dict[str, tuple[str, str, str, str]]) -> None:
+    """That the compiler is not newer than the stdlib the APK carries.
+
+    Both numbers exist here and nowhere else: the compiler is pinned at the top
+    of this file, and the stdlib is whatever Material's POMs ask for. They drift
+    apart silently — the build succeeds, the APK is signed, and the app throws on
+    the first call into a plugin.
+    """
+    stdlib = artefacts.get("org.jetbrains.kotlin:kotlin-stdlib")
+    if not stdlib:
+        return
+    if order(stdlib[2]) < order(KOTLIN):
+        print(
+            f"  warning: the Kotlin compiler is pinned at {KOTLIN} and the resolution "
+            f"brings kotlin-stdlib {stdlib[2]}, which is older. A plugin's Kotlin would "
+            f"compile and then fail on the device.\n"
+            f"  Lower KOTLIN in {pathlib.Path(__file__).name} to {stdlib[2]}.",
+            file=sys.stderr,
+        )
+
+
 def main() -> int:
     TARGET.mkdir(parents=True, exist_ok=True)
     fetch_bundletool()
+    fetch_kotlin()
     artefacts = resolve()
+    check_kotlin(artefacts)
     print(f"==> {len(artefacts)} artefacts")
     expected: set[str] = set()
     for key, (group, artefact, version, packaging) in sorted(artefacts.items()):

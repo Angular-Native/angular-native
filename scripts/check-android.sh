@@ -23,6 +23,9 @@ cd "$ROOT"
 "$ROOT/scripts/check-android-java.sh"
 
 echo
+"$ROOT/scripts/check-android-kotlin.sh"
+
+echo
 "$ROOT/scripts/check-wearos.sh"
 
 echo

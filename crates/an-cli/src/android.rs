@@ -667,10 +667,14 @@ pub fn assemble(
     // `AnPlugin` and `AnPluginCall` with no extra classpath.
     for plugin in plugins {
         let contributed = plugins::sources(plugin, Platform::Android)?;
+        // Said as two numbers because they are compiled by two compilers, and
+        // which of the two ran is the difference between a build that needs the
+        // vendored Kotlin compiler and one that does not.
+        let kt = contributed.iter().filter(|path| path.ends_with(".kt")).count();
         eprintln!(
-            "==> plugin {} ({} Java sources)",
+            "==> plugin {} ({} Java, {kt} Kotlin)",
             plugin.module,
-            contributed.len()
+            contributed.len() - kt,
         );
         sources.extend(contributed);
     }
@@ -684,6 +688,64 @@ pub fn assemble(
     // android.jar and not against the JDK.
     let mut classpath = vec![sdk.android_jar.to_string_lossy().into_owned()];
     classpath.extend(jars.iter().cloned());
+    // The `R` classes aapt2 has just written, one per package. They go on both
+    // compilations for the same reason: a plugin may name one.
+    let generated_java: Vec<String> = walk(&generated)
+        .into_iter()
+        .filter(|path| path.extension().is_some_and(|e| e == "java"))
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect();
+
+    // Kotlin first, if a plugin brought any, and only then.
+    //
+    // The two languages see each other, so the order is not free: `kotlinc` is
+    // handed the Java sources as well —it compiles none of them, it only
+    // resolves against them— and writes its classes into the same directory
+    // `javac` is about to write into, so `javac` finds them on its classpath.
+    // Java calling Kotlin and Kotlin calling Java both work; the generated
+    // registry does the first of the two on every build with a Kotlin plugin in
+    // it, because `new SomePlugin()` is Java naming a Kotlin class.
+    //
+    // `d8` is told nothing about any of this: it dexes whatever is in `classes`.
+    let kotlin: Vec<String> = sources.iter().filter(|p| p.ends_with(".kt")).cloned().collect();
+    let java: Vec<String> = sources.iter().filter(|p| !p.ends_with(".kt")).cloned().collect();
+    if !kotlin.is_empty() {
+        eprintln!("==> kotlinc ({} sources)", kotlin.len());
+        let compiler = kotlinc(workspace, &kotlin)?;
+        let mut kotlinc_args: Vec<String> = vec![
+            "-cp".into(),
+            compiler
+                .iter()
+                .map(|jar| jar.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join(":"),
+            "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler".into(),
+            // The compiler would otherwise put its own `kotlin-stdlib` on the
+            // compilation classpath, and that is not the one the APK carries:
+            // `vendor/android/kotlin-stdlib-*.jar` is, because Material depends
+            // on it and `d8` already dexes it. Two copies of the same classes is
+            // what d8 refuses with "defined twice".
+            "-no-stdlib".into(),
+            "-no-reflect".into(),
+            // The same level javac is given below. A `.class` compiled for a
+            // newer JVM than the rest dexes fine and fails at run time.
+            "-jvm-target".into(),
+            "17".into(),
+            "-nowarn".into(),
+            "-classpath".into(),
+            classpath.join(":"),
+            "-d".into(),
+            classes.to_string_lossy().into_owned(),
+        ];
+        kotlinc_args.extend(kotlin.iter().cloned());
+        kotlinc_args.extend(java.iter().cloned());
+        kotlinc_args.extend(generated_java.iter().cloned());
+        run(root, "java", &kotlinc_args, "the Kotlin build failed")?;
+        // Only from here: everything above compiled against `android.jar` and the
+        // libraries alone.
+        classpath.push(classes.to_string_lossy().into_owned());
+    }
+
     let mut javac: Vec<String> = vec![
         "-nowarn".into(),
         "-source".into(),
@@ -695,14 +757,8 @@ pub fn assemble(
         "-d".into(),
         classes.to_string_lossy().into_owned(),
     ];
-    javac.extend(sources);
-    // The `R` classes aapt2 has just written, one per package.
-    javac.extend(
-        walk(&generated)
-            .into_iter()
-            .filter(|path| path.extension().is_some_and(|e| e == "java"))
-            .map(|path| path.to_string_lossy().into_owned()),
-    );
+    javac.extend(java);
+    javac.extend(generated_java);
     run(root, "javac", &javac, "the Java shell build failed")?;
 
     eprintln!("==> d8");
@@ -1045,6 +1101,57 @@ fn build_aab(
     let size = std::fs::metadata(&aab)?.len();
     eprintln!("==> {} MB in {}", size / (1024 * 1024), aab.display());
     Ok(aab)
+}
+
+/// The jars that run the Kotlin compiler, in classpath order.
+///
+/// `kotlinc` is not part of the Android SDK and not part of the JDK. Gradle
+/// pulls it in; there is no Gradle here, so it is vendored the same way
+/// `bundletool` is and pinned in the one place that downloads it,
+/// `scripts/fetch-android-deps.py`.
+///
+/// Every jar in the directory goes on the classpath, and which jars those are is
+/// not decided here: `kotlin-compiler.jar` is not self-contained and its
+/// manifest names the five it wants beside it, so the set belongs to whoever
+/// unpacks the distribution. Repeating it here would be a list that drifts and
+/// fails as a `NoClassDefFoundError` from inside the compiler's own argument
+/// parser. None of them reaches the APK — the `kotlin-stdlib` the app carries is
+/// `vendor/android/kotlin-stdlib-*.jar`, which Material's resolution brings and
+/// `d8` already dexes.
+///
+/// The sources are named in the failure, and that is the whole point of the
+/// function existing rather than a path being built inline: a plugin whose
+/// Kotlin was quietly left out of the dex is an app that installs and dies
+/// looking for a class the registry names.
+fn kotlinc(workspace: &Workspace, sources: &[String]) -> Result<Vec<PathBuf>> {
+    let home = match std::env::var_os("AN_KOTLINC") {
+        Some(given) => PathBuf::from(given),
+        None => workspace.root.join("vendor/android/tools/kotlinc"),
+    };
+    if home.join("kotlin-compiler.jar").is_file() {
+        let mut jars: Vec<PathBuf> = walk(&home)
+            .into_iter()
+            .filter(|path| path.extension().is_some_and(|e| e == "jar"))
+            .collect();
+        jars.sort();
+        return Ok(jars);
+    }
+    let mut listed = String::new();
+    for source in sources {
+        listed.push_str(&format!("\x20   {source}\n"));
+    }
+    bail!(
+        "this app depends on a plugin written in Kotlin, and the Kotlin compiler is not \
+         here:\n\n{listed}\n\
+         It is not part of the Android SDK — Gradle downloads it, and there is no Gradle \
+         here. Get it once:\n\n\
+         \x20   python3 scripts/fetch-android-deps.py\n\n\
+         which leaves it in {}. Or point AN_KOTLINC at the `lib` directory of a Kotlin \
+         distribution you already have.\n\
+         Nothing else needs it: a plugin whose Android half is Java is compiled by `javac` \
+         alone.",
+        home.display()
+    )
 }
 
 /// Where `bundletool` is.

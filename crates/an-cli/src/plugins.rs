@@ -50,11 +50,18 @@ impl Platform {
         }
     }
 
-    /// The extension its sources carry.
-    fn extension(self) -> &'static str {
+    /// The extensions its sources may carry.
+    ///
+    /// A list and not one name because Android takes two. Kotlin is the language
+    /// Android is written in now, and a plugin that had to be Java to be
+    /// compiled is a plugin most people would not write; both go through the
+    /// same build, because the JVM cannot tell afterwards which half a class
+    /// came from. The order is the order the two compilers run in — see
+    /// `android::assemble`.
+    fn extensions(self) -> &'static [&'static str] {
         match self {
-            Platform::Ios | Platform::Macos | Platform::Watchos => "swift",
-            Platform::Android => "java",
+            Platform::Ios | Platform::Macos | Platform::Watchos => &["swift"],
+            Platform::Android => &["kt", "java"],
         }
     }
 
@@ -916,31 +923,31 @@ pub fn sources(plugin: &Plugin, platform: Platform) -> Result<Vec<String>> {
         .native(platform)
         .with_context(|| format!("{} does not cover {}", plugin.package, platform.label()))?;
     let mut found: Vec<PathBuf> = Vec::new();
-    let mut kotlin: Vec<PathBuf> = Vec::new();
+    let mut stray_kotlin: Vec<PathBuf> = Vec::new();
     for path in walk(&native.sources) {
         match path.extension().and_then(|e| e.to_str()) {
-            Some(extension) if extension == platform.extension() => found.push(path),
-            Some("kt") => kotlin.push(path),
+            Some(extension) if platform.extensions().contains(&extension) => found.push(path),
+            // Kotlin on a platform compiled by `swiftc`. There is no language
+            // here that could take it, and leaving it out without a word is a
+            // plugin that ships no code — so it is named rather than skipped.
+            Some("kt") => stray_kotlin.push(path),
             _ => {}
         }
     }
-    if !kotlin.is_empty() {
-        // There is no Gradle here, and without Gradle there is no `kotlinc`
-        // worth having: the Android shell is Java and it is compiled with `javac`
-        // against `android.jar`. Saying so beats building the APK without those
-        // files in it.
+    if !stray_kotlin.is_empty() {
         bail!(
-            "{}: {} carries Kotlin sources and those are not compiled yet; the Android half \
-             of a plugin is Java. See https://angular-native.github.io/extending/plugins/.",
+            "{}: {} is Kotlin, and the {} half of a plugin is Swift.\n\
+             Kotlin is compiled on Android alone.",
             plugin.package,
-            native.sources.display()
+            stray_kotlin[0].display(),
+            platform.label()
         );
     }
     if found.is_empty() {
         bail!(
             "{}: there is no .{} source in {}",
             plugin.package,
-            platform.extension(),
+            platform.extensions().join(" and no ."),
             native.sources.display()
         );
     }

@@ -236,8 +236,8 @@ vacío.
 ### 4. Android
 
 Lo mismo con `javac`: se une a la invocación del shell, así que ve `AnPlugin`,
-`AnPluginCall` y `android.jar` sin classpath adicional. **La parte de Android de
-un plugin es Java, no Kotlin** — mira [Lo que falta](#lo-que-falta).
+`AnPluginCall` y `android.jar` sin classpath adicional. Java o Kotlin, o los
+dos — mira [Kotlin](#kotlin) más abajo.
 
 ```java
 package dev.angularnative.plugins;
@@ -281,6 +281,54 @@ public final class HapticsPlugin implements AnPlugin {
 `attach(Activity)` tiene una implementación por defecto vacía: lo que no
 necesite contexto no la escribe. En iOS es `attach(UIViewController)` y funciona
 igual.
+
+#### Kotlin
+
+Un `.kt` al lado del `.java`, o en su lugar. `an` ejecuta `kotlinc` antes que
+`javac` contra el mismo directorio de clases, así que los dos se ven en ambas
+direcciones: Kotlin llama al Java del shell, y el registro que genera `an` —que
+es Java— instancia un plugin en Kotlin.
+
+```kotlin
+package dev.angularnative.plugins
+
+import android.app.Activity
+import dev.angularnative.AnPlugin
+import dev.angularnative.AnPluginCall
+import org.json.JSONObject
+
+class HapticsPlugin : AnPlugin {
+    private var host: Activity? = null
+
+    override fun attach(host: Activity) {
+        this.host = host
+    }
+
+    override fun call(method: String, args: JSONObject, respond: AnPluginCall) {
+        when (method) {
+            "buzz" -> respond.resolve()
+            else -> respond.reject("el plugin de haptics no tiene el método $method")
+        }
+    }
+}
+```
+
+El compilador no forma parte del SDK de Android ni del JDK —lo descarga Gradle,
+y aquí no hay Gradle—, así que viene vendorizado, fijado a una versión, y se
+baja una sola vez:
+
+```bash
+python3 scripts/fetch-android-deps.py
+```
+
+Solo se ejecuta cuando un plugin ha traído de verdad un `.kt`: una app cuyos
+plugins son todos Java no arranca ninguna JVM para esto. Una compilación que lo
+necesita y no lo encuentra **se detiene**, nombrando el fichero, en lugar de
+firmar un APK al que le falta un plugin. `AN_KOTLINC` apunta al directorio `lib`
+de una distribución que ya tengas.
+
+El `kotlin-stdlib` que lleva la app es el que Material ya necesita, así que un
+plugin en Kotlin no añade al APK nada más que sus propias clases.
 
 ### 5. Usarlo
 
@@ -545,10 +593,6 @@ dentro.
   que el framework monte en todos los hosts —
   [la sección de arriba](#una-vista-que-trae-un-plugin) dice por qué eso sigue
   cerrado.
-- **Kotlin.** El shell de Android es Java compilado con `javac` contra
-  `android.jar`; aquí no hay Gradle, y sin Gradle no viene ningún `kotlinc` de
-  regalo. Un plugin con fuentes `.kt` **detiene la compilación** y lo dice, en lugar
-  de producir un APK con esos ficheros callados fuera.
 - **Un plazo para el que no responde.** Un plugin que se queda con su objeto de
   llamada y no llama ni a `resolve` ni a `reject` deja la promesa esperando.
   Querría un tiempo límite por llamada —una cámara tarda minutos, leer el

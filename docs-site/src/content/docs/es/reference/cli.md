@@ -409,9 +409,11 @@ Cada una de estas es un error duro con el motivo dentro, no un aviso:
 - **Cualquier plugin en watchOS o en macOS.** Ninguno de los dos hosts tiene
   registro de plugins, así que la compilación se niega en vez de publicar una app
   cuyas llamadas serían todas rechazadas en ejecución.
-- **Fuentes en Kotlin dentro de un plugin.** El shell de Android es Java
-  compilado con `javac`; sin Gradle no hay ningún `kotlinc` al que recurrir, y
-  compilar el APK sin esos ficheros sería peor.
+- **Kotlin en un plugin sin el compilador de Kotlin vendorizado.** `an` ejecuta
+  `kotlinc` él mismo —no hay Gradle que lo haga— y nombra el `.kt` que no puede
+  compilar en vez de firmar un APK sin él. `python3
+  scripts/fetch-android-deps.py` lo baja una sola vez; una app cuyos plugins son
+  todos Java no lo necesita nunca.
 - **Dos plugins reclamando el mismo nombre de módulo**, o pidiendo la misma clave
   de `Info.plist`, el mismo entitlement o el mismo `uses-feature` con valores
   distintos.

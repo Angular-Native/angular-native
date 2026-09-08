@@ -403,9 +403,11 @@ Each of these is a hard error with the reason in it, not a warning:
 - **Any plugin at all on watchOS or macOS.** Neither host has a plugin registry,
   so the build refuses rather than shipping an app whose every call would be
   rejected at runtime.
-- **Kotlin sources in a plugin.** The Android shell is Java compiled with
-  `javac`; without Gradle there is no `kotlinc` to reach for, and compiling the
-  APK without those files would be worse.
+- **Kotlin in a plugin with no Kotlin compiler vendored.** `an` runs `kotlinc`
+  itself — there is no Gradle to do it — and it names the `.kt` it cannot
+  compile rather than signing an APK without it. `python3
+  scripts/fetch-android-deps.py` fetches the compiler once; an app whose plugins
+  are all Java never needs it.
 - **Two plugins claiming the same module name**, or asking for the same
   `Info.plist` key, entitlement or `uses-feature` with different values.
 - **An `Info.plist` that disagrees with `angular-native.json`.** Checked before
