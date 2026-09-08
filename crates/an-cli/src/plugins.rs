@@ -289,6 +289,16 @@ pub fn discover(workspace: &Workspace, app: &Path) -> Result<Vec<Plugin>> {
 /// finds it exactly when npm happened not to hoist it, which is the version of
 /// this that works on one machine and not the next.
 ///
+/// It is also what carries pnpm, which lays `node_modules` out the other way
+/// round: only the direct dependencies are at the top and everything else lives
+/// under `node_modules/.pnpm/<package>@<version>/node_modules`. A plugin
+/// resolved out of the top level canonicalises into that virtual store, and the
+/// climb from there passes through exactly the directory pnpm put its
+/// dependencies in — the same step Node takes, and the reason a plugin that
+/// depends on another plugin is found without a hoist. In a pnpm workspace the
+/// store sits at the workspace root, above the project, and the climb reaches it
+/// too.
+///
 /// Where the climb **stops** is the interesting half. Inside the monorepo it is
 /// the SDK's root, which is where npm puts the workspace packages. For a
 /// project from outside it is that project's root, and not one directory

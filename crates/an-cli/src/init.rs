@@ -47,6 +47,8 @@ pub fn init(dir: Option<&str>, name: Option<&str>, id: Option<&str>, force: bool
 
     // ---- Everything that can say no, before anything is touched ----------
     check_angular(&root)?;
+    check_node_modules(&root)?;
+    check_typescript(&root)?;
     let already = root.join(MARKER).is_file();
     if already && !force {
         eprintln!("==> {} is already initialised; only what is missing is added", root.display());
@@ -194,6 +196,69 @@ fn check_angular(root: &Path) -> Result<()> {
     )
 }
 
+/// Yarn's Plug'n'Play is the one layout `an` cannot work in.
+///
+/// Under PnP there is no `node_modules` at all: the dependencies stay zipped in
+/// `.yarn/cache` and `.pnp.cjs` patches Node's resolver as the process starts.
+/// `ngc` is spawned here as a plain program, esbuild reads the packages off
+/// disk and the framework packages are looked for at
+/// `node_modules/@angular-native`, so none of the three would find anything.
+///
+/// It is refused before anything is installed because the alternative was worse
+/// than a refusal: `yarn add` would go through, write into the user's
+/// `package.json` and lockfile, and the run would then end on "there is still no
+/// reachable node_modules/.bin/ngc", which names neither PnP nor the way out.
+fn check_node_modules(root: &Path) -> Result<()> {
+    // `.pnp.cjs` is what Yarn 2+ writes; `.pnp.js` is the Yarn 2 name and
+    // `.pnp.data.json` comes alongside when the loader is split in two.
+    for marker in [".pnp.cjs", ".pnp.js", ".pnp.data.json"] {
+        if !root.join(marker).is_file() {
+            continue;
+        }
+        bail!(
+            "{} is set up with Yarn's Plug'n'Play ({marker} is in there), and angular-native \
+             needs a real node_modules. `ngc` is run as a plain program and esbuild reads the \
+             packages straight off disk; neither of the two goes through .pnp.cjs, so the \
+             build would come out missing the framework.\n\
+             Add this to .yarnrc.yml and install again, and everything below works:\n\
+             \x20   nodeLinker: node-modules",
+            root.display()
+        );
+    }
+    Ok(())
+}
+
+/// TypeScript has to be in the project, and it is not something `an init` can
+/// put there.
+///
+/// `@angular/compiler-cli` declares `typescript` as an **optional** peer
+/// dependency, and an optional peer is one no package manager installs: npm,
+/// pnpm and yarn all skip it. Installing one here would mean picking a version,
+/// and the range that works is the compiler's, not ours. What a project without
+/// it gets instead is node's own
+///
+/// ```text
+/// Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'typescript' imported from
+///   …/node_modules/@angular/compiler-cli/bundles/chunk-UTWH365F.js
+/// ```
+///
+/// halfway through `an init`, which names neither the project nor the fix. Any
+/// `ng new` carries TypeScript as a devDependency, so this only catches a
+/// project assembled by hand — and it catches it before anything is written.
+fn check_typescript(root: &Path) -> Result<()> {
+    if climb(root, Path::new("node_modules/typescript/package.json")).is_some() {
+        return Ok(());
+    }
+    bail!(
+        "{} has no reachable node_modules/typescript, and `ngc` cannot run without it.\n\
+         It is not installed along with @angular/compiler-cli: the compiler declares it as an \
+         optional peer dependency, which every package manager skips. Add it yourself, in the \
+         version your Angular asks for:\n\
+         \x20   npm install --save-dev typescript",
+        root.display()
+    );
+}
+
 /// A package identifier both iOS and Android will accept. Both are fussy and
 /// neither complains early: Android fails on install and iOS on signing, half an
 /// hour later.
@@ -233,6 +298,11 @@ fn ensure_compiler(root: &Path) -> Result<()> {
     crate::build::run_in(root, manager.program(), &argv, &format!("{} failed", manager.program()))
         .context("@angular/compiler-cli could not be installed")?;
     if !has_ngc(root) {
+        // The install itself is what turns a Yarn Berry project that had never
+        // been installed into a PnP one, so the layout is worth asking about
+        // again: without this the message is about a missing binary and not
+        // about the reason there is no directory for it to be in.
+        check_node_modules(root)?;
         bail!(
             "{} finished fine but there is still no reachable node_modules/.bin/ngc",
             manager.program()
@@ -252,9 +322,19 @@ fn has_ngc(from: &Path) -> bool {
 /// in the package. Answering the path rather than a yes/no is what lets the
 /// compile step run it without going through a package manager to find it.
 fn find_ngc(from: &Path) -> Option<std::path::PathBuf> {
+    climb(from, Path::new("node_modules/.bin/ngc"))
+}
+
+/// The first directory at or above `from` that has `relative` under it.
+///
+/// The climb is Node's own, and it is what makes this work under pnpm as well:
+/// pnpm hoists only the direct dependencies into the project's `node_modules`
+/// and leaves the rest under `node_modules/.pnpm`, but `.bin` and the direct
+/// dependencies are exactly the two things it does put at the top.
+fn climb(from: &Path, relative: &Path) -> Option<PathBuf> {
     let mut dir = from.to_owned();
     loop {
-        let candidate = dir.join("node_modules/.bin/ngc");
+        let candidate = dir.join(relative);
         if candidate.exists() {
             return Some(candidate);
         }
@@ -308,7 +388,9 @@ fn install_packages(sdk: &Path, root: &Path, force: bool) -> Result<()> {
     let vendor = root.join(".angular-native/vendor");
     std::fs::create_dir_all(&vendor)?;
     let staging = root.join(".angular-native/build/packages");
-    let mut tarballs: Vec<String> = Vec::new();
+    // The name travels with the specifier: yarn will not take a bare `file:`
+    // path. See `PackageManager::add`.
+    let mut tarballs: Vec<(&str, String)> = Vec::new();
     for (name, short) in PACKAGES {
         let source = sdk.join("packages").join(short);
         if !source.join("src/public-api.ts").is_file() {
@@ -376,7 +458,7 @@ fn install_packages(sdk: &Path, root: &Path, force: bool) -> Result<()> {
         }
         // Relative: it is what ends up in the user's `package.json`, and an
         // absolute path would only work on this machine.
-        tarballs.push(format!("file:.angular-native/vendor/{file_name}"));
+        tarballs.push((name, format!("file:.angular-native/vendor/{file_name}")));
     }
 
     // Whatever wrote this `node_modules` is what writes into it now. See
@@ -919,6 +1001,14 @@ impl PackageManager {
     /// With no lockfile anywhere it is npm, which is what a fresh
     /// `npx @angular/cli new` leaves behind.
     fn detect(root: &Path) -> PackageManager {
+        // Yarn Berry's `.yarnrc.yml`, and only the project's own. A Berry
+        // project can carry one before there is any lockfile to read, so it
+        // decides on its own; but yarn also writes one in the home directory,
+        // and looking for it upwards the way the lockfiles are looked for would
+        // call every project under $HOME a yarn project.
+        if root.join(".yarnrc.yml").is_file() {
+            return PackageManager::Yarn;
+        }
         for dir in root.ancestors() {
             // Ordered, because a project can carry more than one: a `bun.lock`
             // next to a stale `package-lock.json` is a project that moved to
@@ -948,14 +1038,12 @@ impl PackageManager {
         }
     }
 
-    /// Installing a tarball as an exact dependency, in each one's words.
+    /// Installing a dependency the app builds with rather than ships.
     ///
-    /// npm and bun are the two that have been run. pnpm's and yarn's lines are
-    /// written from their documentation and have never been executed by
-    /// anybody working on this — the same admission the signing paths make.
-    /// They are here rather than absent because a good-faith line somebody can
-    /// correct beats a refusal to try.
-    /// The same, for a dependency the app builds with rather than ships.
+    /// All four forms have been run against a real external project by
+    /// `scripts/check-external.sh`, which is the only reason they can be
+    /// trusted: `pnpm add -D`, `yarn add --dev` and `npm i -D` are three
+    /// different command lines and none of them accepts another's.
     fn add_dev(self, specs: &[String]) -> Vec<String> {
         let mut args: Vec<String> = match self {
             PackageManager::Npm => ["install", "--save-dev", "--no-audit", "--no-fund"]
@@ -970,7 +1058,21 @@ impl PackageManager {
         args
     }
 
-    fn add(self, specs: &[String]) -> Vec<String> {
+    /// Installing a tarball as an exact dependency, in each one's words.
+    ///
+    /// The pairs are `(package name, specifier)`, and the name is not
+    /// decoration: yarn is the one that refuses a bare path. `yarn add
+    /// file:x.tgz` comes back with
+    ///
+    /// ```text
+    /// Usage Error: The file:x.tgz string didn't match the required format
+    ///   (package-name@range).
+    /// ```
+    ///
+    /// so its specifiers go in as `@angular-native/platform@file:…`. The other
+    /// three read the name out of the tarball and are left as they were, which
+    /// is the form they have been running in.
+    fn add(self, packages: &[(&str, String)]) -> Vec<String> {
         let mut args: Vec<String> = match self {
             PackageManager::Npm => {
                 ["install", "--save", "--save-exact", "--no-audit", "--no-fund"]
@@ -982,7 +1084,10 @@ impl PackageManager {
             PackageManager::Pnpm => vec!["add".into(), "--save-exact".into()],
             PackageManager::Yarn => vec!["add".into(), "--exact".into()],
         };
-        args.extend(specs.iter().cloned());
+        args.extend(packages.iter().map(|(name, spec)| match self {
+            PackageManager::Yarn => format!("{name}@{spec}"),
+            _ => spec.clone(),
+        }));
         args
     }
 }
@@ -997,4 +1102,47 @@ fn capture(cwd: &Path, program: &str, args: &[&str]) -> Result<String> {
         bail!("{program} failed:\n{}", String::from_utf8_lossy(&output.stderr).trim());
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The one difference between the four `add` command lines that is not a
+    /// flag. Yarn turns a bare `file:` path down for not being
+    /// `package-name@range`, so its specifiers carry the name; the other three
+    /// read it out of the tarball and are left as they were.
+    #[test]
+    fn only_yarn_gets_the_package_name_in_front_of_the_tarball() {
+        let packages = [("@angular-native/platform", "file:vendor/platform.tgz".to_owned())];
+        for (manager, expected) in [
+            (PackageManager::Npm, "file:vendor/platform.tgz"),
+            (PackageManager::Bun, "file:vendor/platform.tgz"),
+            (PackageManager::Pnpm, "file:vendor/platform.tgz"),
+            (
+                PackageManager::Yarn,
+                "@angular-native/platform@file:vendor/platform.tgz",
+            ),
+        ] {
+            let args = manager.add(&packages);
+            assert_eq!(args.last().map(String::as_str), Some(expected), "{manager:?}");
+        }
+    }
+
+    /// `.yarnrc.yml` counts only where the project is. Yarn writes one in the
+    /// home directory, and the upward walk the lockfiles get would turn every
+    /// project under $HOME into a yarn project.
+    #[test]
+    fn a_yarnrc_above_the_project_does_not_decide_for_it() {
+        let temp = std::env::temp_dir().join(format!("an-detect-{}", std::process::id()));
+        let project = temp.join("project");
+        std::fs::create_dir_all(&project).expect("the temporary directory can be made");
+        std::fs::write(temp.join(".yarnrc.yml"), "nodeLinker: node-modules\n")
+            .expect("the yarnrc can be written");
+        assert_eq!(PackageManager::detect(&project), PackageManager::Npm);
+
+        std::fs::write(project.join(".yarnrc.yml"), "").expect("the yarnrc can be written");
+        assert_eq!(PackageManager::detect(&project), PackageManager::Yarn);
+        let _ = std::fs::remove_dir_all(&temp);
+    }
 }

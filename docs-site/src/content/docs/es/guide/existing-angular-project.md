@@ -137,6 +137,43 @@ pasa antes. Si algo se tuerce, el manifiesto no llega a existir, `an` sigue
 diciendo que el proyecto no está inicializado, y volver a intentarlo es seguro.
 No hay un estado «medio inicializado» que alguien tenga que limpiar a mano.
 
+### Qué gestor de paquetes, y los dos proyectos que esto rechaza
+
+El gestor no se pregunta: `an init` lee el fichero de bloqueo
+—`package-lock.json`, `bun.lockb`, `pnpm-lock.yaml`, `yarn.lock`— subiendo
+directorios como hace npm, así que un proyecto dentro de un workspace hereda el
+gestor del workspace. Si no hay ninguno de los cuatro, es npm. El `.yarnrc.yml`
+de yarn también cuenta, pero solo en el directorio del propio proyecto: yarn
+escribe uno en el directorio personal, y subir a buscarlo convertiría en
+proyecto yarn a todo lo que hay bajo `$HOME`.
+
+Las líneas de comando no son intercambiables, y una de las diferencias no es una
+opción. El tarball vendorizado entra como una ruta `file:` pelada en todos menos
+en yarn, que la rechaza:
+
+```text
+Usage Error: The file:….tgz string didn't match the required format
+  (package-name@range).
+```
+
+así que bajo yarn el especificador lleva el nombre delante,
+`@angular-native/platform@file:…`. Los otros tres lo leen del tarball.
+
+Se rechazan dos proyectos, los dos antes de escribir nada:
+
+- **Plug'n'Play de yarn.** Con `.pnp.cjs` no hay `node_modules`, y `ngc` se
+  ejecuta como un programa cualquiera mientras esbuild lee los paquetes
+  directamente del disco: ninguno de los dos pasa por el cargador de PnP, así
+  que el bundle saldría sin el framework dentro. El rechazo nombra
+  `nodeLinker: node-modules` como arreglo.
+- **Ningún `node_modules/typescript` alcanzable.** `@angular/compiler-cli`
+  declara TypeScript como dependencia par *opcional*, y eso ningún gestor lo
+  instala. Sin él `ngc` muere con el `ERR_MODULE_NOT_FOUND` de node apuntando a
+  un fichero de trozos con hash, que no nombra ni el proyecto ni el arreglo.
+  `an` no lo instala: la versión que sirve la decide el compilador, no nosotros.
+  Cualquier `ng new` ya lo trae, así que esto solo pilla un proyecto montado a
+  mano.
+
 ### Dónde viven los proyectos nativos, y qué pasa si los editas
 
 Capacitor crea `ios/` y `android/` como proyectos completos de Xcode y de Gradle,

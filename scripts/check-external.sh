@@ -56,9 +56,22 @@ export AN_HOME="$ROOT"
 # A real Angular project, set up by hand
 # ---------------------------------------------------------------------------
 rm -rf "$WORK"
-mkdir -p "$APP/src/app"
 
-cat >"$APP/package.json" <<'JSON'
+# The project every part of this script starts from. It is written out rather
+# than generated because `ng new` would want the network and half a minute, and
+# what `an` reads is these four files.
+#
+# `@angular/platform-browser` and `typescript` are in the list on purpose even
+# though nothing here imports the first and no source is compiled by hand with
+# the second. `ng new` puts both in, and leaving them out only works under a
+# manager that installs peer dependencies by itself: yarn does not, and the
+# bundle then dies on `Could not resolve "@angular/platform-browser"` from
+# inside `@angular/router`, which is the project's gap and not `an`'s.
+scaffold_project() { # $1 = the directory to write the project into
+  local dir="$1"
+  mkdir -p "$dir/src/app"
+
+  cat >"$dir/package.json" <<'JSON'
 {
   "name": "my-app",
   "version": "0.0.0",
@@ -67,13 +80,17 @@ cat >"$APP/package.json" <<'JSON'
     "@angular/common": "^22.1.0",
     "@angular/compiler": "^22.1.0",
     "@angular/core": "^22.1.0",
+    "@angular/platform-browser": "^22.1.0",
     "@angular/router": "^22.1.0",
     "rxjs": "~7.8.0"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
   }
 }
 JSON
 
-cat >"$APP/angular.json" <<'JSON'
+  cat >"$dir/angular.json" <<'JSON'
 {
   "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
   "version": 1,
@@ -93,19 +110,22 @@ cat >"$APP/angular.json" <<'JSON'
 }
 JSON
 
-cat >"$APP/src/main.ts" <<'TS'
+  cat >"$dir/src/main.ts" <<'TS'
 import { bootstrapApplication } from '@angular/platform-browser'
 import { App } from './app/app'
 
 bootstrapApplication(App)
 TS
 
-cat >"$APP/src/app/app.ts" <<'TS'
+  cat >"$dir/src/app/app.ts" <<'TS'
 import { Component } from '@angular/core'
 
 @Component({ selector: 'app-root', template: '<h1>the web app, untouched</h1>' })
 export class App {}
 TS
+}
+
+scaffold_project "$APP"
 
 # The SDK's `node_modules`, cloned. `cp -c` uses clonefile on APFS: instant and
 # taking up no disk. If the file system does not support it a real copy is made,
@@ -337,6 +357,183 @@ sed -i '' -e 's/"name": "MyApp"/"name": "AnotherName"/' "$APP/angular-native.jso
 output="$(cd "$APP" && must_fail "$AN" ios --no-launch)"
 contains "$output" 'CFBundleExecutable' 'a plist that does not match the manifest stops the build'
 sed -i '' -e 's/"name": "AnotherName"/"name": "MyApp"/' "$APP/angular-native.json"
+
+# ---------------------------------------------------------------------------
+# The four package managers
+# ---------------------------------------------------------------------------
+#
+# Everything above runs under whichever manager laid out this repository's
+# `node_modules`, because that is the tree the project's is cloned from and the
+# lockfile the climb in `PackageManager::detect` finds. That covers one of the
+# four and says nothing about the other three, and `node_modules` is not a
+# format they agree about: pnpm hoists only the direct dependencies and puts the
+# rest under `node_modules/.pnpm`, yarn Berry defaults to Plug'n'Play and writes
+# no `node_modules` at all, and the three `add` command lines are not
+# interchangeable — `yarn add file:x.tgz` is turned down outright for not being
+# `package-name@range`.
+#
+# So each one gets a project of its own and a real install. That is the one
+# thing here that needs the network: a manager that cannot download Angular is
+# reported as skipped rather than passed, the same as one that is not installed.
+
+# A plugin that depends on another plugin, as two directories the project
+# depends on by path. It is the shape that tells the layouts apart: npm, bun and
+# yarn hoist the second one to the top of `node_modules`, and pnpm leaves it
+# inside the first one's directory in the virtual store, where only Node's own
+# climb finds it.
+plugin_fixture() { # $1 = the project directory
+  local dir="$1" name module
+  for name in a b; do
+    module="fix$name"
+    mkdir -p "$dir/vendor/plugin-$name/native/ios"
+    echo "// $module" >"$dir/vendor/plugin-$name/native/ios/${module}Plugin.swift"
+  done
+  cat >"$dir/vendor/plugin-b/package.json" <<'JSON'
+{
+  "name": "@fixture/plugin-b",
+  "version": "0.0.1",
+  "angularNative": {
+    "module": "fixb",
+    "ios": { "sources": "native/ios", "register": "fixbPlugin" }
+  }
+}
+JSON
+  cat >"$dir/vendor/plugin-a/package.json" <<'JSON'
+{
+  "name": "@fixture/plugin-a",
+  "version": "0.0.1",
+  "dependencies": { "@fixture/plugin-b": "file:../plugin-b" },
+  "angularNative": {
+    "module": "fixa",
+    "ios": { "sources": "native/ios", "register": "fixaPlugin" }
+  }
+}
+JSON
+  node -e '
+    const fs = require("fs"), path = process.argv[1] + "/package.json";
+    const manifest = JSON.parse(fs.readFileSync(path, "utf8"));
+    manifest.dependencies["@fixture/plugin-a"] = "file:./vendor/plugin-a";
+    fs.writeFileSync(path, JSON.stringify(manifest, null, 2) + "\n");
+  ' "$dir"
+}
+
+# Yarn Berry installs into Plug'n'Play unless told otherwise, and PnP is the one
+# layout `an` cannot work in: there is no `node_modules`, and `ngc` and esbuild
+# are both plain processes reading the disk. What is checked is that it says so
+# and leaves the project alone — the failure this replaces was `yarn add` going
+# through, writing into the user's lockfile, and the run then ending on a
+# message about a missing `node_modules/.bin/ngc`.
+check_pnp_refusal() { # $1 = the project directory
+  local dir="$1" output before
+  before="$(shasum "$dir/package.json")"
+  if ! output="$(cd "$dir" && must_fail "$AN" init)"; then
+    ko 'yarn: a Plug'"'"'n'"'"'Play project is turned down for being one'
+    return
+  fi
+  contains "$output" "Plug'n'Play" 'yarn: a Plug'"'"'n'"'"'Play project is turned down for being one'
+  contains "$output" 'nodeLinker: node-modules' 'yarn: and the refusal says what to put in .yarnrc.yml'
+  if [ "$before" = "$(shasum "$dir/package.json")" ]; then
+    ok 'yarn: and nothing was installed before it gave up'
+  else
+    ko 'yarn: and nothing was installed before it gave up'
+  fi
+}
+
+check_manager() { # $1 = the program, $2… = its install command
+  local manager="$1"
+  shift
+  if ! command -v "$manager" >/dev/null 2>&1; then
+    echo "  skipped  $manager is not installed on this machine"
+    return
+  fi
+
+  local dir="$WORK/pm-$manager" log
+  rm -rf "$dir"
+  scaffold_project "$dir"
+  plugin_fixture "$dir"
+  log="$(mktemp)"
+
+  # This project sits under the SDK's own directory, and Yarn Berry climbs until
+  # it finds a package.json: it then refuses to install, because a directory
+  # inside another project has to be one of its workspaces. An empty lockfile is
+  # what its own message asks for — "if you intend it to be a completely
+  # separate project, create an empty yarn.lock file in it" — and it is also
+  # what makes `PackageManager::detect` say yarn.
+  if [ "$manager" = yarn ]; then
+    : >"$dir/yarn.lock"
+  fi
+
+  # Berry turns installs immutable when it thinks it is in CI, and there is no
+  # lockfile here for it to be immutable about.
+  if ! (cd "$dir" && YARN_ENABLE_IMMUTABLE_INSTALLS=false "$@" >"$log" 2>&1); then
+    echo "  skipped  $manager could not install the project (no network?); see $log"
+    return
+  fi
+
+  # Yarn Berry, before anything else: with no `node_modules` written there is
+  # nothing for the rest of this to check, so it is turned down and the project
+  # is told to use the other linker.
+  if [ -f "$dir/.pnp.cjs" ]; then
+    check_pnp_refusal "$dir"
+    printf 'nodeLinker: node-modules\n' >>"$dir/.yarnrc.yml"
+    if ! (cd "$dir" && YARN_ENABLE_IMMUTABLE_INSTALLS=false "$@" >"$log" 2>&1); then
+      echo "  skipped  $manager could not reinstall with nodeLinker: node-modules; see $log"
+      return
+    fi
+  fi
+
+  if ! (cd "$dir" && "$AN" init >"$log" 2>&1); then
+    ko "$manager: an init goes through in a project it laid out"
+    tail -20 "$log"
+    return
+  fi
+  ok "$manager: an init goes through in a project it laid out"
+  # The two framework packages have to be readable from the project, not merely
+  # named in the package.json: under pnpm what is at the top of `node_modules`
+  # is a link into the virtual store, and a broken one looks the same until
+  # something opens it.
+  exists "$dir/node_modules/@angular-native/platform/dist/public-api.js" \
+    "$manager: and the framework packages are readable where the build looks for them"
+  contains "$(cat "$dir/package.json")" 'file:\.angular-native/vendor/angular-native-platform' \
+    "$manager: and the dependency it wrote points at the vendored tarball"
+
+  if (cd "$dir" && "$AN" add ios >"$log" 2>&1) && [ -f "$dir/ios/Info.plist" ]; then
+    ok "$manager: an add ios writes the project Info.plist"
+  else
+    ko "$manager: an add ios writes the project Info.plist"
+    tail -20 "$log"
+  fi
+
+  # A plugin the app never declared, reached through the one it did. This is the
+  # question pnpm's layout raises: with only the direct dependencies hoisted,
+  # anything that resolution finds by flattening is not going to be there.
+  local plugins
+  plugins="$(cd "$dir" && "$AN" plugins 2>&1 || true)"
+  contains "$plugins" '^fixa  \(@fixture/plugin-a\)' \
+    "$manager: the plugin the app depends on is found"
+  contains "$plugins" '^fixb  \(@fixture/plugin-b\)' \
+    "$manager: and so is the plugin that plugin depends on, wherever it was put"
+
+  if ! (cd "$dir" && "$AN" build >"$log" 2>&1); then
+    ko "$manager: an build produces the bundle"
+    tail -20 "$log"
+    rm -f "$log"
+    return
+  fi
+  ok "$manager: an build produces the bundle"
+  local output
+  output="$(cargo run -q -p an-bridge --example headless -- \
+    "$dir/.angular-native/build/bundle/main.js" 3 2>&1 || true)"
+  contains "$output" 'Text#[0-9]+ .*"MyApp"' \
+    "$manager: and the bundle runs, with the app's title on a native Text node"
+  rm -f "$log"
+}
+
+echo "== the same project under each package manager"
+check_manager npm  npm install --no-audit --no-fund
+check_manager bun  bun install
+check_manager pnpm pnpm install
+check_manager yarn yarn install
 
 if [ "$fail" -ne 0 ]; then
   exit 1

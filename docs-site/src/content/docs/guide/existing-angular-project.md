@@ -137,6 +137,40 @@ before. If something goes wrong the manifest never comes into existence, `an`
 still says the project is not set up, and trying again is safe. There is no
 "half initialised" state for anyone to clean up by hand.
 
+### Which package manager, and the two projects this refuses
+
+The manager is not asked for: `an init` reads the lockfile — `package-lock.json`,
+`bun.lockb`, `pnpm-lock.yaml`, `yarn.lock` — climbing up the way npm does, so a
+project inside a workspace gets the workspace's manager. With none of the four
+it is npm. Yarn's `.yarnrc.yml` counts too, but only in the project's own
+directory: yarn writes one in the home directory, and walking up for that one
+would make every project under `$HOME` a yarn project.
+
+The command lines are not interchangeable, and one difference is not a flag.
+The vendored tarball goes in as a bare `file:` path everywhere except yarn,
+which turns it down:
+
+```text
+Usage Error: The file:….tgz string didn't match the required format
+  (package-name@range).
+```
+
+so under yarn the specifier carries the name, `@angular-native/platform@file:…`.
+The other three read it out of the tarball.
+
+Two projects are refused, both before anything is written:
+
+- **Yarn Plug'n'Play.** With `.pnp.cjs` there is no `node_modules`, and `ngc`
+  is run as a plain program while esbuild reads the packages straight off disk
+  — neither goes through the PnP loader, so the bundle would come out without
+  the framework in it. The refusal names `nodeLinker: node-modules` as the fix.
+- **No reachable `node_modules/typescript`.** `@angular/compiler-cli` declares
+  TypeScript as an *optional* peer dependency, which every manager skips.
+  Without it `ngc` dies with node's own `ERR_MODULE_NOT_FOUND` pointing at a
+  hashed chunk file, which names neither the project nor the fix. `an` does not
+  install it: the version that works is the compiler's business, not ours. Any
+  `ng new` already carries it, so this only catches a project assembled by hand.
+
 ### Where the native projects live, and what happens if you edit them
 
 Capacitor creates `ios/` and `android/` as complete Xcode and Gradle projects,

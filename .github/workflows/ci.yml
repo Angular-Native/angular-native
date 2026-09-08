@@ -41,6 +41,22 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # `check-external.sh` runs the whole external flow under all four package
+      # managers and prints `skipped` for any that is not installed, which on a
+      # bare runner is two of them.
+      #
+      # Not corepack, which is the usual answer: it was unbundled in Node 25, so
+      # the step would break the day somebody raises `node-version` above 24.
+      # And not `npm i -g yarn`, which is Yarn 1 — Yarn 1 has no Plug'n'Play,
+      # and the refusal `an init` grew for PnP would never be exercised.
+      # `@yarnpkg/cli-dist` is Berry, Berry defaults to PnP, and that is what
+      # puts the refusal and the reinstall behind it in the gate.
+      - name: Install pnpm and yarn, which the external check needs to not skip
+        run: |
+          npm install -g --no-audit --no-fund pnpm@10.15.0 @yarnpkg/cli-dist@4.9.2
+          pnpm --version
+          yarn --version
+
       - run: npm ci
 
       - name: Run the device-free suite, less the Android half
