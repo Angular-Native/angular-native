@@ -172,6 +172,14 @@ contesta nombrando el widget que el nodo montó de verdad.
 
 ### macOS
 
+| Evento | Por qué no |
+|---|---|
+| `(crown)`, `(crownIdle)` | La corona digital es del Apple Watch. La rueda del ratón de un Mac no lo es: mueve un `an-scroll-view` y llega como `(scroll)`, en puntos y no en detenciones. |
+| `(refresh)` en `an-scroll-view` | En el escritorio no se tira de una lista para recargarla; se recarga con un botón o con un atajo. |
+| `(back)` en `an-stack-view` y en `an-navigation-bar` | El arrastre desde el borde es de iOS, y la cabecera de este host es la barra de título de la ventana, que no tiene botón de volver. |
+| `(dismiss)` en `an-modal` | Aquí el modal es una capa que se muestra y se oculta con `visible`, así que nunca se cierra solo y no tiene nada que anunciar. |
+| los cuatro swipes, fuera de las vistas propias de este host | Justo debajo. |
+
 `(swipeLeft)` y compañía funcionan, pero **solo en vistas que sean de este
 host**. AppKit no tiene `NSSwipeGestureRecognizer`; el gesto llega como
 `swipeWithEvent:` por la cadena de respondedores, y eso hay que atenderlo en la

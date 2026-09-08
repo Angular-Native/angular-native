@@ -1914,13 +1914,6 @@ impl HostRenderer for AppKitHost {
 
         let kind = view.kind();
 
-        // The system dialog does not deliver its choice through the view: it
-        // has no view. `NSAlert` delivers it from its completion block, so
-        // attaching it here would be attaching it twice.
-        if kind == NodeKind::Alert && event == "select" {
-            return;
-        }
-
         // What this platform cannot give is said at subscription time, not
         // when the event fails to arrive.
         if let Some(reason) = unsupported_event(kind, event) {
@@ -1930,6 +1923,13 @@ impl HostRenderer for AppKitHost {
                      {reason}"
                 );
             });
+            return;
+        }
+
+        // Already wired somewhere that is not `attach`: the dialog's choice
+        // and the image's load. Nothing to hang on the view and nothing to
+        // warn about.
+        if crate::events::delivered_elsewhere(kind, event) {
             return;
         }
 
@@ -1968,13 +1968,17 @@ impl HostRenderer for AppKitHost {
         {
             self.listeners.insert(key, listener);
         } else if is_known_event(event) {
-            // A name the framework does send and that this host does not
-            // cover. The ones it does not send —the output names Angular
+            // A name the framework does send and that this host has nothing to
+            // attach it to — nearly always the output put on the wrong
+            // primitive, `(scroll)` on an `<an-view>` or `(submit)` on an
+            // image. The names it does not send —the output names Angular
             // registers along the way— are dropped without noise: see
             // `support::KNOWN_EVENTS`.
             self.warn_once(format!("event:{kind:?}:{event}"), || {
                 eprintln!(
-                    "angular-native: the macOS host cannot deliver `({event})` on <{kind:?}>"
+                    "angular-native: `({event})` on <{kind:?}> cannot be delivered on macOS: \
+                     this host has nothing to attach it to, so the output would never fire. \
+                     Check that it is on the primitive that reports it"
                 );
             });
         }

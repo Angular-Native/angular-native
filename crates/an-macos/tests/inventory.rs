@@ -93,3 +93,48 @@ fn the_swipes_sign_is_the_one_appkit_says() {
         assert_eq!(swipe_bit(name), Some(bit), "\"{name}\" is subscribed to under another bit");
     }
 }
+
+/// `KNOWN_EVENTS` against the only place the names are actually decided.
+///
+/// The list is the host's copy of every name `nativeEvent()` is called with in
+/// `packages/primitives`, and a name missing from it is not a compile error or
+/// a wrong answer: `set_listener` falls through the `is_known_event` guard and
+/// the subscription is dropped without a word. That is how `(crown)` and
+/// `(crownIdle)` went unanswered on a Mac, and reading the TypeScript is the
+/// only thing that can see it.
+///
+/// The file is read through `CARGO_MANIFEST_DIR` because the test runs from
+/// the crate's directory. Outside the monorepo there is no `packages/` to
+/// read, and a test that cannot do its job does not get to fail.
+#[test]
+fn known_events_are_the_names_the_framework_sends() {
+    let primitives = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../packages/primitives/src/primitives.ts");
+    let Ok(source) = std::fs::read_to_string(&primitives) else { return };
+
+    let mut sent: Vec<&str> = Vec::new();
+    for rest in source.split("nativeEvent").skip(1) {
+        // `nativeEvent<T>('name')` and `nativeEvent('name')`: what is wanted is
+        // the first string literal after the call, and the type argument
+        // carries none.
+        let Some(open) = rest.find('\'') else { continue };
+        let Some(close) = rest[open + 1..].find('\'') else { continue };
+        let name = &rest[open + 1..open + 1 + close];
+        if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphabetic()) {
+            sent.push(name);
+        }
+    }
+    assert!(!sent.is_empty(), "not one nativeEvent() call was read from {}", primitives.display());
+
+    let unlisted: Vec<&&str> = sent.iter().filter(|e| !KNOWN_EVENTS.contains(e)).collect();
+    assert!(
+        unlisted.is_empty(),
+        "the framework sends {unlisted:?} and KNOWN_EVENTS does not name them, so a template \
+         subscribing to one is dropped in silence"
+    );
+
+    // And the other way: a name in the list that nobody sends warns about an
+    // event that could never have been asked for.
+    let invented: Vec<&&str> = KNOWN_EVENTS.iter().filter(|e| !sent.contains(e)).collect();
+    assert!(invented.is_empty(), "KNOWN_EVENTS names {invented:?} and no primitive sends them");
+}

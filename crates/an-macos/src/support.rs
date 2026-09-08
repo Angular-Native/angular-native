@@ -130,10 +130,17 @@ pub fn support(kind: NodeKind) -> Option<Support> {
 /// something that works, and a warning that always comes out is a warning
 /// nobody reads. Only the first kind is warned about: what somebody genuinely
 /// asked for and this platform does not give.
+///
+/// It is every name `nativeEvent()` is called with and not only the ones this
+/// host attaches: a name left out of here is dropped without a word, which is
+/// the failure the list exists to prevent. `crown` and `crownIdle` are the
+/// Apple Watch's and are declared on the base directive like the rest, so a
+/// template can subscribe to them on a Mac and has to be told it will hear
+/// nothing.
 pub const KNOWN_EVENTS: &[&str] = &[
     "press", "doublePress", "longPress", "pan", "pinch", "rotate", "swipeLeft", "swipeRight",
     "swipeUp", "swipeDown", "hover", "layout", "safeArea", "back", "refresh", "scroll", "load",
-    "change", "input", "focus", "blur", "submit", "select", "dismiss",
+    "change", "input", "focus", "blur", "submit", "select", "dismiss", "crown", "crownIdle",
 ];
 
 pub fn is_known_event(event: &str) -> bool {
@@ -145,8 +152,22 @@ pub fn is_known_event(event: &str) -> bool {
 /// It is consulted on subscription and not on firing: a template that asks for
 /// `(swipeLeft)` on a Mac has to find out at mount time, not sit waiting for
 /// an event that is never going to arrive.
+///
+/// `scripts/check-platform-gaps.sh` reads the event names out of the patterns
+/// of this match and requires every one of them to be named on the macOS page,
+/// in both languages.
 pub fn unsupported_event(kind: NodeKind, event: &str) -> Option<&'static str> {
     match (kind, event) {
+        // The crown belongs to the Apple Watch, and the two outputs are
+        // declared on the base directive, so every primitive on every platform
+        // carries them. A Mac has a scroll wheel, which is not the same thing:
+        // it moves a scroll view and arrives as `(scroll)`, in points and not
+        // in detents, with no notion of focus deciding who receives it.
+        (_, "crown" | "crownIdle") => Some(
+            "the digital crown belongs to the Apple Watch. There is no wheel to turn on a Mac — \
+             the scroll wheel is not one: it moves an <an-scroll-view> and comes back as \
+             (scroll), in points — so this output would never fire",
+        ),
         (kind, "swipeLeft" | "swipeRight" | "swipeUp" | "swipeDown") if !catches_swipe(kind) => {
             Some(
                 "AppKit's swipe is not a recogniser hung off a view: it is an event that goes up \

@@ -469,9 +469,22 @@ need a paid Developer ID certificate and have never been run. See
   the dialog's *severity* instead, which is not what the prop means. The alert
   itself is presented with `beginSheetModalForWindow:` and never `runModal`,
   which would freeze the event loop that drives the frame.
-- **`(dismiss)` on `an-modal`, `(refresh)` on `an-scroll-view` and `(back)` on
-  either the stack view or the navigation bar** all warn at subscribe time, each
-  with its reason.
+- **Every output this host cannot deliver is refused when the template
+  subscribes**, once and with its reason: `(dismiss)` on `an-modal`,
+  `(refresh)` on `an-scroll-view`, `(back)` on either the stack view or the
+  navigation bar, and the four swipes — `(swipeLeft)`, `(swipeRight)`,
+  `(swipeUp)` and `(swipeDown)` — on anything that is not one of this host's own
+  views. AppKit's swipe is no recogniser hung off a view: it travels up the
+  responder chain, so only `an-view`, `an-stack-view`, `an-scroll-view` and
+  `an-modal` catch it and the refusal names the wrapper to move it to. An output
+  put on a primitive that does not report it is refused the same way —
+  `(scroll)` on an `an-view`, or `(change)` on an `an-textarea`, which AppKit
+  reports through an `NSTextView` delegate this host does not install.
+- **`(crown)` and `(crownIdle)` belong to the Apple Watch.** They are declared
+  on the directive every primitive extends, so a template can subscribe to them
+  here, and a Mac has no wheel to turn: the scroll wheel moves an
+  `an-scroll-view` and comes back as `(scroll)`, in points rather than in
+  detents. Both are refused at subscribe time.
 - **`safeArea` answers once with all-zero insets**, deliberately.
 - Props accepted and dropped with a one-time warning include `keyboardType`,
   `returnKeyType`, `autoCapitalize`, `autoCorrect`, `secureTextEntry`,

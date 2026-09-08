@@ -174,6 +174,14 @@ answered naming the widget the node actually mounted.
 
 ### macOS
 
+| Event | Why not |
+|---|---|
+| `(crown)`, `(crownIdle)` | The digital crown is the Apple Watch's. A Mac's scroll wheel is not one: it moves an `an-scroll-view` and arrives as `(scroll)`, in points rather than in detents. |
+| `(refresh)` on `an-scroll-view` | There is no pull-to-refresh on the desktop; you reload with a button or with a shortcut. |
+| `(back)` on `an-stack-view` and on `an-navigation-bar` | The edge drag is iOS's, and this host's header is the window's title bar, which has no back button. |
+| `(dismiss)` on `an-modal` | The modal here is a layer shown and hidden with `visible`, so it never closes by itself and has nothing to announce. |
+| the four swipes, off this host's own views | See just below. |
+
 `(swipeLeft)` and friends work, but **only on views this host owns**. AppKit has
 no `NSSwipeGestureRecognizer`; the gesture arrives as `swipeWithEvent:` down the
 responder chain, which has to be handled on the class. Bind a swipe directly to

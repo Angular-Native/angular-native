@@ -304,6 +304,40 @@ case "$witness" in
     ;;
 esac
 
+# Every copy of this `.app` that is running, by pid.
+#
+# `pgrep -c` is a Linux flag and BSD pgrep has no counter, so what comes back is
+# the list and the caller counts it. Without the `|| true` a pgrep that matches
+# nothing exits 1 and takes the script with it under `set -e`.
+copies() {
+  pgrep -f "AngularNativeMac.app/Contents/MacOS/AngularNativeMac" 2>/dev/null || true
+}
+
+# Two copies of the same app confuse the accessibility server: what comes back
+# is a tree with no window at all, which reads exactly like a host that
+# publishes nothing. It cost an afternoon to find.
+#
+# This used to be a `pkill -9` of everything that matched, which is worse than
+# the flake it was papering over: `check-macos.sh`, a screenshot run and this
+# script all drive the *same* binary, so the sweep silently killed whatever
+# somebody else was in the middle of and then read a tree it had no reason to
+# trust. There is no way from here to tell a leftover of an earlier run from a
+# live one belonging to another terminal, so neither is killed and neither is
+# guessed at: if anything is already running, this refuses, names the pids and
+# says what clears them. A refusal that names the reason is worth more than a
+# reading that may be of the wrong process.
+BEFORE="$(copies)"
+if [ -n "$BEFORE" ]; then
+  echo "  --   the accessibility tree is not read: the app is already running as pid(s)"
+  echo "       $(echo "$BEFORE" | tr '\n' ' ')and two copies of one application answer the"
+  echo "       accessibility server with no window at all. Something else is driving this"
+  echo "       .app: a screenshot, check-macos.sh, or a run of this that was interrupted."
+  echo "       Clear it with \`pkill -f AngularNativeMac.app/Contents/MacOS/AngularNativeMac\`"
+  echo "       and run this again. Everything above this line was checked; nothing below"
+  echo "       it can be."
+  exit "$fail"
+fi
+
 BUILD_LOG="$(mktemp)"
 if cargo an macos examples/a11y --no-launch >"$BUILD_LOG" 2>&1; then
   echo "  ok   the accessibility example builds into the .app"
@@ -318,12 +352,6 @@ rm -f "$BUILD_LOG"
 BIN="$ROOT/build/macos/AngularNativeMac.app/Contents/MacOS/AngularNativeMac"
 RUN_LOG="$(mktemp)"
 TREE="$ROOT/build/macos/accessibility-tree.txt"
-
-# A copy left over from an earlier run poisons the reading: two processes of the
-# same app confuse the accessibility server, and what comes back is a tree with
-# no window at all. It cost an afternoon to find, so it is swept before and
-# after rather than trusted.
-pkill -9 -f "AngularNativeMac.app/Contents/MacOS/AngularNativeMac" 2>/dev/null || true
 
 "$BIN" >"$RUN_LOG" 2>&1 &
 APP_PID=$!
@@ -344,12 +372,42 @@ window_rows() {
   sed -n "/AXWindow/,/AXMenuBar/p" "$TREE" 2>/dev/null | wc -l
 }
 
+# A copy that turns up *after* the launch poisons the reading exactly as a
+# leftover one does, and it is not hypothetical: `check-macos.sh`, any
+# screenshot run and this script all drive the same binary. So the identity is
+# not established once and then trusted — it is asserted on every turn of the
+# loop, and the refusal comes out the moment a second copy appears instead of
+# thirty seconds later, after polling a tree that was never going to fill.
+not_only_ours() { # <the pids that are running>
+  kill -9 "$APP_PID" 2>/dev/null || true
+  trap - EXIT
+  echo "  --   the accessibility tree is not read: this launched pid $APP_PID and what is"
+  echo "       running is $(echo "$1" | tr '\n' ' ')— with two copies up the accessibility server"
+  echo "       answers with no window at all, so there is no telling whose tree came back."
+  echo "       Something else is driving this .app: a screenshot, check-macos.sh."
+  echo "       Everything above this line was checked; nothing below it can be."
+  exit "$fail"
+}
+
 # The walker's exit code is read and not thrown away. `|| continue` would
 # swallow a 2 — the permission going away between the check above and here, a
 # grant revoked while this ran — and sixty silent retries later this would
 # report the host as mute, which is the wrong bug entirely.
 for _ in $(seq 1 60); do
   sleep 0.5
+
+  running="$(copies)"
+  if [ -z "$running" ]; then
+    # Nothing is running at all, so the app died on its own: that is a real
+    # failure and it is not the accessibility server's. Its log is the only
+    # place the reason will be.
+    trap - EXIT
+    echo "  FAIL  the app exited before it published anything"
+    tail -20 "$RUN_LOG"
+    exit 1
+  fi
+  [ "$running" = "$APP_PID" ] || not_only_ours "$running"
+
   walked=0
   "$AX_DUMP" "$APP_PID" >"$TREE" 2>/dev/null || walked=$?
   if [ "$walked" -eq 2 ]; then
@@ -361,26 +419,6 @@ for _ in $(seq 1 60); do
     break
   fi
 done
-
-# A second copy started *after* the sweep above poisons the reading the same way
-# a leftover one does, and the symptom is identical: a tree with no window,
-# which reads as a host that publishes nothing. `check-macos.sh` and anything
-# taking a screenshot run this same binary, so on a machine doing two things at
-# once it is not hypothetical.
-# `pgrep -c` is a Linux flag; BSD pgrep has no counter, so the lines are counted
-# here. Without the `|| true` a pgrep that matches nothing exits 1 and takes the
-# script with it under `set -e`.
-COPIES="$(pgrep -f "AngularNativeMac.app/Contents/MacOS/AngularNativeMac" 2>/dev/null | wc -l | tr -d ' ' || true)"
-COPIES="${COPIES:-0}"
-if [ "$(window_rows)" -le 8 ] && [ "$COPIES" -gt 1 ]; then
-  kill -9 "$APP_PID" 2>/dev/null || true
-  trap - EXIT
-  echo "  --   the accessibility tree is not read: $COPIES copies of the app are running,"
-  echo "       and two confuse the accessibility server into answering with no window at"
-  echo "       all. Something else is driving this .app — a screenshot, check-macos.sh."
-  echo "       Everything above this line was checked; nothing below it can be."
-  exit "$fail"
-fi
 
 if [ "$(window_rows)" -gt 8 ]; then
   echo "  ok   the app publishes an accessibility tree to a process outside it"

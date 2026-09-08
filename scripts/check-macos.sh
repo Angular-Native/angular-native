@@ -106,6 +106,26 @@ else
 fi
 
 # 4. And now the real one: launching it.
+#
+# Nothing else may be driving this binary while that happens, and the reason is
+# not this check: `check-accessibility.sh` keeps a copy of the same `.app` up
+# for as long as it reads the tree, and two copies of one application answer the
+# accessibility server with no window at all. So a launch from here does not
+# break this script, it breaks *that* one — interference that fails somewhere
+# else is the worst kind to debug. A leftover cannot be told apart from a live
+# run belonging to another terminal, so neither is killed: the pids in the way
+# are named and this stops.
+running="$(pgrep -f "AngularNativeMac.app/Contents/MacOS/AngularNativeMac" 2>/dev/null || true)"
+if [ -n "$running" ]; then
+  echo "  skipped everything that needs the app running: a copy of it is already up as"
+  echo "           pid(s) $(echo "$running" | tr '\n' ' ')and two copies of one .app answer the"
+  echo "           accessibility server with no window, so launching another would break"
+  echo "           check-accessibility.sh. Clear it with"
+  echo "           \`pkill -f AngularNativeMac.app/Contents/MacOS/AngularNativeMac\` and run"
+  echo "           this again."
+  exit "$fail"
+fi
+
 SHOT="$ROOT/build/macos/screenshot.png"
 RUN_LOG="$(mktemp)"
 rm -f "$SHOT"

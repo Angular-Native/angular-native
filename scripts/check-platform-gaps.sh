@@ -18,7 +18,10 @@
 #      macOS and Android refuse nothing, and that is checked too: a page that
 #      grew a row for one of them would be inventing a gap.
 #   2. `IGNORED` in the macOS host: the props AppKit accepts and drops.
-#   3. `unsupported_event` in the macOS host: what warns at subscribe time.
+#   3. `unsupported_event` in every host: what warns at subscribe time.
+#      `an-macos/src/support.rs`, `an-ios/src/family.rs` and the two methods of
+#      `AnHost`, read arm by arm, so a refusal the code makes and the page does
+#      not name is a failure here.
 #   4. The two languages against each other. The bullets are prose and cannot
 #      be compared word for word, but the code spans inside them are the same
 #      in both, so a bullet added to one page and not the other shows up here.
@@ -351,41 +354,26 @@ if 'const IGNORED' in macos_host:
                 f'  ok   the {len(expected)} props AppKit takes and drops are on both macOS pages'
             )
 
-# ── The macOS events that warn at subscribe time ────────────────────────────
-pairs = []
-if 'pub fn unsupported_event' in support:
-    body = support[support.index('pub fn unsupported_event'):]
-    body = body[: body.index('\n}')]
-    pairs = re.findall(r'\(NodeKind::(\w+), "(\w+)"\)', body)
-if pairs:
-    for language, (folder, heading) in PAGES.items():
-        path = f'{folder}/macos.md'
-        section_body = section((root / path).read_text(), heading) or ''
-        for kind, event in pairs:
-            if f'({event})' not in section_body:
-                failures.append(
-                    f'  FAIL {path} does not say that ({event}) on <{tag_of(kind)}> is refused'
-                )
-    oks.append(
-        f'  ok   the {len(pairs)} events macOS refuses at subscribe time are on both macOS pages: '
-        + ', '.join(f'({e}) on <{tag_of(k)}>' for k, e in pairs)
-    )
-else:
-    failures.append('  FAIL unsupported_event could not be read from the macOS host')
-
-# ── The events iOS and Android refuse at subscribe time ─────────────────────
+# ── What each host refuses at subscribe time ────────────────────────────────
 #
-# The same list, in the shape each language allows. `an-ios` keeps it in
-# `family::unsupported_event`, split into what none of the three UIKit families
-# delivers and what only one of them turns down, the way `missing_kind` is
-# split; `AnHost` keeps two static methods, one for every Android and one for
-# the phone, because the crown does arrive on a watch.
+# The same list, in the shape each language allows. `an-macos` keeps it in
+# `support::unsupported_event`; `an-ios` splits `family::unsupported_event`
+# into what none of the three UIKit families delivers and what only one of them
+# turns down, the way `missing_kind` is split; `AnHost` keeps two static
+# methods, one for every Android and one for the phone, because the crown does
+# arrive on a watch.
 #
 # What is read is the event names, because a name is what a page has to carry.
 
 
 def rust_arms(body: str) -> set[str]:
     """The event names in the patterns of a match whose arms return `Some`."""
+    # An arm whose reason is long enough gets a block body — `=> {` and the
+    # `Some(` on the next line — and reading only `=> Some(` misses it. That is
+    # how the Mac's four swipe refusals went unasserted while the page was free
+    # to stop naming them. The two shapes are the same arm, so they are made
+    # into the same text before anything is matched.
+    body = re.sub(r'=>\s*\{\s*Some\(', '=> Some(', body)
     found: set[str] = set()
     for arm in re.findall(r'^\s+(.+?)\s*=>\s*Some\($', body, re.M):
         found.update(re.findall(r'"(\w+)"', arm))
@@ -403,6 +391,10 @@ def java_method(source: str, signature: str) -> str:
     return found.group(0) if found else ''
 
 
+macos_events = rust_arms(rust_fn(support, 'pub fn unsupported_event('))
+if not macos_events:
+    failures.append('  FAIL unsupported_event could not be read from crates/an-macos/src/support.rs')
+
 every_family = rust_arms(rust_fn(family, 'fn on_every_family('))
 android_always = set(
     re.findall(r'case "(\w+)":', java_method(android_host, 'private static String unsupportedEvent('))
@@ -414,6 +406,7 @@ android_phone = set(
 )
 
 REFUSED_EVENTS = {
+    'macos': macos_events,
     'ios': every_family
     | rust_arms(rust_fn(family, 'fn on_this_family(', '#[cfg(target_os = "ios")]')),
     'tvos': every_family

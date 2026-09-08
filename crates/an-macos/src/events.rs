@@ -705,8 +705,24 @@ fn control_action(kind: an_core::NodeKind, event: &str) -> Option<Sel> {
     })
 }
 
+/// The pairs that arrive through something other than `attach`.
+///
+/// Two primitives report without a recogniser and without a subscription: the
+/// system dialog, which has no view at all and hands its choice back from
+/// `NSAlert`'s completion block, and the image, which announces itself from the
+/// loader once the bytes are in — see `alert.rs` and `images.rs`. `attach`
+/// returns `None` for both, and that `None` means "already done", not "cannot
+/// be done": without this list `host::set_listener` would fall through to the
+/// warning and claim two outputs that work do not.
+pub fn delivered_elsewhere(kind: an_core::NodeKind, event: &str) -> bool {
+    use an_core::NodeKind;
+    matches!((kind, event), (NodeKind::Alert, "select") | (NodeKind::Image, "load"))
+}
+
 /// Attaches an event to a view. `None` means this platform does not know how
-/// to deliver it; the caller decides whether that is worth a warning.
+/// to deliver it; the caller decides whether that is worth a warning, and
+/// `host::set_listener` does warn — see `delivered_elsewhere` for the pairs
+/// that legitimately return `None`.
 pub fn attach(
     mtm: objc2::MainThreadMarker,
     view: &NSView,

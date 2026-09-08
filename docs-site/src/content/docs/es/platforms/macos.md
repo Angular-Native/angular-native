@@ -487,9 +487,22 @@ Mira [Firma y distribución](/es/guide/signing-and-distribution/).
   *gravedad* del diálogo, que no es lo que significa la prop. La alerta en sí se
   presenta con `beginSheetModalForWindow:` y nunca con `runModal`, que
   congelaría el bucle de eventos que mueve el fotograma.
-- **`(dismiss)` en `an-modal`, `(refresh)` en `an-scroll-view` y `(back)` tanto
-  en la stack view como en la barra de navegación** avisan todos al suscribirse,
-  cada uno con su motivo.
+- **Toda salida que este host no puede entregar se rechaza al suscribirse**, una
+  vez y con su motivo: `(dismiss)` en `an-modal`, `(refresh)` en
+  `an-scroll-view`, `(back)` tanto en la stack view como en la barra de
+  navegación, y los cuatro swipes —`(swipeLeft)`, `(swipeRight)`, `(swipeUp)` y
+  `(swipeDown)`— en cualquier cosa que no sea una vista propia de este host. El
+  swipe de AppKit no es un reconocedor colgado de una vista: sube por la cadena
+  de respondedores, así que solo lo cazan `an-view`, `an-stack-view`,
+  `an-scroll-view` y `an-modal`, y el rechazo nombra el envoltorio al que
+  moverlo. Una salida puesta en un primitivo que no la informa se rechaza igual:
+  `(scroll)` en un `an-view`, o `(change)` en un `an-textarea`, que AppKit
+  informa por un delegado de `NSTextView` que este host no instala.
+- **`(crown)` y `(crownIdle)` son del Apple Watch.** Se declaran en la directiva
+  de la que heredan todos los primitivos, así que una plantilla puede
+  suscribirse a ellas aquí, y un Mac no tiene rueda que girar: la rueda del
+  ratón mueve un `an-scroll-view` y vuelve como `(scroll)`, en puntos y no en
+  detenciones. Las dos se rechazan al suscribirse.
 - **`safeArea` responde una vez con los cuatro insets a cero**, a propósito.
 - Props aceptadas y descartadas con un aviso único: `keyboardType`,
   `returnKeyType`, `autoCapitalize`, `autoCorrect`, `secureTextEntry`,
