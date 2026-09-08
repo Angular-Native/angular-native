@@ -179,7 +179,7 @@ fi
 # keychain group.
 BIN="build/ios/AngularNative.app/AngularNative"
 if [ -f "$BIN" ]; then
-  if otool -s __TEXT __entitlements "$BIN" 2>/dev/null | grep -q "__entitlements"; then
+  if grep -q "__entitlements" <<<"$(otool -s __TEXT __entitlements "$BIN" 2>/dev/null || true)"; then
     ok 'the binary carries the __TEXT,__entitlements section'
     # `otool`'s dump comes in four-byte words and byte-swapped, so the text is
     # looked for in the binary as it stands rather than reassembled.

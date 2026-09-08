@@ -71,7 +71,7 @@ plist_check() {
 plist_check CFBundleExecutable AngularNativeVision
 plist_check CFBundleIdentifier dev.angularnative.playground.vision
 # 7 is the headset.
-if plutil -extract UIDeviceFamily.0 raw -o - "$PLIST" 2>/dev/null | grep -qx 7; then
+if grep -qx 7 <<<"$(plutil -extract UIDeviceFamily.0 raw -o - "$PLIST" 2>/dev/null || true)"; then
   check ok "$PLIST: UIDeviceFamily is 7, the headset"
 else
   check no "$PLIST: UIDeviceFamily is not 7"
@@ -99,11 +99,11 @@ else
 fi
 
 # 4. The cross-compilation.
-if ! rustup toolchain list 2>/dev/null | grep -q '^nightly'; then
+if ! grep -q '^nightly' <<<"$(rustup toolchain list 2>/dev/null || true)"; then
   echo "  --   cross-compilation skipped: the nightly toolchain is missing"
   echo "       rustup toolchain install nightly"
   echo "       rustup component add rust-src --toolchain nightly"
-elif ! rustup component list --toolchain nightly 2>/dev/null | grep -q 'rust-src (installed)'; then
+elif ! grep -q 'rust-src (installed)' <<<"$(rustup component list --toolchain nightly 2>/dev/null || true)"; then
   echo "  --   cross-compilation skipped: rust-src is missing from nightly"
   echo "       rustup component add rust-src --toolchain nightly"
 else

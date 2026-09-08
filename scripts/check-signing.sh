@@ -73,7 +73,7 @@ cargo build -q -p an-cli
 # Reading a profile, deciding whether it expired, deciding whether it is about
 # this app, refusing a manifest that carries a password. They are Rust tests and
 # not shell, because they are about a function and not about a command.
-if cargo test -q -p an-cli 2>&1 | grep -q '^test result: ok'; then
+if grep -q '^test result: ok' <<<"$(cargo test -q -p an-cli 2>&1 || true)"; then
   ok 'the settings and profile tests pass'
 else
   ko 'the settings and profile tests do not pass'

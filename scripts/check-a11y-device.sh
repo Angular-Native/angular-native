@@ -60,7 +60,7 @@ fi
 # screen — but 227 round points do not fit the rows this template lays out, and
 # what is off screen is not in the accessibility tree either. The check would
 # fail on the screen size and read as if the labels had not arrived.
-if "$ADB" -s "$SERIAL" shell getprop ro.build.characteristics | grep -q watch; then
+if grep -q watch <<<"$("$ADB" -s "$SERIAL" shell getprop ro.build.characteristics || true)"; then
   echo "  FAIL $SERIAL is a watch, and examples/a11y does not fit on one."
   echo "         Wear OS inherits all of this: same AnHost, same AnAccessibility,"
   echo "         same delegate. Run this on a phone."
@@ -112,7 +112,7 @@ fi
 FOUND=""
 for _ in $(seq 1 40); do
   if "$ADB" -s "$SERIAL" shell uiautomator dump /sdcard/an-a11y.xml >/dev/null 2>&1 &&
-     "$ADB" -s "$SERIAL" shell cat /sdcard/an-a11y.xml 2>/dev/null | grep -q 'Save the draft'; then
+     grep -q 'Save the draft' <<<"$("$ADB" -s "$SERIAL" shell cat /sdcard/an-a11y.xml 2>/dev/null || true)"; then
     FOUND="yes"
     break
   fi
@@ -135,7 +135,7 @@ python3 "$ROOT/scripts/check-a11y-dump.py" "$ROOT" "$DUMP_FULL" "$DUMP_COMPRESSE
 # do. `expanded` on something that cannot be pressed, or a role the host does
 # not know, have to end up in the log: that is the difference between a
 # decision and a silent drop.
-if "$ADB" -s "$SERIAL" logcat -d -s angular-native:E | grep -q 'accessibility'; then
+if grep -q 'accessibility' <<<"$("$ADB" -s "$SERIAL" logcat -d -s angular-native:E || true)"; then
   echo "  FAIL the host complained about something the template asked for:"
   "$ADB" -s "$SERIAL" logcat -d -s angular-native:E | grep 'accessibility' | tail -5
   exit 1

@@ -55,7 +55,7 @@ fi
 
 # A watch does not mount six of these —`unsupported()` says why for each— and
 # what it mounts instead is the marker, so the frames would be the marker's.
-if "$ADB" -s "$SERIAL" shell getprop ro.build.characteristics | grep -q watch; then
+if grep -q watch <<<"$("$ADB" -s "$SERIAL" shell getprop ro.build.characteristics || true)"; then
   echo "  FAIL $SERIAL is a watch, and it does not mount half of what this screen asks for."
   echo "         Run this on a phone."
   exit 1
@@ -96,7 +96,7 @@ fi
 FOUND=""
 for _ in $(seq 1 40); do
   if "$ADB" -s "$SERIAL" shell uiautomator dump /sdcard/an-measure.xml >/dev/null 2>&1 &&
-     "$ADB" -s "$SERIAL" shell cat /sdcard/an-measure.xml 2>/dev/null | grep -q 'the icon'; then
+     grep -q 'the icon' <<<"$("$ADB" -s "$SERIAL" shell cat /sdcard/an-measure.xml 2>/dev/null || true)"; then
     FOUND="yes"
     break
   fi
@@ -157,7 +157,7 @@ PY
 # And that the host did not have to fall back on anything. A control it cannot
 # measure now says so; if that line is in the log, the screen above came out by
 # luck and not because it was measured.
-if "$ADB" -s "$SERIAL" logcat -d -s angular-native:E | grep -q 'has no measurement in this host'; then
+if grep -q 'has no measurement in this host' <<<"$("$ADB" -s "$SERIAL" logcat -d -s angular-native:E || true)"; then
   echo "  FAIL the host could not measure something it was asked about:"
   "$ADB" -s "$SERIAL" logcat -d -s angular-native:E | grep 'has no measurement' | tail -5
   exit 1

@@ -41,7 +41,7 @@ check() { # <0 if good, 1 if bad> <what was being checked>
 # 1. The flag exists. It is checked against `--help` and not against the source
 #    because what matters is that clap accepts it: a variant added to the enum
 #    and forgotten in the command line is exactly the shape this hole had.
-if cargo an dev --help 2>&1 | grep -q -- '--macos'; then
+if grep -q -- '--macos' <<<"$(cargo an dev --help 2>&1 || true)"; then
   echo "  ok   the flag is on the command line"
 else
   echo '  FAIL there is no --macos in an dev'

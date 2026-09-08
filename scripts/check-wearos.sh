@@ -62,7 +62,7 @@ for expected in \
   "uses-feature: name='android.hardware.type.watch'" \
   "package: name='dev.angularnative'"
 do
-  if ! printf '%s' "$DUMP" | grep -qF "$expected"; then
+  if ! grep -qF "$expected" <<<"$(printf '%s' "$DUMP" || true)"; then
     echo "  FAIL the watch APK does not declare: $expected"
     exit 1
   fi
@@ -76,7 +76,7 @@ if [ ! -f "$PHONE_APK" ]; then
   echo "  FAIL the phone APK never got built"
   exit 1
 fi
-if "$AAPT2" dump badging "$PHONE_APK" | grep -qF "name='android.hardware.type.watch'"; then
+if grep -qF "name='android.hardware.type.watch'" <<<"$("$AAPT2" dump badging "$PHONE_APK" || true)"; then
   echo "  FAIL the phone APK claims to be a watch one"
   exit 1
 fi

@@ -202,11 +202,11 @@ in_controls 'Alert#[0-9]+ \[0,0 0x0\]' 'the dialog takes up no room in the layou
 
 # 8. The cross-compilation, which is the expensive one and the one that may not
 #    be available.
-if ! rustup toolchain list 2>/dev/null | grep -q '^nightly'; then
+if ! grep -q '^nightly' <<<"$(rustup toolchain list 2>/dev/null || true)"; then
   echo "  --   cross-compilation skipped: the nightly toolchain is missing"
   echo "       rustup toolchain install nightly"
   echo "       rustup component add rust-src --toolchain nightly"
-elif ! rustup component list --toolchain nightly 2>/dev/null | grep -q 'rust-src (installed)'; then
+elif ! grep -q 'rust-src (installed)' <<<"$(rustup component list --toolchain nightly 2>/dev/null || true)"; then
   echo "  --   cross-compilation skipped: rust-src is missing from nightly"
   echo "       rustup component add rust-src --toolchain nightly"
 else

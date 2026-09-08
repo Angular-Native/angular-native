@@ -59,13 +59,13 @@ for name in "$@"; do
   key "$name" >/dev/null
 done
 
-if ioreg -n Root -d1 -a 2>/dev/null | grep -q "CGSSessionScreenIsLocked"; then
+if grep -q "CGSSessionScreenIsLocked" <<<"$(ioreg -n Root -d1 -a 2>/dev/null || true)"; then
   echo "the Mac's screen is locked: no key would reach the simulator." >&2
   echo "Unlock it and try again." >&2
   exit 1
 fi
 
-if ! xcrun simctl list devices booted 2>/dev/null | grep -q "tvOS" ; then
+if ! grep -q "tvOS"  <<<"$(xcrun simctl list devices booted 2>/dev/null || true)"; then
   echo "there is no tvOS simulator running." >&2
   echo "Start the app with: cargo an tvos" >&2
   exit 1

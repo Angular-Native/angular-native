@@ -56,7 +56,7 @@ echo "  ok   the viewport follows the container, so a rotation relays out"
 # flushed, and it never flushed the frames mounted outside the callback. There
 # is no device here to count frames on, so the caller is counted instead.
 # The line comments go first: the activity says in one why it does not call it.
-if sed 's://.*::' "$ACTIVITY" | grep -q "host\.flush()"; then
+if grep -q "host\.flush()" <<<"$(sed 's://.*::' "$ACTIVITY" || true)"; then
   echo "  FAIL MainActivity calls host.flush(); the Rust mount side already does, once per frame"
   exit 1
 fi

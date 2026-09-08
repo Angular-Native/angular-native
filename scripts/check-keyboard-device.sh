@@ -64,7 +64,7 @@ fi
 
 # A watch has no keyboard of this kind: Wear OS answers a text field with its own
 # full-screen input, so there is no inset to report and nothing here to measure.
-if "$ADB" -s "$SERIAL" shell getprop ro.build.characteristics | grep -q watch; then
+if grep -q watch <<<"$("$ADB" -s "$SERIAL" shell getprop ro.build.characteristics || true)"; then
   echo "  --   skipped: $SERIAL is a watch, and a watch answers a text field with a"
   echo "       screen of its own rather than with an inset over this one"
   exit 0

@@ -121,9 +121,13 @@ def tvos_refuses() -> set[str]:
     # The `cfg(tvos)` arm of `missing_kind`, which is the tvOS SDK's
     # availability annotation brought into Rust: the compiler cannot see it,
     # so this list is the only place it exists.
+    # Inside `missing_kind`, not over the whole file: `unsupported_event` is
+    # cfg'd per family as well, so a bare search finds whichever
+    # `#[cfg(target_os = "tvos")]` comes first and can land in the wrong one.
+    body = re.search(r'^pub fn missing_kind.*?^\}', family, re.S | re.M)
     arm = re.search(
         r'#\[cfg\(target_os = "tvos"\)\](.*?)#\[cfg\(not\(target_os = "tvos"\)\)\]',
-        family,
+        body.group(0) if body else '',
         re.S,
     )
     if not arm:

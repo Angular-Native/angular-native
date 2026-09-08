@@ -59,8 +59,14 @@ grep_check 'title=top — pressed 1 times' 'the press reached JS and the signal 
 #    failing: the warning written to the log and the row of the table in
 #    docs-site/src/content/docs/platforms/tvos.md. Drifting apart is exactly what
 #    leaves somebody looking for a control that is never going to appear.
+#    The cfg range is taken inside `missing_kind` and not over the whole file.
+#    `family.rs` has more than one `#[cfg(target_os = "tvos")]` — `unsupported_event`
+#    is cfg'd per family too — and a range that starts at each of them swept up the
+#    kinds named in event refusals as though they were primitives the SDK does not
+#    ship.
+MISSING_KIND="$(awk '/^pub fn missing_kind/,/^\}/' crates/an-ios/src/family.rs)"
 KINDS="$(sed -n '/#\[cfg(target_os = "tvos")\]/,/#\[cfg(not(target_os = "tvos"))\]/p' \
-  crates/an-ios/src/family.rs | grep -oE 'NodeKind::[A-Za-z]+' | sed 's/NodeKind:://' | sort -u)"
+  <<<"$MISSING_KIND" | grep -oE 'NodeKind::[A-Za-z]+' | sed 's/NodeKind:://' | sort -u)"
 if [ -z "$KINDS" ]; then
   check no 'family.rs declares which primitives do not exist on tvOS'
 else
@@ -98,7 +104,7 @@ plist_check CFBundleIdentifier dev.angularnative.playground.tv
 # 3 is the Apple TV. Without this key `simctl` installs something it then does
 # not know how to launch, and the error arrives much later and in another
 # language.
-if plutil -extract UIDeviceFamily.0 raw -o - "$PLIST" 2>/dev/null | grep -qx 3; then
+if grep -qx 3 <<<"$(plutil -extract UIDeviceFamily.0 raw -o - "$PLIST" 2>/dev/null || true)"; then
   check ok "$PLIST: UIDeviceFamily is 3, the Apple TV"
 else
   check no "$PLIST: UIDeviceFamily is not 3"
@@ -113,7 +119,7 @@ fi
 #    binary, and not only because of the class: its `#[link(name = "WebKit")]`
 #    would make the link look for a framework that is not in that SDK, and that
 #    does not show up until the `swiftc` at the end.
-if grep -B1 '^mod web;' crates/an-ios/src/lib.rs | grep -q 'target_os = "tvos"'; then
+if grep -q 'target_os = "tvos"' <<<"$(grep -B1 '^mod web;' crates/an-ios/src/lib.rs || true)"; then
   check no 'the web module is still compiled for tvOS, and WebKit is not in its SDK'
 else
   check ok 'the web module goes out of the binary on tvOS: WebKit is not in its SDK'
@@ -139,11 +145,11 @@ fi
 
 # 6. The cross-compilation, which is the expensive one and the one that may not
 #    be available.
-if ! rustup toolchain list 2>/dev/null | grep -q '^nightly'; then
+if ! grep -q '^nightly' <<<"$(rustup toolchain list 2>/dev/null || true)"; then
   echo "  --   cross-compilation skipped: the nightly toolchain is missing"
   echo "       rustup toolchain install nightly"
   echo "       rustup component add rust-src --toolchain nightly"
-elif ! rustup component list --toolchain nightly 2>/dev/null | grep -q 'rust-src (installed)'; then
+elif ! grep -q 'rust-src (installed)' <<<"$(rustup component list --toolchain nightly 2>/dev/null || true)"; then
   echo "  --   cross-compilation skipped: rust-src is missing from nightly"
   echo "       rustup component add rust-src --toolchain nightly"
 else

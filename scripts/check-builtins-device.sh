@@ -53,7 +53,7 @@ fi
 # A watch is a different set of expectations, not a smaller one: `share` and
 # `files.pick` have to *fail* there, and by name. Which of the two this is
 # decides what is looked for below.
-if "$ADB" -s "$SERIAL" shell getprop ro.build.characteristics | grep -q watch; then
+if grep -q watch <<<"$("$ADB" -s "$SERIAL" shell getprop ro.build.characteristics || true)"; then
   FORM="watch"
 else
   FORM="phone"
@@ -102,7 +102,7 @@ SINCE="$("$ADB" -s "$SERIAL" shell "date +'%m-%d %H:%M:%S.000'" | tr -d '\r')"
 # seconds to get there and a phone two.
 FOUND=""
 for _ in $(seq 1 60); do
-  if "$ADB" -s "$SERIAL" logcat -d -t "$SINCE" 2>/dev/null | grep -q '\[modules\] haptics.support:'; then
+  if grep -q '\[modules\] haptics.support:' <<<"$("$ADB" -s "$SERIAL" logcat -d -t "$SINCE" 2>/dev/null || true)"; then
     FOUND="yes"
     break
   fi
