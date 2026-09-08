@@ -49,5 +49,32 @@
     </array>
 	<key>NSCameraUsageDescription</key>
 	<string>To take a photograph and to read a barcode.</string>
+    <!--
+      Deep links, the half that needs no server.
+
+      The scheme is the bundle identifier, which is what Apple recommends and
+      the only spelling that cannot collide: a scheme is claimed device-wide,
+      and two apps claiming "myapp" end up with iOS picking one of them. So
+      `dev.angularnative.playground://ship/2` opens this app on that route, and
+      `an add ios` writes the same line with the project's own identifier in it.
+
+      A universal link —a real https:// address that opens the app instead of
+      Safari— is not declared here. It needs the associated-domains entitlement
+      and an apple-app-site-association file served from the site, neither of
+      which anything can write for you. The guide says what to add.
+    -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>CFBundleURLName</key>
+            <string>dev.angularnative.playground</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>dev.angularnative.playground</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core'
 
+import { onDeepLink, routeFromUrl, takeInitialDeepLink } from './deep-links'
 import { globalHotState } from './hot-state'
 import {
   APP_BASE_HREF,
@@ -57,6 +58,47 @@ export class NativePlatformLocation extends PlatformLocation {
       this.index = saved.index
     }
     rememberHistory(() => ({ stack: this.stack, index: this.index }))
+
+    // Subscribing comes first, and taking the queue second. Taking it is what
+    // tells the core to stop queueing and start emitting, so in the other order
+    // a link landing between the two calls would be emitted to nobody.
+    onDeepLink((url) => this.openUrl(url))
+    const opened = takeInitialDeepLink()
+    if (opened !== null) {
+      const route = routeFromUrl(opened)
+      // The entry is replaced rather than pushed. The app was *started* by this
+      // URL: there is no screen behind it, and a stack with `/` underneath would
+      // make the back gesture go somewhere the person never was instead of
+      // leaving the app.
+      if (route !== null) {
+        this.stack[this.index] = { url: route, state: null }
+        // The stack was written down a line ago, before this entry existed. A
+        // save on the very first screen would otherwise restore the app to the
+        // route it would have had if no link had opened it.
+        this.remember()
+      }
+    }
+  }
+
+  /**
+   * A URL from outside while the app is running: another app, a notification, a
+   * link in a browser.
+   *
+   * It goes onto the stack and then out as a `popstate`, which is the same road
+   * the back gesture takes. The router is listening there, reads the new URL and
+   * navigates; because the index went up, the transition animates forwards and
+   * the screen the person was on stays underneath, where back will find it.
+   *
+   * A link to where the app already is does nothing. Tapping the same
+   * notification twice should not stack the same screen on itself.
+   */
+  openUrl(url: string): void {
+    const route = routeFromUrl(url)
+    if (route === null || route === this.stack[this.index].url) return
+    this.pushState(null, '', route)
+    for (const listener of this.listeners) {
+      listener({ type: 'popstate', state: null })
+    }
   }
 
   override getBaseHrefFromDOM(): string {

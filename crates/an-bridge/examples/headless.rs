@@ -234,6 +234,19 @@ fn main() {
         .unwrap_or(QuickJsRuntime::DEFAULT_STACK_SIZE);
     let mut js = QuickJsRuntime::with_options(std::rc::Rc::new(an_bridge::runtime::StderrLog), stack)
         .expect("the JS engine never started");
+
+    // `AN_OPEN_URL` is the cold start: the URL is put in before the bundle is
+    // evaluated, which is exactly the order the system uses when it launches the
+    // process *because* of a link. It is the case that cannot be tested by
+    // sending an event, because at that moment there is nobody to send it to.
+    if let Ok(url) = std::env::var("AN_OPEN_URL") {
+        println!("-- opened with {url}");
+        an_bridge::deep_links().open(&url);
+    }
+    // `AN_OPEN_URL_LATER` is the other half: a link reaching an app that is
+    // already on screen. It goes in halfway through the run.
+    let later = std::env::var("AN_OPEN_URL_LATER").ok();
+    let mut opened_later = false;
     // A pretend `device`: it makes the whole path of a native module testable
     // —promise in JS, registry, answer, resolution— with no simulator.
     js.register_module(Box::new(FakeDevice));
@@ -270,9 +283,24 @@ fn main() {
     // The count taken right before scrolling, so it can be said how many views
     // the scroll cost.
     let mut before_scroll = (0usize, 0usize);
+    // A run driven by a URL does not also poke the app. A simulated tap
+    // navigates somewhere of its own, and the tree printed at the end would not
+    // say which of the two put it there.
+    let driven_by_url = std::env::var("AN_OPEN_URL").is_ok() || later.is_some();
 
     for frame in 0..frames {
         let now = frame as f64 * step;
+
+        // Halfway through, a link reaching an app that is already on screen.
+        // The navigation it causes is not instant: the router schedules it on a
+        // timer, so the frames after this one are what show the result.
+        if !opened_later && frame >= frames / 2 {
+            if let Some(url) = later.as_ref() {
+                println!("-- link while running: {url}");
+                an_bridge::deep_links().open(url);
+                opened_later = true;
+            }
+        }
 
         // The events the previous frame produced —including the `layout` ones
         // the core emits— go in before anything else.
@@ -296,7 +324,7 @@ fn main() {
         }
 
         // Halfway through the run, a tap on the first node that is listening.
-        if !tapped && frame >= frames / 2 {
+        if !driven_by_url && !tapped && frame >= frames / 2 {
             if let Some(target) = renderer.host().pressable.first().copied() {
                 println!("-- simulated tap on #{target}");
                 js.dispatch_events(&[HostEvent {
@@ -314,7 +342,7 @@ fn main() {
 
         // One frame after the tap, a long scroll: it moves the whole window and
         // shows whether the list recycles or rebuilds.
-        if !scrolled && frame >= frames / 2 {
+        if !driven_by_url && !scrolled && frame >= frames / 2 {
             if let Some(target) = renderer.host().scrollable.first().copied() {
                 before_scroll = (renderer.host().created, renderer.host().destroyed);
                 println!("-- simulated scroll on #{target} to y=4000");
@@ -335,7 +363,7 @@ fn main() {
         // whoever moves something with a finger updates on `move` and settles on
         // `end`, and if only one of the two arrived it would look like it works
         // until the second drag.
-        if !panned && frame >= frames / 2 {
+        if !driven_by_url && !panned && frame >= frames / 2 {
             let target = renderer.host().pannable.first().copied();
             if let Some(target) = target {
                 println!("-- simulated drag on #{target}");
@@ -368,7 +396,7 @@ fn main() {
 
         // Near the end, the back gesture: it checks that the stack brings the
         // previous screen back rather than rebuilding it.
-        if !went_back && frames > 3 && frame == frames - 2 {
+        if !driven_by_url && !went_back && frames > 3 && frame == frames - 2 {
             if let Some(target) = renderer.host().backable.first().copied() {
                 before_back = (renderer.host().created, renderer.host().destroyed);
                 println!("-- simulated back on #{target}");

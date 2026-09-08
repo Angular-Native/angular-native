@@ -440,3 +440,26 @@ fn report(error: Option<String>) -> jint {
         }
     }
 }
+
+/// A URL the app was opened with, or one that arrived while it was running.
+///
+/// It takes no handle: the mailbox is global to the process, because a link can
+/// be what starts the process in the first place and there is no runtime yet to
+/// hang it off. The Apple hosts reach the same mailbox through
+/// `an_deeplink_open`; here everything crosses JNI, so it gets its own door.
+///
+/// See `crates/an-bridge/src/deeplink.rs`.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_angularnative_MainActivity_nativeOpenUrl(
+    mut env: EnvUnowned,
+    _class: JClass,
+    url: JString,
+) {
+    env.with_env(|env| -> Result<(), jni::errors::Error> {
+        let Ok(url) = env.get_string(&url) else { return Ok(()) };
+        let url: String = url.into();
+        an_bridge::deep_links().open(&url);
+        Ok(())
+    })
+    .resolve::<LogErrorAndDefault>()
+}

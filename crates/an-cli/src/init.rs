@@ -166,6 +166,19 @@ pub fn add(workspace: &Workspace, platform: &str) -> Result<()> {
         path.display(),
         workspace.build_dir().join(dir).display()
     );
+    // The two platforms that receive a URL. It is said here because it is the
+    // only moment the file is new and nobody has yet decided it says everything
+    // it is going to say.
+    if matches!(platform, "ios" | "android") {
+        eprintln!();
+        eprintln!(
+            "It already declares a deep link on {}://, so {}://ship/2 opens the app on\n\
+             that route with no further wiring. A universal link or an App Link —a real\n\
+             https:// address— is the part nobody can write for you: it needs a file served\n\
+             from your site. See https://angular-native.github.io/guide/navigation/.",
+            project.bundle_id, project.bundle_id
+        );
+    }
     Ok(())
 }
 
@@ -813,6 +826,17 @@ fn plist(
         Family::TvOs => "shells/tvos/Resources/Info.plist",
         Family::VisionOs => "shells/visionos/Resources/Info.plist",
     });
+    // How many times the identifier appears. On iOS it is three: the bundle
+    // identifier itself, and the deep-link scheme's name and value — a URL
+    // scheme is claimed device-wide, so the only spelling that cannot collide
+    // with another app's is the identifier. Substituting all three is what gives
+    // a new project a working `<bundle id>://route` without it writing a line.
+    // The TV and the headset declare no scheme: nothing in either shell receives
+    // one yet, and a declaration that leads nowhere is worse than none.
+    let identifier_times = match family {
+        Family::Ios => 3,
+        Family::TvOs | Family::VisionOs => 1,
+    };
     let text = std::fs::read_to_string(&source)
         .with_context(|| format!("{} could not be read", source.display()))?;
     let text = substitute(
@@ -827,7 +851,7 @@ fn plist(
             (
                 &format!("<string>dev.angularnative.playground{id_suffix}</string>"),
                 &format!("<string>{bundle_id}{id_suffix}</string>"),
-                1,
+                identifier_times,
             ),
         ],
     )?;
@@ -917,14 +941,23 @@ const PLIST_HEADER: &str = "<!--\n  \
     on every compilation and never rewrites it.\n\n  \
     CFBundleExecutable and CFBundleIdentifier have to go on matching app.name\n  \
     and app.bundleId in angular-native.json. If they stop matching, the build\n  \
-    stops and says so.\n-->\n";
+    stops and says so.\n\n  \
+    CFBundleURLTypes, if it is there, is the app's deep-link scheme, and it is\n  \
+    the bundle identifier because a scheme is claimed device-wide. A universal\n  \
+    link is not here and cannot be: it needs the associated-domains entitlement\n  \
+    and a file served from your site. See\n  \
+    https://angular-native.github.io/guide/navigation/.\n-->\n";
 
 const MANIFEST_HEADER: &str = "<!--\n  \
     Created by `an add android`. From here on it is yours: the permissions and\n  \
     whatever the app declares go in here.\n\n  \
     The package attribute is not changed: it is the package of the shell's\n  \
     classes. The identifier Android installs the app under comes from\n  \
-    app.bundleId in angular-native.json.\n-->\n";
+    app.bundleId in angular-native.json.\n\n  \
+    MainActivity already answers a VIEW intent on the app's own scheme, so\n  \
+    <applicationId>://route opens it. An App Link on an https:// address is a\n  \
+    second intent-filter you add here, and a file served from your site. See\n  \
+    https://angular-native.github.io/guide/navigation/.\n-->\n";
 
 // ---------------------------------------------------------------------------
 // Odds and ends

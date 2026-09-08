@@ -20,7 +20,39 @@ import java.nio.charset.StandardCharsets;
  */
 public final class MainActivity extends androidx.appcompat.app.AppCompatActivity {
 
+    static {
+        // The same library `AnRuntime` loads, and loading it twice is a no-op.
+        // It is named here because the deep-link door below is this class's own
+        // native method, and it may be knocked on before a runtime exists: on a
+        // cold start the intent is read before the engine is built.
+        System.loadLibrary("an_android");
+    }
+
     private static final String TAG = "angular-native";
+
+    /**
+     * Hands a URL to the core. Global to the process and not to the runtime: a
+     * link can be the reason the process exists, so it may be called before
+     * there is anything to hand it to. What arrives early is kept and read by
+     * the app as it boots; what arrives later reaches it as an event.
+     *
+     * <p>Implemented in `crates/an-android/src/jni_bridge.rs`.
+     */
+    private static native void nativeOpenUrl(String url);
+
+    /**
+     * The URL an intent is asking for, or null if it is not asking for one.
+     *
+     * <p>Only ACTION_VIEW: the launcher's own intent has no data, and a SEND
+     * from another app is a share and not a route.
+     */
+    private static String linkOf(android.content.Intent intent) {
+        if (intent == null || !android.content.Intent.ACTION_VIEW.equals(intent.getAction())) {
+            return null;
+        }
+        android.net.Uri data = intent.getData();
+        return data == null ? null : data.toString();
+    }
 
     /** Where `an` leaves `app.appearance`. Written by `crates/an-cli/src/android.rs`. */
     private static final String APPEARANCE_KEY = "dev.angularnative.appearance";
@@ -149,6 +181,18 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
             runtime.setViewport(w, h);
         });
 
+        // Before the bundle is evaluated, and that ordering is the whole point.
+        //
+        // If the app was cold-started by a link, the URL has to be in the core
+        // before Angular boots: the bundle reads whatever is waiting as it
+        // starts, and the router's first decision is then already the right one.
+        // Handed over afterwards it would still arrive —as an event— but one
+        // navigation late, and the home screen would appear and be pushed aside.
+        String launchedWith = linkOf(getIntent());
+        if (launchedWith != null) {
+            nativeOpenUrl(launchedWith);
+        }
+
         // The assets carry the packaged bundle; AnBundles decides whether an
         // installed update has earned the right to run instead, and retires one
         // that failed to confirm itself on its trial launch.
@@ -193,6 +237,30 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
                     }
                 };
         Choreographer.getInstance().postFrameCallback(frameCallback);
+    }
+
+    /**
+     * A link reaching an app that is already running.
+     *
+     * <p>It only arrives here because the activity is `singleTask` in the
+     * manifest. With the default launch mode Android would build a second
+     * MainActivity for the VIEW intent instead: a second engine, a second tree,
+     * and the state the person had built up gone — with nothing anywhere saying
+     * why.
+     *
+     * <p>`setIntent` matters as well. `getIntent()` goes on returning the one
+     * the activity was created with until it is replaced, so a later recreation
+     * —a rotation with the runtime rebuilt— would replay the launch URL and
+     * navigate away from wherever the person had got to.
+     */
+    @Override
+    protected void onNewIntent(android.content.Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        String url = linkOf(intent);
+        if (url != null) {
+            nativeOpenUrl(url);
+        }
     }
 
     @Override

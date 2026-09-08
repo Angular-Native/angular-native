@@ -5,6 +5,7 @@
 //! mutations up in a binary buffer and hands it over once per frame.
 
 pub mod builtins;
+pub mod deeplink;
 pub mod modules;
 pub mod plugins;
 pub mod protocol;
@@ -13,6 +14,7 @@ pub mod runtime;
 pub mod worker;
 
 pub use builtins::{builtin_bridge, builtin_modules, BUILTIN_MODULES};
+pub use deeplink::{deep_links, DeepLinks, DEEP_LINK_EVENT, DEEP_LINK_MODULE};
 pub use modules::{ModuleRegistry, ModuleResult, NativeModule, Responder};
 pub use plugins::{HostPlugin, PluginBridge, PluginCall};
 pub use protocol::{apply, Encoder, ProtocolError};

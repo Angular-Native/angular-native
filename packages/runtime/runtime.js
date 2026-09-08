@@ -499,6 +499,28 @@
         current.delete(handler)
         if (current.size === 0) moduleListeners.delete(key)
       }
+    },
+
+    /// The URLs the app was opened with, read without waiting for a frame.
+    ///
+    /// A deep link can reach the shell before this bundle has been evaluated:
+    /// the system starts the process *because* of the URL. A native call would
+    /// answer a frame later, and by then the router has already put the first
+    /// screen up. This is the one thing that has to be synchronous, and it can
+    /// be: the queue is a Rust global sitting on this very thread.
+    ///
+    /// Calling it is also what says "from now on I am listening": whatever
+    /// arrives afterwards comes through `on('deeplink', 'url')` instead. So it
+    /// is called once, after subscribing, and never in the other order.
+    deepLinks() {
+      if (typeof native.deepLinks !== 'function') return []
+      try {
+        const parsed = JSON.parse(native.deepLinks())
+        return Array.isArray(parsed) ? parsed : []
+      } catch (error) {
+        console.error('the deep links could not be read:', error)
+        return []
+      }
     }
   }
 

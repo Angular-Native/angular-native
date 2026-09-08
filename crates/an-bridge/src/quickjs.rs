@@ -114,6 +114,23 @@ impl QuickJsRuntime {
                     )
                     .map_err(|e| JsError::Engine(e.to_string()))?;
 
+                // The URLs the app was opened with, read synchronously.
+                //
+                // A native call would not do. Its answer arrives in a frame, and
+                // the router has already decided where the app starts by then:
+                // the first screen would flash before the deep link replaced it.
+                // Reading it while the bundle is being evaluated is what makes a
+                // cold start land on the right route the first time it paints.
+                native
+                    .set(
+                        "deepLinks",
+                        Func::from(|| {
+                            serde_json::to_string(&crate::deeplink::deep_links().take())
+                                .unwrap_or_else(|_| "[]".to_owned())
+                        }),
+                    )
+                    .map_err(|e| JsError::Engine(e.to_string()))?;
+
                 ctx.globals()
                     .set("__an", native)
                     .map_err(|e| JsError::Engine(e.to_string()))?;
@@ -158,6 +175,13 @@ impl QuickJsRuntime {
                 tracked.borrow_mut().push(text);
             },
         )));
+
+        // Where a link that arrives while the app runs is delivered. It is done
+        // here and not by every host in turn: nothing about a deep link is
+        // platform code, and a host that forgot would have an app that opens on
+        // a URL once and then never again — a silence, not an error.
+        crate::deeplink::deep_links()
+            .attach(modules.borrow().emitter(crate::deeplink::DEEP_LINK_MODULE));
 
         let mut this =
             QuickJsRuntime { context, runtime, commands, log, pending_rejections: pending, modules };

@@ -131,15 +131,127 @@ The same mechanism is available to your own components — see
 [hot refresh in the CLI reference](/reference/cli/#what-a-save-actually-does)
 for the `hotState` signal.
 
+## Deep links
+
+A URL from outside the app — another app, a notification, a link in a browser —
+becomes a route. Nothing has to be provided for it beyond
+`NATIVE_LOCATION_PROVIDERS`, which you already have.
+
+`an add ios` and `an add android` declare a scheme for you, and the scheme is
+your bundle identifier. That is not a stylistic choice: a URL scheme is claimed
+device-wide, so two apps both claiming `myapp` leave the system deciding between
+them, and the identifier is the one string that is already yours alone. So:
+
+```bash
+# iOS simulator
+xcrun simctl openurl booted 'com.example.myapp://ship/2'
+
+# Android
+adb shell am start -a android.intent.action.VIEW -d 'com.example.myapp://ship/2'
+```
+
+opens the app on `/ship/2`, cold or already running.
+
+### How a URL becomes a route
+
+A **custom scheme** has no site in it. `myapp://ship/2` looks to a URL parser
+like the path `/2` on the host `ship`, and nobody writing that link means it, so
+everything after the scheme is the route: `/ship/2`.
+
+A **universal link or App Link** does have a site, and it is not part of the
+route: `https://example.com/ship/2` becomes `/ship/2`.
+
+Query strings and fragments come along. Anything that is not a URL at all is
+ignored rather than treated as `/` — navigating home because a link was
+unreadable is worse than doing nothing.
+
+### Cold start and already running
+
+They are genuinely different cases and both work.
+
+On a **cold start** the system launches the process *because* of the URL, and it
+reaches the shell before Angular exists. The shell hands it to the core before
+the bundle is evaluated; `NativePlatformLocation` reads it as it is constructed
+and puts it in the stack as the *current* entry, not on top of `/`. So the first
+screen the app paints is already the right one — no home screen flashing past —
+and the back gesture leaves the app, because there is genuinely nothing behind.
+
+**Already running**, the URL arrives as an event and is pushed. The screen the
+person was on stays alive underneath, the transition animates forwards, and back
+returns to where they were. A link to the route the app is already showing does
+nothing.
+
+The handover between the two is deliberate and not a matter of luck: taking the
+queue of waiting links is the same act as saying "I am listening now", so a URL
+landing in the gap cannot be delivered twice or lost.
+
+### Doing something else with it
+
+If you want to intercept a link rather than let it navigate — checking a token,
+mapping a legacy URL onto a new route — subscribe and do it yourself:
+
+```ts
+import { onDeepLink, routeFromUrl } from '@angular-native/platform'
+
+const stop = onDeepLink((url) => {
+  console.log('opened with', url, '->', routeFromUrl(url))
+})
+```
+
+`onDeepLink` sees the links that arrive while the app is running.
+`routeFromUrl` is the same function the location uses, exported so your mapping
+and the built-in one cannot disagree.
+
+### What you still have to write by hand
+
+The custom scheme is wired. A **universal link** or **App Link** — a real
+`https://` address that opens your app instead of the browser — cannot be,
+because half of it lives on your web server and nothing in a CLI can put it
+there.
+
+On **iOS** you need two things beyond what `an add ios` writes:
+
+1. The `com.apple.developer.associated-domains` entitlement, with
+   `applinks:example.com`. `an` does not write your entitlements file, so this
+   is yours.
+2. `https://example.com/.well-known/apple-app-site-association`, served as
+   `application/json` with no redirect, naming your Team ID and bundle
+   identifier. Apple fetches it; if it cannot, the link silently opens Safari
+   instead, which is the single most common reason a universal link "does not
+   work".
+
+The shell already handles `continue userActivity`, so once those two are in
+place nothing else changes.
+
+On **Android** you add a second `<intent-filter>` to `android/AndroidManifest.xml`
+beside the one `an add android` wrote:
+
+```xml
+<intent-filter android:autoVerify="true">
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+    <data android:scheme="https" android:host="example.com" />
+</intent-filter>
+```
+
+and serve `https://example.com/.well-known/assetlinks.json` with your package
+name and the SHA-256 fingerprint of the signing certificate. `autoVerify` is
+what makes Android open your app without asking; without the file it falls back
+to a chooser.
+
+:::note[Only iOS and Android receive a URL]
+macOS, tvOS, visionOS, watchOS and Wear OS do not deliver deep links yet. The
+core's side is shared — the mailbox and the JS end are in `an-bridge`, not in a
+host — so what is missing on those platforms is only the shell handing the URL
+over: `application(_:open:urls:)` on AppKit, and the equivalent elsewhere.
+:::
+
 ## What is not there
 
 **No `#` fragments.** There is no address bar to put one in, so
 `onHashChange` returns a no-op unsubscriber and `hash` is whatever the URL
 string itself carried.
-
-**No deep links yet.** A URL that arrives from outside the app — a custom scheme,
-a universal link — is not wired to the router. The stack is in-memory and starts
-at `/`.
 
 **`protocol` is `app:` and `hostname` is `localhost`.** They have to answer
 something, since `PlatformLocation` declares them, and there is nothing truthful
@@ -162,3 +274,18 @@ Two screens, a parameterised route, `withComponentInputBinding`, and the back
 gesture. `scripts/check-router.sh` drives it through `headless` and checks that
 a navigation mounts the second screen's nodes and that going back brings the
 first one's straight back rather than rebuilding them.
+
+The same example is what proves the deep links, with no simulator:
+
+```bash
+# cold start: the URL goes in before the bundle is evaluated
+AN_OPEN_URL='playground://ship/3' \
+  cargo run -p an-bridge --example headless -- build/bundle/router/main.js 3
+
+# already running: it arrives halfway through
+AN_OPEN_URL_LATER='playground://ship/2' \
+  cargo run -p an-bridge --example headless -- build/bundle/router/main.js 6
+```
+
+`scripts/check-deep-links.sh` runs both and checks that the first paints the
+detail screen without the list ever appearing, and that the second pushes.

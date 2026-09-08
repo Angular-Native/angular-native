@@ -1,5 +1,12 @@
 export { bootstrapNativeApplication, platformNative } from './platform'
 export { NATIVE_LOCATION_PROVIDERS, NativePlatformLocation } from './location'
+export {
+  DEEP_LINK_EVENT,
+  DEEP_LINK_MODULE,
+  onDeepLink,
+  routeFromUrl,
+  takeInitialDeepLink
+} from './deep-links'
 export { globalHotState, hotState } from './hot-state'
 export { callNative, Device, NativeModules, onNative } from './native-modules'
 // The built-in modules: one typed service per name in `BUILTIN_MODULES`, on the

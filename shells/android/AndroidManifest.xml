@@ -114,13 +114,48 @@
                 android:resource="@xml/an_file_paths" />
         </provider>
 
+        <!--
+          singleTask, and not for the task semantics: it is what makes
+          `onNewIntent` happen. With the default launch mode a VIEW intent
+          reaching a running app builds a *second* MainActivity — a second
+          engine, a second tree, and whatever the person had done gone — instead
+          of handing the URL to the one already on screen.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              Deep links, the half that needs no server.
+
+              The scheme is the application id, which is the only spelling that
+              cannot collide: a scheme is claimed device-wide and two apps
+              claiming "myapp" leave Android showing a chooser. So
+              `<applicationId>://ship/2` opens the app on that route, and `an`
+              substitutes the placeholder when it writes the manifest aapt2
+              sees, exactly as it does for the FileProvider's authority.
+
+              BROWSABLE is what lets a link in another app —a browser, a
+              message— start this one. DEFAULT is what lets an implicit VIEW
+              intent resolve to this activity at all; without it the filter
+              matches nothing and there is no error to read.
+
+              An App Link on a real https:// address is a second filter, with
+              android:autoVerify="true" and an assetlinks.json served from the
+              site. It is not written here because nothing can write it for you:
+              the site is yours. The guide says what it looks like.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${applicationId}" />
             </intent-filter>
         </activity>
     </application>

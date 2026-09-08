@@ -20,6 +20,13 @@
         ) {
             guard let windowScene = scene as? UIWindowScene else { return }
 
+            // Before the root view controller, for the reason `AppDelegate`
+            // explains: creating it evaluates the bundle, and the bundle reads
+            // the pending links as it boots. On a scene-based app this is where
+            // the launch URL lives — `didFinishLaunching`'s options do not carry
+            // it.
+            AnDeepLinks.take(fromConnectionOptions: connectionOptions)
+
             // What size the window wants when it opens.
             //
             // There is no screen to deduce it from, so if nothing is asked for
@@ -37,6 +44,23 @@
             window.rootViewController = RootViewController()
             window.makeKeyAndVisible()
             self.window = window
+        }
+
+        /// A custom scheme reaching a scene that is already on screen.
+        func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+            for context in URLContexts {
+                AnDeepLinks.open(context.url)
+            }
+        }
+
+        /// A universal link reaching a scene that is already on screen.
+        func scene(_ scene: UIScene, continue userActivity: NSUserActivity) {
+            guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
+                  let url = userActivity.webpageURL
+            else {
+                return
+            }
+            AnDeepLinks.open(url)
         }
     }
 
