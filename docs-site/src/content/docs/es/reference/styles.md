@@ -66,19 +66,20 @@ empezarían a soltar hijos por fuera. En iOS, tvOS, visionOS y macOS se aplica e
 valor resuelto tal cual.
 :::
 
-### Nada hace scroll horizontal
+### Un eje, y solo uno
 
-`contentSize` se calcula asumiendo que el desbordamiento va hacia abajo, así que
-el contenido de un nodo con scroll se **acota a su propio ancho** — en el núcleo,
-y otra vez en el host, que es donde ocurre el scroll.
+El contenido de un nodo con scroll se **acota a su propio marco en el eje por el
+que no se desplaza** — en el núcleo, y otra vez en el host, que es donde ocurre
+el scroll. Cuál sea ese eje lo dice `[horizontal]` en `<an-scroll-view>`; sin
+decir nada, es hacia abajo.
 
 Esa cota no es pulcritud. Un `UIScrollView` hace scroll en el eje en el que su
 contenido sea mayor, así que un contenido unos puntos más ancho —una imagen que
 reporta su tamaño intrínseco dentro de una fila, por ejemplo— convierte la página
 entera en algo que se puede arrastrar de lado hasta dejar la pantalla vacía. En
-vertical el desbordamiento es el objetivo; en horizontal es siempre un error en
-otro sitio, y debe verse como un borde recortado y no como una pantalla que se
-puede barrer.
+el eje que se pidió el desbordamiento es el objetivo; en el otro es siempre un
+error en otro sitio, y debe verse como un borde recortado y no como una pantalla
+que se puede barrer.
 
 `scripts/check-clip.sh` comprueba las dos cosas: que la raíz y todo nodo con
 scroll recortan, que un contenedor normal no, y que ningún nodo con scroll es más
@@ -241,10 +242,24 @@ que sostenga más de lo que sostenía la muestra. Un botón con un `[ios].subtit
 ocupa dos líneas y la muestra ocupaba una, así que necesita un alto explícito en
 la plantilla o el título se recorta.
 
-## `contentSize`, y el eje que falta
+## `contentSize`, y el eje por el que viaja
 
 Para un nodo con scroll el núcleo reporta además cuánto sitio ocupan los hijos,
 que es lo que un `UIScrollView` quiere como su `contentSize`.
 
-Lo calcula asumiendo que el desbordamiento va **hacia abajo**. Así que el scroll
-horizontal no es una prop de host que falte: es trabajo en `an-core`.
+La operación lleva dos números y ningún eje, así que al host se lo dice la prop
+`horizontal`, y el otro eje se acota al marco de la propia vista. Una vista con
+scroll más grande por dentro que por fuera en los dos ejes no es algo que este
+motor ofrezca: es el aspecto que tiene un tamaño intrínseco descarriado.
+
+### Un tamaño en una vista con scroll es un tamaño
+
+Una vista con scroll no debe dimensionarse por su contenido —una lista de cinco
+mil filas la haría de cinco mil filas de alto— y en flexbox eso se dice con
+`flex-basis: 0`. Un `flex-basis` distinto de `auto` también gana a `width` y
+`height` en el eje principal, y así es como un `[style.height]` sobre un
+`<an-scroll-view>` se quedaba en nada.
+
+Por eso el basis se resuelve en cada layout, contra la dirección en la que el
+*padre* coloca a sus hijos: es el tamaño que la plantilla pidió en ese eje
+cuando lo pidió, y cero solo cuando no.

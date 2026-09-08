@@ -167,3 +167,145 @@ fn an_unrecognised_style_travels_as_a_host_prop_in_camel_case() {
             if key == "fontSize" && v == "18"
     )));
 }
+
+
+/// A scroll view is not sized by its content, and that used to be said with a
+/// `flex-basis: 0` that also beat any `[style.height]` the app wrote: the view
+/// came out zero points tall and nothing anywhere said why.
+#[test]
+fn a_height_on_a_scroll_view_is_the_height_it_gets() {
+    let mut tree = ShadowTree::new();
+    tree.create_node(1, NodeKind::View).unwrap();
+    tree.create_node(2, NodeKind::ScrollView).unwrap();
+    tree.set_style(1, "width", "100%").unwrap();
+    tree.set_style(1, "height", "100%").unwrap();
+    tree.set_style(2, "height", "200").unwrap();
+    tree.insert_child(1, 2, 0).unwrap();
+    tree.set_root(1).unwrap();
+
+    let frame = tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
+    assert_eq!(frame_of(&frame.ops, 2).unwrap().height, 200.0);
+}
+
+/// The same in a row, where the main axis is the other one: there it is `width`
+/// that the basis must yield to, and `height` is an ordinary cross-axis size.
+#[test]
+fn a_width_on_a_scroll_view_inside_a_row_is_the_width_it_gets() {
+    let mut tree = ShadowTree::new();
+    tree.create_node(1, NodeKind::View).unwrap();
+    tree.create_node(2, NodeKind::ScrollView).unwrap();
+    tree.set_style(1, "width", "100%").unwrap();
+    tree.set_style(1, "height", "100%").unwrap();
+    tree.set_style(1, "flexDirection", "row").unwrap();
+    tree.set_style(2, "width", "120").unwrap();
+    tree.insert_child(1, 2, 0).unwrap();
+    tree.set_root(1).unwrap();
+
+    let frame = tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
+    assert_eq!(frame_of(&frame.ops, 2).unwrap().width, 120.0);
+}
+
+/// With no size of its own it still does not grow with its content: five
+/// thousand rows must not make the scroll view five thousand rows tall.
+#[test]
+fn without_a_size_a_scroll_view_still_does_not_grow_with_its_content() {
+    let mut tree = ShadowTree::new();
+    tree.create_node(1, NodeKind::View).unwrap();
+    tree.create_node(2, NodeKind::ScrollView).unwrap();
+    tree.create_node(3, NodeKind::View).unwrap();
+    tree.set_style(1, "width", "100%").unwrap();
+    tree.set_style(1, "height", "100%").unwrap();
+    tree.set_style(2, "flexGrow", "1").unwrap();
+    tree.set_style(3, "height", "4000").unwrap();
+    tree.insert_child(2, 3, 0).unwrap();
+    tree.insert_child(1, 2, 0).unwrap();
+    tree.set_root(1).unwrap();
+
+    let frame = tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
+    assert_eq!(frame_of(&frame.ops, 2).unwrap().height, VIEWPORT.1);
+}
+
+fn content_of(ops: &[MountOp], id: u32) -> Option<(f32, f32)> {
+    ops.iter().rev().find_map(|op| match op {
+        MountOp::SetContentSize { id: got, width, height } if *got == id => Some((*width, *height)),
+        _ => None,
+    })
+}
+
+/// `[horizontal]` turns the children sideways and lets the content come out
+/// wider than the frame. The cross axis is clamped instead, which is the same
+/// rule as before with the two axes swapped.
+#[test]
+fn a_horizontal_scroll_view_overflows_sideways_and_not_downwards() {
+    let mut tree = ShadowTree::new();
+    tree.create_node(1, NodeKind::View).unwrap();
+    tree.create_node(2, NodeKind::ScrollView).unwrap();
+    tree.set_style(1, "width", "100%").unwrap();
+    tree.set_style(1, "height", "100%").unwrap();
+    tree.set_style(2, "height", "120").unwrap();
+    tree.set_prop(2, "horizontal", PropValue::Bool(true)).unwrap();
+    for id in 3..=6 {
+        tree.create_node(id, NodeKind::View).unwrap();
+        tree.set_style(id, "width", "200").unwrap();
+        tree.set_style(id, "height", "400").unwrap();
+        tree.insert_child(2, id, (id - 3) as usize).unwrap();
+    }
+    tree.insert_child(1, 2, 0).unwrap();
+    tree.set_root(1).unwrap();
+
+    let frame = tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
+    // Four cards of 200 in a row: the children run along x and the last one
+    // starts at 600.
+    assert_eq!(frame_of(&frame.ops, 6).unwrap().x, 600.0);
+    assert_eq!(frame_of(&frame.ops, 2).unwrap().height, 120.0);
+    // 800 points of content in a 320-point frame, and the 400-point cards
+    // clamped to the frame's own height rather than offering a second axis.
+    assert_eq!(content_of(&frame.ops, 2), Some((800.0, 120.0)));
+}
+
+/// The direction is a default, not an override: a template that wrote
+/// `flexDirection` keeps it.
+#[test]
+fn a_template_that_set_the_direction_keeps_it() {
+    let mut tree = ShadowTree::new();
+    tree.create_node(1, NodeKind::View).unwrap();
+    tree.create_node(2, NodeKind::ScrollView).unwrap();
+    tree.create_node(3, NodeKind::View).unwrap();
+    tree.create_node(4, NodeKind::View).unwrap();
+    tree.set_style(1, "width", "100%").unwrap();
+    tree.set_style(1, "height", "100%").unwrap();
+    tree.set_style(2, "flexDirection", "column").unwrap();
+    tree.set_prop(2, "horizontal", PropValue::Bool(true)).unwrap();
+    for id in [3, 4] {
+        tree.set_style(id, "width", "50").unwrap();
+        tree.set_style(id, "height", "60").unwrap();
+        tree.insert_child(2, id, (id - 3) as usize).unwrap();
+    }
+    tree.insert_child(1, 2, 0).unwrap();
+    tree.set_root(1).unwrap();
+
+    let frame = tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
+    assert_eq!(frame_of(&frame.ops, 4).unwrap().y, 60.0);
+}
+
+/// The basis the core resolves is a default: a template that wrote `flexBasis`
+/// out — or the `flex` shorthand, which writes it — keeps what it wrote.
+#[test]
+fn a_template_that_set_the_basis_keeps_it() {
+    let mut tree = ShadowTree::new();
+    tree.create_node(1, NodeKind::View).unwrap();
+    tree.create_node(2, NodeKind::ScrollView).unwrap();
+    tree.create_node(3, NodeKind::ScrollView).unwrap();
+    tree.set_style(1, "width", "100%").unwrap();
+    tree.set_style(1, "height", "100%").unwrap();
+    tree.set_style(2, "flexBasis", "90").unwrap();
+    tree.set_style(2, "height", "200").unwrap();
+    tree.set_style(3, "height", "200").unwrap();
+    tree.insert_child(1, 2, 0).unwrap();
+    tree.insert_child(1, 3, 1).unwrap();
+    tree.set_root(1).unwrap();
+
+    let frame = tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
+    assert_eq!(frame_of(&frame.ops, 2).unwrap().height, 90.0);
+    assert_eq!(frame_of(&frame.ops, 3).unwrap().height, 200.0);
+}

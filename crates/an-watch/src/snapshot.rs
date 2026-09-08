@@ -206,6 +206,10 @@ pub struct Node {
     /// default, so the snapshot does not grow a key per node for nothing.
     #[serde(skip_serializing_if = "std::ops::Not::not", default)]
     pub clip: bool,
+    /// `ScrollView`: which way the content may overflow. Omitted when it is
+    /// downwards, which is what every scroll view that never asked does.
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub horizontal: bool,
     /// Only on a `ScrollView`, and only when the content overflows.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_width: Option<f32>,
@@ -508,6 +512,7 @@ fn node(host: &WatchHost, id: NodeId, overlays: &mut Vec<Node>) -> Option<Node> 
         presentation: string_of(host, id, "presentation"),
         transition: string_of(host, id, "transition"),
         clip: source.clip,
+        horizontal: kind.is_scrollable() && bool_of(host, id, "horizontal") == Some(true),
         content_width: content.map(|c| c.0),
         content_height: content.map(|c| c.1),
         listens,
@@ -892,7 +897,9 @@ pub(crate) fn reads(kind: NodeKind, key: &str) -> bool {
         NodeKind::DatePicker => matches!(key, "value" | "mode"),
         NodeKind::Alert => matches!(key, "visible" | "title" | "message" | "buttons" | "sheet"),
         NodeKind::Modal => matches!(key, "visible" | "presentation"),
-        NodeKind::ScrollView => matches!(key, "scrollEnabled" | "showsScrollIndicator"),
+        NodeKind::ScrollView => {
+            matches!(key, "scrollEnabled" | "showsScrollIndicator" | "horizontal")
+        }
         NodeKind::StackView => key == "transition",
         // What the watch does not paint was already warned about wholesale by
         // its kind: repeating its props would be saying the same thing twice.

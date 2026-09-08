@@ -327,6 +327,35 @@ impl LayoutStyle {
             || matches!(self.0.overflow.y, Overflow::Hidden | Overflow::Scroll)
     }
 
+    /// Whether this node lays its children out along x.
+    ///
+    /// A child cannot see its parent's style, and `flex-basis` is the main
+    /// axis's: the only one who can say which of `width` and `height` a scroll
+    /// view has to yield to is the parent, and it says it through this.
+    pub fn is_row(&self) -> bool {
+        matches!(self.0.flex_direction, FlexDirection::Row | FlexDirection::RowReverse)
+    }
+
+    /// Pins the `flex-basis` a scrollable node needs, given the direction its
+    /// parent lays its children out in. Returns `true` if it changed.
+    ///
+    /// A scroll view is not sized by its content — that is what the scrolling
+    /// is for — and the way to say so in flexbox is `flex-basis: 0`. But a
+    /// non-`auto` `flex-basis` also beats `width`/`height` on the main axis,
+    /// which is how a `[style.height]` on a scroll view came to resolve to
+    /// nothing at all: the basis the core set at birth won, in silence. So the
+    /// basis yields to the size the app asked for whenever it asked for one,
+    /// and only falls back to zero when it did not.
+    pub fn set_scroll_basis(&mut self, parent_row: bool) -> bool {
+        let asked = if parent_row { self.0.size.width } else { self.0.size.height };
+        let basis = if asked == Dimension::auto() { Dimension::length(0.0) } else { asked };
+        if self.0.flex_basis == basis {
+            return false;
+        }
+        self.0.flex_basis = basis;
+        true
+    }
+
     /// Applies a prop. Returns `true` if the style really did change (the
     /// caller uses this to avoid dirtying layout for nothing).
     pub fn set(&mut self, key: StyleKey, value: StyleValue) -> bool {

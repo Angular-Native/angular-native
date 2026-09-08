@@ -129,7 +129,12 @@ checkw 'WATCH CHANGED WHILE HOT' "the watch's new template is on screen"
 checkw 'ScrollView#[0-9]+ \[0,0 227x227\]' "the safe area host's styles are still applied"
 # And the primitives' inputs are still inputs of a directive and not loose
 # properties that happen to end up in the same place.
-checkw 'ScrollView#[0-9]+ .*props refreshing=false' 'the primitives still match as directives'
+#
+# The prop is not anchored to the start of the list. They are printed in
+# alphabetical order, so anything added to `an-scroll-view` that sorts before
+# `refreshing` —`horizontal` did— would break this while proving exactly what
+# it is here to prove.
+checkw 'ScrollView#[0-9]+ .*props .*refreshing=false' 'the primitives still match as directives'
 
 if [ "$fail" -ne 0 ]; then
   echo

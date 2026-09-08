@@ -7,21 +7,40 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.view.InputDevice;
 import android.view.MotionEvent;
+import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.ScrollView;
 
 /**
- * A scroll view with "pull to refresh".
+ * A scroll view with "pull to refresh", and with an axis.
  *
- * Android ships none in the platform: `SwipeRefreshLayout` lives in AndroidX,
- * which is a separate dependency. The downward drag while scrolled to the very
- * top is detected and an arc is drawn, which is what the system itself does, so
- * that `refreshing` means the same thing as the iOS `UIRefreshControl`.
+ * Android ships no refresh control in the platform: `SwipeRefreshLayout` lives
+ * in AndroidX, which is a separate dependency. The downward drag while scrolled
+ * to the very top is detected and an arc is drawn, which is what the system
+ * itself does, so that `refreshing` means the same thing as the iOS
+ * `UIRefreshControl`.
+ *
+ * The axis is the other thing UIKit gets for free and this does not: a
+ * `ScrollView` scrolls downwards and a `HorizontalScrollView` sideways, and a
+ * view cannot change class once it has been made. `[horizontal]` arrives as a
+ * prop, which is always *after* the view was created, so the sideways one is
+ * slipped in between this view and its content the moment it is asked for.
+ * Swapping this view for another instead would mean rewriting the host's id
+ * table, its listeners and whatever the parent had already been told, all for a
+ * prop that is set once and never again.
  */
 public final class AnScrollView extends ScrollView {
 
     public interface OnRefresh {
         void onRefresh();
+    }
+
+    /** The offset in pixels, on both axes at once: the template gets one event. */
+    public interface OnScroll {
+        void onScroll(int x, int y);
     }
 
     /** How far it has to be pulled, in dp, for it to count. */
@@ -32,9 +51,19 @@ public final class AnScrollView extends ScrollView {
     private final RectF arc = new RectF();
 
     private OnRefresh listener;
+    private OnScroll scrollListener;
     private boolean refreshing;
     /** Whether the finger moves the content. It keeps clipping either way. */
     private boolean scrollEnabled = true;
+    /** Whether the scrollers may be drawn. Both axes are asked for together. */
+    private boolean indicators = true;
+    /**
+     * The sideways half, made the first time `[horizontal]` asks for it and
+     * kept afterwards: turning the axis back is rarer than turning it, and a
+     * view that has been in the hierarchy costs nothing sitting detached.
+     */
+    private Sideways sideways;
+    private boolean horizontal;
     private float startY = Float.NaN;
     private float pull;
     private float spin;
@@ -62,6 +91,106 @@ public final class AnScrollView extends ScrollView {
 
     public void setScrollEnabled(boolean enabled) {
         this.scrollEnabled = enabled;
+        if (sideways != null) {
+            sideways.setScrollEnabled(enabled);
+        }
+    }
+
+    /**
+     * Which way the content may overflow.
+     *
+     * The core has already clamped the content to this view's own size on the
+     * other axis, so the half that is not asked for has nothing to scroll and
+     * stays out of the gesture's way on its own.
+     */
+    public void setHorizontal(boolean horizontal) {
+        if (this.horizontal == horizontal) {
+            return;
+        }
+        this.horizontal = horizontal;
+        View content = content();
+        if (content == null) {
+            // The host adds the content right after creating this view, so this
+            // is only reachable if that ever stops being true.
+            return;
+        }
+        ViewGroup from = (ViewGroup) content.getParent();
+        ViewGroup.LayoutParams params = content.getLayoutParams();
+        from.removeView(content);
+        if (horizontal) {
+            if (sideways == null) {
+                sideways = new Sideways(getContext());
+                sideways.setScrollEnabled(scrollEnabled);
+            }
+            sideways.addView(content, params);
+            addView(
+                    sideways,
+                    new FrameLayout.LayoutParams(
+                            FrameLayout.LayoutParams.MATCH_PARENT,
+                            FrameLayout.LayoutParams.WRAP_CONTENT));
+        } else {
+            removeView(sideways);
+            addView(content, params);
+        }
+        applyIndicators();
+        applyScrollListener();
+    }
+
+    /** Whether the system draws the scrollers. */
+    public void setIndicatorsShown(boolean shown) {
+        this.indicators = shown;
+        applyIndicators();
+    }
+
+    /**
+     * One listener for the two halves.
+     *
+     * `View.setOnScrollChangeListener` reports the view it is on, and once the
+     * content hangs off the sideways half there are two of them: x comes from
+     * one and y from the other. The template asked for one `(scroll)`, so they
+     * are put back together here.
+     */
+    public void setOnScroll(OnScroll listener) {
+        this.scrollListener = listener;
+        applyScrollListener();
+    }
+
+    private void applyIndicators() {
+        setVerticalScrollBarEnabled(indicators && !horizontal);
+        setHorizontalScrollBarEnabled(false);
+        if (sideways != null) {
+            sideways.setHorizontalScrollBarEnabled(indicators && horizontal);
+            sideways.setVerticalScrollBarEnabled(false);
+        }
+    }
+
+    private void applyScrollListener() {
+        OnScroll listener = scrollListener;
+        setOnScrollChangeListener(
+                listener == null
+                        ? null
+                        : (View.OnScrollChangeListener)
+                                (v, x, y, oldX, oldY) -> listener.onScroll(sidewaysOffset(), y));
+        if (sideways != null) {
+            sideways.setOnScrollChangeListener(
+                    listener == null
+                            ? null
+                            : (View.OnScrollChangeListener)
+                                    (v, x, y, oldX, oldY) -> listener.onScroll(x, getScrollY()));
+        }
+    }
+
+    private int sidewaysOffset() {
+        return sideways == null ? 0 : sideways.getScrollX();
+    }
+
+    /** The single child the host mounts, wherever the axis has left it. */
+    private View content() {
+        if (sideways != null && sideways.getChildCount() > 0) {
+            return sideways.getChildAt(0);
+        }
+        View first = getChildCount() > 0 ? getChildAt(0) : null;
+        return first == sideways ? null : first;
     }
 
     /**
@@ -110,12 +239,27 @@ public final class AnScrollView extends ScrollView {
                 && event.getAction() == MotionEvent.ACTION_SCROLL
                 && event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)) {
             float notches = event.getAxisValue(MotionEvent.AXIS_SCROLL);
-            float pixels =
-                    -notches * ViewConfiguration.get(getContext()).getScaledVerticalScrollFactor();
+            ViewConfiguration configuration = ViewConfiguration.get(getContext());
             // `scrollBy` does not clamp on its own; without the cap, the crown
             // keeps "scrolling" a list that has already ended and the `scroll`
             // event that comes out of here would report a scroll that never
             // happened.
+            if (horizontal && sideways != null) {
+                // The crown is the only way through a list on the watch, and a
+                // sideways one is still a list: the detents go to whichever
+                // half can move, or the strip would simply not answer it.
+                float pixels = -notches * configuration.getScaledHorizontalScrollFactor();
+                View content = sideways.getChildCount() > 0 ? sideways.getChildAt(0) : null;
+                int width = content == null ? 0 : content.getWidth();
+                int max = Math.max(0, width - sideways.getWidth());
+                int at = sideways.getScrollX();
+                int target = Math.min(max, Math.max(0, at + Math.round(pixels)));
+                if (target != at) {
+                    sideways.scrollTo(target, 0);
+                }
+                return true;
+            }
+            float pixels = -notches * configuration.getScaledVerticalScrollFactor();
             int max = Math.max(0, contentHeight() - getHeight());
             int target = Math.min(max, Math.max(0, getScrollY() + Math.round(pixels)));
             if (target != getScrollY()) {
@@ -128,6 +272,34 @@ public final class AnScrollView extends ScrollView {
 
     private int contentHeight() {
         return getChildCount() > 0 ? getChildAt(0).getHeight() : 0;
+    }
+
+    /**
+     * The sideways half. It exists only to answer `scrollEnabled`, which
+     * `HorizontalScrollView` has no more of a switch for than `ScrollView`
+     * does: what there is is deciding whether to intercept the drag.
+     */
+    private static final class Sideways extends HorizontalScrollView {
+
+        private boolean scrollEnabled = true;
+
+        Sideways(Context context) {
+            super(context);
+        }
+
+        void setScrollEnabled(boolean enabled) {
+            this.scrollEnabled = enabled;
+        }
+
+        @Override
+        public boolean onInterceptTouchEvent(MotionEvent event) {
+            return scrollEnabled && super.onInterceptTouchEvent(event);
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            return scrollEnabled && super.onTouchEvent(event);
+        }
     }
 
     /**

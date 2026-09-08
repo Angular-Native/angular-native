@@ -9,9 +9,9 @@ The system's scroll view: `UIScrollView`, Android's `ScrollView`, `NSScrollView`
 The momentum, the rubber-banding at the edges, the scrollbar's behaviour and the
 way it interacts with the keyboard are the platform's, not an imitation.
 
-The core reports `contentSize` — how much room the children take — computed
-assuming the overflow goes **downwards**. Horizontal scrolling is therefore not
-a missing host prop; it is work in `an-core`.
+The core reports `contentSize` — how much room the children take — and clamps it
+to the view's own frame across the axis it is not scrolling on: one axis, never
+two. Which one that is is `[horizontal]`'s business.
 
 ## Availability
 
@@ -29,6 +29,7 @@ a missing host prop; it is work in `an-core`.
 
 | Prop | Type | Default | |
 |---|---|---|---|
+| `horizontal` | `boolean \| null` | `false` | Scrolls sideways instead of downwards, and lays the children out along x unless the template wrote `[style.flexDirection]` itself. |
 | `showsScrollIndicator` | `boolean \| null` | `null` |  |
 | `scrollEnabled` | `boolean \| null` | `true` | Whether the finger moves the content. |
 | `bounces` | `boolean \| null` | `null` | iOS's bounce on reaching the end. |
@@ -63,6 +64,30 @@ and permission to shrink:
 ```
 
 This is the single most common reason a scroll view "does nothing".
+
+A `[style.height]` does the same job and is honoured: the `flex-basis` the core
+uses to keep the content from sizing the view yields to whatever size the
+template asked for on the parent's main axis.
+
+### Sideways
+
+```html
+<an-scroll-view [horizontal]="true" [style.height]="'96'">
+  @for (card of cards(); track card.id) {
+    <an-view [style.width]="'120'">…</an-view>
+  }
+</an-scroll-view>
+```
+
+`[horizontal]` turns the children sideways as well, because a horizontal scroll
+view whose children still stack downwards is never wider than itself and so has
+nothing to scroll. That is a default: writing `[style.flexDirection]` out takes
+the decision back.
+
+It is a boolean and not a `direction` enum because an enum would have to offer
+`both`, and `both` is not something Android can be — a `ScrollView` and a
+`HorizontalScrollView` are two classes, and a view cannot change class after it
+has been made.
 
 ## Example
 

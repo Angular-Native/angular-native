@@ -9,9 +9,9 @@ La vista con scroll del sistema: `UIScrollView`, el `ScrollView` de Android,
 `NSScrollView`. La inercia, el rebote en los bordes, el comportamiento de la
 barra y cómo interactúa con el teclado son de la plataforma, no una imitación.
 
-El núcleo reporta `contentSize` —cuánto ocupan los hijos— calculado asumiendo
-que el desbordamiento va **hacia abajo**. Así que el scroll horizontal no es una
-prop de host que falte: es trabajo en `an-core`.
+El núcleo reporta `contentSize` —cuánto ocupan los hijos— y lo recorta al marco
+de la propia vista en el eje por el que no hace scroll: un eje, nunca dos. Cuál
+sea es cosa de `[horizontal]`.
 
 ## Disponibilidad
 
@@ -29,6 +29,7 @@ prop de host que falte: es trabajo en `an-core`.
 
 | Prop | Tipo | Por defecto | |
 |---|---|---|---|
+| `horizontal` | `boolean \| null` | `false` | Hace scroll de lado en vez de hacia abajo, y coloca los hijos a lo largo de x salvo que la plantilla escriba `[style.flexDirection]`. |
 | `showsScrollIndicator` | `boolean \| null` | `null` |  |
 | `scrollEnabled` | `boolean \| null` | `true` | Whether the finger moves the content. |
 | `bounces` | `boolean \| null` | `null` | iOS's bounce on reaching the end. |
@@ -64,6 +65,30 @@ parte del espacio y permiso para encoger:
 
 Esta es, de largo, la razón más común de que una vista con scroll «no haga
 nada».
+
+Un `[style.height]` hace el mismo trabajo y se respeta: el `flex-basis` con el
+que el núcleo evita que el contenido dimensione la vista cede ante el tamaño que
+la plantilla pida en el eje principal del padre.
+
+### De lado
+
+```html
+<an-scroll-view [horizontal]="true" [style.height]="'96'">
+  @for (card of cards(); track card.id) {
+    <an-view [style.width]="'120'">…</an-view>
+  }
+</an-scroll-view>
+```
+
+`[horizontal]` también gira los hijos, porque una vista con scroll horizontal
+cuyos hijos siguen apilándose hacia abajo nunca es más ancha que ella misma y
+por tanto no tiene nada por lo que desplazarse. Eso es un valor por defecto:
+escribir `[style.flexDirection]` recupera la decisión.
+
+Es un booleano y no un enum `direction` porque un enum tendría que ofrecer
+`both`, y `both` no es algo que Android pueda ser: `ScrollView` y
+`HorizontalScrollView` son dos clases, y una vista no cambia de clase una vez
+creada.
 
 ## Ejemplo
 

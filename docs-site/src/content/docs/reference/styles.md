@@ -65,22 +65,24 @@ leaking children. On iOS, tvOS, visionOS and macOS the resolved value is applied
 as it stands.
 :::
 
-### Nothing scrolls sideways
+### One axis, and only one
 
-`contentSize` is computed assuming the overflow goes downwards, so a scrollable
-node's content is **clamped to its own width** — in the core, and again in the
-host where the scrolling happens.
+A scrollable node's content is **clamped to its own frame across the axis it is
+not scrolling on** — in the core, and again in the host where the scrolling
+happens. Which axis that is comes from `[horizontal]` on `<an-scroll-view>`;
+with nothing said it is downwards.
 
 That clamp is not tidiness. A `UIScrollView` scrolls on whichever axis its
 content is bigger, so content a few points too wide — one image reporting its
 intrinsic size into a row, say — turns the whole page into something that can be
-dragged sideways until there is nothing on screen. Vertically, overflow is the
-point; horizontally it is always a mistake somewhere else, and it should show up
-as a clipped edge rather than as a screen that can be swiped away.
+dragged sideways until there is nothing on screen. Along the axis that was asked
+for, overflow is the point; across it it is always a mistake somewhere else, and
+it should show up as a clipped edge rather than as a screen that can be swiped
+away.
 
-`scripts/check-clip.sh` asserts both: that the root and every scrollable node
-clip, that an ordinary container does not, and that no scrollable node is wider
-inside than out.
+`scripts/check-clip.sh` asserts that the root and every scrollable node clip and
+that an ordinary container does not; `scripts/check-scroll.sh` asserts that no
+scroll view is bigger inside than out across the axis it scrolls on.
 
 ### Flex
 
@@ -236,10 +238,24 @@ more than the sample did. A button with an `[ios].subtitle` is two lines tall
 and the sample was one, so it needs an explicit height in the template or the
 title gets clipped.
 
-## `contentSize`, and the axis that is missing
+## `contentSize`, and the axis it travels on
 
 For a scrollable node the core also reports how much room the children take,
 which is what a `UIScrollView` wants as its `contentSize`.
 
-It computes that assuming the overflow goes **downwards**. Horizontal scrolling
-is therefore not a host prop that is missing: it is work in `an-core`.
+The op carries two numbers and no axis, so the host is told which one it is by
+the `horizontal` prop and clamps the other to the view's own frame. A scroll
+view that is bigger inside than out on both axes is not a feature this engine
+offers: it is what a stray intrinsic size looks like.
+
+### A size on a scroll view is a size
+
+A scroll view must not be sized by its content — a list of five thousand rows
+would make it five thousand rows tall — and in flexbox that is said with
+`flex-basis: 0`. A non-`auto` `flex-basis` also beats `width` and `height` on
+the main axis, which is how a `[style.height]` on an `<an-scroll-view>` used to
+resolve to nothing at all.
+
+The basis is therefore resolved per layout, against the direction the *parent*
+lays its children out in: it is the size the template asked for on that axis
+whenever it asked for one, and zero only when it did not.

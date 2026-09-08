@@ -668,6 +668,7 @@ export class ScrollView extends NativeVisual {
   constructor() {
     super()
     this.push({
+      horizontal: this.horizontal,
       showsScrollIndicator: this.showsScrollIndicator,
       scrollEnabled: this.scrollEnabled,
       bounces: this.bounces,
@@ -675,6 +676,22 @@ export class ScrollView extends NativeVisual {
     })
     this.pushPlatform(SCROLL_VIEW_IOS, this.ios)
   }
+
+  /**
+   * Scrolls sideways instead of downwards.
+   *
+   * A boolean and not a `direction` enum: an enum would have to offer `both`,
+   * and `both` is not a thing a `HorizontalScrollView` can be — Android picks
+   * the axis when it makes the view. `horizontal` is also the name React
+   * Native gives it, which is where the rest of this primitive's vocabulary
+   * comes from.
+   *
+   * It turns the children sideways as well. A horizontal scroll view whose
+   * children still stack downwards has nothing wider than itself and therefore
+   * nothing to scroll, which is a way of doing nothing in silence; writing
+   * `[style.flexDirection]` out takes the decision back.
+   */
+  readonly horizontal = input<boolean | null>(false)
 
   readonly showsScrollIndicator = input<boolean | null>(null)
 

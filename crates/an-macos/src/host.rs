@@ -233,6 +233,20 @@ impl HostView {
     }
 }
 
+/// What an `NSScrollView` was asked for on each axis. The defaults are the ones
+/// the view is created with: downwards, with its scroller.
+#[derive(Clone, Copy)]
+struct Scrollers {
+    sideways: bool,
+    shown: bool,
+}
+
+impl Default for Scrollers {
+    fn default() -> Self {
+        Scrollers { sideways: false, shown: true }
+    }
+}
+
 /// A transform's parts, uncomposed. The scale starts at 1 and not at 0: a view
 /// with no `scale` has to look the way it did before the prop existed, not
 /// disappear.
@@ -290,6 +304,11 @@ pub struct AppKitHost {
     fonts: HashMap<NodeId, an_layout::FontSpec>,
     /// Radii per corner: top-left, top-right, bottom-right, bottom-left.
     corners: HashMap<NodeId, [f64; 4]>,
+    /// Which scrollers each `NSScrollView` may show. The two props that decide
+    /// it arrive separately and in whatever order the template wrote them, so
+    /// they are kept and applied together rather than one overwriting the
+    /// other.
+    scrollers: HashMap<NodeId, Scrollers>,
     /// The frame the core sent, without the translation. It has to be kept
     /// because `translateX` may arrive after the frame and the view then has
     /// to be placed again.
@@ -361,6 +380,7 @@ impl AppKitHost {
             views: HashMap::new(),
             fonts: HashMap::new(),
             corners: HashMap::new(),
+            scrollers: HashMap::new(),
             frames: HashMap::new(),
             transforms: HashMap::new(),
             animations: HashMap::new(),
@@ -689,6 +709,21 @@ impl AppKitHost {
     /// that asks for it and nothing at all for every view that does not, and it
     /// has to be redrawn on every resize — a mask does not stretch — which is
     /// why `place` comes back here.
+    /// Puts a scroll view's two scrollers where the props left them.
+    ///
+    /// The wrong scroller enabled is not decoration: AppKit shows an overlay
+    /// scroller when the document is bigger than the clip view on that axis,
+    /// and lets the wheel drag the view on it, so a page ends up moving on an
+    /// axis it has nothing to show on.
+    fn apply_scrollers(&mut self, id: NodeId) {
+        let Some(HostView::Scroll(scroll)) = self.views.get(&id) else { return };
+        let wanted = self.scrollers.get(&id).copied().unwrap_or_default();
+        unsafe {
+            scroll.setHasHorizontalScroller(wanted.shown && wanted.sideways);
+            scroll.setHasVerticalScroller(wanted.shown && !wanted.sideways);
+        }
+    }
+
     fn apply_corners(&mut self, id: NodeId) {
         let Some(radii) = self.corners.get(&id).copied() else { return };
         let Some(view) = self.views.get(&id) else { return };
@@ -973,6 +1008,7 @@ impl HostRenderer for AppKitHost {
         }
         self.fonts.remove(&id);
         self.corners.remove(&id);
+        self.scrollers.remove(&id);
         self.frames.remove(&id);
         self.transforms.remove(&id);
         self.animations.remove(&id);
@@ -1600,14 +1636,15 @@ impl HostRenderer for AppKitHost {
             }
 
             // --- scroll
+            "horizontal" => {
+                self.scrollers.entry(id).or_default().sideways =
+                    matches!(value, PropValue::Bool(true));
+                self.apply_scrollers(id);
+            }
             "showsScrollIndicator" => {
-                if let Some(HostView::Scroll(scroll)) = self.views.get(&id) {
-                    let shown = !matches!(value, PropValue::Bool(false));
-                    unsafe {
-                        scroll.setHasVerticalScroller(shown);
-                        scroll.setHasHorizontalScroller(shown);
-                    }
-                }
+                self.scrollers.entry(id).or_default().shown =
+                    !matches!(value, PropValue::Bool(false));
+                self.apply_scrollers(id);
             }
             "scrollEnabled" => {
                 // AppKit has no scroll switch, and hiding the scrollers is not

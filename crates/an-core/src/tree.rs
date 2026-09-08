@@ -97,6 +97,21 @@ struct Node {
     /// `false` until the first layout: forces an initial `SetLayout` even when
     /// the frame that came out is (0,0,0,0).
     laid_out: bool,
+    /// Scrollable nodes only: which axis the content is allowed to overflow on.
+    horizontal: bool,
+    /// Whether the app itself set `flexDirection` on this node.
+    ///
+    /// `[horizontal]` turns a scroll view's children sideways, the way it does
+    /// in React Native, because a horizontal scroll view whose children still
+    /// stack downwards has nothing to scroll and says nothing about it. That is
+    /// a default and not an override: a template that wrote the direction out
+    /// keeps it, whichever of the two arrives last.
+    styled_direction: bool,
+    /// Whether the app itself set `flexBasis`, or the `flex` shorthand that
+    /// writes it. The basis a scroll view gets by default is resolved before
+    /// every layout, and it must not overwrite one the template asked for —
+    /// that would be swapping one silent override for another.
+    styled_basis: bool,
 }
 
 impl Node {
@@ -112,6 +127,9 @@ impl Node {
             content: (0.0, 0.0),
             clip: None,
             laid_out: false,
+            horizontal: false,
+            styled_direction: false,
+            styled_basis: false,
         }
     }
 
@@ -134,6 +152,11 @@ pub struct ShadowTree {
     children_dirty: Vec<NodeId>,
     /// Leaf nodes that have to be measured again.
     measure_dirty: Vec<NodeId>,
+    /// Every live scrollable node. Their `flex-basis` depends on the direction
+    /// their parent lays out in, which nothing tells them when it changes, so
+    /// it is resolved for all of them before each layout rather than tracked
+    /// through every way a parent's style or a reparenting can move it.
+    scrollables: Vec<NodeId>,
     needs_layout: bool,
 }
 
@@ -153,6 +176,7 @@ impl ShadowTree {
             pending: Vec::new(),
             children_dirty: Vec::new(),
             measure_dirty: Vec::new(),
+            scrollables: Vec::new(),
             needs_layout: false,
         }
     }
@@ -176,11 +200,6 @@ impl ShadowTree {
         }
         self.created += 1;
         let mut node = Node::new(kind);
-        // A ScrollView is not sized by its content: that is what the scrolling
-        // is for. Without these defaults, a list of five thousand rows gives a
-        // ScrollView 280,000 points tall and the parent's layout blows up. It is
-        // what React Native does too, where a ScrollView's children do not count
-        // towards the size of the ScrollView itself.
         // A stack behaves like a full-screen container: its children sit on top
         // of one another, not in a row.
         if kind.is_stack() {
@@ -197,12 +216,22 @@ impl ShadowTree {
             node.style.set(StyleKey::Width, StyleValue::Points(0.0));
             node.style.set(StyleKey::Height, StyleValue::Points(0.0));
         }
+        // A ScrollView is not sized by its content: that is what the scrolling
+        // is for. Without these defaults, a list of five thousand rows gives a
+        // ScrollView 280,000 points tall and the parent's layout blows up. It is
+        // what React Native does too, where a ScrollView's children do not count
+        // towards the size of the ScrollView itself.
+        //
+        // The `flex-basis` that says so is *not* set here: it is the main
+        // axis's, so it depends on the parent, and a fixed zero was quietly
+        // beating any `[style.height]` the app wrote. `flush_scroll_basis`
+        // resolves it before every layout.
         if kind.is_scrollable() {
             node.style.set(StyleKey::Overflow, StyleValue::Keyword(an_layout::Keyword::Scroll));
-            node.style.set(StyleKey::FlexBasis, StyleValue::Points(0.0));
             node.style.set(StyleKey::FlexShrink, StyleValue::Number(1.0));
             node.style.set(StyleKey::MinHeight, StyleValue::Points(0.0));
             node.style.set(StyleKey::MinWidth, StyleValue::Points(0.0));
+            self.scrollables.push(id);
         }
         if kind.is_mountable() {
             self.layout
@@ -243,6 +272,9 @@ impl ShadowTree {
         }
         for current in order.into_iter().rev() {
             let Some(node) = self.nodes[current as usize].take() else { continue };
+            if node.kind.is_scrollable() {
+                self.scrollables.retain(|scrollable| *scrollable != current);
+            }
             if node.kind.is_mountable() {
                 self.layout
                     .destroy(current)
@@ -378,6 +410,15 @@ impl ShadowTree {
         };
         let parsed = StyleValue::parse(value);
         let node = self.node_mut(id)?;
+        // Written down before the "nothing changed" way out: a template that
+        // asks for the direction it already has is still a template that asked,
+        // and `[horizontal]` must not go on to overrule it.
+        if key == StyleKey::FlexDirection && parsed != StyleValue::Unset {
+            node.styled_direction = true;
+        }
+        if matches!(key, StyleKey::FlexBasis | StyleKey::Flex) && parsed != StyleValue::Unset {
+            node.styled_basis = true;
+        }
         if !node.style.set(key, parsed) {
             return Ok(());
         }
@@ -405,12 +446,46 @@ impl ShadowTree {
             None => node.props.push((key.into(), value.clone())),
         }
         let kind = node.kind;
+        let asked_sideways = matches!(value, PropValue::Bool(true));
         if kind.is_mountable() {
             self.pending.push(MountOp::SetProp { id, key: key.to_owned(), value });
         }
         if affects_measure(key) && kind.is_measured_leaf() {
             self.mark_measure_dirty(id);
         }
+        // The one prop the core reads as well as forwards. Which axis a scroll
+        // view may overflow on is a layout decision before it is a host one:
+        // it is what says whether the content is allowed to come out wider than
+        // the frame, and the clamp in `collect_layout` is the only thing
+        // standing between a horizontal scroll view and a `contentSize` cut
+        // back to the width of the screen.
+        if kind.is_scrollable() && key == "horizontal" {
+            self.set_horizontal(id, asked_sideways)?;
+        }
+        Ok(())
+    }
+
+    /// Turns a scroll view sideways: the axis the content may overflow on, and
+    /// — unless the template said otherwise — the direction its children run in.
+    fn set_horizontal(&mut self, id: NodeId, horizontal: bool) -> Result<(), Error> {
+        let node = self.node_mut(id)?;
+        if node.horizontal == horizontal {
+            return Ok(());
+        }
+        node.horizontal = horizontal;
+        // The content size is recomputed and re-sent from the layout pass, so
+        // the axis change reaches the host by the same road as any other frame.
+        self.needs_layout = true;
+        if self.node(id)?.styled_direction {
+            return Ok(());
+        }
+        let direction = if horizontal { an_layout::Keyword::Row } else { an_layout::Keyword::Column };
+        let node = self.node_mut(id)?;
+        if !node.style.set(StyleKey::FlexDirection, StyleValue::Keyword(direction)) {
+            return Ok(());
+        }
+        let style = node.style.clone();
+        self.layout.set_style(id, &style).map_err(|e| Error::Layout(format!("{e:?}")))?;
         Ok(())
     }
 
@@ -457,6 +532,7 @@ impl ShadowTree {
         };
 
         self.flush_children()?;
+        self.flush_scroll_basis()?;
         self.flush_measures()?;
 
         let mut ops = std::mem::take(&mut self.pending);
@@ -468,6 +544,39 @@ impl ShadowTree {
             self.collect_layout(root, &mut ops)?;
         }
         Ok(Frame { ops })
+    }
+
+    /// Gives every scroll view the `flex-basis` that keeps it from being sized
+    /// by its content without swallowing the size the app asked for.
+    ///
+    /// It runs over all of them and not only the dirty ones because what it
+    /// depends on is the *parent's* `flexDirection`, and a node is told nothing
+    /// when its parent restyles or when it is moved under another one. The list
+    /// is one entry per `<an-scroll-view>` on screen — the windowed list keeps
+    /// one and recycles its rows — so a walk per layout is cheaper than the
+    /// bookkeeping that would keep it exact.
+    fn flush_scroll_basis(&mut self) -> Result<(), Error> {
+        // By index, so that the list is not copied on every settled frame: the
+        // loop touches `nodes` and `layout` and never the list itself.
+        for index in 0..self.scrollables.len() {
+            let id = self.scrollables[index];
+            let Some(node) = self.nodes.get(id as usize).and_then(Option::as_ref) else { continue };
+            if node.styled_basis {
+                continue;
+            }
+            let parent_row = node
+                .parent
+                .and_then(|parent| self.nodes.get(parent as usize).and_then(Option::as_ref))
+                .is_some_and(|parent| parent.style.is_row());
+            let node = self.nodes[id as usize].as_mut().expect("checked above");
+            if !node.style.set_scroll_basis(parent_row) {
+                continue;
+            }
+            let style = node.style.clone();
+            self.layout.set_style(id, &style).map_err(|e| Error::Layout(format!("{e:?}")))?;
+            self.needs_layout = true;
+        }
+        Ok(())
     }
 
     /// Syncs to taffy the child lists that changed, filtering out the nodes
@@ -559,20 +668,23 @@ impl ShadowTree {
             let content = if scrollable {
                 let (w, h) =
                     self.layout.content_size(id).map_err(|e| Error::Layout(format!("{e:?}")))?;
-                // The width is clamped to the scroll view's own, because this
-                // engine only overflows downwards: `contentSize` is computed
-                // that way and there is no horizontal scrolling to go with it.
+                // A scroll view overflows on one axis, the one it was asked
+                // for, and is clamped to its own frame on the other.
                 //
-                // Reporting a wider content than that does not add a feature,
-                // it takes one away. A `UIScrollView` scrolls on whichever axis
-                // its content is bigger, so a row that came out a few points
-                // too wide — one image reporting its intrinsic size, say — lets
-                // the whole page be dragged sideways into nothing, and the app
-                // looks like it emptied itself. Vertically the overflow is the
-                // point; horizontally it is always a mistake somewhere else,
-                // and it should show up as a clipped edge rather than as a
-                // screen that can be swiped away.
-                (w.min(frame.width), h)
+                // Reporting a bigger content on the cross axis does not add a
+                // feature, it takes one away. A `UIScrollView` scrolls on
+                // whichever axis its content is bigger, so a row that came out
+                // a few points too wide — one image reporting its intrinsic
+                // size, say — lets the whole page be dragged sideways into
+                // nothing, and the app looks like it emptied itself. Along the
+                // asked-for axis the overflow is the point; across it it is
+                // always a mistake somewhere else, and it should show up as a
+                // clipped edge rather than as a screen that can be swiped away.
+                if node.horizontal {
+                    (w, h.min(frame.height))
+                } else {
+                    (w.min(frame.width), h)
+                }
             } else {
                 (0.0, 0.0)
             };

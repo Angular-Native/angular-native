@@ -220,6 +220,7 @@ different behaviours is worse than saying only Android has them.
 
 | Prop | iOS | Android |
 |---|---|---|
+| `horizontal` | `alwaysBounce…`, one axis of the `contentSize` | an inner `HorizontalScrollView` |
 | `showsScrollIndicator` | `showsVertical…` | both scrollbars |
 | `refreshing` | `UIRefreshControl` | an arc of our own |
 | `bounces` | `bounces` | `overScrollMode` |
@@ -227,9 +228,11 @@ different behaviours is worse than saying only Android has them.
 | `[ios].pagingEnabled` | `isPagingEnabled` | — |
 | `[ios].keyboardDismissMode` | `keyboardDismissMode` | — |
 
-**Left out:** horizontal scrolling. It is not a host prop: the core computes
-`contentSize` assuming the overflow goes downwards, and turning that around is
-work in the core.
+**Left out:** both axes at once. The core clamps `contentSize` to the view's own
+frame across the axis it is not scrolling on, so a scroll view offers one
+direction and only one. Android is the reason it stays that way: `ScrollView`
+and `HorizontalScrollView` are two classes, and the two nested inside each other
+fight over every diagonal drag.
 
 ### `an-tab-bar` — `UITabBarController` · `AnTabBar` · `NSSegmentedControl`
 

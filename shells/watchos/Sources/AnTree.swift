@@ -150,6 +150,8 @@ struct AnNode: Decodable, Identifiable, Equatable {
     let presentation: String?
     let transition: String?
 
+    /// `ScrollView`: whether it scrolls sideways. Absent means downwards.
+    let horizontal: Bool?
     let contentWidth: Double?
     let contentHeight: Double?
 

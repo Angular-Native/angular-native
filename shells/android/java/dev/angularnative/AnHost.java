@@ -2144,11 +2144,16 @@ public final class AnHost {
                     ((AnScrollView) view).setScrollEnabled(!"false".equals(value));
                 }
                 break;
+            case "horizontal":
+                if (view instanceof AnScrollView) {
+                    ((AnScrollView) view).setHorizontal("true".equals(value));
+                }
+                break;
             case "showsScrollIndicator":
-                if (view instanceof ScrollView) {
-                    boolean shown = !"false".equals(value);
-                    view.setVerticalScrollBarEnabled(shown);
-                    view.setHorizontalScrollBarEnabled(shown);
+                if (view instanceof AnScrollView) {
+                    // The scroller belongs to whichever half is scrolling, and
+                    // only that view knows which one that is.
+                    ((AnScrollView) view).setIndicatorsShown(!"false".equals(value));
                 }
                 break;
             case "bounces":
@@ -2542,15 +2547,20 @@ public final class AnHost {
                                     : null);
             return;
         }
-        if ("scroll".equals(event) && view instanceof ScrollView) {
-            view.setOnScrollChangeListener(
-                    enabled
-                            ? (v, x, y, oldX, oldY) -> {
-                                if (runtime != null) {
-                                    runtime.dispatchEvent(id, "scroll", x / density, y / density);
-                                }
-                            }
-                            : null);
+        if ("scroll".equals(event) && view instanceof AnScrollView) {
+            // Not `setOnScrollChangeListener` straight on the view: a sideways
+            // scroll view keeps its offset on an inner one, and the template
+            // asked for a single `(scroll)` carrying both numbers.
+            ((AnScrollView) view)
+                    .setOnScroll(
+                            enabled
+                                    ? (x, y) -> {
+                                        if (runtime != null) {
+                                            runtime.dispatchEvent(
+                                                    id, "scroll", x / density, y / density);
+                                        }
+                                    }
+                                    : null);
             return;
         }
         if (view instanceof EditText) {

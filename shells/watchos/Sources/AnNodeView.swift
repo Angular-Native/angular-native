@@ -155,7 +155,11 @@ struct AnNodeView: View {
     /// Inside, taffy is still in charge: the content is a `ZStack` of the size
     /// `contentSize` gave, with the children in their frames.
     private var scrollView: some View {
-        ScrollView(.vertical) {
+        // One axis, never both: the core clamps the content to this view's own
+        // size across the axis it was not asked for, so a second one would have
+        // nothing to travel over and would only take the crown away from the
+        // one that does.
+        ScrollView(node.horizontal == true ? .horizontal : .vertical) {
             children
                 .frame(
                     width: node.contentWidth ?? node.width,

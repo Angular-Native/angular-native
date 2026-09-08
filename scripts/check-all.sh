@@ -61,6 +61,9 @@ fi
 "$ROOT/scripts/check-angular.sh"
 "$ROOT/scripts/check-list.sh"
 "$ROOT/scripts/check-clip.sh"
+# The two things a scroll view was getting wrong on its own account: a size it
+# ignored and an axis it did not have.
+"$ROOT/scripts/check-scroll.sh"
 
 echo
 # The fourth duplicated list, and the one that had no check: what a control

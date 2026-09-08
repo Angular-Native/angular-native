@@ -667,6 +667,10 @@ pub struct UikitHost {
     /// given to UIKit is the two of them together — kept here so that setting
     /// one never silently undoes the other.
     clips: HashMap<NodeId, bool>,
+    /// The scroll views that were asked to scroll sideways. Kept because
+    /// `set_content_size` has to know which axis is the one that may overflow,
+    /// and the op carries two numbers and no axis.
+    horizontal: std::collections::HashSet<NodeId>,
     /// The nodes subscribed to the safe area, with the last insets they were
     /// told about. They are only notified when those really change.
     safe_area: HashMap<NodeId, [f32; 4]>,
@@ -735,6 +739,7 @@ impl UikitHost {
             animating_out: std::collections::HashSet::new(),
             warned_views: std::collections::HashSet::new(),
             clips: HashMap::new(),
+            horizontal: std::collections::HashSet::new(),
             safe_area: HashMap::new(),
             keyboard,
             alerts: HashMap::new(),
@@ -1534,6 +1539,7 @@ impl HostRenderer for UikitHost {
         }
         self.fonts.remove(&id);
         self.corners.remove(&id);
+        self.horizontal.remove(&id);
         self.safe_area.remove(&id);
         self.alerts.remove(&id);
         self.slider_values.remove(&id);
@@ -2470,6 +2476,25 @@ impl HostRenderer for UikitHost {
                     }
                 }
             }
+            "horizontal" => {
+                let sideways = matches!(value, PropValue::Bool(true));
+                if sideways {
+                    self.horizontal.insert(id);
+                } else {
+                    self.horizontal.remove(&id);
+                }
+                if let HostView::Scroll(scroll) = view {
+                    // A `UIScrollView` scrolls on whichever axis its content is
+                    // bigger, and the core has already made sure only one of
+                    // them is. What is left to say is which way it may be
+                    // dragged when the content does *not* overflow: the bounce
+                    // is the only thing that tells a finger the view is a
+                    // scroll view at all, and on the wrong axis it is the thing
+                    // that makes a page look like it can be swiped away.
+                    scroll.setAlwaysBounceHorizontal(sideways);
+                    scroll.setAlwaysBounceVertical(!sideways);
+                }
+            }
             "showsScrollIndicator" => {
                 if let HostView::Scroll(scroll) = view {
                     let shown = !matches!(value, PropValue::Bool(false));
@@ -2632,22 +2657,30 @@ impl HostRenderer for UikitHost {
         self.views.clear();
         self.fonts.clear();
         self.corners.clear();
+        self.horizontal.clear();
         self.listeners.clear();
     }
 
     fn set_content_size(&mut self, id: NodeId, width: f32, height: f32) {
         if let Some(HostView::Scroll(scroll)) = self.views.get(&id) {
-            // Never wider than the scroll view itself. The core already clamps
-            // this, and it is clamped again here because the consequence is out
-            // of all proportion to the mistake: a `UIScrollView` scrolls on
-            // whichever axis its content is bigger, so a content width a few
-            // points over -- one image reporting its intrinsic size into a row
-            // -- turns the whole page into something that can be dragged
-            // sideways until the screen is empty. This engine overflows
-            // downwards only, and that is enforced where the scrolling happens.
-            let bounds = scroll.bounds().size.width;
-            let width = if bounds > 0.0 { (width as f64).min(bounds) } else { width as f64 };
-            scroll.setContentSize(CGSize { width, height: height as f64 });
+            // Never bigger than the scroll view itself across the axis it was
+            // asked to scroll on. The core already clamps this, and it is
+            // clamped again here because the consequence is out of all
+            // proportion to the mistake: a `UIScrollView` scrolls on whichever
+            // axis its content is bigger, so a content width a few points over
+            // -- one image reporting its intrinsic size into a row -- turns the
+            // whole page into something that can be dragged sideways until the
+            // screen is empty.
+            let bounds = scroll.bounds().size;
+            let (mut width, mut height) = (width as f64, height as f64);
+            if self.horizontal.contains(&id) {
+                if bounds.height > 0.0 {
+                    height = height.min(bounds.height);
+                }
+            } else if bounds.width > 0.0 {
+                width = width.min(bounds.width);
+            }
+            scroll.setContentSize(CGSize { width, height });
         }
     }
 
