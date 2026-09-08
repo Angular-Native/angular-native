@@ -2,7 +2,7 @@
 title: Comprobarlo sin dispositivo
 description: Un comando lo corre todo, `headless` renderiza un bundle sin plataforma debajo, y un puñado de scripts vigilan las listas que están duplicadas en tres lenguajes.
 sidebar:
-  order: 9
+  order: 10
 ---
 
 Casi todo lo que puede salir mal aquí sale mal **en silencio**. Una prop que

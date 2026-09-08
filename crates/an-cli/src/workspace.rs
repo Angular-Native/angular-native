@@ -7,7 +7,7 @@
 //! ones:
 //!
 //!   · the **SDK root** is where the crates, the native shells and
-//!     `scripts/bundle.mjs` come from. It is this repo, always.
+//!     `scripts/bundle.mjs` come from.
 //!   · the **project root** is where the app's code lives and where the
 //!     artefacts are written. In the monorepo it is the same as the SDK's;
 //!     outside, it is not.
@@ -15,6 +15,24 @@
 //! Telling them apart is this module's entire job. The rest of the CLI asks for
 //! `workspace.root` when it wants the SDK and `workspace.build_dir()` when it
 //! wants to write, and never finds out which of the two worlds it is in.
+//!
+//! The SDK root used to be "this repo, always", and it is not any more. It is
+//! one of three things, and [`sdk_root`] is where the three are told apart:
+//!
+//!   1. a git checkout of this repository, found through `AN_HOME` or through
+//!      the path the binary was compiled from;
+//!   2. the payload of `@angular-native/cli` under a `node_modules`, which is
+//!      what `npm install -g @angular-native/cli` leaves behind;
+//!   3. the monorepo the current directory is already inside, which is the
+//!      case [`Workspace::discover`] settles without asking anybody.
+//!
+//! The npm payload is laid out **exactly** like the checkout —`crates/`,
+//! `shells/`, `packages/`, `scripts/bundle.mjs`— on purpose: `validate_sdk`
+//! asks for the same four things whichever it is, and no other module has to
+//! learn that there is now a third world. The one place it does show is
+//! [`Workspace::sdk_is_npm`]: a global npm install sits somewhere the user
+//! cannot write, so `cargo` cannot leave `target/` beside the crates it is
+//! compiling. `main` sends it to the project instead.
 
 use std::path::{Path, PathBuf};
 
@@ -262,11 +280,24 @@ impl Workspace {
         }
     }
 
+    /// Whether the SDK came from npm rather than from a checkout.
+    ///
+    /// The one thing the rest of the CLI has to know about the third world, and
+    /// it is asked exactly once, in `main`: a global npm install lives where the
+    /// user cannot write, so `cargo` is sent elsewhere. See `target_dir`.
+    pub fn sdk_is_npm(&self) -> bool {
+        is_npm_sdk(&self.root)
+    }
+
     /// Where `cargo` leaves what it compiles.
     ///
     /// Almost always `target/` at the SDK's root, but `CARGO_TARGET_DIR` exists
     /// and whoever has it set does not expect the CLI to go looking for the
     /// static library where it no longer is.
+    ///
+    /// That variable is also how the npm install is dealt with: `main` sets it
+    /// when the SDK is under `node_modules`, so what is read here and what the
+    /// child `cargo` writes cannot come apart.
     pub fn target_dir(&self) -> PathBuf {
         match std::env::var_os("CARGO_TARGET_DIR") {
             Some(dir) => absolute(&dir.to_string_lossy()),
@@ -340,15 +371,30 @@ fn is_monorepo(dir: &Path) -> bool {
     dir.join("Cargo.toml").is_file() && dir.join("packages/runtime/runtime.js").is_file()
 }
 
+/// The name of the npm package whose payload is an SDK. It is the name the
+/// package's own `package.json` carries, and reading it is the only way to tell
+/// the payload apart from any other directory that happens to have a
+/// `packages/` in it.
+pub const NPM_PACKAGE: &str = "@angular-native/cli";
+
 /// The SDK's root when `an` runs outside the monorepo.
 ///
-/// Two places, in this order, and neither of them guessed at:
+/// Three places, in this order, and none of them guessed at:
 ///
-///   1. `AN_HOME`, for whoever has several checkouts or installed the binary by
-///      hand.
+///   1. `AN_HOME`, for whoever has several checkouts, installed the binary by
+///      hand, or came in through the npm shim. `bin/an.mjs` sets it before
+///      spawning this binary because Node's resolver is the only thing that
+///      knows where the package manager put the payload: under pnpm the
+///      executable's package and the payload's are not siblings, they are two
+///      unrelated directories inside `node_modules/.pnpm`.
 ///   2. The path this binary was compiled from. `cargo install --path
 ///      crates/an-cli` bakes it in, so an `an` on the PATH knows how to find its
-///      way back to its repo.
+///      way back to its repo. An npm-installed binary was compiled in CI and
+///      that path is somebody else's runner, which is why it has to be allowed
+///      to fail rather than end the search.
+///   3. Beside the executable. This is what makes the binary work when it is
+///      run directly instead of through the shim — every layout but pnpm's puts
+///      `@angular-native/cli` where a climb from the executable finds it.
 ///
 /// If the place exists but has not got what is needed, it says what is missing.
 /// A half-finished SDK would produce a `swiftc` with no sources or a bundle with
@@ -362,13 +408,60 @@ pub fn sdk_root() -> Result<PathBuf> {
     }
     let compiled_from = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let compiled_from = compiled_from.canonicalize().unwrap_or(compiled_from);
-    validate_sdk(&compiled_from).with_context(|| {
-        format!(
-            "this `an` was compiled from {}, and the SDK is no longer there.\n\
-             Set AN_HOME to the path of the angular-native repository.",
-            compiled_from.display()
-        )
-    })
+    if let Ok(root) = validate_sdk(&compiled_from) {
+        return Ok(root);
+    }
+    if let Some(root) = beside_the_executable() {
+        return Ok(root);
+    }
+    // The path it was compiled from is named even now: for the `cargo install`
+    // case it is the whole answer, and for the npm case it is at least a clue
+    // that this binary is not where it thinks it is.
+    bail!(
+        "this `an` was compiled from {}, the SDK is no longer there, and there is no \
+         {NPM_PACKAGE} beside the executable either.\n\
+         Set AN_HOME to the path of the angular-native repository, or install the CLI with \
+         `npm install -g {NPM_PACKAGE}`.",
+        compiled_from.display()
+    )
+}
+
+/// Climbs from the executable looking for an SDK: the directory it is in, a
+/// `@angular-native/cli` beside it, or one under a `node_modules` on the way up.
+///
+/// The middle case is the npm one. `npm install -g @angular-native/cli` leaves
+/// the executable at
+/// `…/node_modules/@angular-native/cli-<platform>/bin/an` and the payload at
+/// `…/node_modules/@angular-native/cli`, so the climb reaches `@angular-native/`
+/// and the sibling is one `join` away.
+fn beside_the_executable() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe = exe.canonicalize().unwrap_or(exe);
+    let mut dir = exe.parent()?.to_owned();
+    loop {
+        let candidates = [
+            dir.clone(),
+            dir.join("@angular-native").join("cli"),
+            dir.join("node_modules").join("@angular-native").join("cli"),
+        ];
+        if let Some(found) = candidates.into_iter().find(|dir| validate_sdk(dir).is_ok()) {
+            return Some(found);
+        }
+        if !dir.pop() {
+            return None;
+        }
+    }
+}
+
+/// Whether this directory is the npm package's payload rather than a checkout.
+///
+/// The `package.json` is read rather than the layout inspected: the payload is
+/// laid out exactly like the repository, deliberately, so the layout cannot tell
+/// them apart and nothing else should try.
+pub fn is_npm_sdk(dir: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(dir.join("package.json")) else { return false };
+    let Ok(parsed) = serde_json::from_str::<Value>(&text) else { return false };
+    parsed.get("name").and_then(Value::as_str) == Some(NPM_PACKAGE)
 }
 
 fn validate_sdk(dir: &Path) -> Result<PathBuf> {
@@ -416,4 +509,36 @@ pub fn absolute(raw: &str) -> PathBuf {
         std::env::current_dir().unwrap_or_default().join(path)
     };
     path.canonicalize().unwrap_or(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The monorepo's own root has a `package.json` and a `packages/`, and it is
+    /// what every check script runs in. Mistaking it for the npm payload would
+    /// send `cargo`'s output somewhere `check-all.sh` does not look, so the
+    /// marker is the package's **name** and nothing about the layout.
+    #[test]
+    fn the_monorepo_is_not_taken_for_an_npm_install() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        assert!(root.join("package.json").is_file(), "the fixture is the repository itself");
+        assert!(!is_npm_sdk(&root));
+    }
+
+    /// And a directory laid out like the payload is, down to the name. This is
+    /// what `scripts/build-cli.mjs` writes.
+    #[test]
+    fn the_payload_is_recognised_by_the_name_in_its_manifest() {
+        let dir = std::env::temp_dir().join("an-cli-npm-sdk-test");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("the temporary directory is writable");
+        std::fs::write(
+            dir.join("package.json"),
+            format!(r#"{{ "name": "{NPM_PACKAGE}", "version": "0.0.1" }}"#),
+        )
+        .expect("the manifest is written");
+        assert!(is_npm_sdk(&dir));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

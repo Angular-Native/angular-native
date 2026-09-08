@@ -412,9 +412,18 @@ fn install_packages(sdk: &Path, root: &Path, force: bool) -> Result<()> {
         let destination = staging.join(short);
         let _ = std::fs::remove_dir_all(&destination);
         std::fs::create_dir_all(&destination)?;
+        // The TypeScript is copied into the project before it is compiled, and
+        // that is not tidiness: it is what decides which Angular it is compiled
+        // against. TypeScript resolves `@angular/core` by climbing from the
+        // importing file, so compiling the SDK's copy in place resolves against
+        // whatever `node_modules` happens to be above the SDK — the monorepo's
+        // own, by luck, and nothing at all when `an` came from
+        // `npm install -g @angular-native/cli` and lives in a global prefix.
+        // From under the project the climb lands where it was always meant to.
+        copy_sources(&source.join("src"), &destination.join("src"))?;
 
         eprintln!("==> compiling {name}");
-        std::fs::write(destination.join("tsconfig.json"), package_tsconfig(&source, &staging))?;
+        std::fs::write(destination.join("tsconfig.json"), package_tsconfig(&destination, &staging))?;
         // The binary out of the project's own `node_modules`, not
         // `npm exec`: all four managers write `node_modules/.bin`, so this is
         // the one way of saying "the project's ngc" that does not first have
@@ -504,12 +513,39 @@ fn install_packages(sdk: &Path, root: &Path, force: bool) -> Result<()> {
     Ok(())
 }
 
+/// A recursive copy of a directory of sources. `std::fs` and not `ditto` or
+/// `cp -R`: `an init` is the one command that has to work on a machine with no
+/// Xcode and no Apple in sight.
+fn copy_sources(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir_all(to)
+        .with_context(|| format!("{} could not be created", to.display()))?;
+    for entry in std::fs::read_dir(from)
+        .with_context(|| format!("{} could not be read", from.display()))?
+    {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_sources(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target).with_context(|| {
+                format!("{} could not be copied to {}", entry.path().display(), target.display())
+            })?;
+        }
+    }
+    Ok(())
+}
+
 /// The tsconfig one of the framework's packages is compiled with.
 ///
 /// `compilationMode: partial` is what makes this a publishable library: the
 /// decorators are left as `ɵɵngDeclare*` declarations that the Angular Linker
 /// resolves at packaging time, instead of code tied to the compiler's exact
 /// version.
+///
+/// `source` is the **copy** in the staging directory and not the SDK's own:
+/// see `install_packages`. TypeScript resolves a bare specifier by climbing
+/// from the importing file, so where these `.ts` files sit decides which
+/// Angular they are compiled against.
 fn package_tsconfig(source: &Path, staging: &Path) -> String {
     let primitives = staging.join("primitives/dist/public-api.d.ts");
     format!(

@@ -1,0 +1,160 @@
+# The `an` command, published to npm.
+#
+# `publish.yml` beside this one ships the framework packages, which are pure
+# JavaScript and come out of one Linux runner. The CLI cannot: it is a native
+# executable, and there is one per host. So it is published the way esbuild and
+# swc are —`@angular-native/cli` with five `optionalDependencies` carrying an
+# `os` and a `cpu` between them— and this workflow is what builds those five.
+#
+# Two things about the order matter and neither is decoration:
+#
+#   · the five executables are published **before** `@angular-native/cli`. An
+#     optional dependency that 404s is skipped in silence by npm, so a CLI
+#     published first would install cleanly for everybody and then fail at the
+#     first `an` with a message about a missing package.
+#   · nothing is published until all five have built. A partial release cannot
+#     be taken back: the version is burnt, and the machines whose executable did
+#     not make it get the silent skip above.
+#
+# What the five contain is one binary each. What `@angular-native/cli` contains
+# is the payload —`crates/`, `shells/`, `packages/`, `scripts/bundle.mjs`— and
+# it is the same on every host, because it is Swift, Java, Rust and TypeScript
+# *source*. The core is compiled by the user's own cargo the first time they run
+# a platform command, and `docs-site/.../guide/installing.md` is where the
+# reasoning for that lives.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  # The host table lives in `scripts/build-cli.mjs`, beside the code that writes
+  # each package's `os` and `cpu`. Reading it here rather than restating it is
+  # what stops the matrix and the manifests drifting apart — the failure that
+  # would produce is a package published for a machine the shim never looks for.
+  hosts:
+    name: which hosts there are
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.read.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: read
+        run: echo "matrix=$(node scripts/build-cli.mjs --print-hosts)" >>"$GITHUB_OUTPUT"
+
+      # The tag is the version. Six packages are about to be published under
+      # whatever `packages/cli/package.json` says, and a number that is not the
+      # tag can never be taken back — `an --version` is what a bug report
+      # quotes, and it would quote something no tag points at.
+      - name: The version being published is the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          said="$(node -p "require('./packages/cli/package.json').version")"
+          if [ "$said" != "$tag" ]; then
+            echo "the tag is $tag and packages/cli/package.json says $said"
+            exit 1
+          fi
+
+  build:
+    name: an for ${{ matrix.host }}
+    needs: hosts
+    strategy:
+      # One host failing must not leave the other four half-published. See the
+      # header: the publish job needs all five artefacts before it starts.
+      fail-fast: true
+      matrix:
+        include: ${{ fromJSON(needs.hosts.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # Every host builds natively on its own runner. `an-cli` links QuickJS
+      # through `cc`, and a cross-compiled C toolchain is a second thing that
+      # can be wrong about a release nobody can re-cut.
+      - name: Rust for ${{ matrix.target }}
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked -p an-cli --target ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: an-${{ matrix.host }}
+          path: target/${{ matrix.target }}/release/an${{ matrix.os == 'win32' && '.exe' || '' }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: publish the six packages
+    needs: [hosts, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: build/artifacts
+          pattern: an-*
+
+      # `--binary <host>=<path>` per host, so the assembly fails loudly if one
+      # of the five artefacts did not arrive rather than publishing a manifest
+      # with an empty `bin/`.
+      - name: Assemble
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t args < <(node scripts/build-cli.mjs --print-hosts | node -e '
+            const hosts = JSON.parse(require("fs").readFileSync(0, "utf8"))
+            for (const { host, os } of hosts) {
+              console.log("--binary")
+              console.log(`${host}=build/artifacts/an-${host}/${os === "win32" ? "an.exe" : "an"}`)
+            }')
+          node scripts/build-cli.mjs --pack "${args[@]}"
+
+      # The same gate the framework packages go through, on the manifest this
+      # release is about to burn a version number on.
+      - run: ./scripts/check-publish.sh
+
+      # The executables first. An optional dependency that is not on the
+      # registry yet is skipped without a word, so a `@angular-native/cli`
+      # published ahead of them would install and not work.
+      - name: Publish the five executables
+        run: |
+          set -euo pipefail
+          for dir in build/npm-cli/cli-*/; do
+            npm publish "$dir" --provenance --access public
+          done
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @angular-native/cli
+        run: npm publish build/npm-cli/cli --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # And the tarballs on the release itself, for whoever cannot reach npm or
+      # wants to see what they are about to run before it is on their PATH.
+      - name: Attach the tarballs to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: gh release upload "$GITHUB_REF_NAME" build/npm-cli/*.tgz --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

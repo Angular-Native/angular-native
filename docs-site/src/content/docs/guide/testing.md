@@ -2,7 +2,7 @@
 title: Checking it without a device
 description: One command runs the lot, `headless` renders a bundle with no platform under it, and a handful of scripts guard the lists that are duplicated across three languages.
 sidebar:
-  order: 9
+  order: 10
 ---
 
 Most of what can go wrong here goes wrong **quietly**. A prop that no host

@@ -2,7 +2,7 @@
 title: Gestos y animación
 description: Los reconocedores son los del sistema, las transformaciones quedan fuera del layout, y la animación corre en el hilo de dibujo de la plataforma — qué se gana con eso y qué hace distinto cada plataforma.
 sidebar:
-  order: 5
+  order: 6
 ---
 
 Dos cosas de esta página van juntas casi siempre: un gesto dice dónde está un

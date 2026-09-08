@@ -2,7 +2,7 @@
 title: Props y el envoltorio nativo
 description: Cuánto del control real alcanza una plantilla, cómo viaja una prop, y qué se dejó fuera de cada una a propósito.
 sidebar:
-  order: 4
+  order: 5
 ---
 
 Cada primitivo envuelve un control nativo de verdad. La pregunta que responde

@@ -2,7 +2,7 @@
 title: Llevar un proyecto Angular al móvil
 description: Ya tienes una app de `ng new` y quieres que corra sobre vistas nativas. No hace falta mover nada a este repositorio.
 sidebar:
-  order: 3
+  order: 4
 ---
 
 Este documento es para quien ya tiene una app de Angular —una de `ng new`— y
@@ -12,10 +12,9 @@ repositorio ni mover el proyecto a `examples/`: `an` sirve igual desde fuera.
 ## De principio a fin
 
 ```bash
-# 1. El binario, una vez por máquina. Deja `an` en el PATH y se acuerda de dónde
-#    está el SDK, así que desde aquí ya no hay que volver a este directorio.
-cd angular-native
-cargo install --path crates/an-cli
+# 1. El CLI, una vez por máquina. El paquete lleva también el SDK, así que
+#    desde aquí ya no hay ningún repositorio al que volver.
+npm install -g @angular-native/cli
 
 # 2. Un proyecto Angular cualquiera.
 npx @angular/cli@latest new mi-app
@@ -207,17 +206,21 @@ aplicación lo pone `aapt2` con `--rename-manifest-package`.
 
 ## Dónde busca `an` el SDK
 
-Fuera del monorepo, `an` necesita saber dónde están los crates y los shells. Dos
-sitios, en este orden:
+Fuera del monorepo, `an` necesita saber dónde están los crates y los shells.
+Tres sitios, en este orden:
 
-1. `AN_HOME`, si está definida.
+1. `AN_HOME`, si está definida. El shim de npm la pone apuntando a su propio
+   paquete, y lo que definas tú gana sobre eso.
 2. La ruta desde la que se compiló el binario. `cargo install --path
    crates/an-cli` la deja grabada dentro, así que un `an` en el PATH sabe volver
    a su repositorio.
+3. Al lado del ejecutable — una subida buscando `@angular-native/cli`, que es lo
+   que deja al lado una instalación con npm.
 
 Si el sitio existe pero le falta algo, se dice qué falta. Por eso
 `angular-native.json` **no** guarda la ruta del SDK: sería la del disco de quien
-ejecutó `an init`, y el fichero se commitea.
+ejecutó `an init`, y el fichero se commitea. La versión larga está en
+[Instalar el CLI](/es/guide/installing/).
 
 ## Comprobarlo sin simulador
 

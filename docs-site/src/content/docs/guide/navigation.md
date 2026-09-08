@@ -2,7 +2,7 @@
 title: Navigation and the router
 description: Angular's router with no address bar — an in-memory history, a native stack that keeps the screen behind alive, and where the back gesture and the Android button come in.
 sidebar:
-  order: 6
+  order: 7
 ---
 
 Angular's router works here unchanged: the same `provideRouter`, the same route

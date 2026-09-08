@@ -2,7 +2,7 @@
 title: Taking an Angular project to mobile
 description: You already have an `ng new` app and want it running on native views. Nothing has to move into this repository.
 sidebar:
-  order: 3
+  order: 4
 ---
 
 This page is for someone who already has an Angular app — one from `ng new` —
@@ -13,10 +13,9 @@ just as well from outside.
 ## End to end
 
 ```bash
-# 1. The binary, once per machine. It leaves `an` on the PATH and remembers
-#    where the SDK is, so from here on you never come back to this directory.
-cd angular-native
-cargo install --path crates/an-cli
+# 1. The CLI, once per machine. The package carries the SDK too, so from here
+#    on there is no repository to come back to.
+npm install -g @angular-native/cli
 
 # 2. Any Angular project.
 npx @angular/cli@latest new my-app
@@ -205,16 +204,20 @@ the application identifier is set by `aapt2` with `--rename-manifest-package`.
 ## Where `an` looks for the SDK
 
 Outside the monorepo, `an` needs to know where the crates and the shells are.
-Two places, in this order:
+Three places, in this order:
 
-1. `AN_HOME`, if it is set.
+1. `AN_HOME`, if it is set. The npm shim sets it to its own package, and
+   anything you set yourself wins over that.
 2. The path it was built from. `cargo install --path crates/an-cli` records it
    inside the binary, so an `an` on the PATH knows how to find its way back to
    its repository.
+3. Beside the executable — a climb looking for `@angular-native/cli`, which is
+   what an npm install leaves next door.
 
 If the place exists but something is missing, it says what. That is why
 `angular-native.json` does **not** store the SDK path: it would be the path on
-the disk of whoever ran `an init`, and the file is committed.
+the disk of whoever ran `an init`, and the file is committed. The long version
+is in [Installing the CLI](/guide/installing/).
 
 ## Checking it without a simulator
 

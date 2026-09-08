@@ -1,0 +1,62 @@
+{
+  "name": "@angular-native/cli",
+  "version": "0.0.1",
+  "description": "The `an` command: Angular on real native views, with no clone of the SDK and no Rust toolchain to build the JavaScript half.",
+  "type": "module",
+  "bin": {
+    "an": "bin/an.mjs"
+  },
+  "files": [
+    "bin",
+    "Cargo.toml",
+    "Cargo.lock",
+    "rust-toolchain.toml",
+    "crates",
+    "shells",
+    "scripts",
+    "packages",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "angular",
+    "native",
+    "ios",
+    "android",
+    "rust",
+    "no-webview",
+    "angular-native",
+    "cli"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Angular-Native/angular-native.git",
+    "directory": "packages/cli"
+  },
+  "license": "MIT",
+  "author": "Néstor García Bou",
+  "homepage": "https://angular-native.github.io",
+  "bugs": {
+    "url": "https://github.com/Angular-Native/angular-native/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "dependencies": {
+    "@angular/compiler": "^22.1.5",
+    "@angular/compiler-cli": "^22.1.5",
+    "@babel/core": "^8.0.1",
+    "esbuild": "^0.28.2",
+    "typescript": "6.0.3"
+  },
+  "optionalDependencies": {
+    "@angular-native/cli-darwin-arm64": "0.0.1",
+    "@angular-native/cli-darwin-x64": "0.0.1",
+    "@angular-native/cli-linux-arm64": "0.0.1",
+    "@angular-native/cli-linux-x64": "0.0.1",
+    "@angular-native/cli-win32-x64": "0.0.1"
+  }
+}

@@ -82,13 +82,22 @@ platform entirely and runs once, in the core, over taffy.
 `an` is not confined to this repository. On any app out of `ng new`:
 
 ```bash
-cargo install --path crates/an-cli   # puts `an` on the PATH, once per machine
+npm install -g @angular-native/cli   # puts `an` on the PATH, once per machine
 
 cd my-app                            # an ordinary Angular project
 an init                              # dependencies, tsconfig and entry point
 an add ios                           # writes ios/Info.plist, yours from then on
 an ios                               # to the simulator
 ```
+
+Nothing is cloned. The package carries the SDK as well as the executable — the
+shells' Swift and Java, the core's Rust, `scripts/bundle.mjs` and the
+framework's TypeScript — and one per-host `optionalDependency` carries the
+binary, the way esbuild ships its own. What it does **not** carry is a compiled
+core: `an ios` and `an android` build it with your `cargo`, which is the
+smallest of the three toolchains they already need.
+[guide/installing](https://angular-native.github.io/guide/installing/) has the
+arithmetic behind that and the three places `an` looks for the SDK.
 
 It touches neither `src/main.ts` nor `angular.json`, so `ng build` and
 `ng serve` keep working exactly as before. The whole flow — and why the
@@ -115,7 +124,7 @@ cargo an build --release      # the bundle and nothing else
 there is no simulator to launch into, so it closes the window that was open and
 opens a new one.
 
-Twelve commands, no nested subcommands, every option long-form. The whole
+Thirteen commands, no nested subcommands, every option long-form. The whole
 inventory, with the defaults and the four asymmetries between them, is in
 [reference/cli](https://angular-native.github.io/reference/cli/).
 
@@ -257,6 +266,7 @@ simulator, and it is what most of those scripts drive.
 
 | npm package | What it does |
 |---|---|
+| `packages/cli` | How `an` reaches a machine that never cloned this: the shim, and the SDK payload it ships beside a per-host executable |
 | `packages/runtime` | JS prelude: console, timers, `AbortController`, the command buffer |
 | `packages/platform-native` | `Renderer2`, the platform, `PlatformLocation`, navigation, modules |
 | `packages/primitives` | Every primitive, control and composite |

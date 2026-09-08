@@ -17,6 +17,11 @@
 # repeated one that trampled the user's code, or an `Info.plist` out of step with
 # the manifest are the three ways this has of ruining somebody else's project,
 # and none of them may happen in silence.
+#
+# The last section is the same three commands over again with the one difference
+# that matters to anybody who is not us: the `an` is the one `npm install -g
+# @angular-native/cli` puts on the PATH, the SDK is the payload under a
+# `node_modules`, and there is no checkout and no `AN_HOME`.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -534,6 +539,170 @@ check_manager npm  npm install --no-audit --no-fund
 check_manager bun  bun install
 check_manager pnpm pnpm install
 check_manager yarn yarn install
+
+# ---------------------------------------------------------------------------
+# The same project again, with an `an` that came from npm
+# ---------------------------------------------------------------------------
+#
+# Everything above runs the `an` this repository just compiled, with `AN_HOME`
+# pointing at this repository. That is the one thing somebody installing the CLI
+# does not have, and it hides the whole question: an `an` on the PATH is useless
+# without the shells' Swift, the core's Rust and `scripts/bundle.mjs`, and none
+# of those is in the executable.
+#
+# So the packages are really built, really installed into a prefix of their own,
+# and the same three commands are run in a project outside this repository with
+# `AN_HOME` unset — which is what `sdk_root`'s third rule and `bin/an.mjs` exist
+# for. What is being defended is silent: a path left out of `packages/cli`'s
+# payload does not fail here, it fails on somebody's machine at `an ios`, twenty
+# seconds in, as a `swiftc` with no sources.
+echo
+echo "== an, installed the way somebody who has never cloned this gets it"
+
+npm_check() {
+  local host prefix app log payload manifest output before
+  host="$(node -p 'process.platform + "-" + process.arch')"
+
+  log="$(mktemp)"
+  if ! node scripts/build-cli.mjs --pack --binary "$host=$AN" >"$log" 2>&1; then
+    echo "  skipped  the CLI packages could not be assembled; see $log"
+    return
+  fi
+  ok "the six packages are assembled, with a real executable for $host"
+  rm -f "$log"
+
+  local cli native
+  cli="$(ls "$ROOT/build/npm-cli/angular-native-cli-"[0-9]*.tgz 2>/dev/null | head -1)"
+  native="$(ls "$ROOT/build/npm-cli/angular-native-cli-$host-"*.tgz 2>/dev/null | head -1)"
+  if [ ! -f "$cli" ] || [ ! -f "$native" ]; then
+    ko 'both tarballs come out of the assembly'
+    return
+  fi
+
+  # The payload ships **sources**. An archive in there would mean the release
+  # had started carrying a compiled core, and that is a decision with a
+  # documented answer — see guide/installing — not something to discover from a
+  # tarball that grew by three hundred megabytes.
+  local carried
+  carried="$(tar -tzf "$cli")"
+  contains "$carried" 'package/crates/an-core/src/lib\.rs' \
+    'the payload carries the core as Rust source, for the user cargo to build'
+  contains "$carried" 'package/shells/ios/Sources/' \
+    "the payload carries the shells' Swift, which no host can be built without"
+  contains "$carried" 'package/packages/runtime/runtime\.js' 'the payload carries the JS prelude'
+  contains "$carried" 'package/scripts/bundle\.mjs' 'the payload carries the bundler'
+  if grep -qE -e '^package/.*\.(a|so|dylib|rlib)$' <<<"$carried"; then
+    ko 'the payload ships no compiled object, only sources'
+  else
+    ok 'the payload ships no compiled object, only sources'
+  fi
+
+  # `os` and `cpu` are the whole reason there are five packages: without them
+  # npm would install all five and every machine would download four
+  # executables it cannot run.
+  manifest="$(tar -xzOf "$native" package/package.json)"
+  contains "$manifest" '"os": *\[' "the executable's package is pinned to one os"
+  contains "$manifest" '"cpu": *\[' 'and to one cpu, so npm installs only the matching one'
+
+  # A prefix of its own. Nothing here may touch the machine's real global
+  # `node_modules`, and a check that did would be a check nobody can run twice.
+  prefix="$WORK/npm-prefix"
+  rm -rf "$prefix"
+  mkdir -p "$prefix"
+  log="$(mktemp)"
+  if ! npm install -g --prefix "$prefix" --no-audit --no-fund "$cli" "$native" >"$log" 2>&1; then
+    echo "  skipped  the tarballs could not be installed (no network?); see $log"
+    return
+  fi
+  ok 'npm install -g puts the two packages in, and nothing else'
+
+  payload="$prefix/lib/node_modules/@angular-native/cli"
+  # The four things `validate_sdk` asks for, asked of the installed tree and not
+  # of the tarball: `files` can list a directory npm then leaves out.
+  local missing=""
+  for needed in packages/runtime/runtime.js scripts/bundle.mjs shells crates; do
+    [ -e "$payload/$needed" ] || missing="$missing $needed"
+  done
+  if [ -z "$missing" ]; then
+    ok 'the installed payload has the four things `an` refuses an SDK without'
+  else
+    ko "the installed payload is missing:$missing"
+  fi
+
+  # Outside the repository, and with `AN_HOME` unset: this is the only part of
+  # this file where neither the monorepo climb nor the variable can answer the
+  # question of where the SDK is.
+  app="$(mktemp -d)/my-app"
+  scaffold_project "$app"
+  log="$(mktemp)"
+  if ! (cd "$app" && npm install --no-audit --no-fund >"$log" 2>&1); then
+    echo "  skipped  the throwaway project could not be installed (no network?); see $log"
+    return
+  fi
+
+  npm_an() { (cd "$app" && env -u AN_HOME PATH="$prefix/bin:$PATH" an "$@"); }
+
+  output="$(npm_an --version 2>&1 || true)"
+  contains "$output" '^an ' 'the `an` on the PATH is the shim, and it runs the binary beside it'
+
+  if ! npm_an init >"$log" 2>&1; then
+    ko 'an init goes through with no checkout and no AN_HOME'
+    tail -20 "$log"
+    return
+  fi
+  output="$(cat "$log")"
+  ok 'an init goes through with no checkout and no AN_HOME'
+  contains "$output" 'node_modules/@angular-native/cli' \
+    'and the SDK it found is the payload under node_modules'
+  exists "$app/angular-native.json" 'an init from npm: writes the manifest'
+  exists "$app/node_modules/@angular-native/platform/dist/public-api.js" \
+    'an init from npm: compiles and installs the framework packages'
+
+  if npm_an add ios >"$log" 2>&1 && [ -f "$app/ios/Info.plist" ]; then
+    ok 'an add ios from npm: writes the project Info.plist'
+  else
+    ko 'an add ios from npm: writes the project Info.plist'
+    tail -20 "$log"
+  fi
+
+  if ! npm_an build >"$log" 2>&1; then
+    ko 'an build from npm: produces the bundle'
+    tail -20 "$log"
+    return
+  fi
+  ok 'an build from npm: produces the bundle'
+  output="$(cargo run -q -p an-bridge --example headless -- \
+    "$app/.angular-native/build/bundle/main.js" 3 2>&1 || true)"
+  contains "$output" 'Text#[0-9]+ .*"MyApp"' \
+    "and the bundle runs, with the app's title on a native Text node"
+
+  # A global prefix is very often somewhere the user cannot write, and `cargo`
+  # puts `target/` beside the workspace it compiles unless it is told otherwise.
+  # Nothing may appear in there.
+  if [ -e "$payload/target" ] || [ -e "$payload/build" ]; then
+    ko 'nothing is written into the installed package'
+  else
+    ok 'nothing is written into the installed package'
+  fi
+
+  # And the executable on its own, with no shim to hand it `AN_HOME`. This is
+  # `sdk_root`'s third rule: the climb from the executable finds
+  # `@angular-native/cli` next door, which is the layout npm, bun and yarn all
+  # write.
+  output="$(cd "$app" && env -u AN_HOME "$prefix/lib/node_modules/@angular-native/cli-$host/bin/an" \
+    plugins 2>&1 || true)"
+  contains "$output" 'depends on no plugin|^[a-z]' \
+    'the executable run directly, with no shim, still finds the SDK beside it'
+
+  rm -rf "$(dirname "$app")"
+  rm -f "$log"
+}
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "  skipped  node is not installed on this machine"
+else
+  npm_check
+fi
 
 if [ "$fail" -ne 0 ]; then
   exit 1

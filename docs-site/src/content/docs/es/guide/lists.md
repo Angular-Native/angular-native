@@ -2,7 +2,7 @@
 title: Listas largas
 description: "`an-virtual-list` monta un número fijo de vistas y no crea ninguna más mientras haces scroll — cómo funciona el reciclaje, por qué hay que declarar la altura de fila, y cuándo un `@for` normal es mejor respuesta."
 sidebar:
-  order: 7
+  order: 8
 ---
 
 Un `@for` sobre diez mil filas crea diez mil vistas nativas. En un móvil eso no

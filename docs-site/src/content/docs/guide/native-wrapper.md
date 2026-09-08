@@ -2,7 +2,7 @@
 title: Props and the native wrapper
 description: How much of the real control a template can reach, how a prop travels, and what was deliberately left out of each one.
 sidebar:
-  order: 4
+  order: 5
 ---
 
 Every primitive wraps a real native control. The question this page answers is

@@ -2,7 +2,7 @@
 title: Navegación y el router
 description: El router de Angular sin barra de direcciones — un historial en memoria, una pila nativa que mantiene viva la pantalla de atrás, y por dónde entran el gesto de volver y el botón de Android.
 sidebar:
-  order: 6
+  order: 7
 ---
 
 El router de Angular funciona aquí sin cambios: el mismo `provideRouter`, los

@@ -2,7 +2,7 @@
 title: Firma y distribución
 description: Poner una compilación en un dispositivo real y en una tienda — dónde viven los ajustes, qué tienes que conseguir tú de Apple y de Google, y cuáles de estos caminos no se han ejecutado nunca.
 sidebar:
-  order: 10
+  order: 11
 ---
 
 Todo lo demás de esta documentación corre en un simulador o en un emulador,

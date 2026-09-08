@@ -26,9 +26,19 @@ jobs:
       - run: npm ci
       - run: node scripts/build-packages.mjs
       - run: ./scripts/check-publish.sh
+      # `packages/cli` is skipped, and it is the one package that would install
+      # cleanly and be useless: what is in the directory is a shim and a
+      # manifest, and the SDK payload it needs —`crates/`, `shells/`,
+      # `packages/`, `scripts/bundle.mjs`— is copied in at assembly time by
+      # `scripts/build-cli.mjs`. Publishing it from here would ship the wrapper
+      # with nothing inside. `release.yml`, on the same tag, is what publishes
+      # it, along with the five per-host executables it depends on.
       - name: Publish
         run: |
           for dir in packages/*/; do
+            if [ "$dir" = "packages/cli/" ]; then
+              continue
+            fi
             npm publish "$dir" --provenance --access public || exit 1
           done
         env:

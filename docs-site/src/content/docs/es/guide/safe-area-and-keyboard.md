@@ -2,7 +2,7 @@
 title: El área segura y el teclado
 description: Un solo evento reporta todos los márgenes que reserva el sistema —muesca, barras, bisel y el teclado— y llega en movimiento, una vez por frame, así que el layout viaja con la animación en vez de llegar antes que ella.
 sidebar:
-  order: 8
+  order: 9
 ---
 
 Cada plataforma se guarda partes de la pantalla para sí: una muesca, una barra de

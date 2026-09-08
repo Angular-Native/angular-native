@@ -324,6 +324,35 @@ const DEFAULT_TV: &str = "Apple TV 4K (3rd generation)";
 /// The only headset there is: the visionOS runtime ships one model.
 const DEFAULT_HEADSET: &str = "Apple Vision Pro";
 
+/// Sends `cargo`'s output away from an npm-installed SDK.
+///
+/// The four platform builds run `cargo` with its working directory set to the
+/// SDK, and cargo puts `target/` next to the workspace it is compiling. When the
+/// SDK is a git checkout that is exactly right. When it is
+/// `@angular-native/cli` under a global `node_modules` it is a directory the
+/// user very often cannot write to, and when it is a local one it is a directory
+/// `npm ci` deletes — so a build either fails outright or throws itself away.
+///
+/// The project's own build directory is where every other artefact already
+/// goes, and it is in the `.gitignore` `an init` wrote. Setting the variable
+/// rather than passing `--target-dir` is what keeps the two halves in step:
+/// `Workspace::target_dir` reads the same variable when it goes looking for the
+/// static library afterwards.
+///
+/// Anything the user set wins: whoever has `CARGO_TARGET_DIR` in their
+/// environment meant it.
+fn redirect_cargo_target(workspace: &workspace::Workspace) {
+    if !workspace.sdk_is_npm() || std::env::var_os("CARGO_TARGET_DIR").is_some() {
+        return;
+    }
+    let target = workspace.build_dir().join("target");
+    // SAFETY: nothing in this program has started a thread yet — this is the
+    // statement after `Workspace::discover`, and every command runs below it.
+    // The variable has to be in the environment and not in an argument list
+    // because it is read by the `cargo` each platform module spawns.
+    unsafe { std::env::set_var("CARGO_TARGET_DIR", &target) };
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     // `an init` is the only one that runs where there is nothing to discover
@@ -333,6 +362,7 @@ fn main() -> anyhow::Result<()> {
         return init::init(dir.as_deref(), name.as_deref(), id.as_deref(), *force);
     }
     let workspace = workspace::Workspace::discover()?;
+    redirect_cargo_target(&workspace);
 
     match cli.command {
         Command::Build { app, release } => {

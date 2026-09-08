@@ -2,7 +2,7 @@
 title: The safe area and the keyboard
 description: One event reports every margin the system reserves — notch, bars, bezel and the keyboard — and it arrives moving, once per frame, so the layout travels with the animation instead of arriving before it.
 sidebar:
-  order: 8
+  order: 9
 ---
 
 Every platform keeps parts of the screen for itself: a notch, a status bar, a

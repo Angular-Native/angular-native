@@ -2,7 +2,7 @@
 title: Long lists
 description: "`an-virtual-list` mounts a fixed number of views and never creates another one while you scroll — how the recycling works, why the row height has to be declared, and when a plain `@for` is the better answer."
 sidebar:
-  order: 7
+  order: 8
 ---
 
 A `@for` over ten thousand rows creates ten thousand native views. On a phone

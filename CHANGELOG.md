@@ -20,7 +20,11 @@ a package page:
 - **The npm packages** — `@angular-native/runtime`, `platform`, `primitives`
   and the nine `plugin-*`.
 - **The `an` binary**, which compiles an app and puts the platform bundle
-  together.
+  together. It is published too, as `@angular-native/cli` plus one
+  `@angular-native/cli-<host>` per machine it is cross-compiled for, and the
+  first of those carries the shells, the crates and `scripts/bundle.mjs` — so
+  the binary and the sources it reads are one release by construction and not
+  by discipline.
 - **The wire protocol** between them: twelve opcodes and a `NodeKind` byte for
   every primitive, frozen because a renderer and a core that disagree about a
   byte do not fail, they mount the wrong view. `check-kinds.sh` is what keeps

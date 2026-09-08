@@ -2,7 +2,7 @@
 title: Gestures and animation
 description: The recognisers are the system's, the transforms sit outside layout, and the animation runs on the platform's drawing thread — what that buys you, and what each platform does differently.
 sidebar:
-  order: 5
+  order: 6
 ---
 
 Two things on this page go together more often than not: a gesture reports where

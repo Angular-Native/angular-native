@@ -2,7 +2,7 @@
 title: Signing and distribution
 description: Putting a build on a real device and into a store — where the settings live, what you have to get from Apple and Google yourself, and which of these paths have never been run.
 sidebar:
-  order: 10
+  order: 11
 ---
 
 Everything else in this documentation runs on a simulator or an emulator, signed

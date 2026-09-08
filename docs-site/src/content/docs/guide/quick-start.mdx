@@ -44,17 +44,18 @@ import { Steps, Tabs, TabItem, Aside, CardGrid, LinkCard } from '@astrojs/starli
 
 <Steps>
 
-1. Clone this repository and put `an` on your PATH:
+1. Put `an` on your PATH:
 
    ```bash
-   git clone https://github.com/nesgarbo/angular-native
-   cd angular-native
-   cargo install --path crates/an-cli
+   npm install -g @angular-native/cli
    ```
 
    <Aside type="note">
-   `cargo install` records where it was built from, so `an` knows how to find
-   the framework's sources later, from any directory. `AN_HOME` overrides it.
+   The package carries the SDK as well as the executable — the shells' Swift and
+   Java, the core's Rust, the framework's TypeScript — so there is nothing to
+   clone and no `AN_HOME` to set. What it does not carry is a compiled core:
+   the platform commands build it with your own `cargo`, and
+   [Installing the CLI](/guide/installing/) says what that needs and why.
    </Aside>
 
 2. Create an Angular project, or use one you already have:

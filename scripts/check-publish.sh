@@ -54,11 +54,26 @@ for (const short of shorts) {
   if (p.types && !existsSync(join(dir, p.types))) {
     problems.push(`${p.types} does not exist, so the package ships untyped`)
   }
+  // A package whose product is a command has no `main`, and the same silent
+  // failure applies to its `bin`: npm links the name onto the PATH whether or
+  // not there is a file under it, and the first thing the user sees is the
+  // shell saying the interpreter cannot be found.
+  const bins = Object.entries(p.bin ?? {})
+  for (const [name, path] of bins) {
+    if (!existsSync(join(dir, path))) {
+      problems.push(`bin.${name} points at ${path}, which does not exist`)
+    }
+  }
+  if (!main && !bins.length) {
+    problems.push('neither main nor bin, so nothing about it can be run or imported')
+  }
   if (problems.length) {
     console.log(`  FAIL ${p.name || short}: ${problems.join('; ')}`)
     bad++
-  } else {
+  } else if (main) {
     console.log(`  ok   ${p.name} ships ${main} with its types`)
+  } else {
+    console.log(`  ok   ${p.name} ships the ${bins.map(([name]) => name).join(', ')} command`)
   }
 }
 process.exit(bad ? 1 : 0)
