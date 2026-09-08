@@ -87,6 +87,49 @@ import { NATIVE_PRIMITIVES, type NativeCrownEvent } from '@angular-native/primit
                 <an-text [style.flexGrow]="'1'" [fontSize]="12" [color]="'#64748b'">SF Symbols</an-text>
               </an-view>
 
+              <!--
+                Transforms take no part in the layout: the badge is
+                permanently tilted and still occupies its upright box, so the
+                row does not grow to make room for the corners. That is what
+                makes them cheap, and it is why they are what you follow a
+                finger with.
+              -->
+              <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'12'" [style.width]="'100%'" [style.height]="'26'">
+                <an-view
+                  [style.width]="'40'"
+                  [style.height]="'18'"
+                  [style.alignItems]="'center'"
+                  [style.justifyContent]="'center'"
+                  [backgroundColor]="'#f472b6'"
+                  [borderRadius]="4"
+                  [rotate]="-0.26">
+                  <an-text [fontSize]="10" [color]="'#0b1020'">beta</an-text>
+                </an-view>
+
+                <!--
+                  [animate] is set once and holds for every change after it, so
+                  the button below moves and grows this dot over 220 ms instead
+                  of jumping. What it covers is the frame, the opacity and the
+                  transform, and nothing else: a colour change is still a cut.
+                -->
+                <an-view
+                  [style.width]="'16'"
+                  [style.height]="'16'"
+                  [backgroundColor]="'#6ee7b7'"
+                  [borderRadius]="8"
+                  [animate]="220"
+                  [animateEasing]="'ease-out'"
+                  [translateX]="moved() ? 56 : 0"
+                  [scale]="moved() ? 1.6 : 1"></an-view>
+              </an-view>
+
+              <an-button
+                [title]="moved() ? '← bring the dot back' : 'move the dot →'"
+                [color]="'#0b1020'"
+                [backgroundColor]="'#f472b6'"
+                [borderRadius]="10"
+                (press)="moved.set(!moved())"></an-button>
+
               <an-button
                 [title]="'input →'"
                 [color]="'#0b1020'"
@@ -278,6 +321,12 @@ export class AppComponent {
   readonly direction = signal<'push' | 'pop'>('push')
 
   readonly alerts = signal(true)
+  /**
+   * Where the dot is. It starts moved so that the example shows a transform in
+   * effect on the frame it mounts, rather than only after somebody presses
+   * something.
+   */
+  readonly moved = signal(true)
   readonly brightness = signal(40)
   readonly sets = signal(3)
 

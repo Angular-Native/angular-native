@@ -152,11 +152,41 @@ done
 # Without the comments: this file explains why it does not use them, and
 # explaining it cannot count as using it.
 LAY_OUT="$(grep -vE '^\s*(//|\*)' shells/watchos/Sources/AnNodeView.swift shells/watchos/Sources/AnOverlays.swift \
-  shells/watchos/Sources/AnBorder.swift \
+  shells/watchos/Sources/AnBorder.swift shells/watchos/Sources/AnMotion.swift \
   | grep -nE '\b(VStack|HStack|LazyVStack|LazyHStack|Spacer\(\)|\.padding\()' || true)"
 [ -z "$LAY_OUT" ] && r=0 || r=1
 check $r "the shell lays nothing out: no VStack, no HStack, no padding"
 if [ -n "$LAY_OUT" ]; then echo "$LAY_OUT" | sed 's/^/       /'; fi
+
+# 6b. Movement, which is SwiftUI's and not a drawing of ours.
+#
+#     A transform on this host is three modifiers and an animation is one, and
+#     what was missing was never that SwiftUI could not do it: it was that
+#     nothing carried the numbers. Checking the modifier names is checking that
+#     it is still the system doing the moving — a `Timer` nudging a value frame
+#     by frame would pass every other check here and drop the frame on a watch.
+MOTION="$(grep -vE '^\s*(//|\*)' shells/watchos/Sources/AnMotion.swift \
+  shells/watchos/Sources/AnNodeView.swift)"
+while IFS='|' read -r NEEDLE WHAT; do
+  grep -qF -- "$NEEDLE" <<<"$MOTION" && r=0 || r=1
+  check $r "$WHAT is SwiftUI's own modifier"
+done <<'EOF'
+.scaleEffect(x:|the scale
+.rotationEffect(.radians|the rotation
+.offset(x:|the translation
+.animation(|the animation
+EOF
+
+# And that the transform is applied before the node is placed. `.position`
+# hands back a view the size of the whole container, so a `.scaleEffect` after
+# it scales about that container's centre and the node travels across the
+# screen instead of growing where it stands. A type check cannot see that and a
+# watch shows it immediately.
+PLACED="$(grep -vE '^\s*(//|\*)' shells/watchos/Sources/AnNodeView.swift)"
+MOVES="$(grep -nF '.anTransform(node)' <<<"$PLACED" | head -1 | cut -d: -f1)"
+SITS="$(grep -nF '.position(x:' <<<"$PLACED" | head -1 | cut -d: -f1)"
+if [ -n "$MOVES" ] && [ -n "$SITS" ] && [ "$MOVES" -lt "$SITS" ]; then r=0; else r=1; fi
+check $r "the transform is applied before .position and not after it"
 
 # 7. The examples, mounted with the viewport of a 46 mm Series 11. Without this, a
 #    change in the primitives could leave the watch app unpainted and nobody
@@ -195,6 +225,16 @@ in_controls 'Alert#[0-9]+ .*buttons=' 'the dialog comes down with its buttons'
 in_controls 'Modal#[0-9]+ .*presentation=sheet' 'the sheet comes down saying how it is presented'
 in_controls 'StackView#[0-9]+ .*transition=' 'the stack comes down with the direction of the transition'
 
+# Movement, from a real template. A transform and an animation are props on
+# every primitive, so what has to be proved here is that they survive the trip:
+# the core carries them —`transform` in the resolved tree is its own doing— and
+# the snapshot hands them to the shell. That the shell then applies them is
+# section 2's job, which will not let a field exist on one side only.
+in_controls 'transform rotate=-0\.26' 'the tilted badge keeps its rotation'
+in_controls 'View#[0-9]+ \[52,' 'and takes no part in the layout: the dot beside it is not pushed along'
+in_controls 'transform scale=1\.60 translateX=56\.00' 'the dot comes down moved and scaled'
+in_controls 'animate=220 animateEasing=ease-out' 'and with the duration and the curve it moves with'
+
 # The dialog takes up no room: the system presents it. If it ever did take room,
 # in 248 points of height it would eat half the screen and it would not be
 # obvious why.
@@ -204,17 +244,25 @@ in_controls 'Alert#[0-9]+ \[0,0 0x0\]' 'the dialog takes up no room in the layou
 #    be available.
 if ! grep -q '^nightly' <<<"$(rustup toolchain list 2>/dev/null || true)"; then
   echo "  --   cross-compilation skipped: the nightly toolchain is missing"
-  echo "       rustup toolchain install nightly"
-  echo "       rustup component add rust-src --toolchain nightly"
+  # One command, with the component in it: two lines invite installing the first
+  # and reading the second as optional, and nightly without `rust-src` skips here
+  # all the same. It is the line CI runs.
+  echo "       rustup toolchain install nightly --component rust-src"
 elif ! grep -q 'rust-src (installed)' <<<"$(rustup component list --toolchain nightly 2>/dev/null || true)"; then
   echo "  --   cross-compilation skipped: rust-src is missing from nightly"
   echo "       rustup component add rust-src --toolchain nightly"
 else
+  # The output is kept rather than thrown away. `-Z build-std` compiles `std`
+  # first, so a failure here is as often the toolchain as the crate, and
+  # `2>/dev/null` cannot tell the two apart: it prints FAIL and nothing to act
+  # on. Section 1 of this file keeps its cargo log for the same reason.
+  XLOG="$(mktemp)"
   if cargo +nightly build --quiet -Z build-std=std,panic_abort \
-      -p an-watch --target aarch64-apple-watchos-sim 2>/dev/null; then
+      -p an-watch --target aarch64-apple-watchos-sim >"$XLOG" 2>&1; then
     echo "  ok   an-watch for aarch64-apple-watchos-sim"
   else
     echo "  FAIL an-watch does not cross-compile for aarch64-apple-watchos-sim"
+    tail -30 "$XLOG" | sed 's/^/       /'
     fail=1
   fi
 fi

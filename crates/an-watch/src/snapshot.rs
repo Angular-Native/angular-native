@@ -34,9 +34,9 @@ use crate::host::WatchHost;
 
 #[derive(Serialize)]
 // camelCase on the wire, so Foundation does not have to transform every key on
-// the way in: `JSONDecoder.convertFromSnakeCase` rewrites each one of the sixty
-// keys of every node, and it measured a fifth of the whole decode on a screen
-// of thirty nodes. The field names here stay snake_case, which is what
+// the way in: `JSONDecoder.convertFromSnakeCase` rewrites every one of a node's
+// keys —there are getting on for seventy— and it measured a fifth of the whole
+// decode on a screen of thirty nodes. The field names here stay snake_case, which is what
 // `check-watchos.sh` reads to compare them against Swift's.
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
@@ -89,6 +89,50 @@ pub struct Node {
     pub border_color: Option<[f32; 4]>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub opacity: Option<f32>,
+
+    // ------------------------------------------------------------ transforms
+    //
+    // They take no part in the layout, on purpose and on every host: a node
+    // that has been moved or scaled still occupies the box taffy gave it. That
+    // is what makes them cheap, and it is why they are applied on top of the
+    // frame rather than folded into it.
+    //
+    // Nothing travels for the identity —a zero shift, a scale of one, no
+    // turn—: the shell reads the absent key as "leave it where it is", and a
+    // key on every node to say nothing happened is what `border_radii` already
+    // refuses to be.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub translate_x: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub translate_y: Option<f32>,
+    /// The two axes, with `scale` already folded in: it sets both and
+    /// `scaleX`/`scaleY` override the one they name. It is resolved here so
+    /// the shell reads one number per axis and never learns there were three
+    /// props; it is also the order the directive pushes them in, which is what
+    /// decides it on UIKit, where the last write wins.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scale_x: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scale_y: Option<f32>,
+    /// Radians, which is what the contract says and what the rotate gesture
+    /// reports.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rotate: Option<f32>,
+
+    // ------------------------------------------------------------- animation
+    //
+    // Milliseconds, the way a template writes them; the shell divides. It is
+    // not a value you can see, it says how the ones you can are arrived at,
+    // and what it covers is the frame, the opacity and the transform —
+    // exactly the three things `an-ios` wraps in an animation block.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animate: Option<f32>,
+    /// Only alongside a duration: a delay before an animation nobody asked
+    /// for has nothing to delay.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animate_delay: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub animate_easing: Option<String>,
     /// Only travels when the template switches it off: a control being live
     /// is the normal case, and sending it always would fatten every node for
     /// nothing.
@@ -370,6 +414,16 @@ fn corner_radii_of(host: &WatchHost, id: NodeId) -> Option<[f32; 4]> {
     radii.iter().any(|r| *r != radii[0]).then_some(radii)
 }
 
+/// One axis of the scale, with `scale` already folded in.
+///
+/// `scale` sets both axes and `scaleX`/`scaleY` override the one they name.
+/// That is the order the directive pushes the three props in, and therefore the
+/// order the imperative hosts end up resolving them in, where each one arrives
+/// as its own `set_prop` and the last write wins.
+fn scale_of(host: &WatchHost, id: NodeId, axis: &str) -> Option<f32> {
+    number_of(host, id, axis).or_else(|| number_of(host, id, "scale"))
+}
+
 fn f64_of(host: &WatchHost, id: NodeId, key: &str) -> Option<f64> {
     match host.node(id)?.props.get(key)? {
         PropValue::Number(n) => Some(*n),
@@ -459,6 +513,14 @@ fn node(host: &WatchHost, id: NodeId, overlays: &mut Vec<Node>) -> Option<Node> 
     // shell a border on the very node the host has just refused one on: a field
     // in the snapshot is a promise something will be drawn with it.
     let outline = unpaintable(kind, "borderWidth").is_none();
+    // And whether it has a frame of its own to move, which is the same
+    // question asked of the other family `unpaintable` rules out.
+    let placed = unpaintable(kind, "translateX").is_none();
+    // A duration of zero is no animation. Sending it would have the shell
+    // install a modifier that animates nothing, and the difference between
+    // that and no modifier is a view identity SwiftUI resets when the template
+    // switches the animation on.
+    let animate = placed.then(|| number_of(host, id, "animate").filter(|ms| *ms > 0.0)).flatten();
 
     let built = Node {
         id,
@@ -479,6 +541,21 @@ fn node(host: &WatchHost, id: NodeId, overlays: &mut Vec<Node>) -> Option<Node> 
             .flatten(),
         border_color: outline.then(|| color_of(host, id, "borderColor")).flatten(),
         opacity: number_of(host, id, "opacity"),
+        // Nothing travels for the identity: an absent key is the shell's
+        // "leave it where it is", and the value that comes back when a
+        // template animates a transform away is that same absence.
+        translate_x: placed
+            .then(|| number_of(host, id, "translateX").filter(|v| *v != 0.0))
+            .flatten(),
+        translate_y: placed
+            .then(|| number_of(host, id, "translateY").filter(|v| *v != 0.0))
+            .flatten(),
+        scale_x: placed.then(|| scale_of(host, id, "scaleX")).flatten().filter(|s| *s != 1.0),
+        scale_y: placed.then(|| scale_of(host, id, "scaleY")).flatten().filter(|s| *s != 1.0),
+        rotate: placed.then(|| number_of(host, id, "rotate").filter(|r| *r != 0.0)).flatten(),
+        animate,
+        animate_delay: animate.and(number_of(host, id, "animateDelay")).filter(|ms| *ms > 0.0),
+        animate_easing: animate.and(string_of(host, id, "animateEasing")),
         // A switched-off control is the exception, not the rule: only the
         // `false` travels.
         disabled: bool_of(host, id, "enabled") == Some(false)
@@ -794,27 +871,34 @@ fn warn_unread(host: &WatchHost, id: NodeId, kind: NodeKind) {
 /// `unheard` an event— and it is a function rather than a table for the same
 /// reason they are: the reason has to be written next to the decision.
 pub(crate) fn unpaintable(kind: NodeKind, key: &str) -> Option<&'static str> {
-    // Only the outline family, and only where there is no outline to draw. A
-    // kind the watch does not paint at all has already said so wholesale
-    // through `unsupported`, and repeating it per prop would bury it.
-    if !matches!(
-        key,
-        "borderWidth"
-            | "borderColor"
-            | "borderRadius"
-            | "borderTopLeftRadius"
-            | "borderTopRightRadius"
-            | "borderBottomRightRadius"
-            | "borderBottomLeftRadius"
-    ) {
+    // Only the two the system presents. A kind the watch does not paint at all
+    // has already said so wholesale through `unsupported`, and repeating it per
+    // prop would bury it.
+    if !matches!(kind, NodeKind::Alert | NodeKind::Modal) {
         return None;
     }
-    match kind {
-        NodeKind::Alert | NodeKind::Modal => Some(
+    match key {
+        "borderWidth"
+        | "borderColor"
+        | "borderRadius"
+        | "borderTopLeftRadius"
+        | "borderTopRightRadius"
+        | "borderBottomRightRadius"
+        | "borderBottomLeftRadius" => Some(
             "the system presents a dialog and a sheet, and the app hands it a title, a \
              message and buttons — not a frame. There is no edge of ours to round or to \
              stroke, and drawing one would mean painting a lookalike in front of the \
              real one",
+        ),
+        // The same absent frame, for the family that moves one. `.alert` and
+        // `.sheet` are modifiers on the root: the system decides where the
+        // presentation comes from, how long it takes and where it goes, and it
+        // hands back no view to shift, scale, turn or time.
+        "translateX" | "translateY" | "scale" | "scaleX" | "scaleY" | "rotate" | "animate"
+        | "animateDelay" | "animateEasing" => Some(
+            "the system presents a dialog and a sheet and animates them itself. There is no \
+             frame of ours here to move, scale or turn, and SwiftUI offers no way into the \
+             timing of a presentation it owns",
         ),
         _ => None,
     }
@@ -840,6 +924,21 @@ pub(crate) fn reads(kind: NodeKind, key: &str) -> bool {
             | "opacity"
             | "testID"
             | "enabled"
+            // Transforms and the animation that carries the node to its next
+            // one. They go here rather than per kind for the same reason the
+            // outline does: on the watch they are not a property of a view —
+            // there are no views — but modifiers hung on the frame taffy gave,
+            // and every node has one of those. Where there is no frame,
+            // `unpaintable` has already said so with the reason.
+            | "translateX"
+            | "translateY"
+            | "scale"
+            | "scaleX"
+            | "scaleY"
+            | "rotate"
+            | "animate"
+            | "animateDelay"
+            | "animateEasing"
     ) {
         return true;
     }

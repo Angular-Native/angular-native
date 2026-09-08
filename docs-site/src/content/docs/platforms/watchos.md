@@ -71,15 +71,21 @@ Colours are resolved to 0..1 RGBA in Rust. Swift never parses `#rrggbb`.
 prebuilt `std`. It has to be built on the spot, and that needs nightly:
 
 ```bash
-rustup toolchain install nightly
-rustup component add rust-src --toolchain nightly
+rustup toolchain install nightly --component rust-src
 ```
 
+One command, and it is the one CI runs. Nightly without `rust-src` skips here
+exactly as no nightly at all does, so the component is not an optional second
+step.
+
 That is why `an watchos` calls `cargo +nightly` rather than the toolchain in
-`rust-toolchain.toml`, which pins stable with the two iOS targets and nothing
-else. `check-watchos.sh` skips the cross-compilation step — saying so — when it
-cannot find a nightly with `rust-src`: somebody missing a toolchain should not
-bring down the rest of the checks.
+`rust-toolchain.toml`, which pins stable with the two iOS and two Android
+targets — every target the suite cross-compiles to whose `std` rustup can
+install. The three tier-3 Apple ones are deliberately absent from it: rustup
+cannot install what it does not ship. `check-watchos.sh` skips the
+cross-compilation step — saying so — when it cannot find a nightly with
+`rust-src`: somebody missing a toolchain should not bring down the rest of the
+checks.
 
 There is no `.xcodeproj`. `an watchos` calls `xcrun swiftc` directly with
 `-sdk watchsimulator`, `-target arm64-apple-watchos11.0-simulator` and
@@ -97,7 +103,7 @@ bring the haptics, the highlight and the crown behaviour watchOS gives them.
 
 | Primitive | What it is on the watch |
 |---|---|
-| `an-view` | `ZStack(alignment: .topLeading)` — background, corners (one radius or four), border, opacity and whatever gestures the template asks for. |
+| `an-view` | `ZStack(alignment: .topLeading)` — background, corners (one radius or four), border, opacity, transform and whatever gestures the template asks for. |
 | `an-text` | `Text`. Font, weight, italic, family, `letterSpacing`, underline and strikethrough, alignment and `numberOfLines`. Measured with the real `UIFont`. |
 | `an-button` | `Button` with `.buttonStyle(.plain)`: the highlight and the haptics are the system's, the background is the app's. |
 | `an-scroll-view` | `ScrollView(.vertical)`. The crown scrolls it because SwiftUI scrolls it — that is not something worth imitating. |
@@ -111,7 +117,7 @@ bring the haptics, the highlight and the crown behaviour watchOS gives them.
 | `an-text-input` | `TextField` / `SecureField`. Tapping it opens the watch's **own** input screen — dictation, scribble or keyboard — and hands the text back. |
 | `an-select` | `Picker().labelsHidden()`: the wheel the crown turns. There is no dropdown on a watch. |
 | `an-date-picker` | `DatePicker`, the watch's dial picker. |
-| `an-stack-view` | `ZStack` showing the last child, with transitions: `pop` comes in leading and leaves trailing, `none` is the identity, and the default is the reverse. `.easeOut` over 0.25 s. |
+| `an-stack-view` | `ZStack` showing the last child, with transitions: `pop` comes in leading and leaves trailing, `none` is the identity, and the default is the reverse. `.easeOut` over 0.25 s, or whatever `[animate]` says. |
 | `an-alert` | `.alert`, with its buttons and its `(select)`. With no buttons it gets an `OK`. |
 | `an-modal` | `.sheet`, or `.fullScreenCover` when `[presentation]` is `fullScreen`. |
 
@@ -154,6 +160,52 @@ The shell draws `Color.clear` at the laid-out size on purpose.
 `check-watchos.sh` checks that the supported list and the unsupported list
 together cover the whole vocabulary, and that no primitive appears in both or in
 neither.
+
+## Moving things
+
+`[animate]`, `[translateX]`, `[translateY]`, `[scale]`, `[scaleX]`, `[scaleY]`
+and `[rotate]` are base props — every primitive has them — and on the watch each
+one is a SwiftUI modifier.
+
+| Prop | On the watch |
+|---|---|
+| `[translateX]`, `[translateY]` | `.offset(x:y:)`. |
+| `[scale]`, `[scaleX]`, `[scaleY]` | `.scaleEffect(x:y:)`. `scale` sets both axes and the two named ones override the axis they name; the three are folded into two in Rust, so the shell reads one number per axis. |
+| `[rotate]` | `.rotationEffect(.radians:)`. Radians, the unit `(rotation)` reports. |
+| `[animate]`, `[animateDelay]`, `[animateEasing]` | `.animation(_:value:)`, `ease-out` by default, `.delay` when there is one. Milliseconds in the template, seconds in SwiftUI. |
+
+SwiftUI is a **better** fit for this than UIKit, not a worse one: `UIView.animate`
+needs the starting state in place before the block is entered, and here the value
+the view came from is still in the view tree. What was missing was never the
+drawing — nothing carried the numbers across.
+
+Three things are decided in Rust or in the placement, not in the drawing:
+
+- **A transform takes no part in the layout.** taffy placed the node and none of
+  this moves it back: a scaled view still occupies its unscaled box. That is the
+  contract on every host, and it is what makes a transform cheap enough to
+  follow a finger with.
+- **The order is scale, then rotate, then translate**, which is the order
+  `an-ios` multiplies its `CGAffineTransform` in. The other way round the
+  rotation turns the translation with it, and dragging something tilted goes off
+  diagonally instead of following the finger.
+- **The modifiers go before `.position`.** `.position` hands back a view the size
+  of the whole container with the content placed inside it, so a `.scaleEffect`
+  after it would scale about *that* centre and the node would travel across the
+  screen instead of growing where it stands.
+
+What `[animate]` covers is the frame, the opacity and the transform — the three
+things `an-ios` puts inside an animation block. A colour or a label changing is a
+cut on every host. The identity never travels: a zero shift, a scale of one and
+no turn are an absent key, which is also what a template animating a transform
+back to nothing produces.
+
+The animation modifier is attached only to the nodes that ask for one, rather
+than `.animation(nil, value:)` on every node in the tree: an `an-stack-view`
+plays a transition on its screens, and a stray animation scope reaching into it
+is not the kind of thing a check finds later. The cost is that switching
+`[animate]` on or off changes the branch, and with it the node's identity, so the
+first frame after it is turned on is not animated.
 
 ## The digital crown
 
@@ -314,9 +366,9 @@ warning per frame is an unreadable log:
   deliberately not the same message as the one above: "nobody reads this yet" is
   a gap somebody can close and "there is nothing here to draw on" is not, and an
   app author who cannot tell them apart waits for a release that is never
-  coming. A `[borderWidth]` on an `an-alert` is the case that exists today — the
-  system presents the dialog and the app hands it a title, a message and
-  buttons, not a frame.
+  coming. A `[borderWidth]` or a `[rotate]` on an `an-alert` are the cases that
+  exist today — the system presents the dialog and the app hands it a title, a
+  message and buttons, not a frame to stroke, to move or to time.
 - **An event that cannot be delivered**, warned once per kind and event name.
 - **A primitive that is not drawn**, with the SDK's reason.
 
@@ -387,11 +439,14 @@ up.
   module name reached at run time that is not there is rejected with the name
   *and* the reason there is nothing under it, which is not the message a typo
   would get.
-- **Animation and transforms.** `[animate]`, `translateX`, `scale`, `rotate`.
-  In SwiftUI these are `withAnimation` and `.offset`/`.scaleEffect`, but the
-  model is rebuilt whole on every snapshot and an animation needs to know where
-  it came from. The stack view already animates its screens in and out, which is
-  the most visible case.
+- **Moving a dialog or a sheet.** Everywhere else this is done now:
+  `[animate]`, `[translateX]`, `[scale]` and `[rotate]` are `.offset`,
+  `.scaleEffect`, `.rotationEffect` and `.animation(_:value:)` on the frame
+  taffy gave, and SwiftUI needs no starting state handed to it because the value
+  the view came from is still in the tree. An `an-alert` and an `an-modal` have
+  no such frame: `.alert` and `.sheet` are modifiers on the root, and the system
+  decides where the presentation comes from and how long it takes. Those props
+  are refused there, with the reason, rather than quietly dropped.
 - **Per-side borders.** There are none, here or anywhere else in the project.
   `[borderWidth]` is one number and it is drawn; `borderTopWidth` and its three
   siblings are *layout* styles — taffy resolves them, they inset the children

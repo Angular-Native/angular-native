@@ -537,6 +537,142 @@ mod tests {
         assert_eq!(root.children[2].border_width, None);
     }
 
+    /// Transforms and the animation that carries a node to its next frame.
+    ///
+    /// Three things are pinned here and each of them is a decision the shell
+    /// depends on. `scale` is folded into the two axes in Rust, so Swift reads
+    /// one number per axis and never learns there were three props. The
+    /// identity does not travel at all, which is also what a template animating
+    /// a transform back to nothing has to produce. And `animateDelay` and
+    /// `animateEasing` only travel beside a duration, because on their own they
+    /// have nothing to delay or to shape.
+    #[test]
+    fn the_snapshot_carries_the_transform_and_the_animation() {
+        let mut tree = ShadowTree::new();
+        tree.create_node(1, NodeKind::View).unwrap();
+        tree.set_style(1, "width", "208").unwrap();
+        tree.set_style(1, "height", "248").unwrap();
+        tree.set_root(1).unwrap();
+
+        // `scale` sets both axes and `scaleY` overrides the one it names,
+        // which is the order the directive pushes the three props in.
+        tree.create_node(2, NodeKind::View).unwrap();
+        tree.set_style(2, "height", "40").unwrap();
+        tree.set_prop(2, "translateX", PropValue::Number(12.0)).unwrap();
+        tree.set_prop(2, "scale", PropValue::Number(2.0)).unwrap();
+        tree.set_prop(2, "scaleY", PropValue::Number(3.0)).unwrap();
+        tree.set_prop(2, "rotate", PropValue::Number(0.5)).unwrap();
+        tree.set_prop(2, "animate", PropValue::Number(200.0)).unwrap();
+        tree.set_prop(2, "animateDelay", PropValue::Number(50.0)).unwrap();
+        tree.set_prop(2, "animateEasing", PropValue::Str("linear".into())).unwrap();
+        tree.insert_child(1, 2, 0).unwrap();
+
+        // The identity, written out in full. None of it travels: an absent key
+        // is the shell's "leave it where it is", and a key on every node saying
+        // nothing happened is what the snapshot exists not to send.
+        tree.create_node(3, NodeKind::View).unwrap();
+        tree.set_style(3, "height", "40").unwrap();
+        tree.set_prop(3, "translateX", PropValue::Number(0.0)).unwrap();
+        tree.set_prop(3, "translateY", PropValue::Number(0.0)).unwrap();
+        tree.set_prop(3, "scale", PropValue::Number(1.0)).unwrap();
+        tree.set_prop(3, "rotate", PropValue::Number(0.0)).unwrap();
+        // A duration of zero is no animation, and with no animation there is
+        // nothing for the delay or the curve to apply to.
+        tree.set_prop(3, "animate", PropValue::Number(0.0)).unwrap();
+        tree.set_prop(3, "animateDelay", PropValue::Number(50.0)).unwrap();
+        tree.set_prop(3, "animateEasing", PropValue::Str("ease-in".into())).unwrap();
+        tree.insert_child(1, 3, 1).unwrap();
+
+        let mut mount = MountSide::new(WatchHost::new(new_event_queue()));
+        let measurer = WatchMeasurer::new(Default::default());
+        mount.apply(&tree.commit((208.0, 248.0), &measurer).unwrap());
+        let root = crate::snapshot::snapshot(mount.host()).root.unwrap();
+
+        let moved = &root.children[0];
+        assert_eq!(moved.translate_x, Some(12.0));
+        assert_eq!(moved.translate_y, None, "a shift nobody asked for is not sent");
+        assert_eq!(moved.scale_x, Some(2.0), "[scale] reaches the axis nothing overrode");
+        assert_eq!(moved.scale_y, Some(3.0), "and [scaleY] overrides the one it names");
+        assert_eq!(moved.rotate, Some(0.5));
+        assert_eq!(moved.animate, Some(200.0), "milliseconds, as the template wrote them");
+        assert_eq!(moved.animate_delay, Some(50.0));
+        assert_eq!(moved.animate_easing.as_deref(), Some("linear"));
+
+        let still = &root.children[1];
+        assert_eq!(still.translate_x, None);
+        assert_eq!(still.translate_y, None);
+        assert_eq!(still.scale_x, None);
+        assert_eq!(still.scale_y, None);
+        assert_eq!(still.rotate, None);
+        assert_eq!(still.animate, None);
+        assert_eq!(still.animate_delay, None, "there is no animation to delay");
+        assert_eq!(still.animate_easing, None, "and none to shape");
+
+        // And the whole family is read, so none of it leaves through the
+        // "nobody looks at this" warning that means a gap somebody can close.
+        for key in [
+            "translateX",
+            "translateY",
+            "scale",
+            "scaleX",
+            "scaleY",
+            "rotate",
+            "animate",
+            "animateDelay",
+            "animateEasing",
+        ] {
+            assert!(crate::snapshot::reads(NodeKind::View, key), "[{key}] is applied on the watch");
+            assert!(crate::snapshot::unpaintable(NodeKind::View, key).is_none());
+        }
+    }
+
+    /// A dialog and a sheet are presented by the system, so neither an outline
+    /// nor a transform on them is a gap somebody can close later: there is no
+    /// frame of ours to draw on or to move.
+    #[test]
+    fn a_transform_on_a_dialog_is_refused_with_the_reason() {
+        for kind in [NodeKind::Alert, NodeKind::Modal] {
+            for key in [
+                "translateX",
+                "translateY",
+                "scale",
+                "scaleX",
+                "scaleY",
+                "rotate",
+                "animate",
+                "animateDelay",
+                "animateEasing",
+            ] {
+                assert!(
+                    crate::snapshot::unpaintable(kind, key).is_some(),
+                    "{kind:?} has no frame of its own to apply [{key}] to and has to say so"
+                );
+            }
+        }
+
+        // And what was refused does not travel: a field in the snapshot is a
+        // promise the shell will draw with it.
+        let mut tree = ShadowTree::new();
+        tree.create_node(1, NodeKind::View).unwrap();
+        tree.set_style(1, "width", "208").unwrap();
+        tree.set_style(1, "height", "248").unwrap();
+        tree.set_root(1).unwrap();
+        tree.create_node(2, NodeKind::Alert).unwrap();
+        tree.set_prop(2, "visible", PropValue::Bool(true)).unwrap();
+        tree.set_prop(2, "translateX", PropValue::Number(20.0)).unwrap();
+        tree.set_prop(2, "rotate", PropValue::Number(0.4)).unwrap();
+        tree.set_prop(2, "animate", PropValue::Number(300.0)).unwrap();
+        tree.insert_child(1, 2, 0).unwrap();
+
+        let mut mount = MountSide::new(WatchHost::new(new_event_queue()));
+        let measurer = WatchMeasurer::new(Default::default());
+        mount.apply(&tree.commit((208.0, 248.0), &measurer).unwrap());
+        let alert = &crate::snapshot::snapshot(mount.host()).overlays[0];
+        assert_eq!(alert.translate_x, None);
+        assert_eq!(alert.rotate, None);
+        assert_eq!(alert.animate, None);
+    }
+
     /// A dialog and a sheet are presented by the system, so an outline on them
     /// is not a gap somebody can close later: there is no edge of ours to draw
     /// on. The host has to say that, and say it differently from "nobody reads

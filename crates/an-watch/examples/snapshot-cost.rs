@@ -9,8 +9,8 @@
 //!
 //! Half of the answer is not here. Rust's half of a changed frame is tens of
 //! microseconds; Swift's `JSONDecoder` is around seven times that, because the
-//! synthesised `init(from:)` asks for all sixty optional keys of `AnNode` on
-//! every node whether they were sent or not. `AN_DUMP=/tmp/screen.json` writes
+//! synthesised `init(from:)` asks for every optional key of `AnNode` —getting
+//! on for seventy of them— on every node, whether they were sent or not. `AN_DUMP=/tmp/screen.json` writes
 //! the exact bytes out so the other half can be timed against `AnTree.swift`'s
 //! own structs. Optimising what this file prints without looking at that would
 //! be sharpening the cheaper end.

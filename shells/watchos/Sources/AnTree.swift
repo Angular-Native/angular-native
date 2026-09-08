@@ -91,6 +91,25 @@ struct AnNode: Decodable, Identifiable, Equatable {
     let borderWidth: Double?
     let borderColor: [Double]?
     let opacity: Double?
+
+    /// Where the node is drawn relative to where taffy put it. Rust has
+    /// already folded `scale` into the two axes and left the identity out
+    /// altogether, so an absent key means "leave it alone". `AnMotion` is what
+    /// turns these into modifiers.
+    let translateX: Double?
+    let translateY: Double?
+    let scaleX: Double?
+    let scaleY: Double?
+    /// Radians, the unit the contract uses and the one `(rotation)` reports.
+    let rotate: Double?
+
+    /// How long this node takes to reach its next frame, opacity or transform,
+    /// in milliseconds. Absent means the change is a jump. `animateDelay` only
+    /// ever arrives beside a duration.
+    let animate: Double?
+    let animateDelay: Double?
+    let animateEasing: String?
+
     /// Whether this node keeps its children inside its own frame — the
     /// resolved `overflow`. Absent means false: the core leaves the key out
     /// rather than send it on every node. See `anClips`.

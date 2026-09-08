@@ -32,6 +32,23 @@ struct AnNodeView: View {
     let crownFocus: FocusState<UInt32?>.Binding
 
     var body: some View {
+        // The animation is outermost so that what it covers is everything
+        // under it: the frame, the placement, the transform and the opacity
+        // each `case` applies. It is attached only when the template asked for
+        // one, rather than `.animation(nil, value:)` on every node in the
+        // tree: an `an-stack-view` plays a transition on its screens, and a
+        // scope that reaches into it is not something a grep can catch later.
+        // The cost is that switching `[animate]` on or off changes the branch
+        // and with it the node's identity, which is one frame not animated the
+        // first time it is turned on.
+        if let animation = node.anAnimation {
+            placed.animation(animation, value: node.anMotion)
+        } else {
+            placed
+        }
+    }
+
+    private var placed: some View {
         content
             .frame(width: node.width, height: node.height)
             // The outline goes here, on the frame taffy gave and before the
@@ -39,6 +56,11 @@ struct AnNodeView: View {
             // belongs to every node and not to a kind. `AnBorder` is what says
             // why there is one width and not four.
             .anBorder(node)
+            // And the transform on top of the outline, so the line scales and
+            // turns with the box it draws — which is what a `CALayer` border
+            // does under a `CGAffineTransform` on the phone. `AnMotion` is what
+            // says why it cannot go after `.position`.
+            .anTransform(node)
             .position(x: node.x + node.width / 2, y: node.y + node.height / 2)
             // Accessibility goes here and not in every `case` of `content`
             // for the same reason the frame does: it belongs to every node,
@@ -131,7 +153,11 @@ struct AnNodeView: View {
         // animation moves the child's frame and only `clipsToBounds` stops it.
         // A stack meant to contain its transition asks for `overflow: hidden`.
         .anClip(node)
-        .animation(.easeOut(duration: 0.25), value: node.children?.last?.id)
+        // 0.25 s of ease-out unless the stack said otherwise. A stack carrying
+        // `[animate]` is a template asking for its screens to take that long,
+        // and honouring it here costs nothing; without one this is the
+        // transition the watch has always played.
+        .animation(node.anAnimation ?? .easeOut(duration: 0.25), value: node.children?.last?.id)
     }
 
     /// Which way a screen comes in and goes out.
