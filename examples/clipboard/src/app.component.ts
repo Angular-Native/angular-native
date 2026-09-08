@@ -30,7 +30,21 @@ const PHRASES = [
       [style.gap]="'16'"
       [backgroundColor]="'#0b1020'">
 
-      <an-text [fontSize]="28" [fontWeight]="'bold'" [color]="'#f4f7ff'">clipboard</an-text>
+      <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'12'">
+        <!--
+          This PNG is not in this example. It belongs to the plugin —
+          packages/plugin-clipboard/resources/clipboard-mark.png — and it reaches
+          the bundle because the plugin's package.json names the directory it is
+          in. A plugin that could only ship code had to draw its own artwork or
+          go without.
+        -->
+        <an-image
+          [source]="'clipboard-mark.png'"
+          [resizeMode]="'contain'"
+          [style.width]="'44'"
+          [style.height]="'44'" />
+        <an-text [fontSize]="28" [fontWeight]="'bold'" [color]="'#f4f7ff'">clipboard</an-text>
+      </an-view>
 
       <an-text [fontSize]="14" [color]="'#9fb0d4'">
         one plugin: an npm package, Swift, Java and this line of TypeScript

@@ -83,9 +83,13 @@ echo
 # That the number of commands the pages claim is the number clap has.
 "$ROOT/scripts/check-cli-commands.sh"
 "$ROOT/scripts/check-platform-gaps.sh"
+# That a check cannot report a failure that belongs to the shell rather than to
+# what it was checking.
+"$ROOT/scripts/check-script-pipes.sh"
 "$ROOT/scripts/check-publish.sh"
 "$ROOT/scripts/check-plugin-sources.sh"
 "$ROOT/scripts/check-router.sh"
+"$ROOT/scripts/check-deep-links.sh"
 "$ROOT/scripts/check-controls.sh"
 "$ROOT/scripts/check-measure.sh"
 "$ROOT/scripts/check-gestures.sh"
@@ -127,6 +131,13 @@ echo
 # of the above because it builds the same example, and its last step reads the
 # tree that build produces.
 "$ROOT/scripts/check-plugin-views.sh"
+
+echo
+# The other thing a plugin contributes that is not a method: the files its code
+# reads by name. It goes here for the same reason as the two above —the same
+# example, the same build directory— and it ends by launching a real Mac window
+# to see that a PNG the app does not own is on the screen.
+"$ROOT/scripts/check-plugin-resources.sh"
 
 echo
 # What is not a plugin: the module every host is supposed to have compiled in.

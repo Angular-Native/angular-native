@@ -55,7 +55,8 @@ keyed by platform:
     },
     "macos": {
       "identity": "Developer ID Application",
-      "notaryProfile": "an-notary"
+      "notaryProfile": "an-notary",
+      "profile": "macos/profiles/developer-id.provisionprofile"
     },
     "android": {
       "keystore": "../secrets/release.keystore",
@@ -74,10 +75,46 @@ keyed by platform:
 | `ios.profile` | Path to the `.mobileprovision`, relative to the project. |
 | `macos.identity` | Same, and it is nearly always `Developer ID Application`. |
 | `macos.notaryProfile` | The **name** of a `notarytool` keychain profile. Not a credential. |
+| `macos.profile` | Path to a macOS `.provisionprofile`, relative to the project. Only needed when a plugin asks for a restricted entitlement — see below. |
 | `android.keystore` | Path to the keystore, relative to the project. |
 | `android.keyAlias` | Which key inside it. |
 | `android.storePasswordEnv` | The **name of an environment variable**. Defaults to `AN_ANDROID_KEYSTORE_PASSWORD`. |
 | `android.keyPasswordEnv` | Same, defaulting to `AN_ANDROID_KEY_PASSWORD`, and to the store password when that variable is unset. |
+
+### A plugin's entitlements on the Mac
+
+Distribution needs no provisioning profile: a `.app` is signed with a Developer
+ID certificate and notarised, and neither step involves one. **An entitlement
+does.** macOS splits them in two:
+
+- The `com.apple.security.` ones — the hardened-runtime relaxations, the sandbox
+  — are restrictions the app puts on itself. Anybody may sign them, ad hoc
+  included, and `an macos` always writes the two the engine cannot live without.
+- Everything else — `keychain-access-groups`, `application-identifier`,
+  `com.apple.developer.*`, the app groups — are permissions the *system* grants,
+  and it grants them only to an app carrying a profile that authorises them. A
+  certificate on its own is not enough.
+
+An `.app` that carries one of the second kind without the profile is **killed the
+instant it launches**: `Killed: 9`, nothing in the log about entitlements, and
+from the outside it is a crash in the app. So:
+
+| What you run | What happens to `keychain-access-groups` |
+|---|---|
+| `an macos` | Left out, with a warning naming the plugin that asked. The plugin falls back to what it can do without it and says so at run time. |
+| `an macos --sign` with no `macos.profile` | The build stops, naming the plugin and the entitlement. There is no artefact, because the only artefact available would be one that never runs. |
+| `an macos --sign` with a profile that does not carry it | Same refusal, naming the profile too. Nothing may be signed in that the profile does not carry. |
+| `an macos --sign` with a profile that carries it | Written into the signature, and the profile goes into the bundle as `Contents/embedded.provisionprofile`. |
+
+The profile and the certificate have to belong to the same account, and that is
+checked after signing: `codesign` does not mind, and the system says so by
+killing the app.
+
+The profile itself comes from
+[the developer portal](https://developer.apple.com/account/resources/profiles/list)
+— a macOS profile for this app id, with the capability enabled — and it needs
+the paid Apple Developer Program. The app id it has to be for is the Mac
+bundle's: the project's `bundleId` with `.mac` on the end.
 
 There is no `macos.team`, on purpose. Nothing on that platform needs it: the
 certificate carries the team and `notarytool` gets it from the keychain profile.
@@ -95,6 +132,7 @@ Every setting has an environment variable that overrides the file:
 | `AN_IOS_PROFILE` | `signing.ios.profile` |
 | `AN_MACOS_IDENTITY` | `signing.macos.identity` |
 | `AN_MACOS_NOTARY_PROFILE` | `signing.macos.notaryProfile` |
+| `AN_MACOS_PROFILE` | `signing.macos.profile` |
 | `AN_ANDROID_KEYSTORE` | `signing.android.keystore` |
 | `AN_ANDROID_KEY_ALIAS` | `signing.android.keyAlias` |
 | `AN_BUNDLETOOL` | Where `bundletool.jar` is |

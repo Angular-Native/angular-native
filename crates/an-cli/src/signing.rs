@@ -685,9 +685,17 @@ pub fn parse_identities(listing: &str) -> Vec<(String, String)> {
 // macOS
 // ---------------------------------------------------------------------------
 
-/// What a Developer ID build needs. There is no provisioning profile here: an
-/// app distributed outside the App Store is signed with a Developer ID
-/// certificate and notarised, and neither step involves a profile.
+/// What a Developer ID build needs.
+///
+/// **Distribution needs no provisioning profile; an entitlement does.** Those
+/// are two questions, and they have different answers. Signing a `.app` with a
+/// Developer ID certificate and notarising it involve no profile at all. But
+/// macOS grants a *restricted* entitlement —`keychain-access-groups` and the
+/// rest of the list in `macos.rs`— only to an app carrying a profile that
+/// authorises it, whoever signed it, and the punishment for carrying one without
+/// the profile is `Killed: 9` before the app's first line runs, with nothing in
+/// the log. So the profile is optional here, and exactly as optional as the
+/// entitlements are: an app no plugin asks an entitlement for never needs one.
 pub struct Macos {
     pub identity: String,
     pub identity_name: String,
@@ -695,9 +703,21 @@ pub struct Macos {
     /// and the app-specific password behind it live in the keychain, put there
     /// once by `xcrun notarytool store-credentials`.
     pub notary_profile: Option<String>,
+    /// The `.provisionprofile`, when the project has one. It goes into the
+    /// bundle as `Contents/embedded.provisionprofile`.
+    pub profile: Option<PathBuf>,
+    /// Its name as it reads in the developer portal, for saying it out loud.
+    pub profile_name: Option<String>,
+    /// The profile's `Entitlements` dictionary — what the system will actually
+    /// grant. Empty when there is no profile, which is the honest value: with
+    /// none, nothing restricted is granted.
+    pub profile_entitlements: Map<String, Value>,
 }
 
-pub fn macos(settings: &Settings, notarising: bool) -> Result<Macos> {
+/// `bundle_id` is the Mac bundle's, suffix and all: a profile is tied to one app
+/// id, and the one that has to match is the identifier the `.app` will carry,
+/// not the one the project writes in its manifest.
+pub fn macos(settings: &Settings, notarising: bool, bundle_id: &str) -> Result<Macos> {
     // There is no `team` here on purpose: on macOS nothing needs it. The
     // certificate carries the team, and notarytool gets it from the keychain
     // profile. A key in the manifest that changes nothing is a key somebody
@@ -705,9 +725,11 @@ pub fn macos(settings: &Settings, notarising: bool) -> Result<Macos> {
     let block = "  \"signing\": {\n    \
                  \"macos\": {\n      \
                  \"identity\": \"Developer ID Application\",\n      \
-                 \"notaryProfile\": \"an-notary\"\n    }\n  }";
+                 \"notaryProfile\": \"an-notary\",\n      \
+                 \"profile\": \"macos/profiles/developer-id.provisionprofile\"\n    }\n  }";
     let variables = "    export AN_MACOS_IDENTITY='Developer ID Application'\n\
-                     \x20   export AN_MACOS_NOTARY_PROFILE=an-notary";
+                     \x20   export AN_MACOS_NOTARY_PROFILE=an-notary\n\
+                     \x20   export AN_MACOS_PROFILE=/path/to/profile.provisionprofile";
     let wanted = settings
         .value("macos", "identity", "AN_MACOS_IDENTITY")
         .ok_or_else(|| settings.missing("macos", "an macos --sign", block, variables))?;
@@ -741,12 +763,60 @@ pub fn macos(settings: &Settings, notarising: bool) -> Result<Macos> {
             settings.where_from()
         ));
     }
+    // The profile is read here, in the same pass, so that a third errand is not
+    // discovered after the first two have been run.
+    let mut profile_path = None;
+    let mut profile_name = None;
+    let mut profile_entitlements = Map::new();
+    if let Some(path) = settings.file("macos", "profile", "AN_MACOS_PROFILE") {
+        match read_macos_profile(settings, &path, bundle_id) {
+            Ok(facts) => {
+                profile_name = Some(facts.name);
+                profile_entitlements = facts.entitlements;
+                profile_path = Some(path);
+            }
+            Err(error) => problems.push(format!("{error}")),
+        }
+    }
+
     if !problems.is_empty() {
         bail!("{}\nSee {DOCS}", problems.join("\n\n"));
     }
 
     let (identity, identity_name) = identity.expect("with no problems there is an identity");
-    Ok(Macos { identity, identity_name, notary_profile })
+    Ok(Macos {
+        identity,
+        identity_name,
+        notary_profile,
+        profile: profile_path,
+        profile_name,
+        profile_entitlements,
+    })
+}
+
+/// Reads and checks a macOS `.provisionprofile`.
+///
+/// It is the same file format as the phone's `.mobileprovision` —a plist in a
+/// CMS envelope— and it is read with the same three questions asked of it: is it
+/// readable, has it expired, is it about this app. A profile for another app is
+/// worth naming here rather than at `codesign` time, which says only that an
+/// entitlement is "not allowed".
+fn read_macos_profile(settings: &Settings, path: &Path, bundle_id: &str) -> Result<ProfileFacts> {
+    settings.check_not_committed(path, "provisioning profile")?;
+    if !path.is_file() {
+        bail!(
+            "{} is missing, and it is the provisioning profile the entitlements are \
+             granted by.\n\
+             Download it from https://developer.apple.com/account/resources/profiles/list, \
+             choosing a macOS profile for this app id.",
+            path.display()
+        );
+    }
+    let decoded = decode_profile(path)?;
+    let facts = ProfileFacts::parse(&decoded, path)?;
+    facts.check_not_expired(path, &now_iso8601())?;
+    facts.check_bundle_id(path, bundle_id)?;
+    Ok(facts)
 }
 
 /// Same lookup as on iOS, with a different sentence when there is nothing.

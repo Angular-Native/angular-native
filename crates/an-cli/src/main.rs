@@ -348,7 +348,12 @@ fn main() -> anyhow::Result<()> {
             plugins::list(&workspace, &found);
             match platform {
                 Some(platform) => {
-                    plugins::require(&found, platform.into(), &std::collections::BTreeSet::new())
+                    plugins::require(&found, platform.into(), &std::collections::BTreeSet::new())?;
+                    // The resources are not per platform, so this says the same
+                    // thing whichever one was named — but it is only asked when
+                    // one was, because that is the flag that means "tell me
+                    // whether this app can be built" rather than "list them".
+                    resources::check(&workspace, &app, &found)
                 }
                 None => Ok(()),
             }
@@ -484,7 +489,7 @@ fn main() -> anyhow::Result<()> {
             // start existing because a compilation ran first.
             let identity = if sign || notarize {
                 let settings = signing::Settings::read(&workspace)?;
-                let macos = signing::macos(&settings, notarize)?;
+                let macos = signing::macos(&settings, notarize, &macos::bundle_id(&workspace))?;
                 eprintln!("==> signing as {}", macos.identity_name);
                 Some(macos)
             } else {

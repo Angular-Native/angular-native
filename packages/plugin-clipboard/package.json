@@ -14,6 +14,7 @@
   "files": [
     "dist",
     "native",
+    "resources",
     "README.md"
   ],
   "sideEffects": false,
@@ -49,6 +50,7 @@
   "angularNative": {
     "module": "clipboard",
     "entry": "src/public-api.ts",
+    "resources": "resources",
     "ios": {
       "sources": "native/ios",
       "register": "AnClipboardPlugin"

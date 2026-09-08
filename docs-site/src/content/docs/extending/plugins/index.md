@@ -66,6 +66,12 @@ Four lines:
     // plugin published to npm already compiled does not need it.
     "entry": "src/public-api.ts",
 
+    // Optional. A directory of files the plugin's own code reads by name: a
+    // PNG, a .strings, a sound, a model. One directory for every platform,
+    // not one per platform, because every host looks a resource up by the
+    // same name. See "Files a plugin ships" below.
+    "resources": "resources",
+
     // One section per platform covered. The one that is missing is the one
     // that will fail that platform's build, on purpose.
     "ios": {
@@ -89,6 +95,33 @@ Four lines:
 
 The `plist`, `entitlements` and `manifest` sections have a page of their own:
 [Permissions a plugin needs](/extending/plugin-permissions/).
+
+### Files a plugin ships
+
+`angularNative.resources` names a directory inside the package, and everything
+in it travels into the app under the name it has there — the same place, and the
+same flat namespace, as the app's own `resources/`:
+
+| Platform | Where they land | How the plugin reads one |
+|---|---|---|
+| iOS, tvOS, visionOS | the `.app` root, beside `main.js` | `Bundle.main.url(forResource:withExtension:)`, `UIImage(named:)` |
+| macOS | `Contents/Resources` | the same, with `NSImage(named:)` |
+| watchOS | the `.app` root; the bundle is flat | by path, out of `Bundle.main.resourcePath` |
+| Android | `assets/` inside the APK | `activity.getAssets().open(name)` |
+
+**Not Android's `res/`.** A drawable under `res/` is compiled by `aapt2` and
+reached through a generated `R` class belonging to the app's package; a plugin
+would have to name an id linked into a package it does not own. `assets/` takes
+the name as it is written. What that gives up is what `res/` is for — density
+buckets, locale folders, theme attributes — and a plugin that needs those is
+shipping an Android library rather than a resource.
+
+**The namespace is flat, so a collision stops the build.** Two plugins each
+shipping `icon.png`, or one landing on a name the app itself uses, or on
+`main.js`: all three are refused by name, with both owners named, before
+anything is compiled — `an plugins <app> --platform ios` is enough to see it.
+Nothing is renamed for you: the name in the manifest is the name the code asks
+for.
 
 ## What ships
 
@@ -590,5 +623,12 @@ A method with no canned answer is rejected too, with the method's name in it.
   object and calls neither `resolve` nor `reject` leaves the promise waiting. It
   would want a per-call timeout — a camera takes minutes, reading the clipboard
   does not — and there is none.
-- **Assets.** Plist keys, entitlements and manifest entries a plugin *can*
-  contribute. Files of its own it cannot.
+- **An entitlement on the Mac needs more than a signature.** macOS grants a
+  restricted entitlement —`keychain-access-groups` and the rest— only to an app
+  carrying a provisioning profile that authorises it, and a certificate on its
+  own does not do it. `an macos` without `--sign` leaves the key out and says
+  which plugin lost which entitlement; `an macos --sign` with no
+  `signing.macos.profile` stops the build rather than producing a `.app` that is
+  killed the instant it launches. What there is no way to get here is the
+  profile itself: it comes from the developer portal and needs the paid
+  programme.

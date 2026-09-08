@@ -298,6 +298,137 @@ contains "$output" 'notarytool store-credentials' \
 contains "$output" 'leave .--sign. off' 'and says what to do to build without any of it'
 
 # ---------------------------------------------------------------------------
+# 6b. A plugin's entitlements, which a signature alone does not buy
+# ---------------------------------------------------------------------------
+#
+# `@angular-native/plugin-keychain` asks for `keychain-access-groups`, and macOS
+# grants that one only to an app carrying a provisioning profile that authorises
+# it. A certificate is not enough. Signed with the entitlement and without the
+# profile, the `.app` is killed the instant it launches — `Killed: 9`, nothing in
+# the log, and from the outside it is a crash in the app.
+#
+# The ad-hoc half runs on any Mac. The signed half needs a certificate in this
+# keychain, and is skipped —loudly— when there is none: that is most machines and
+# every CI runner, and a skip is not a pass.
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "  --   the macOS entitlements are skipped: they need a Mac"
+else
+  MACAPP="$ROOT/build/macos/AngularNativeMac.app"
+  LOG="$WORK/entitlements.log"
+  if "$AN" macos examples/secrets --no-launch >"$LOG" 2>&1; then
+    contains "$(cat "$LOG")" 'keychain-access-groups .asked for by @angular-native/plugin-keychain. is left out' \
+      'an ad-hoc build says which plugin loses which entitlement, and does not just drop it'
+    contains "$(cat "$LOG")" 'Killed: 9' 'and what carrying it anyway would have done'
+    ENTITLEMENTS="$(codesign -d --entitlements - "$MACAPP" 2>&1)"
+    if grep -q 'keychain-access-groups' <<<"$ENTITLEMENTS"; then
+      ko 'the ad-hoc .app carries the entitlement it cannot use, so it would be killed at launch'
+    else
+      ok 'and the signature really does not carry it, which is what keeps the app alive'
+    fi
+    contains "$ENTITLEMENTS" 'com\.apple\.security\.cs\.allow-jit' \
+      'while the two the engine cannot live without are there whatever else is not'
+  else
+    ko 'the keychain example does not build for macOS'
+    tail -20 "$LOG" | sed 's/^/       /'
+  fi
+
+  # The signed half. The identity is taken by its SHA-1 so that nothing has to
+  # be quoted, and the team is read back out of a throwaway signature rather
+  # than parsed out of the certificate's subject.
+  IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null \
+    | sed -n 's/^ *1) \([0-9A-F]*\) .*/\1/p')"
+  if [ -z "$IDENTITY" ]; then
+    echo "  --   the signed macOS build is skipped: this keychain has no codesigning identity"
+    echo "       (that is the normal case; the ad-hoc half above is what runs everywhere)"
+  else
+    PROBE="$WORK/probe"
+    cp "$AN" "$PROBE"
+    codesign --force --sign "$IDENTITY" "$PROBE" >/dev/null 2>&1 || true
+    TEAM="$(codesign -dv "$PROBE" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+    MACID="$(plutil -extract CFBundleIdentifier raw -o - "$ROOT/shells/macos/Resources/Info.plist")"
+
+    # 1. Signed, no profile. This is the build that used to be produced and
+    #    launched into `Killed: 9`.
+    export AN_MACOS_IDENTITY="$IDENTITY"
+    unset AN_MACOS_PROFILE
+    output="$(must_fail "$AN" macos examples/secrets --no-launch --sign)"
+    contains "$output" '@angular-native/plugin-keychain' \
+      'a signed build with no profile fails, naming the plugin'
+    contains "$output" 'keychain-access-groups' 'and the entitlement it cannot grant'
+    contains "$output" 'signing\.macos\.profile' 'and what would grant it'
+    contains "$output" 'without --sign' 'and the way to build anyway, with the fallback'
+
+    # 2. A profile, made here. `security cms -D` unwraps one signed by anybody,
+    #    so everything the CLI reads out of a profile —expiry, app id, team— is
+    #    exercised for real. What cannot be exercised is the system accepting
+    #    it: only Apple issues a profile amfid honours, so what is checked below
+    #    stops at the artefact.
+    PROFILE_DIR="$WORK/macos-profiles"
+    mkdir -p "$PROFILE_DIR"
+    macos_profile() { # $1 name  $2 team  $3 the entitlements dictionary body
+      cat >"$PROFILE_DIR/$1.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+	<key>Name</key><string>$1</string>
+	<key>TeamIdentifier</key><array><string>$2</string></array>
+	<key>Entitlements</key><dict>
+		<key>application-identifier</key><string>$2.$MACID</string>
+		<key>com.apple.developer.team-identifier</key><string>$2</string>
+$3
+	</dict>
+	<key>ExpirationDate</key><date>2999-01-01T00:00:00Z</date>
+</dict>
+</plist>
+PLIST
+      openssl smime -sign -nodetach -binary -in "$PROFILE_DIR/$1.plist" \
+        -out "$PROFILE_DIR/$1.provisionprofile" -signer "$PROFILES/cert.pem" \
+        -inkey "$PROFILES/key.pem" -outform DER >/dev/null 2>&1
+    }
+    macos_profile grants "$TEAM" \
+      '		<key>keychain-access-groups</key><array><string>'"$TEAM.$MACID"'</string></array>'
+    macos_profile silent "$TEAM" ''
+    macos_profile stranger ABCDE12345 \
+      '		<key>keychain-access-groups</key><array><string>ABCDE12345.'"$MACID"'</string></array>'
+
+    # A profile that does not carry the entitlement is not a profile that grants
+    # it, and signing more than the profile carries is the same dead app.
+    export AN_MACOS_PROFILE="$PROFILE_DIR/silent.provisionprofile"
+    output="$(must_fail "$AN" macos examples/secrets --no-launch --sign)"
+    contains "$output" 'does not carry keychain-access-groups' \
+      'a profile without the entitlement is refused, saying which key is missing from it'
+    contains "$output" '@angular-native/plugin-keychain' 'and which plugin asked for it'
+
+    # A profile from another account. codesign accepts it without a word; the
+    # system says so at launch by killing the app.
+    export AN_MACOS_PROFILE="$PROFILE_DIR/stranger.provisionprofile"
+    output="$(must_fail "$AN" macos examples/secrets --no-launch --sign)"
+    contains "$output" "belongs to the team ABCDE12345" \
+      "a profile from another team is caught, naming that team"
+    contains "$output" "signs for $TEAM" 'and the one the certificate signs for'
+
+    # And the one that goes through. The `.app` cannot be launched here —amfid
+    # honours no profile but Apple's— so what is asserted is the artefact: the
+    # entitlement in the signature and the profile inside the bundle.
+    export AN_MACOS_PROFILE="$PROFILE_DIR/grants.provisionprofile"
+    if "$AN" macos examples/secrets --no-launch --sign >"$LOG" 2>&1; then
+      ok 'with a profile that grants it, the signed build goes through'
+      contains "$(codesign -d --entitlements - "$MACAPP" 2>&1)" 'keychain-access-groups' \
+        'and the entitlement is in the signature this time'
+      exists "$MACAPP/Contents/embedded.provisionprofile" \
+        'and the profile is inside the bundle, where the system looks for it'
+      contains "$(codesign -dv "$MACAPP" 2>&1)" "TeamIdentifier=$TEAM" \
+        'and the .app is signed by the certificate, not ad hoc'
+    else
+      ko 'a profile that grants the entitlement should produce a signed .app'
+      tail -20 "$LOG" | sed 's/^/       /'
+    fi
+    rm -f "$PROBE"
+    unset AN_MACOS_IDENTITY AN_MACOS_PROFILE
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # 7. The Android release path, end to end
 # ---------------------------------------------------------------------------
 #

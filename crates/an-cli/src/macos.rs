@@ -63,6 +63,16 @@ const DEPLOYMENT: &str = "14.0";
 /// its own. See `assemble` for why they have to be named.
 const FRAMEWORKS: &[&str] = &["WebKit", "MapKit", "AVFoundation", "AVKit"];
 
+/// The identifier the `.app` will carry, which is the project's plus the Mac's
+/// suffix.
+///
+/// It is public because a provisioning profile is tied to one app id, and
+/// `signing::macos` has to check the profile against the identifier the bundle
+/// really gets and not the one written in `angular-native.json`.
+pub fn bundle_id(workspace: &Workspace) -> String {
+    format!("{}{}", workspace.bundle_id(), SUFFIX.1)
+}
+
 pub struct Package {
     pub dir: PathBuf,
 }
@@ -104,7 +114,7 @@ pub fn assemble(
     // projects were one app as far as the system was concerned, sharing a
     // container and replacing each other in the Dock.
     let app_name = format!("{}{}", workspace.app_name(), SUFFIX.0);
-    let bundle_id = format!("{}{}", workspace.bundle_id(), SUFFIX.1);
+    let bundle_id = bundle_id(workspace);
     // The project's build directory and not the SDK's. `an macos` used to
     // write into `build/macos` under the SDK whoever ran it, so an app built
     // from somebody's project landed inside this repository — and two projects
@@ -242,7 +252,21 @@ pub fn assemble(
     // plugins' keys, and a plugin that only got them on the signed path would
     // work for whoever ships the app and fail for whoever develops it, which is
     // the wrong way round.
-    let entitlements = write_entitlements(&app_dir, plugins, &bundle_id, signing.is_some())?;
+    let entitlements = write_entitlements(&app_dir, plugins, &bundle_id, signing)?;
+    // The profile goes in before the signature, which covers it. An app whose
+    // entitlements the profile authorises and that does not carry the profile is
+    // the same `Killed: 9` as one carrying an entitlement nobody authorised.
+    if let Some(macos) = signing {
+        if let Some(profile) = &macos.profile {
+            eprintln!(
+                "==> embedded.provisionprofile ({})",
+                macos.profile_name.as_deref().unwrap_or("unnamed")
+            );
+            std::fs::copy(profile, contents.join("embedded.provisionprofile")).with_context(
+                || format!("{} could not be copied into the .app", profile.display()),
+            )?;
+        }
+    }
     match signing {
         // Unsigned, macOS kills the app on the first `mmap` of generated code
         // —which is what QuickJS does— with a `Killed: 9` and no explanation.
@@ -372,7 +396,63 @@ fn sign(app_dir: &Path, entitlements: &Path, macos: &Macos) -> Result<()> {
             signing::DOCS
         );
     }
-    Ok(())
+    check_profile_team(app_dir, macos)
+}
+
+/// That the profile and the certificate belong to the same team.
+///
+/// `codesign` does not check this and has no reason to: the entitlements are a
+/// file it is handed and the profile is a resource it copies. The system checks
+/// it at launch, once, by killing the app — a profile from another account is a
+/// `Killed: 9` indistinguishable from every other one, and the account somebody
+/// downloaded the profile from is exactly the thing that is easy to get wrong
+/// when two of them are open in the same browser.
+///
+/// The team of the certificate is read back out of the signature rather than out
+/// of the certificate: `codesign -dv` prints it, it is already installed, and
+/// parsing an X.509 subject to find an `OU` is a second way of asking the same
+/// question that can disagree with the first.
+///
+/// Nothing is said when either side does not name a team. An ad-hoc signature
+/// has none —and never gets here— and a profile with no `TeamIdentifier` has
+/// already been refused when it was read.
+fn check_profile_team(app_dir: &Path, macos: &Macos) -> Result<()> {
+    let Some(profile_team) = macos
+        .profile_entitlements
+        .get("com.apple.developer.team-identifier")
+        .and_then(Value::as_str)
+    else {
+        return Ok(());
+    };
+    let described = Command::new("codesign")
+        .arg("-dv")
+        .arg(app_dir)
+        .output()
+        .context("codesign could not be run")?;
+    // `codesign -dv` writes its description to stderr, which is where every
+    // other tool would put an error. It is not one.
+    let text = String::from_utf8_lossy(&described.stderr);
+    let Some(signed_team) = text
+        .lines()
+        .find_map(|line| line.strip_prefix("TeamIdentifier="))
+        .filter(|team| *team != "not set")
+    else {
+        return Ok(());
+    };
+    if signed_team == profile_team {
+        return Ok(());
+    }
+    bail!(
+        "the profile {} belongs to the team {profile_team}, and {:?} signs for \
+         {signed_team}.\n\
+         The two have to be the same account: macOS checks it at launch and the way it \
+         says so is by killing the app —`Killed: 9`, nothing in the log— which is \
+         indistinguishable from every other reason it does that.\n\
+         Download the profile from the account the certificate belongs to.\nSee {}",
+        macos.profile_name.as_deref().unwrap_or("given"),
+        macos.identity_name,
+        signing::DOCS
+    )
 }
 
 /// The `.app`'s entitlements: the two the engine cannot live without, plus
@@ -399,29 +479,90 @@ fn sign(app_dir: &Path, entitlements: &Path, macos: &Macos) -> Result<()> {
 ///
 /// The floor wins a collision, and it is the only place it can: a plugin that
 /// asked for `allow-jit: false` would be asking for an app that does not start.
+///
+/// **What may be asked for at all depends on the profile.** The restricted half
+/// of the plugins' keys —see [`needs_profile`]— is granted by the provisioning
+/// profile and by nothing else, so the profile's own dictionary is the base an
+/// ad-hoc build does without: without one, those keys are dropped with a warning
+/// and the plugin falls back; with a signature and no profile, the build stops,
+/// because the only `.app` it could produce is one the system kills at launch.
 fn write_entitlements(
     app_dir: &Path,
     plugins: &[Plugin],
     bundle_id: &str,
-    real_identity: bool,
+    signing: Option<&Macos>,
 ) -> Result<PathBuf> {
-    let mut entries: BTreeMap<String, Value> = BTreeMap::new();
+    // The base is the profile's own dictionary when there is one, exactly as on
+    // a device build in `ios.rs`: what the profile carries is what the system
+    // will grant, so it is the authority on every key it mentions and the plugin
+    // is not asked what team it was signed for.
+    let mut entries: BTreeMap<String, Value> = signing
+        .map(|macos| macos.profile_entitlements.clone().into_iter().collect())
+        .unwrap_or_default();
     for (key, entry) in &plugins::entitlement_entries(plugins, Platform::Macos)? {
-        if !real_identity && needs_profile(key) {
-            // See `needs_profile`. This is the loudest warning in this file
-            // because it is the one that changes what the app can do, and the
-            // app still starts and still looks right: whoever gets it has to be
-            // told what stopped working and what to run to get it back.
+        if entries.contains_key(key) {
             eprintln!(
-                "==> warning: {key} (asked for by {}) is left out of this build.\n    \
-                 An ad-hoc signature cannot carry it —macOS wants a provisioning profile behind \
-                 it— and an .app that carries it anyway is killed the instant it launches, with \
-                 a bare `Killed: 9`.\n    \
-                 The plugin will fall back to whatever it can do without the entitlement and say \
-                 so at run time. `an macos --sign` gives it the real one.",
+                "==> entitlements: {key} (asked for by {}) is granted by the profile",
                 entry.package
             );
             continue;
+        }
+        if needs_profile(key) {
+            match signing {
+                // Ad hoc. See `needs_profile`. This is the loudest warning in
+                // this file because it is the one that changes what the app can
+                // do, and the app still starts and still looks right: whoever
+                // gets it has to be told what stopped working and what it costs
+                // to get it back.
+                None => {
+                    eprintln!(
+                        "==> warning: {key} (asked for by {}) is left out of this build.\n    \
+                         An ad-hoc signature cannot carry it —macOS grants it only to an app \
+                         with a provisioning profile behind it— and an .app that carries it \
+                         anyway is killed the instant it launches, with a bare `Killed: 9`.\n    \
+                         The plugin will fall back to whatever it can do without the \
+                         entitlement and say so at run time. A signature and a \
+                         signing.macos.profile that grants it are what give it the real one.",
+                        entry.package
+                    );
+                    continue;
+                }
+                // Signed, and the profile does not cover it. A certificate is
+                // not what grants a restricted entitlement — the profile is —
+                // and `codesign` accepts the key without a word, so nothing
+                // between here and the user's machine says anything. There is no
+                // half-measure: dropping the key would hand a signed app a
+                // keychain that answers −34018, and writing it produces an app
+                // that never runs.
+                Some(macos) => bail!(
+                    "{} asks for the entitlement {key}, and this build cannot grant it.\n\n\
+                     {}\n\n\
+                     macOS grants a restricted entitlement on the word of a provisioning \
+                     profile, never on the word of a certificate alone. Signed with it and \
+                     without the profile, the .app is killed the instant it launches — \
+                     `Killed: 9`, nothing in the log, and it looks like a crash in the app.\n\n\
+                     Either:\n\
+                     \x20 · make a macOS profile for {bundle_id} at \
+                     https://developer.apple.com/account/resources/profiles/list with that \
+                     entitlement enabled, and point signing.macos.profile (or \
+                     AN_MACOS_PROFILE) at it, or\n\
+                     \x20 · build without --sign: the entitlement is then left out with a \
+                     warning and {} falls back to what it can do without it.\n\
+                     See {}",
+                    entry.package,
+                    match &macos.profile_name {
+                        Some(name) => format!(
+                            "The profile {name:?} it was given does not carry {key}, and \
+                             nothing may be signed in that the profile does not carry."
+                        ),
+                        None => "There is no signing.macos.profile, so nothing restricted is \
+                                 granted."
+                            .to_owned(),
+                    },
+                    entry.package,
+                    signing::DOCS
+                ),
+            }
         }
         eprintln!("==> entitlements: {key} (from {})", entry.package);
         entries.insert(key.clone(), substitute(&entry.value, bundle_id));

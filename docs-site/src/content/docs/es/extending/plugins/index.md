@@ -67,6 +67,12 @@ Cuatro líneas:
     // plugin publicado en npm ya compilado no lo necesita.
     "entry": "src/public-api.ts",
 
+    // Opcional. Un directorio de ficheros que el código del plugin lee por su
+    // nombre: un PNG, un .strings, un sonido, un modelo. Uno para todas las
+    // plataformas, no uno por plataforma, porque todos los hosts buscan un
+    // recurso por el mismo nombre. Ver "Ficheros que trae un plugin" abajo.
+    "resources": "resources",
+
     // Una sección por plataforma cubierta. La que falta es la que hará fallar
     // la compilación de esa plataforma, a propósito.
     "ios": {
@@ -90,6 +96,33 @@ Cuatro líneas:
 
 Las secciones `plist`, `entitlements` y `manifest` tienen página propia:
 [Permisos que necesita un plugin](/es/extending/plugin-permissions/).
+
+### Ficheros que trae un plugin
+
+`angularNative.resources` nombra un directorio dentro del paquete, y todo lo que
+hay en él viaja a la app con el nombre que tiene allí — al mismo sitio, y al
+mismo espacio de nombres plano, que el `resources/` de la propia app:
+
+| Plataforma | Dónde acaban | Cómo lee uno el plugin |
+|---|---|---|
+| iOS, tvOS, visionOS | la raíz del `.app`, junto a `main.js` | `Bundle.main.url(forResource:withExtension:)`, `UIImage(named:)` |
+| macOS | `Contents/Resources` | lo mismo, con `NSImage(named:)` |
+| watchOS | la raíz del `.app`; el bundle es plano | por ruta, desde `Bundle.main.resourcePath` |
+| Android | `assets/` dentro del APK | `activity.getAssets().open(nombre)` |
+
+**No el `res/` de Android.** Un drawable bajo `res/` lo compila `aapt2` y se
+alcanza a través de una clase `R` generada que pertenece al paquete de la app; un
+plugin tendría que nombrar un id enlazado en un paquete que no es suyo.
+`assets/` toma el nombre tal como está escrito. Lo que eso deja fuera es para lo
+que sirve `res/` —cubos de densidad, carpetas de idioma, atributos de tema— y un
+plugin que necesita eso está trayendo una biblioteca de Android, no un recurso.
+
+**El espacio de nombres es plano, así que una colisión detiene la
+compilación.** Dos plugins que traen cada uno `icon.png`, o uno que cae sobre un
+nombre que usa la propia app, o sobre `main.js`: los tres se rechazan por su
+nombre, con los dos dueños nombrados, antes de compilar nada — basta
+`an plugins <app> --platform ios` para verlo. No se renombra nada por ti: el
+nombre del manifiesto es el nombre que pide el código.
 
 ## Lo que viene incluido
 
@@ -597,5 +630,11 @@ dentro.
   llamada y no llama ni a `resolve` ni a `reject` deja la promesa esperando.
   Querría un tiempo límite por llamada —una cámara tarda minutos, leer el
   portapapeles no— y no lo hay.
-- **Recursos.** Claves de plist, derechos y entradas de manifiesto un plugin
-  *sí* puede aportar. Ficheros propios no.
+- **Un derecho en el Mac necesita más que una firma.** macOS concede un derecho
+  restringido —`keychain-access-groups` y los demás— sólo a una app que lleva un
+  perfil de aprovisionamiento que lo autoriza; un certificado por sí solo no
+  basta. `an macos` sin `--sign` deja la clave fuera y dice qué plugin ha
+  perdido qué derecho; `an macos --sign` sin `signing.macos.profile` detiene la
+  compilación en lugar de producir un `.app` que el sistema mata en cuanto
+  arranca. Lo que aquí no hay manera de conseguir es el perfil: sale del portal
+  de desarrollador y necesita el programa de pago.

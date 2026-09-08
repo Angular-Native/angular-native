@@ -1,9 +1,10 @@
 //! Finding plugins and linking them in.
 //!
 //! A plugin is an npm package that brings native sources along with its
-//! TypeScript. There is nothing to install here and no separate file to keep up
-//! to date: what the app declares as a dependency is what gets linked, and the
-//! manifest lives in the plugin's own `package.json`.
+//! TypeScript, and —since it may need a file it did not write in code— the
+//! resources those sources read by name. There is nothing to install here and no
+//! separate file to keep up to date: what the app declares as a dependency is
+//! what gets linked, and the manifest lives in the plugin's own `package.json`.
 //!
 //! That this fits in one file is the payoff for having neither an `.xcodeproj`
 //! nor Gradle. In Capacitor this part is one script that edits the Xcode project
@@ -154,6 +155,9 @@ pub struct Plugin {
     pub module: String,
     /// The `.ts` that exports its API, if it ships one in source.
     pub entry: Option<PathBuf>,
+    /// The directory holding the files it ships besides code, absolute, if it
+    /// ships any. See [`crate::resources`], which is where they end up.
+    pub resources: Option<PathBuf>,
     pub ios: Option<Native>,
     pub android: Option<Native>,
     pub macos: Option<Native>,
@@ -366,11 +370,40 @@ fn read_manifest(package: &str, dir: &Path) -> Result<Option<Plugin>> {
         None => None,
     };
 
+    // `angularNative.resources` is one directory for every platform, and it sits
+    // beside `module` rather than inside each platform's section for the reason
+    // `resources.rs` gives about the app's own: every host looks a resource up
+    // by the same name, so four copies of one PNG would be four chances for
+    // them to drift. A plugin that really needs different artwork on one
+    // platform ships it under a different name and asks for that name there.
+    let resources = match declared.get("resources") {
+        Some(value) => {
+            let relative = value.as_str().with_context(|| {
+                format!(
+                    "{}: angularNative.resources has to be the directory holding them, \
+                     as a string",
+                    manifest.display()
+                )
+            })?;
+            let path = dir.join(relative);
+            if !path.is_dir() {
+                bail!(
+                    "{}: angularNative.resources points at {}, which is not a directory",
+                    manifest.display(),
+                    path.display()
+                );
+            }
+            Some(path)
+        }
+        None => None,
+    };
+
     let mut plugin = Plugin {
         package: package.to_owned(),
         dir: dir.to_owned(),
         module: module.to_owned(),
         entry,
+        resources,
         ios: None,
         android: None,
         macos: None,
@@ -1087,6 +1120,13 @@ pub fn list(workspace: &Workspace, plugins: &[Plugin]) {
             plugin.coverage(),
             dir.display()
         );
+        // The files it ships besides code. They land in the same directory as
+        // the app's own and are asked for by the same bare name, so somebody
+        // looking at this list is looking at the names that can collide.
+        if let Some(resources) = &plugin.resources {
+            let dir = resources.strip_prefix(&root).unwrap_or(resources);
+            println!("    resources: {}", dir.display());
+        }
         // A platform the plugin has ruled out on purpose is worth a line of its
         // own here, where somebody is looking at the list precisely because they
         // are wondering what will happen on that platform. Finding it out from a
