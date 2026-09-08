@@ -99,4 +99,21 @@ int32_t an_builtin_resolve(uint64_t id, const char *json);
 /// Rejects a call. 0 if the call existed.
 int32_t an_builtin_reject(uint64_t id, const char *message);
 
+// ── Deep links ──────────────────────────────────────────────────────────────
+//
+// A URL the app was opened with. On the Mac it arrives through
+// `application(_:open:urls:)`, which AppKit calls before
+// `applicationDidFinishLaunching` when the URL is what launched the app — so
+// this too may be called before `an_runtime_new`, and like the two blocks above
+// it is global to the process. What arrives early is kept and handed to the app
+// as it starts; what arrives later reaches it as a `deeplink.url` event.
+//
+// The symbol is the phone's, not a Mac spelling of it: it lives in `an-bridge`,
+// which is under both hosts, and the two never end up in the same binary.
+//
+// See `crates/an-bridge/src/deeplink.rs`.
+
+/// Hands over a URL. 0 if it was taken, -1 if the string could not be read.
+int32_t an_deeplink_open(const char *url);
+
 #endif

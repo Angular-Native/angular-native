@@ -128,13 +128,45 @@
                 android:resource="@xml/an_file_paths" />
         </provider>
 
+        <!--
+          singleTask, and not for the task semantics: it is what makes
+          `onNewIntent` happen. With the default launch mode a VIEW intent
+          reaching a running app builds a *second* MainActivity — a second
+          engine, a second tree, and whatever the person had done gone — instead
+          of handing the URL to the one already on screen. Wear OS runs the
+          phone's `MainActivity`, so it is the same class and the same rule.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!--
+              Deep links. The receiving code is the phone's, because the activity
+              is: `shells/android/java` is compiled into both APKs and it already
+              reads the launch intent and answers `onNewIntent`. Only the filter
+              was missing, and without it Android matches nothing and there is no
+              error to read.
+
+              A watch is not where somebody pastes a URL, but it is where `adb
+              shell am start -a android.intent.action.VIEW -d ...` and a Wear
+              notification's content intent land, and both are the same VIEW
+              intent this filter answers.
+
+              The scheme is the application id, the only spelling that cannot
+              collide device-wide; `an` substitutes the placeholder when it
+              writes the manifest aapt2 sees, exactly as it does on the phone.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${applicationId}" />
             </intent-filter>
         </activity>
     </application>

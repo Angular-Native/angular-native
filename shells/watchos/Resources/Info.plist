@@ -37,6 +37,22 @@
     <array>
         <integer>4</integer>
     </array>
+    <!--
+      No CFBundleURLTypes, and that is a decision rather than an omission.
+
+      Every other Apple family here declares its deep-link scheme and is opened
+      by it. A watch is not: there is no public call on watchOS that opens a
+      third-party app by a custom scheme — `WKApplication.openSystemURL(_:)`
+      takes Apple's own and turns down everything else — and the block was tried
+      here, with the scheme declared and the app installed and running, to see
+      whether the system would nonetheless deliver: it answers
+      `LSApplicationWorkspaceErrorDomain error 115`, which is nothing claimed it.
+      A declaration nothing reads is worse than none, because it reads as wiring.
+
+      The watch is reached instead by its own complication's `widgetURL` and by a
+      universal link arriving as an `NSUserActivity`, and both are wired in
+      `Sources/App.swift`, which is where the whole of it is written down.
+    -->
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>

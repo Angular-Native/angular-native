@@ -117,4 +117,24 @@ int32_t an_builtin_resolve(uint64_t id, const char *json);
 /// Rejects a call. 0 if the call existed.
 int32_t an_builtin_reject(uint64_t id, const char *message);
 
+// ── Deep links ──────────────────────────────────────────────────────────────
+//
+// A URL the app was opened with, and on this platform that is a shorter list
+// than on the others: nothing opens a third-party watch app by a custom scheme,
+// so what gets here is the app's own complication (`widgetURL`) or a universal
+// link arriving as an `NSUserActivity`. `shells/watchos/Sources/App.swift` says
+// it at length, and the watch's `Info.plist` deliberately declares no
+// `CFBundleURLTypes`.
+//
+// The symbol is the phone's and not a watch spelling of it: it lives in
+// `an-bridge`, under every host, and the two never end up in the same binary.
+// Like the two blocks above it is global to the process and may be called
+// before `an_watch_runtime_new` — which is the whole point, since a URL that
+// launched the app arrives before there is anything to deliver it to.
+//
+// See `crates/an-bridge/src/deeplink.rs`.
+
+/// Hands over a URL. 0 if it was taken, -1 if the string could not be read.
+int32_t an_deeplink_open(const char *url);
+
 #endif

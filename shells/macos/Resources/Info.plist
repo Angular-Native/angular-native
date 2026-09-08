@@ -45,5 +45,35 @@
         <key>NSAllowsLocalNetworking</key>
         <true/>
     </dict>
+    <!--
+      Deep links, the half that needs no server.
+
+      The scheme is the bundle identifier, and on the Mac that identifier is the
+      project's with `.mac` on the end: one project builds for the phone and for
+      the desktop, both bundles can be installed on the same machine, and a
+      scheme is claimed device-wide. Were the two to share one, LaunchServices
+      would pick whichever it saw last. So
+      `dev.angularnative.playground.mac://ship/2` opens this app on that route,
+      and `an add macos` writes the same three lines with the project's own
+      identifier in them.
+
+      A universal link —a real https:// address that opens the app instead of
+      Safari— is not declared here. It needs the associated-domains entitlement
+      and an apple-app-site-association file served from the site, neither of
+      which anything can write for you. The guide says what to add.
+    -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>CFBundleURLName</key>
+            <string>dev.angularnative.playground.mac</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>dev.angularnative.playground.mac</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

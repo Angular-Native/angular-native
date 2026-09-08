@@ -70,10 +70,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// A URL from outside the app: `open dev.angularnative.playground.mac://ship/3`,
+    /// a link clicked in another app, a second `open` while this one is running.
+    ///
+    /// AppKit calls this between `applicationWillFinishLaunching` and
+    /// `applicationDidFinishLaunching` when the URL is what launched the app —
+    /// the same place it has always called `application(_:openFile:)` from — so
+    /// on a cold start the URL is already in the core before the window, and
+    /// therefore before the bundle is evaluated. That ordering is not decorative:
+    /// handed over afterwards the link still arrives, one navigation late, with
+    /// the home screen painted first and pushed aside.
+    ///
+    /// There is no `launchOptions` to read on this platform and no scene, so
+    /// unlike the phone this is the only door, cold and warm alike.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            AnDeepLinks.open(url)
+        }
+    }
+
     /// On a phone there is no "close the window": the app goes to the
     /// background. On the desktop there is, and a single-window app left running
     /// with nothing to show is a zombie in the Dock.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+}
+
+/// The one place a URL crosses into the core, kept as its own name for the same
+/// reason the phone's is: `AppDelegate` should not be where what a link means is
+/// decided.
+enum AnDeepLinks {
+    static func open(_ url: URL) {
+        // The absolute string and not the components: what the route means is
+        // the app's business, and the core hands it to Angular's router whole.
+        an_deeplink_open(url.absoluteString)
     }
 }

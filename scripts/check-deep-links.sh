@@ -70,28 +70,55 @@ hasnt '(invalid buffer|uncaught rejected promise|bootstrap failed)' \
 # The scheme is the bundle identifier on both platforms. It is the only spelling
 # that cannot collide: a scheme is claimed device-wide, and two apps claiming
 # "myapp" leave the system picking one of them.
-plist=shells/ios/Resources/Info.plist
-grep -q 'CFBundleURLTypes' "$plist" && r=0 || r=1
-check $r "$plist declares CFBundleURLTypes"
-if command -v plutil >/dev/null 2>&1; then
-  scheme="$(plutil -extract CFBundleURLTypes.0.CFBundleURLSchemes.0 raw -o - "$plist" 2>/dev/null || true)"
-  id="$(plutil -extract CFBundleIdentifier raw -o - "$plist" 2>/dev/null || true)"
-  [ -n "$scheme" ] && [ "$scheme" = "$id" ] && r=0 || r=1
-  check $r "and the scheme is the bundle identifier ($scheme vs $id)"
-else
-  echo "  skipped plutil is not here, so the scheme cannot be read"
-fi
-
-manifest=shells/android/AndroidManifest.xml
-for needle in 'android.intent.action.VIEW' 'android.intent.category.BROWSABLE' \
-              'android:scheme="${applicationId}"'; do
-  grep -qF -- "$needle" "$manifest" && r=0 || r=1
-  check $r "$(basename "$manifest") declares $needle"
+# Four families and four decorations. One project builds a phone, a television,
+# a headset and a Mac; all four can sit on the same desk, and four bundles
+# claiming one scheme are four apps the system has to choose between. So each
+# declares *its own* identifier, suffix and all, which is what makes the
+# comparison below worth making.
+for plist in shells/ios/Resources/Info.plist \
+             shells/macos/Resources/Info.plist \
+             shells/tvos/Resources/Info.plist \
+             shells/visionos/Resources/Info.plist; do
+  grep -q '<key>CFBundleURLTypes</key>' "$plist" && r=0 || r=1
+  check $r "$plist declares CFBundleURLTypes"
+  if command -v plutil >/dev/null 2>&1; then
+    scheme="$(plutil -extract CFBundleURLTypes.0.CFBundleURLSchemes.0 raw -o - "$plist" 2>/dev/null || true)"
+    id="$(plutil -extract CFBundleIdentifier raw -o - "$plist" 2>/dev/null || true)"
+    [ -n "$scheme" ] && [ "$scheme" = "$id" ] && r=0 || r=1
+    check $r "and its scheme is its bundle identifier ($scheme vs $id)"
+  else
+    echo "  skipped plutil is not here, so the scheme cannot be read"
+  fi
 done
-# Without singleTask a VIEW intent builds a second activity — a second engine,
-# a second tree — instead of reaching `onNewIntent`.
-grep -q 'android:launchMode="singleTask"' "$manifest" && r=0 || r=1
-check $r 'and MainActivity is singleTask, so onNewIntent is what happens'
+
+# The watch is the exception, and it is a refusal rather than an oversight.
+# Nothing on watchOS opens a third-party app by a custom scheme: the block was
+# declared here and tried, with the app installed and running, and the system
+# answers that nothing claimed the URL. A declaration nothing reads is worse
+# than none, because it reads as wiring — so what is checked is that the key is
+# absent *and* that the reason is written where somebody would go looking for
+# the key. Fill the hole and this line asks what changed on the platform.
+watch_plist=shells/watchos/Resources/Info.plist
+grep -q '<key>CFBundleURLTypes</key>' "$watch_plist" && r=1 || r=0
+check $r 'the watch declares no scheme: nothing on watchOS can claim one'
+grep -q 'CFBundleURLTypes' "$watch_plist" && r=0 || r=1
+check $r 'and it says so in writing, so the gap is not a silent one'
+
+# Wear OS runs the phone's MainActivity out of the same `shells/android/java`,
+# so the class already reads the launch intent and answers `onNewIntent`. Its
+# manifest is a separate file, though, and a filter added to one and not the
+# other is a platform that quietly receives nothing.
+for manifest in shells/android/AndroidManifest.xml shells/android/AndroidManifest.wear.xml; do
+  for needle in 'android.intent.action.VIEW' 'android.intent.category.BROWSABLE' \
+                'android:scheme="${applicationId}"'; do
+    grep -qF -- "$needle" "$manifest" && r=0 || r=1
+    check $r "$(basename "$manifest") declares $needle"
+  done
+  # Without singleTask a VIEW intent builds a second activity — a second engine,
+  # a second tree — instead of reaching `onNewIntent`.
+  grep -q 'android:launchMode="singleTask"' "$manifest" && r=0 || r=1
+  check $r "and its MainActivity is singleTask, so onNewIntent is what happens"
+done
 
 # ── 4. Received on both platforms, cold and warm ────────────────────────────
 swift=shells/ios/Sources/AppDelegate.swift
@@ -124,9 +151,29 @@ sys.exit(0 if 0 <= opened < window else 1)
 PY
 check $r 'and so does AppDelegate, before the root view controller exists'
 
-# ── 5. The two doors into the core, and the name written twice ──────────────
-grep -q 'an_deeplink_open' crates/an-ios/include/angular_native.h && r=0 || r=1
-check $r 'angular_native.h declares an_deeplink_open'
+# The Mac has no launch options and no scene: AppKit hands the URL over through
+# `application(_:open:urls:)` and nowhere else, cold and warm alike. Whether it
+# arrives early enough is AppKit's business and not the file's, so there is no
+# ordering to read here — section 7 runs the app instead.
+mac=shells/macos/Sources/AppDelegate.swift
+grep -q 'open urls: \[URL\]' "$mac" && r=0 || r=1
+check $r "$(basename "$mac") handles application(_:open:urls:) on the Mac"
+# The watch has neither of the phone's doors. What it has is SwiftUI's two, and
+# both are needed: `onOpenURL` is how a complication's `widgetURL` arrives, and
+# a universal link arrives as a browsing user activity.
+watch=shells/watchos/Sources/App.swift
+for needle in 'onOpenURL' 'NSUserActivityTypeBrowsingWeb'; do
+  grep -q "$needle" "$watch" && r=0 || r=1
+  check $r "$(basename "$watch") handles $needle, which is how a watch is reached"
+done
+
+# ── 5. The doors into the core, and the name written twice ──────────────────
+for header in crates/an-ios/include/angular_native.h \
+              crates/an-macos/include/angular_native_macos.h \
+              crates/an-watch/include/angular_native_watch.h; do
+  grep -q 'an_deeplink_open' "$header" && r=0 || r=1
+  check $r "$(basename "$header") declares an_deeplink_open"
+done
 grep -q 'an_deeplink_open' crates/an-bridge/src/deeplink.rs && r=0 || r=1
 check $r 'and the bridge exports it'
 grep -q 'Java_dev_angularnative_MainActivity_nativeOpenUrl' crates/an-android/src/jni_bridge.rs \
@@ -158,6 +205,56 @@ take = text.find('takeInitialDeepLink(')
 sys.exit(0 if 0 <= subscribe < take else 1)
 PY
 check $r 'the location subscribes before it takes the queue, so nothing falls between'
+
+# ── 7. The one platform where all of this can actually be run ───────────────
+#
+# Everything above this line reads files. macOS does not have to: there is no
+# simulator to bring up and no device to look for, so the `.app` is built on the
+# machine running the check, `open` hands it a URL exactly the way a person or
+# another app would, and what is examined is the window that came up.
+#
+# It is the same claim as the headless run and it is made the same way — by what
+# is *absent*. `AN_DUMP_TEXT` logs the string of every view the host mounted; if
+# the home screen's title is in there, the app painted it and was pushed aside
+# afterwards, which is the failure a delivery arriving one navigation too late
+# produces and the one nothing else here would catch.
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "  --   the macOS run is skipped: the .app only builds on a Mac"
+elif ! command -v plutil >/dev/null 2>&1; then
+  echo "  skipped the macOS run: the bundle identifier cannot be read"
+else
+  BUILD_LOG="$(mktemp)"
+  if ! cargo an macos examples/router --no-launch >"$BUILD_LOG" 2>&1; then
+    echo "  skipped the macOS run: the .app did not build"
+    tail -20 "$BUILD_LOG"
+  else
+    APP="$ROOT/build/macos/AngularNativeMac.app"
+    # The scheme is the identifier and the identifier is read back out of the
+    # bundle that was just built, not written here: the two cannot drift, and a
+    # renamed app is a check that still tests the right URL.
+    scheme="$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist")"
+    RUN_LOG="$(mktemp)"
+    # `open` and not the executable: running the binary by hand never goes near
+    # LaunchServices, and LaunchServices is the half being tested. `-n` forces a
+    # fresh process so this is a cold start and not a second URL to a window
+    # that is already up; `-W` waits for the app, which quits itself once it has
+    # taken the screenshot.
+    open -W -n -a "$APP" \
+      --env AN_SCREENSHOT="$ROOT/build/macos/deep-link.png" \
+      --env AN_DUMP_TEXT=1 --stderr "$RUN_LOG" "$scheme://ship/3" || true
+    OUTPUT="$(grep '\[text\]' "$RUN_LOG" || true)"
+    if [ -z "$OUTPUT" ]; then
+      echo "  FAIL the .app opened with a URL and mounted nothing at all"
+      tail -20 "$RUN_LOG"
+      fail=1
+    else
+      has 'Home port: Palma' 'a URL opens the real .app on the route it asked for'
+      hasnt '\bShips\b' 'and the home screen was never painted on the way there'
+    fi
+    rm -f "$RUN_LOG"
+  fi
+  rm -f "$BUILD_LOG"
+fi
 
 if [ "$fail" -ne 0 ]; then
   exit 1

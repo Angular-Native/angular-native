@@ -826,16 +826,19 @@ fn plist(
         Family::TvOs => "shells/tvos/Resources/Info.plist",
         Family::VisionOs => "shells/visionos/Resources/Info.plist",
     });
-    // How many times the identifier appears. On iOS it is three: the bundle
+    // How many times the identifier appears: three, everywhere. The bundle
     // identifier itself, and the deep-link scheme's name and value — a URL
     // scheme is claimed device-wide, so the only spelling that cannot collide
     // with another app's is the identifier. Substituting all three is what gives
     // a new project a working `<bundle id>://route` without it writing a line.
-    // The TV and the headset declare no scheme: nothing in either shell receives
-    // one yet, and a declaration that leads nowhere is worse than none.
+    //
+    // The TV and the headset used to be one, back when neither declared a
+    // scheme. They share `shells/ios/Sources`, so the code that receives a URL
+    // was already theirs and only the declaration was missing. It stays a
+    // `match` although the three arms now agree: a fourth family added to the
+    // enum stops compiling here until somebody has looked at its plist.
     let identifier_times = match family {
-        Family::Ios => 3,
-        Family::TvOs | Family::VisionOs => 1,
+        Family::Ios | Family::TvOs | Family::VisionOs => 3,
     };
     let text = std::fs::read_to_string(&source)
         .with_context(|| format!("{} could not be read", source.display()))?;
@@ -876,6 +879,12 @@ fn macos_plist(workspace: &Workspace, name: &str, bundle_id: &str) -> Result<Str
     // The same decoration the shell's own plist carries, and the same one
     // `an macos` will look for: one project builds for the phone and for the
     // desktop, and two bundles sharing an identifier are one app to the system.
+    //
+    // Three times and not one: the identifier itself, and the deep-link
+    // scheme's name and value. The scheme is the identifier —claimed
+    // device-wide, so nothing else can be unique— and on the Mac that is the
+    // decorated one, or a project's phone and desktop bundles would be fighting
+    // over the same scheme.
     let text = substitute(
         &text,
         &source,
@@ -884,7 +893,7 @@ fn macos_plist(workspace: &Workspace, name: &str, bundle_id: &str) -> Result<Str
             (
                 "<string>dev.angularnative.playground.mac</string>",
                 &format!("<string>{bundle_id}.mac</string>"),
-                1,
+                3,
             ),
         ],
     )?;

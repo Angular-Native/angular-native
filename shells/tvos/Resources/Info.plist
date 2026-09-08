@@ -48,6 +48,38 @@
         <true/>
     </dict>
     <!--
+      Deep links, the half that needs no server.
+
+      The code that receives the URL is already here: this family shares
+      `shells/ios/Sources`, so `AppDelegate` and `AnDeepLinks` are the phone's.
+      What was missing was this declaration — without it tvOS never hands the
+      app anything and the receiving code is never called.
+
+      The scheme is the bundle identifier, which is the only spelling that cannot
+      collide: a scheme is claimed device-wide, and the decoration (`.tv`)
+      is what keeps a project's television bundle from claiming the phone's. So
+      `dev.angularnative.playground.tv://ship/2` opens this app on that route, and `an add tvos`
+      writes the same three lines with the project's own identifier in them.
+
+      A universal link —a real https:// address— is not declared here. It needs
+      the associated-domains entitlement and an apple-app-site-association file
+      served from the site, neither of which anything can write for you. The
+      guide says what to add.
+    -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>CFBundleURLName</key>
+            <string>dev.angularnative.playground.tv</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>dev.angularnative.playground.tv</string>
+            </array>
+        </dict>
+    </array>
+    <!--
       Without this the app installs and launches, but appears in the grid with no
       icon: tvOS's `CFBundleIcons` points at a layered icon and at the top shelf
       image, and both live in an asset catalogue compiled with `actool`. There is
