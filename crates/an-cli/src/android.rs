@@ -360,15 +360,37 @@ fn check_targets(abis: &[Abi]) -> Result<()> {
     )
 }
 
+/// The newest release under a directory, ignoring previews.
+///
+/// A GitHub runner's `platforms/` holds `android-37.2-beta3` beside
+/// `android-37.2`, and a plain sort puts the beta on top: `-beta3` is longer
+/// than nothing and compares greater. Building against a preview SDK means the
+/// compile target changes whenever the image does, which is a build that starts
+/// failing on a machine nobody touched.
+///
+/// A release is preferred over every preview; a preview is used only when there
+/// is nothing else, because refusing outright would break whoever installed
+/// only a beta on purpose.
 fn newest_dir(parent: &Path) -> Option<PathBuf> {
-    let mut entries: Vec<PathBuf> = std::fs::read_dir(parent)
+    let entries: Vec<PathBuf> = std::fs::read_dir(parent)
         .ok()?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
         .filter(|path| path.is_dir())
         .collect();
-    entries.sort();
-    entries.pop()
+    let is_preview = |path: &PathBuf| {
+        let name = path.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+        name.contains("-beta") || name.contains("-rc") || name.contains("-alpha")
+    };
+    // Releases first, and only fall back to the previews if there are none.
+    let mut released: Vec<&PathBuf> = entries.iter().filter(|p| !is_preview(p)).collect();
+    released.sort();
+    if let Some(newest) = released.pop() {
+        return Some(newest.clone());
+    }
+    let mut previews: Vec<&PathBuf> = entries.iter().collect();
+    previews.sort();
+    previews.pop().cloned()
 }
 
 /// Opens the dev server's port on the device, back towards this machine.
@@ -1805,5 +1827,43 @@ mod tests {
                 .unwrap_or_else(|_| panic!("{} could not be read", path.display()));
             assert!(declares_version(&text), "{manifest} has no android:versionCode");
         }
+    }
+}
+
+#[cfg(test)]
+mod newest_dir_tests {
+    use super::*;
+
+    fn dirs(root: &Path, names: &[&str]) {
+        for name in names {
+            std::fs::create_dir_all(root.join(name)).unwrap();
+        }
+    }
+
+    /// `android-37.2-beta3` sorts above `android-37.2` — the suffix is longer
+    /// than nothing — so a plain sort builds against a preview. On a CI runner
+    /// that means the compile target changes with the image.
+    #[test]
+    fn a_release_wins_over_a_preview_that_sorts_above_it() {
+        let root = std::env::temp_dir().join(format!("an-sdk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        dirs(&root, &["android-35", "android-36", "android-37.2", "android-37.2-beta3"]);
+        assert_eq!(
+            newest_dir(&root).unwrap().file_name().unwrap(),
+            "android-37.2",
+            "a plain sort would have taken the beta"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Refusing outright would break whoever installed only a preview on
+    /// purpose, so it is used when it is all there is.
+    #[test]
+    fn a_preview_is_used_when_it_is_the_only_one() {
+        let root = std::env::temp_dir().join(format!("an-sdk-only-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        dirs(&root, &["android-38-rc1", "android-38-beta2"]);
+        assert_eq!(newest_dir(&root).unwrap().file_name().unwrap(), "android-38-rc1");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

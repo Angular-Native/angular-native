@@ -128,7 +128,7 @@ export default defineConfig({
         {
           icon: 'github',
           label: 'GitHub',
-          href: 'https://github.com/nesgarbo/angular-native'
+          href: 'https://github.com/angular-native/angular-native'
         }
       ],
       // Five groups and not ten: somebody arriving wants to learn, somebody

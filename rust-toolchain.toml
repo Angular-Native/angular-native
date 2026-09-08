@@ -1,3 +1,18 @@
 [toolchain]
 channel = "stable"
-targets = ["aarch64-apple-ios-sim", "aarch64-apple-ios"]
+# Every target the device-free suite cross-compiles to, so that a clone is one
+# `cargo` away from running it. The two Android triples used to be missing and
+# installed by hand on the machines that happened to need them; x86_64 is not
+# optional either, because `--aab` carries it and a bundle that lost it still
+# builds, still signs and still uploads — Play simply stops offering the app to
+# Chromebooks and emulators.
+#
+# The tier-3 Apple targets are deliberately absent: tvOS, visionOS and watchOS
+# have no prebuilt `std`, so rustup cannot install them and their scripts ask
+# for nightly with `rust-src` instead.
+targets = [
+  "aarch64-apple-ios-sim",
+  "aarch64-apple-ios",
+  "aarch64-linux-android",
+  "x86_64-linux-android",
+]

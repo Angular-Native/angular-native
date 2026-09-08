@@ -30,6 +30,64 @@ Un script que no puede hacer su trabajo imprime **`skipped`**, no un aprobado.
 Esa distinción es el objetivo: una suite que se pone verde porque el emulador no
 estaba arrancado es peor que una que se pone roja.
 
+## Las dos mitades
+
+```bash
+./scripts/check-all.sh               # todo
+./scripts/check-all.sh --no-android  # todo menos la mitad de abajo
+./scripts/check-android.sh           # el shell Java, Wear OS, las dos compilaciones cruzadas de Android
+```
+
+La mitad de Android es un script aparte porque quiere una máquina distinta del
+resto: las comprobaciones de Apple necesitan swiftc, los SDK de los simuladores y
+un `.app` de verdad, y las de Android necesitan el NDK y nada de Apple.
+`check-all.sh` llama a `check-android.sh` en vez de repetir lo que hay dentro, así
+que hay una lista de cada mitad y ninguna puede separarse de la que corre CI.
+
+## En CI
+
+`.github/workflows/ci.yml` corre esos dos comandos en dos runners: la mitad de
+Apple en `macos-15`, la de Android en `ubuntu-24.04`. Las dos imágenes llevan el
+SDK de Android y el NDK, así que el Mac podría hacerlo todo — no lo hace porque
+un minuto de macOS se factura a diez veces uno de Linux, y nada de la mitad de
+Android necesita un Mac.
+
+Tres cosas que el trabajo de Linux tiene que acertar, y ninguna es una suposición
+sobre el runner:
+
+- **El NDK** ya está en la imagen, así que no hay paso de `sdkmanager`. La imagen
+  pone `ANDROID_NDK_HOME` en su NDK por defecto, que es lo que mantiene a `an`
+  lejos de los más nuevos que también están instalados. Antes de compilar nada, el
+  trabajo comprueba que el compilador que nombra `an env android` existe de
+  verdad: un NDK que hubiera dejado caer el nivel de API contra el que se compila
+  el core aparecería si no como un linker que falta dentro de un crate que no
+  tiene nada que ver.
+- **El nombre del host.** `find_ndk_toolchain` lee el único directorio que hay
+  bajo `toolchains/llvm/prebuilt/` en vez de dar por hecho `darwin-x86_64`, así
+  que encuentra `linux-x86_64` sin cambiar nada.
+- **Material 3**, que `fetch-android-deps.py` resuelve a mano: un centenar de
+  viajes a dos repositorios Maven para traer 43 MB, en cada ejecución, incluso
+  cuando todos los jars ya están en disco. `vendor/android/` se cachea, con la
+  clave puesta en los dos scripts que deciden qué acaba dentro y en la versión de
+  build-tools cuyo `aapt2` compiló los recursos — las tres cosas que cambian su
+  contenido.
+
+Un cuarto trabajo arranca un emulador y corre `check-a11y-device.sh` encima, con
+`AN_ABI=x86_64` para que el APK lleve la arquitectura que el emulador es. Es
+`continue-on-error` y no bloquea `main`: es la única comprobación que lee el árbol
+de accesibilidad desde fuera, de un Android de verdad, y a la vez la señal menos
+fiable del fichero — un emulador alojado que no arranca pondría la ejecución en
+rojo por algo que no está en el código, y una ejecución roja que nadie se cree es
+peor que ninguna.
+
+:::caution[El workflow no se ha ejecutado nunca]
+Cada paso suyo se ha corrido a mano en un Mac — `an env android` con una
+toolchain `linux-x86_64` puesta en disco, una descarga de dependencias en frío, el
+shell Java, Wear OS, las dos compilaciones cruzadas, un APK `x86_64` — pero el
+fichero entero no ha corrido nunca en un runner de GitHub. Lo que nadie ha visto:
+el primer fallo de caché, un Linux de verdad, y el emulador arrancando.
+:::
+
 ## `headless`
 
 ```bash

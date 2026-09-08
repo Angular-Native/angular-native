@@ -1,10 +1,14 @@
-# The device-free half of the suite, on every push.
+# The device-free suite, on every push, split across the two machines it needs.
 #
-# `scripts/check-all.sh` is the gate locally and it is the gate here too: one
-# script rather than a list of steps that can drift from it. It needs macOS —
-# swiftc, the simulators' SDKs and a real `.app` that gets launched and
-# screenshotted are all part of what it checks — so there is no cheaper runner
-# to move it to.
+# `scripts/check-all.sh` is the gate locally and it is the gate here too, so
+# that CI cannot run a different list from the one a person runs. It is passed
+# `--no-android` and the half it leaves out — `scripts/check-android.sh` — is a
+# job of its own on Linux. The split is not about capability: both runner images
+# ship the Android SDK and NDK, so the Mac could do the lot. It is about what the
+# Mac is for. macOS minutes bill at ten times a Linux minute, the Apple half
+# already fills that runner, and the Android half needs nothing Apple at all —
+# so it runs beside it, for a tenth of the price, and the wall clock is the
+# longer of the two rather than their sum.
 name: check
 
 on:
@@ -18,6 +22,7 @@ concurrency:
 
 jobs:
   check:
+    name: the Apple half
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -28,20 +33,163 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install the Rust targets the checks cross-compile to
-        run: |
-          rustup target add aarch64-apple-ios-sim aarch64-apple-ios
-          rustup toolchain install nightly --component rust-src
+      # The iOS targets come from `rust-toolchain.toml`; nightly does not, and
+      # cannot — a toolchain file pins one channel, and tvOS, visionOS and
+      # watchOS are tier 3 and build their own `std` from `rust-src`.
+      - name: Install the nightly the tier-3 Apple targets need
+        run: rustup toolchain install nightly --component rust-src
 
       - uses: Swatinem/rust-cache@v2
 
       - run: npm ci
 
-      # The NDK paths in `.cargo/config.toml` are absolute and belong to one
-      # machine, so the Android half cannot run here. It is skipped rather than
-      # faked: a check that cannot do its job says so.
-      - name: Run the device-free suite
-        run: ./scripts/check-all.sh
+      - name: Run the device-free suite, less the Android half
+        run: ./scripts/check-all.sh --no-android
+
+  android:
+    name: the Android half
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # The shell is compiled with `-source 17 -target 17`, so the JDK only has
+      # to be at least 17. It is pinned anyway: the image's default has moved
+      # before, and a javac that has dropped `-source 17` fails in the middle of
+      # the Java shell, which reads like the shell being broken.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # Which build-tools `an` will use — plain `sort`, not `sort -V`, because
+      # that is what `newest_dir` does and the cache key has to name the aapt2
+      # that actually compiled the resources below.
+      - name: Which build-tools the SDK offers
+        id: sdk
+        run: echo "build-tools=$(ls "$ANDROID_HOME/build-tools" | sort | tail -1)" >> "$GITHUB_OUTPUT"
+
+      # Material 3 is not in the platform and there is no Gradle here to fetch
+      # it: `fetch-android-deps.py` walks the POMs itself, which is a hundred-odd
+      # round trips to dl.google.com and Maven Central for 43 MB, and it does
+      # that even when every jar is already on disk. Caching it is worth more for
+      # the network than for the minute — two third-party repositories reachable
+      # is otherwise a precondition of every push.
+      #
+      # The key names the three things that decide what ends up in `vendor/`: the
+      # script that resolves the tree (the seed, the ignore list, bundletool's
+      # version), the script that unpacks it, and the aapt2 that compiled the
+      # `.flat` resources. Nothing else changes it — a POM pins its own
+      # dependencies, and neither repository republishes a coordinate.
+      - name: Cache the resolved Android dependencies
+        id: android-deps
+        uses: actions/cache@v4
+        with:
+          path: vendor/android
+          key: android-deps-${{ runner.os }}-${{ steps.sdk.outputs.build-tools }}-${{ hashFiles('scripts/fetch-android-deps.py', 'scripts/prepare-android-deps.py') }}
+
+      - name: Resolve Material 3 and everything it drags along
+        if: steps.android-deps.outputs.cache-hit != 'true'
+        run: |
+          python3 scripts/fetch-android-deps.py
+          python3 scripts/prepare-android-deps.py
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: npm ci
+
+      # The NDK is on the image already — no `sdkmanager` — and the image sets
+      # `ANDROID_NDK_HOME` to its default, which is what keeps `an` off the newer
+      # ones also installed. Worth one assertion before anything is compiled:
+      # `Sdk::cargo_env` builds the compiler's file name out of the API level, so
+      # an NDK that has dropped API 24 gives a linker that does not exist, and
+      # cargo reports that as `linker \`…-clang\` not found` from inside a crate
+      # that has nothing to do with it.
+      - name: The NDK the image ships is one `an` can use
+        run: |
+          # `an env android` prints `env 'NAME=VALUE' 'NAME=VALUE' …`, so the
+          # quotes are the separator and the name has to come off the front.
+          CC="$(cargo an env android | tr "'" '\n' | grep -m1 'aarch64-linux-android[0-9]*-clang$' | sed 's/^[^=]*=//')"
+          echo "$CC"
+          test -x "$CC"
+
+      - name: Run the Android half
+        run: ./scripts/check-android.sh
+
+  android-device:
+    name: accessibility on an emulator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # Not a gate, on purpose. `check-a11y-device.sh` is the only check that reads
+    # the accessibility tree back out of a real Android instead of out of our own
+    # source, which makes it the most valuable one here and also the least
+    # trustworthy signal: a hosted emulator fails to boot, hangs on the system
+    # UI or loses its adb connection for reasons that have nothing to do with the
+    # code. Gating `main` on it would teach everybody to ignore a red run, which
+    # costs more than the check is worth. It reports, it does not block.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Which build-tools the SDK offers
+        id: sdk
+        run: echo "build-tools=$(ls "$ANDROID_HOME/build-tools" | sort | tail -1)" >> "$GITHUB_OUTPUT"
+
+      # The same key as the job above, so the two share one entry rather than
+      # each resolving the tree for itself.
+      - name: Cache the resolved Android dependencies
+        id: android-deps
+        uses: actions/cache@v4
+        with:
+          path: vendor/android
+          key: android-deps-${{ runner.os }}-${{ steps.sdk.outputs.build-tools }}-${{ hashFiles('scripts/fetch-android-deps.py', 'scripts/prepare-android-deps.py') }}
+
+      - name: Resolve Material 3 and everything it drags along
+        if: steps.android-deps.outputs.cache-hit != 'true'
+        run: |
+          python3 scripts/fetch-android-deps.py
+          python3 scripts/prepare-android-deps.py
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: npm ci
+
+      # Without this the emulator falls back to software rendering and a boot
+      # that takes two minutes takes twenty and then times out.
+      - name: Let the runner use KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # `AN_ABI=x86_64` is the one thing this needs that a phone does not. The
+      # emulator on an x86_64 host is an x86_64 Android, and `an android`
+      # defaults to arm64-v8a alone — the APK would build, and `adb install`
+      # would refuse it with INSTALL_FAILED_NO_MATCHING_ABIS.
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: AN_ABI=x86_64 ./scripts/check-a11y-device.sh
 
   docs:
     runs-on: ubuntu-latest

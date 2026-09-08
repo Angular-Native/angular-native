@@ -14,6 +14,19 @@ trap 'echo "  FAIL exited with an error: ${BASH_COMMAND} (check-all.sh line ${LI
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# `--no-android` leaves out the half that needs the NDK. It exists for CI, which
+# has to put the two halves on two runners —the rest of this wants swiftc, the
+# simulators' SDKs and a Mac; the Android half wants nothing Apple— and for
+# anybody working without an SDK installed. What it skips is one script,
+# `check-android.sh`, so there is no list here that can drift from the list CI
+# runs.
+ANDROID=1
+case "${1:-}" in
+  "") ;;
+  --no-android) ANDROID=0 ;;
+  *) echo "usage: check-all.sh [--no-android]" >&2; exit 2 ;;
+esac
+
 echo "== duplicated lists"
 "$ROOT/scripts/check-styles.sh"
 "$ROOT/scripts/check-kinds.sh"
@@ -116,10 +129,15 @@ echo
 "$ROOT/scripts/check-secrets.sh"
 
 echo
-"$ROOT/scripts/check-android-java.sh"
-
-echo
-"$ROOT/scripts/check-wearos.sh"
+# The Java shell, Wear OS and the two Android cross-compilations, all in one
+# script so that the CI job that owns them can name it. Skipping it is what
+# `--no-android` is for, and a skip says so rather than passing quietly.
+if [ "$ANDROID" = 1 ]; then
+  "$ROOT/scripts/check-android.sh"
+else
+  echo "== Android"
+  echo "  --   skipped: --no-android. scripts/check-android.sh is the half that was left out."
+fi
 
 echo
 # Signing and distribution. It goes after the Android checks because it builds
@@ -137,41 +155,17 @@ echo
 
 echo
 echo "== cross-compilation"
-# Android needs the NDK in the environment. It used to come from a committed
-# `.cargo/config.toml` holding one machine's paths; it is worked out at build
-# time now, and `an env android` is how anything that is not `an android`
-# itself — this, a CI job, an editor — gets hold of it.
-# An `env` prefix, not a list of exports: most of these names carry the target
-# triple with its hyphens, and a shell cannot export one of those.
-ANDROID_ENV_ERR="$(mktemp)"
-# Only what it printed. `2>&1` would fold cargo's own build warnings into the
-# variable, and the whole thing is about to be eval'd.
-ANDROID_ENV="$(cargo an env android 2>"$ANDROID_ENV_ERR")" || {
-  echo "  FAIL the Android cross-compilation environment could not be worked out"
-  sed 's/^/       /' "$ANDROID_ENV_ERR"
+# Apple only. The two Android triples are cross-compiled by
+# `check-android.sh`, next to the rest of the Android half, because they need
+# the NDK environment and nothing else here does.
+LOG="$(mktemp)"
+# The output is kept, not thrown away: a `2>/dev/null` here cannot tell a crate
+# that does not compile from a toolchain that is not installed, and the two want
+# completely different things done about them.
+if cargo build --quiet -p an-ios --target aarch64-apple-ios-sim >"$LOG" 2>&1; then
+  echo "  ok   an-ios for aarch64-apple-ios-sim"
+else
+  echo "  FAIL an-ios for aarch64-apple-ios-sim"
+  tail -30 "$LOG" | sed 's/^/       /'
   exit 1
-}
-# x86_64 is here because `--aab` defaults to it: a bundle that stopped
-# carrying it would still build, still sign and still upload, and the app would
-# simply not be offered to a Chromebook or an emulator.
-for target in aarch64-apple-ios-sim aarch64-linux-android x86_64-linux-android; do
-  case "$target" in
-    *ios*) crate=an-ios ;;
-    *) crate=an-android ;;
-  esac
-  # The output is kept, not thrown away: a `2>/dev/null` here cannot tell a
-  # crate that does not compile from a toolchain that is not installed, and
-  # the two want completely different things done about them.
-  LOG="$(mktemp)"
-  case "$target" in
-    *android*) PREFIX="$ANDROID_ENV" ;;
-    *) PREFIX="" ;;
-  esac
-  if eval "$PREFIX cargo build --quiet -p '$crate' --target '$target'" >"$LOG" 2>&1; then
-    echo "  ok   $crate for $target"
-  else
-    echo "  FAIL $crate for $target"
-    tail -30 "$LOG" | sed 's/^/       /'
-    exit 1
-  fi
-done
+fi

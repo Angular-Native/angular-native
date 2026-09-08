@@ -30,6 +30,62 @@ A script that cannot do its job prints **`skipped`**, not a pass. That
 distinction is the point: a suite that goes green because the emulator was not
 running is worse than one that goes red.
 
+## The two halves
+
+```bash
+./scripts/check-all.sh               # everything
+./scripts/check-all.sh --no-android  # everything except the half below
+./scripts/check-android.sh           # the Java shell, Wear OS, the two Android cross-compilations
+```
+
+The Android half is a script of its own because it wants a different machine
+from the rest: the Apple checks need swiftc, the simulators' SDKs and a real
+`.app`, and the Android ones need the NDK and nothing Apple. `check-all.sh`
+calls `check-android.sh` rather than repeating what is in it, so there is one
+list of each half and neither can drift from the one CI runs.
+
+## In CI
+
+`.github/workflows/ci.yml` runs those two commands on two runners: the Apple
+half on `macos-15`, the Android half on `ubuntu-24.04`. Both runner images carry
+the Android SDK and the NDK, so the Mac could do the lot — it does not because a
+macOS minute bills at ten times a Linux one, and nothing in the Android half
+needs a Mac.
+
+Three things the Linux job has to get right, none of them a guess about the
+runner:
+
+- **The NDK** is already on the image, so there is no `sdkmanager` step. The
+  image sets `ANDROID_NDK_HOME` to its default, which is what keeps `an` off the
+  newer NDKs also installed. Before compiling anything the job asserts that the
+  compiler `an env android` names actually exists — an NDK that dropped the API
+  level the core is built against otherwise shows up as a missing linker inside
+  an unrelated crate.
+- **The host tag.** `find_ndk_toolchain` reads whatever single directory is
+  under `toolchains/llvm/prebuilt/` instead of assuming `darwin-x86_64`, so it
+  finds `linux-x86_64` with nothing changed.
+- **Material 3**, which `fetch-android-deps.py` resolves by hand: a hundred-odd
+  round trips to two Maven repositories for 43 MB, on every run, even when every
+  jar is already on disk. `vendor/android/` is cached, keyed on the two scripts
+  that decide what goes into it and on the build-tools version whose `aapt2`
+  compiled the resources — the three things that change its contents.
+
+A fourth job boots an emulator and runs `check-a11y-device.sh` on it, with
+`AN_ABI=x86_64` so the APK carries the architecture the emulator is. It is
+`continue-on-error` and does not gate `main`: it is the only check that reads
+the accessibility tree back out of a real Android, and also the least
+trustworthy signal in the file — a hosted emulator that fails to boot would
+otherwise turn the run red for something that is not in the code, and a red run
+nobody believes is worse than no run.
+
+:::caution[The workflow has never executed]
+Every step of it has been run by hand on a Mac — `an env android` with a
+`linux-x86_64` toolchain laid out on disk, a cold dependency fetch, the Java
+shell, Wear OS, both cross-compilations, an `x86_64` APK — but the file itself
+has never run on a GitHub runner. What nobody has watched: the first cache miss,
+a real Linux host, and the emulator booting.
+:::
+
 ## `headless`
 
 ```bash
