@@ -2596,10 +2596,39 @@ impl HostRenderer for UikitHost {
             return;
         }
         let kind = view.kind();
+
+        // What this family cannot give is said at subscription time, not when
+        // the event fails to arrive: there is nobody looking at the log the
+        // moment an output does not fire.
+        if let Some(reason) = crate::family::unsupported_event(kind, event) {
+            crate::family::report(&format!("({event}) on <{kind:?}>"), reason);
+            return;
+        }
+
+        if crate::events::delivered_elsewhere(kind, event) {
+            return;
+        }
+
         if let Some(listener) =
             crate::events::attach(self.mtm, native, kind, id, event, self.events.clone())
         {
             self.listeners.insert(key, listener);
+        } else if crate::family::is_known_event(event) {
+            // A name the framework does send and this host has nothing to
+            // attach it to — nearly always the event put on the wrong
+            // primitive, `(scroll)` on an `<an-view>` or `(change)` on
+            // something that is not a control. The names it does not send —
+            // the output names Angular registers along the way — are dropped
+            // without noise: see `family::KNOWN_EVENTS`.
+            //
+            // `report` keys on the text, so the tvOS focus branch inside
+            // `attach`, which builds the same string, has already had its say
+            // and this does not repeat it.
+            crate::family::report(
+                &format!("({event}) on <{kind:?}>"),
+                "this host has nothing to attach it to, so the output would never fire. Check \
+                 that it is on the primitive that reports it",
+            );
         }
     }
 

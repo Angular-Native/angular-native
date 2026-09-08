@@ -329,6 +329,19 @@ orientations are portrait and both landscapes.
   [The safe area and the keyboard](/guide/safe-area-and-keyboard/). What there
   is no way to ask for is the bar above it: a Done button, a next-field arrow,
   anything `inputAccessoryView` is for.
+- **Three outputs the base directive declares and this host does not deliver**:
+  `(hover)`, `(crown)` and `(crownIdle)`. Every primitive carries every output —
+  they are declared once, on the directive they all extend — and two of these
+  belong to other machines: the pointer to the desktop, the crown to the Apple
+  Watch. `UIHoverGestureRecognizer` **is** in the SDK, but what it reports is a
+  trackpad, a mouse turned on through AssistiveTouch or a Pencil held above the
+  glass, and `[cursor]`, the prop that goes with `(hover)`, means nothing here;
+  an output that fires on the reviewer's iPad and never on the user's phone is
+  worse than one that does not exist. Each is refused when the template
+  subscribes, once, with its reason — and so is an output put on a primitive
+  that does not report it, `(scroll)` on an `<an-view>` or `(change)` on an
+  `<an-textarea>`, which UIKit reports through a delegate this host does not
+  install.
 - **Six things the accessibility contract asks for and UIKit cannot say**: an
   unknown role, an unknown state key, a role UIKit has no trait for,
   `checked: 'mixed'` — UIKit only knows checked and unchecked, so the value is

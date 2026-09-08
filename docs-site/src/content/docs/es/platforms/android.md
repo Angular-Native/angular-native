@@ -252,6 +252,16 @@ que el ancho infinito.
   clara sobre una app oscura puede costar de leer. Se dice una vez en lugar de
   saltárselo en silencio. Mira
   [Qué aspecto tiene la app](#qué-aspecto-tiene-la-app).
+- **Tres salidas que declara la directiva base y este host no entrega**:
+  `(hover)`, `(crown)` y `(crownIdle)`. Android sí manda eventos de hover —bajo
+  un ratón, bajo un stylus, en un Chromebook— pero `[cursor]`, la prop que
+  acompaña a `(hover)`, aquí no significa nada, y media pareja que funciona en
+  un Chromebook y nunca en un teléfono se prueba una vez y se publica rota. La
+  corona es del reloj: `(crown)` y `(crownIdle)` sí llegan en Wear OS y se
+  rechazan en un teléfono. Cada una se rechaza al suscribirse, una vez, con su
+  motivo — y también una salida puesta en un primitivo que no la informa,
+  `(scroll)` en un `<an-view>`, que se contesta nombrando el widget que el nodo
+  montó de verdad.
 - **Atrás es el callback obsoleto.** No hay atrás predictivo.
 - **`armeabi-v7a` solo si la pides.** `--abi armeabi-v7a` la compila; no está
   en ningún valor por defecto. Ver [Qué ABIs](#qué-abis).

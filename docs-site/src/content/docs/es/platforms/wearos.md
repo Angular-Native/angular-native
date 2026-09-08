@@ -310,6 +310,11 @@ Los dos eran fallos de todas las plataformas. El reloj es quien los encontró.
   se puede mover a mano, pero un `an-slider` o un `an-stepper` no la toman del
   sistema como hacen los de watchOS, donde basta con tener el foco. Aquí habría
   que llevarles el foco y el eje, y eso es cosa del primitivo.
+- **`(hover)` y la prop `[cursor]` que lo acompaña.** Android sí manda eventos
+  de hover bajo un ratón o un stylus, y un reloj no tiene ninguno de los dos.
+  Los dos son la pareja del escritorio, así que la suscripción se rechaza una
+  vez, con su motivo, en lugar de dejarla esperando un evento que aquí no
+  produce nada.
 - **Modo ambiente.** Un reloj de verdad baja a una pantalla en blanco y negro a
   1 Hz cuando la muñeca se baja. Hoy la app simplemente se cierra, que es lo que
   hace Wear OS con una app que no lo declara. No hay `AmbientModeSupport`, ni

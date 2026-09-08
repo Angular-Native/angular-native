@@ -90,4 +90,18 @@ int32_t an_builtin_resolve(uint64_t id, const char *json);
 /// Rejects a call. 0 if the call existed.
 int32_t an_builtin_reject(uint64_t id, const char *message);
 
+// ── Deep links ──────────────────────────────────────────────────────────────
+//
+// A URL the app was opened with: a custom scheme, or a universal link. It can
+// arrive before there is a runtime at all —the system starts the process
+// *because* of the link— so this is global to the process like the two blocks
+// above, and it may be called before `an_runtime_new`. What arrives early is
+// kept and handed to the app as it starts; what arrives later reaches it as a
+// `deeplink.url` event. Either way the router ends up on the route.
+//
+// See `crates/an-bridge/src/deeplink.rs`.
+
+/// Hands over a URL. 0 if it was taken, -1 if the string could not be read.
+int32_t an_deeplink_open(const char *url);
+
 #endif

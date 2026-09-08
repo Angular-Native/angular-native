@@ -235,6 +235,16 @@ height at all, only what is added to the font's own. No line height travels as
   there before that, so the status and navigation bar icons keep the theme's and
   a light bar over a dark app can be hard to read. It is said once rather than
   skipped in silence. See [What the app looks like](#what-the-app-looks-like).
+- **Three outputs the base directive declares and this host does not deliver**:
+  `(hover)`, `(crown)` and `(crownIdle)`. Android does send hover events — under
+  a mouse, under a stylus, on a Chromebook — but `[cursor]`, the prop that goes
+  with `(hover)`, has no meaning here, and half a pair that works on a
+  Chromebook and never on a phone gets tested once and shipped broken. The crown
+  is the watch's: `(crown)` and `(crownIdle)` do arrive on Wear OS and are
+  turned down on a phone. Each is refused when the template subscribes, once,
+  with its reason — and so is an output put on a primitive that does not report
+  it, `(scroll)` on an `<an-view>`, which is answered naming the widget the node
+  actually mounted.
 - **Back is the deprecated callback.** There is no predictive back.
 - **No `armeabi-v7a` unless you ask for it.** `--abi armeabi-v7a` builds it;
   nothing defaults to it. See [Which ABIs](#which-abis).

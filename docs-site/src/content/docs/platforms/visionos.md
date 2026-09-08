@@ -133,6 +133,12 @@ not capture the highlight in place.
   it is the same shell and the same `AnPlugin` protocol. If one of them uses an
   API the headset does not have, the link step stops with swiftc's error;
   `an visionos` warns before compiling so it does not arrive as a surprise.
+- **Four outputs that reach the subscription and not the headset**: `(hover)`,
+  `(crown)` and `(crownIdle)`, which no UIKit family delivers — the gaze is not
+  a pointer an app is allowed to read, and there is no wheel — and `(back)`,
+  because `UIScreenEdgePanGestureRecognizer` is not in the SDK and this window
+  has no edge to drag in from, so the way back has to be a button in the
+  template. Each refusal is said once, when the template subscribes.
 - **Nothing volumetric.** This is a flat window in a 3D space, which is what
   visionOS calls a *window*. Neither a `volume` nor an immersive space: both are
   SwiftUI and RealityKit, and there is no `UIView` to mount in them, so they

@@ -247,6 +247,15 @@ finds out:
   and a date is asked for on a screen of its own; but those are new primitives
   and a vocabulary decision, not a `cfg`. `an-web-view` can have no substitute
   at all: WebKit is not in the SDK.
+- **Six outputs that reach the subscription and not the remote**: `(hover)`,
+  `(crown)` and `(crownIdle)`, which no UIKit family delivers — there is no
+  pointer and no wheel — plus `(pinch)` and `(rotate)`, whose recognisers are
+  marked `API_UNAVAILABLE(tvos)` because the remote's surface is single-touch,
+  and `(refresh)`, because `UIRefreshControl` is not in the SDK and a television
+  has nothing to pull. `(pan)` and the four swipes do arrive: the surface sends
+  indirect touches and UIKit recognises them like a finger's. Each refusal is
+  said once, when the template subscribes, and not when the event fails to
+  turn up.
 - **Plugins are compiled with their iOS sources**, which is all they declare. If
   one uses API tvOS does not have, linking stops with swiftc's error; `an tvos`
   warns before starting so it does not arrive as a surprise. No plugin declares

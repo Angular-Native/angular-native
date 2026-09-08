@@ -79,7 +79,7 @@ keyboard animates. See [the safe area and the keyboard](/guide/safe-area-and-key
 |---|---|---|
 | `(focus)` | `{ value? }` | `value` only when the view is a text field. |
 | `(blur)` | `{ value? }` | |
-| `(hover)` | `{ hovered, x, y }` | Desktop only. One output rather than two, because one `NSTrackingArea` delivers both. |
+| `(hover)` | `{ hovered, x, y }` | Desktop only; refused with a reason everywhere else. One output rather than two, because one `NSTrackingArea` delivers both. |
 
 Focus used to live on `an-text-input` alone, because on a phone focus belongs to
 the keyboard. On a TV it is the whole platform — the remote walks the focusable
@@ -143,10 +143,34 @@ SDK's rather than a decision made here.
 | Event | Why not |
 |---|---|
 | `(pinch)`, `(rotation)` | The remote's surface is single-touch, and `UIPinchGestureRecognizer` and `UIRotationGestureRecognizer` are not in the tvOS SDK. |
+| `(refresh)` | `UIRefreshControl` is not in the SDK, and a television has nothing to pull. |
 
 `(pan)` and the four swipes do work — the surface reports a drag. `(press)`
 arrives from the centre button, so a view that cannot take focus can never be
 pressed.
+
+### iOS, iPadOS and visionOS
+
+| Event | Why not |
+|---|---|
+| `(hover)` | The pointer is the desktop's. See below. |
+| `(crown)`, `(crownIdle)` | The digital crown is the Apple Watch's; there is no wheel to turn here. |
+| `(back)` on `an-stack-view` | visionOS only: `UIScreenEdgePanGestureRecognizer` is not in that SDK and the window has no edge to drag in from. |
+
+Anything else that reaches the host with nothing to attach it to is answered the
+same way, naming the primitive: `(scroll)` on an `an-view`, `(change)` on an
+`an-textarea` — which UIKit reports through a `UITextViewDelegate` this host does
+not install, and which the Mac turns down for the same reason.
+
+### Android and Wear OS
+
+| Event | Why not |
+|---|---|
+| `(hover)` | The pointer is the desktop's. Android does send hover events under a mouse or a stylus, but `[cursor]` has no meaning here. See below. |
+| `(crown)`, `(crownIdle)` | On a phone only: there is no wheel. On Wear OS both arrive. |
+
+As on the Apple hosts, an output on a primitive that does not report it is
+answered naming the widget the node actually mounted.
 
 ### macOS
 
@@ -173,8 +197,18 @@ The one host that is not a view hierarchy, and the one with the longest list.
 ### Phones have no pointer
 
 `(hover)` is desktop-only, and so is the `[cursor]` prop that goes with it. A
-finger has no shape and nothing hovers before it touches. That is declared
-rather than forgotten.
+finger has no shape and nothing hovers before it touches.
+
+Both other host families *could* half-deliver it. UIKit ships
+`UIHoverGestureRecognizer` — an iPad trackpad, a mouse turned on through
+AssistiveTouch, an Apple Pencil held above the glass — and Android sends
+`ACTION_HOVER_ENTER` under a mouse or a stylus. Neither is attached, and the
+decision is deliberate: what those report is hardware most of these devices do
+not have, so the output would fire on the reviewer's iPad and never on the
+user's phone, and `[cursor]`, the other half of the pair, has no meaning on
+either. An interface that only answers to a pointer cannot be used with a
+finger. So the subscription is refused, once, with that reason, instead of being
+dropped without a word.
 
 ## The warning that is deliberately not printed
 
@@ -184,6 +218,9 @@ template, including ones that are not platform events at all — `onChange`,
 something that works perfectly, and a warning that always appears is a warning
 nobody reads.
 
-So the hosts keep a list of the events they know how to attach, and warn only
-about the first kind: something a template genuinely asked the platform for and
-this platform does not give.
+So each host keeps a list of the names the framework does send —
+`support::KNOWN_EVENTS` on the Mac, `family::KNOWN_EVENTS` for the three UIKit
+families, `KNOWN_EVENTS` in `AnHost` — and warns only about the first kind:
+something a template genuinely asked the platform for and this platform does not
+give. `scripts/check-platform-gaps.sh` reads the refusals out of those hosts and
+fails if a platform page does not name them.

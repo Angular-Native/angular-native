@@ -310,6 +310,10 @@ Both were bugs on every platform. The watch is what found them.
   from the system the way watchOS's do, where having focus is enough. Here the
   focus and the axis would have to be carried to them, and that is the
   primitive's job.
+- **`(hover)` and the `[cursor]` prop that goes with it.** Android does send
+  hover events under a mouse or a stylus, and a watch has neither. The two are
+  the desktop's pair, so the subscription is refused once, with its reason,
+  rather than left waiting for an event nothing here produces.
 - **Ambient mode.** A real watch drops to a black-and-white 1 Hz screen when the
   wrist goes down. Today the app simply closes, which is what Wear OS does with
   an app that does not declare it. There is no `AmbientModeSupport`, no

@@ -78,7 +78,7 @@ se anima. Ver [el área segura y el teclado](/es/guide/safe-area-and-keyboard/).
 |---|---|---|
 | `(focus)` | `{ value? }` | `value` solo cuando la vista es un campo de texto. |
 | `(blur)` | `{ value? }` | |
-| `(hover)` | `{ hovered, x, y }` | Solo escritorio. Un output y no dos, porque un `NSTrackingArea` entrega las dos cosas. |
+| `(hover)` | `{ hovered, x, y }` | Solo escritorio; en el resto se rechaza con un motivo. Un output y no dos, porque un `NSTrackingArea` entrega las dos cosas. |
 
 El foco vivía antes solo en `an-text-input`, porque en un móvil el foco es del
 teclado. En una tele es la plataforma entera —el mando recorre las vistas
@@ -141,10 +141,34 @@ decisión tomada aquí.
 | Evento | Por qué no |
 |---|---|
 | `(pinch)`, `(rotation)` | La superficie del mando es de un solo toque, y `UIPinchGestureRecognizer` y `UIRotationGestureRecognizer` no están en el SDK de tvOS. |
+| `(refresh)` | `UIRefreshControl` no está en el SDK, y de una tele no se tira. |
 
 `(pan)` y los cuatro swipes sí funcionan: la superficie reporta un arrastre.
 `(press)` llega del botón central, así que una vista que no puede coger el foco
 no se puede pulsar nunca.
+
+### iOS, iPadOS y visionOS
+
+| Evento | Por qué no |
+|---|---|
+| `(hover)` | El puntero es del escritorio. Mira más abajo. |
+| `(crown)`, `(crownIdle)` | La corona digital es del Apple Watch; aquí no hay rueda que girar. |
+| `(back)` en `an-stack-view` | Solo en visionOS: `UIScreenEdgePanGestureRecognizer` no está en ese SDK y la ventana no tiene borde del que tirar. |
+
+Cualquier otra cosa que llegue al host sin nada a lo que engancharla se contesta
+igual, nombrando el primitivo: `(scroll)` en un `an-view`, `(change)` en un
+`an-textarea` —que UIKit informa por un `UITextViewDelegate` que este host no
+instala, y que el Mac rechaza por el mismo motivo—.
+
+### Android y Wear OS
+
+| Evento | Por qué no |
+|---|---|
+| `(hover)` | El puntero es del escritorio. Android sí manda eventos de hover bajo un ratón o un stylus, pero `[cursor]` aquí no significa nada. Mira más abajo. |
+| `(crown)`, `(crownIdle)` | Solo en un teléfono: no hay rueda. En Wear OS llegan las dos. |
+
+Como en los hosts de Apple, una salida en un primitivo que no la informa se
+contesta nombrando el widget que el nodo montó de verdad.
 
 ### macOS
 
@@ -172,8 +196,18 @@ El único host que no es una jerarquía de vistas, y el de la lista más larga.
 ### Un móvil no tiene puntero
 
 `(hover)` es solo de escritorio, y la prop `[cursor]` que va con él, también. Un
-dedo no tiene forma y nada sobrevuela antes de tocar. Eso está declarado, no
-olvidado.
+dedo no tiene forma y nada sobrevuela antes de tocar.
+
+Las otras dos familias de hosts *podrían* entregarlo a medias. UIKit trae
+`UIHoverGestureRecognizer` —un trackpad de iPad, un ratón encendido con
+AssistiveTouch, un Apple Pencil sostenido sobre el cristal— y Android manda
+`ACTION_HOVER_ENTER` bajo un ratón o un stylus. No se engancha ninguno de los
+dos, y la decisión es deliberada: lo que informan es hardware que la mayoría de
+estos dispositivos no tiene, así que la salida se dispararía en el iPad de quien
+revisa y nunca en el móvil de quien la usa, y `[cursor]`, la otra mitad de la
+pareja, no significa nada en ninguno. Una interfaz que solo responde a un
+puntero no se puede usar con un dedo. Así que la suscripción se rechaza, una
+vez, con ese motivo, en lugar de descartarse sin decir nada.
 
 ## El aviso que deliberadamente no se imprime
 
@@ -183,6 +217,9 @@ plantilla, incluidos los que no son eventos de plataforma en absoluto:
 que funciona perfectamente, y un aviso que sale siempre es un aviso que nadie
 lee.
 
-Así que los hosts llevan una lista de los eventos que saben enganchar, y solo
-avisan del primer tipo: algo que una plantilla le pidió de verdad a la plataforma
-y que esta plataforma no da.
+Así que cada host lleva una lista de los nombres que el framework sí manda
+—`support::KNOWN_EVENTS` en el Mac, `family::KNOWN_EVENTS` para las tres
+familias de UIKit, `KNOWN_EVENTS` en `AnHost`— y solo avisa del primer tipo:
+algo que una plantilla le pidió de verdad a la plataforma y que esta plataforma
+no da. `scripts/check-platform-gaps.sh` lee los rechazos de esos hosts y falla
+si una página de plataforma no los nombra.

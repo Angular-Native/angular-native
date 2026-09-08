@@ -390,9 +390,15 @@ export abstract class NativeVisual {
    *
    * On a desktop this is not decoration: a control that does not change as the
    * mouse passes over it looks disabled, and that is the only hint somebody with
-   * a mouse has that there is something there to click. On a phone it does not
-   * exist —there is no pointer to respond to— which is why that platform's host
-   * never delivers it.
+   * a mouse has that there is something there to click.
+   *
+   * Only macOS delivers it. UIKit and Android both *have* the mechanism —
+   * `UIHoverGestureRecognizer`, `ACTION_HOVER_ENTER` — and neither host attaches
+   * it: what those report is a trackpad, a mouse or a stylus, hardware most of
+   * those devices do not have, and `[cursor]`, the prop that goes with this, has
+   * no meaning there at all. Half a pair that fires on a Chromebook and never on
+   * a phone is worse than none, so those hosts refuse the subscription and say
+   * why rather than dropping it in silence.
    */
   readonly hover = outputFromObservable(this.nativeEvent<NativeHoverEvent>('hover'))
 

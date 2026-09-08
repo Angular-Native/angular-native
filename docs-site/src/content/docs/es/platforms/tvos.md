@@ -248,6 +248,14 @@ entera nadie:
   responde a izquierda/derecha, y una fecha se pide en una pantalla propia; pero
   eso son primitivas nuevas y una decisión de vocabulario, no un `cfg`.
   `an-web-view` no puede tener sustituto ninguno: WebKit no está en el SDK.
+- **Seis salidas que llegan a la suscripción y no al mando**: `(hover)`,
+  `(crown)` y `(crownIdle)`, que no entrega ninguna familia de UIKit —no hay
+  puntero ni rueda—, más `(pinch)` y `(rotate)`, cuyos reconocedores están
+  marcados `API_UNAVAILABLE(tvos)` porque la superficie del mando es de un solo
+  toque, y `(refresh)`, porque `UIRefreshControl` no está en el SDK y de una
+  tele no se tira. `(pan)` y los cuatro swipes sí llegan: la superficie manda
+  toques indirectos y UIKit los reconoce como los de un dedo. Cada rechazo se
+  dice una vez, al suscribirse la plantilla, y no cuando el evento no aparece.
 - **Los plugins se compilan con sus fuentes de iOS**, que es lo único que
   declaran. Si alguna usa API que tvOS no tiene, el enlazado se para con el
   error de swiftc; `an tvos` lo avisa antes de empezar para que no llegue de

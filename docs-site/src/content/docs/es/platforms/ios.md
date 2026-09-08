@@ -336,6 +336,19 @@ el siguiente. Las orientaciones soportadas son vertical y las dos horizontales.
   [El área segura y el teclado](/es/guide/safe-area-and-keyboard/). Lo que no
   hay forma de pedir es la barra de encima: un botón Hecho, una flecha al
   siguiente campo, cualquier cosa para la que sirve `inputAccessoryView`.
+- **Tres salidas que declara la directiva base y este host no entrega**:
+  `(hover)`, `(crown)` y `(crownIdle)`. Todos los primitivos llevan todas las
+  salidas —se declaran una sola vez, en la directiva de la que heredan todos— y
+  dos de estas son de otra máquina: el puntero es del escritorio y la corona,
+  del Apple Watch. `UIHoverGestureRecognizer` **sí** está en el SDK, pero lo que
+  informa es un trackpad, un ratón encendido con AssistiveTouch o un Pencil
+  sostenido sobre el cristal, y `[cursor]`, la prop que acompaña a `(hover)`,
+  aquí no significa nada; una salida que se dispara en el iPad de quien revisa y
+  nunca en el móvil de quien la usa es peor que una que no existe. Cada una se
+  rechaza al suscribirse, una vez, con su motivo — y también una salida puesta
+  en un primitivo que no la informa, `(scroll)` en un `<an-view>` o `(change)`
+  en un `<an-textarea>`, que UIKit informa por un delegado que este host no
+  instala.
 - **Seis cosas que pide el contrato de accesibilidad y UIKit no sabe decir**:
   un rol desconocido, una clave de estado desconocida, un rol para el que UIKit
   no tiene rasgo, `checked: 'mixed'` —UIKit solo conoce marcado y sin marcar,

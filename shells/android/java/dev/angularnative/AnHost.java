@@ -2528,11 +2528,172 @@ public final class AnHost {
 
     // ----------------------------------------------------------------- events
 
+    /**
+     * The event names the framework knows how to send.
+     *
+     * Two kinds of name reach a host. One is `nativeEvent()`'s in
+     * `packages/primitives` —`press`, `change`, `scroll`— and that one really is
+     * a request. The other is the name of the directive's *output* —`onChange`,
+     * `valueChange`—: Angular registers an element listener for every `(output)`
+     * that appears in a template, and that name corresponds to no platform event
+     * on any host.
+     *
+     * Warning about the second kind would mean warning on every startup about
+     * something that works, and a warning that always comes out is a warning
+     * nobody reads. Only the first kind is warned about. It is the same list the
+     * Mac and the three UIKit families keep, for the same reason: the outputs
+     * are declared once, on the base directive, so every platform sees all of
+     * them.
+     */
+    private static final java.util.Set<String> KNOWN_EVENTS =
+            new java.util.HashSet<>(
+                    java.util.Arrays.asList(
+                            "press",
+                            "doublePress",
+                            "longPress",
+                            "pan",
+                            "pinch",
+                            "rotate",
+                            "swipeLeft",
+                            "swipeRight",
+                            "swipeUp",
+                            "swipeDown",
+                            "hover",
+                            "layout",
+                            "safeArea",
+                            "back",
+                            "refresh",
+                            "scroll",
+                            "load",
+                            "change",
+                            "input",
+                            "focus",
+                            "blur",
+                            "submit",
+                            "select",
+                            "dismiss",
+                            "crown",
+                            "crownIdle"));
+
+    private static boolean isKnownEvent(String event) {
+        return KNOWN_EVENTS.contains(event);
+    }
+
+    /**
+     * Events no Android delivers, with the reason.
+     *
+     * Consulted on subscription and not on firing: an output that never arrives
+     * gives nobody anything to look at. `scripts/check-platform-gaps.sh` reads
+     * this method and requires every event named here to be named on the
+     * platform's page, in both languages.
+     *
+     * The decision about `hover`, so it is not made again from scratch: Android
+     * does have it. `setOnHoverListener` and `ACTION_HOVER_ENTER`/`EXIT` are in
+     * the framework and they fire on a Chromebook, on DeX, on a tablet with a
+     * mouse and under a stylus. It is not attached anyway, because `(hover)` and
+     * the `[cursor]` prop are one pair and they are the desktop's: half a pair —
+     * an event with no cursor to go with it — that fires on a Chromebook and
+     * never on a phone is worse than one that does not exist, because it gets
+     * tested once and shipped broken. An interface that only answers to a
+     * pointer cannot be used with a finger.
+     */
+    private static String unsupportedEvent(String event) {
+        switch (event) {
+            case "hover":
+                return "the pointer is the desktop's. Android does send hover events under a"
+                        + " mouse or a stylus, but [cursor], the prop that goes with (hover), has"
+                        + " no meaning here and most of these devices have nothing to hover"
+                        + " with. Use (press) and (longPress), which every one of them has";
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * And what only the watch has. The phone is the one that has to be told: on
+     * Wear OS these do arrive.
+     */
+    private static String unsupportedOnThePhone(String event) {
+        switch (event) {
+            case "crown":
+            case "crownIdle":
+                return "the crown belongs to the watch and there is no wheel to turn here, so"
+                        + " this output would never fire";
+            default:
+                return null;
+        }
+    }
+
+    /** Wear OS or the phone, for the messages. */
+    private String platformName() {
+        return watch ? "Wear OS" : "Android";
+    }
+
+    /**
+     * What has already been said about an event.
+     *
+     * The core sends the subscription again on every re-render, and a list in an
+     * `@for` sends one per row: without this, one mistake in a template is a
+     * hundred lines of logcat and the warning stops being read.
+     */
+    private final java.util.Set<String> warnedEvents = new java.util.HashSet<>();
+
+    private void warnEvent(String key, String message) {
+        if (warnedEvents.add(key)) {
+            android.util.Log.e("angular-native", message);
+        }
+    }
+
+    /**
+     * The pairs that arrive through something other than {@link #setListener}.
+     *
+     * Some primitives report without a subscription, because the listener goes
+     * on at creation or the presentation itself delivers it: the drop-down, the
+     * segmented control, the stepper, the date field and the search field from
+     * {@link #createView}, and the modal, the alert and the image from where
+     * they are presented and loaded. Falling through to the warning below would
+     * mean warning about outputs that work.
+     */
+    private boolean deliveredElsewhere(int id, View view, String event) {
+        if ("dismiss".equals(event)) {
+            return modals.get(id) != null;
+        }
+        if ("select".equals(event)) {
+            return alerts.get(id) != null;
+        }
+        if ("load".equals(event)) {
+            return view instanceof ImageView;
+        }
+        if ("change".equals(event)) {
+            return view instanceof AnSegmentedControl
+                    || view instanceof AnStepper
+                    || view instanceof android.widget.Spinner
+                    || view instanceof AnDateField;
+        }
+        if ("input".equals(event) || "submit".equals(event)) {
+            return view instanceof android.widget.SearchView;
+        }
+        return false;
+    }
+
     public void setListener(int id, String event, boolean enabled) {
         View view = views.get(id);
         // A listener on a primitive that never mounted cannot be left waiting in
         // silence: nothing would ever arrive. It was already said on creation.
         if (view == null || unsupported.contains(id)) {
+            return;
+        }
+        // What this platform cannot give is said at subscription time, not when
+        // the event fails to arrive: there is nobody looking at logcat the
+        // moment an output does not fire.
+        String refused = unsupportedEvent(event);
+        if (refused != null) {
+            if (enabled) {
+                warnEvent(
+                        event,
+                        "`(" + event + ")` cannot be delivered on " + platformName() + ": "
+                                + refused);
+            }
             return;
         }
         if ("refresh".equals(event) && view instanceof AnScrollView) {
@@ -2694,13 +2855,27 @@ public final class AnHost {
             return;
         }
         Gestures gestures = gestureFor(id, view, event, enabled);
-        if (gestures != null) {
-            gestures.set(event, enabled);
+        if (gestures != null && gestures.set(event, enabled)) {
+            return;
         }
+        if (gestures != null) {
+            gestures.discardIfIdle();
+        }
+        if (!enabled || deliveredElsewhere(id, view, event) || !isKnownEvent(event)) {
+            return;
+        }
+        // A name the framework does send and nothing here reports — nearly
+        // always the event put on the wrong primitive, `(scroll)` on an
+        // `<an-view>` or `(change)` on something that is not a control. The
+        // names it does not send —the output names Angular registers along the
+        // way— are dropped without noise: see KNOWN_EVENTS.
+        warnEvent(
+                event + ":" + view.getClass().getSimpleName(),
+                "`(" + event + ")` cannot be delivered on " + platformName() + ": this node"
+                        + " mounted a " + view.getClass().getSimpleName() + ", which does not"
+                        + " report it, so the output would never fire. Check that it is on the"
+                        + " primitive that does");
     }
-
-    /** It has been said once that a phone has no crown; no need to say it again. */
-    private boolean crownWarned;
 
     /**
      * The crown on any old view.
@@ -2712,13 +2887,11 @@ public final class AnHost {
      */
     private void setCrown(int id, View view, String event, boolean enabled) {
         if (!watch) {
-            if (enabled && !crownWarned) {
-                crownWarned = true;
+            if (enabled && warnedEvents.add(event)) {
                 android.util.Log.e(
                         "angular-native",
-                        "`(" + event + ")` cannot be delivered on this Android: the crown belongs"
-                                + " to the watch and there is no wheel to turn here, so this"
-                                + " output would never fire");
+                        "`(" + event + ")` cannot be delivered on Android: "
+                                + unsupportedOnThePhone(event));
             }
             return;
         }
@@ -3255,7 +3428,8 @@ public final class AnHost {
             this.view = view;
         }
 
-        void set(String event, boolean enabled) {
+        /** True if this is one of the names a touch can produce. */
+        boolean set(String event, boolean enabled) {
             switch (event) {
                 case "press":
                 case "click":
@@ -3290,9 +3464,23 @@ public final class AnHost {
                     swipeDown = enabled;
                     break;
                 default:
-                    return;
+                    return false;
             }
             rebuild();
+            return true;
+        }
+
+        /**
+         * Drops itself if nothing was ever subscribed.
+         *
+         * {@link #gestureFor} creates the object before knowing whether the name
+         * is a gesture at all, so a `(scroll)` on a plain view would leave one
+         * behind for the life of the node.
+         */
+        void discardIfIdle() {
+            if (!any()) {
+                gestures.remove(Integer.valueOf(id));
+            }
         }
 
         /** Is any gesture still active? If not, the view goes back to being clean. */

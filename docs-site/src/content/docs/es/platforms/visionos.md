@@ -149,6 +149,12 @@ ver el realce puesto en una captura.
   es el mismo shell y el mismo protocolo `AnPlugin`. Si alguno usa API que el
   visor no tiene, el enlazado se para con el error de swiftc; `an visionos` lo
   avisa antes de compilar para que no llegue de sorpresa.
+- **Cuatro salidas que llegan a la suscripción y no al visor**: `(hover)`,
+  `(crown)` y `(crownIdle)`, que no entrega ninguna familia de UIKit —la mirada
+  no es un puntero que una app pueda leer, y no hay rueda— y `(back)`, porque
+  `UIScreenEdgePanGestureRecognizer` no está en el SDK y esta ventana no tiene
+  borde del que tirar, así que la vuelta atrás tiene que ser un botón de la
+  plantilla. Cada rechazo se dice una vez, al suscribirse la plantilla.
 - **Nada volumétrico.** Esto es una ventana plana en un espacio 3D, que es lo
   que visionOS llama una *window*. Ni `volume` ni espacio inmersivo: las dos
   cosas son SwiftUI y RealityKit, y no hay `UIView` que montar en ellas, así

@@ -373,6 +373,87 @@ if pairs:
 else:
     failures.append('  FAIL unsupported_event could not be read from the macOS host')
 
+# ── The events iOS and Android refuse at subscribe time ─────────────────────
+#
+# The same list, in the shape each language allows. `an-ios` keeps it in
+# `family::unsupported_event`, split into what none of the three UIKit families
+# delivers and what only one of them turns down, the way `missing_kind` is
+# split; `AnHost` keeps two static methods, one for every Android and one for
+# the phone, because the crown does arrive on a watch.
+#
+# What is read is the event names, because a name is what a page has to carry.
+
+
+def rust_arms(body: str) -> set[str]:
+    """The event names in the patterns of a match whose arms return `Some`."""
+    found: set[str] = set()
+    for arm in re.findall(r'^\s+(.+?)\s*=>\s*Some\($', body, re.M):
+        found.update(re.findall(r'"(\w+)"', arm))
+    return found
+
+
+def rust_fn(source: str, signature: str, guard: str = '') -> str:
+    prefix = re.escape(guard) + r'\s*\n' if guard else ''
+    found = re.search(prefix + re.escape(signature) + r'.*?\n\}', source, re.S)
+    return found.group(0) if found else ''
+
+
+def java_method(source: str, signature: str) -> str:
+    found = re.search(re.escape(signature) + r'.*?\n    \}', source, re.S)
+    return found.group(0) if found else ''
+
+
+every_family = rust_arms(rust_fn(family, 'fn on_every_family('))
+android_always = set(
+    re.findall(r'case "(\w+)":', java_method(android_host, 'private static String unsupportedEvent('))
+)
+android_phone = set(
+    re.findall(
+        r'case "(\w+)":', java_method(android_host, 'private static String unsupportedOnThePhone(')
+    )
+)
+
+REFUSED_EVENTS = {
+    'ios': every_family
+    | rust_arms(rust_fn(family, 'fn on_this_family(', '#[cfg(target_os = "ios")]')),
+    'tvos': every_family
+    | rust_arms(rust_fn(family, 'fn on_this_family(', '#[cfg(target_os = "tvos")]')),
+    'visionos': every_family
+    | rust_arms(rust_fn(family, 'fn on_this_family(', '#[cfg(target_os = "visionos")]')),
+    'android': android_always | android_phone,
+    'wearos': android_always,
+}
+
+if not every_family:
+    failures.append('  FAIL unsupported_event could not be read from crates/an-ios/src/family.rs')
+if not android_always or not android_phone:
+    failures.append('  FAIL the two unsupportedEvent methods could not be read from AnHost')
+
+for platform, events in sorted(REFUSED_EVENTS.items()):
+    if not events:
+        continue
+    before = len(failures)
+    for language, (folder, heading) in PAGES.items():
+        path = f'{folder}/{platform}.md'
+        page = root / path
+        if not page.is_file():
+            continue
+        body = section(page.read_text(), heading) or ''
+        for event in sorted(events):
+            if f'({event})' not in body:
+                failures.append(
+                    f'  FAIL {path} does not say that ({event}) is refused at subscribe time'
+                )
+    if len(failures) == before:
+        count = len(events)
+        oks.append(
+            f'  ok   the {count} event{"" if count == 1 else "s"} {platform} refuses at '
+            'subscribe time '
+            + ('is' if count == 1 else 'are')
+            + ' on both pages: '
+            + ', '.join(f'({e})' for e in sorted(events))
+        )
+
 # ── The two languages, against each other ───────────────────────────────────
 #
 # The prose differs, of course. What cannot differ is what is inside the

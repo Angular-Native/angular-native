@@ -171,7 +171,9 @@ and that is declared rather than forgotten — a finger has no shape and nothing
 hovers before it touches. Where there *is* a mouse, both are set up with an
 `NSTrackingArea`, which unlike a recogniser does not have to be handled by the
 view itself, so they work over a system `NSButton` exactly as they do over an
-`an-view`.
+`an-view`. Bind `(hover)` on iOS or Android and the host says so when the
+template subscribes, once, with the reason — it is not dropped in silence. See
+[what a platform cannot deliver](/reference/events/#what-a-platform-cannot-deliver).
 
 ## When events are delivered
 

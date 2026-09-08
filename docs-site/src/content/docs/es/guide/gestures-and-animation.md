@@ -170,7 +170,10 @@ usan las demás apps del usuario.
 eso está declarado, no olvidado: un dedo no tiene forma y nada sobrevuela antes
 de tocar. Donde **sí** hay ratón, los dos se montan con un `NSTrackingArea`, que
 a diferencia de un reconocedor no tiene que atenderlo la propia vista, así que
-funcionan igual sobre un `NSButton` del sistema que sobre un `an-view`.
+funcionan igual sobre un `NSButton` del sistema que sobre un `an-view`. Si
+enganchas `(hover)` en iOS o en Android, el host lo dice al suscribirse la
+plantilla, una vez y con el motivo: no se descarta en silencio. Mira
+[lo que una plataforma no puede entregar](/es/reference/events/#lo-que-una-plataforma-no-puede-entregar).
 
 ## Cuándo se entregan los eventos
 

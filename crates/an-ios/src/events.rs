@@ -531,20 +531,13 @@ fn continuous_gesture(
     node: NodeId,
     queue: &EventQueue,
 ) -> Option<(Retained<UIGestureRecognizer>, Retained<GestureTarget>)> {
-    // Pinching and rotating ask for two fingers at once. The tvOS remote's
-    // surface is single-touch and the SDK says so without hedging: both
-    // classes are marked `API_UNAVAILABLE(tvos)`. Asking objc2 for the class
-    // here would close the app, so it is said and nothing is attached.
-    //
-    // `pan` and the four `swipe`s do go through: the remote's surface sends
-    // indirect touches and UIKit recognises them just like a finger's.
+    // Pinching and rotating ask for two fingers at once, and both recogniser
+    // classes are marked `API_UNAVAILABLE(tvos)`: asking objc2 for one would
+    // close the app. The guard stays here and not only in
+    // `family::unsupported_event` because the `_` arm below builds a swipe out
+    // of anything it does not recognise.
     #[cfg(target_os = "tvos")]
     if matches!(event, "pinch" | "rotate") {
-        crate::family::report(
-            &format!("({event})"),
-            "the remote has a single-touch surface, and UIPinchGestureRecognizer and \
-             UIRotationGestureRecognizer are not in the SDK",
-        );
         return None;
     }
 
@@ -631,9 +624,32 @@ fn leak_event_name(event: &str) -> &'static str {
     }
 }
 
-/// The event names this platform knows how to recognise. The rest are ignored
-/// in silence: a template may carry a `(click)` inherited from the web, and
-/// that is no reason to crash the app.
+/// The pairs that arrive through something other than `attach`.
+///
+/// Six primitives report without a recogniser and without a subscription: the
+/// tab bar through the controller's delegate, the drop-down through the menu
+/// built from `[items]`, the header through the bar button `[showsBack]` puts
+/// there, the modal and the alert through the presentation itself, and the
+/// image from the loader. `attach` returns `None` for all six, and that `None`
+/// means "already done", not "cannot be done" — without this list the host
+/// would warn about six outputs that work.
+pub fn delivered_elsewhere(kind: an_core::NodeKind, event: &str) -> bool {
+    use an_core::NodeKind;
+    matches!(
+        (kind, event),
+        (NodeKind::TabBar, "select")
+            | (NodeKind::Picker, "change")
+            | (NodeKind::NavigationBar, "back")
+            | (NodeKind::Modal, "dismiss")
+            | (NodeKind::Alert, "select")
+            | (NodeKind::Image, "load")
+    )
+}
+
+/// Attaches an event to a view. `None` means this host has nothing to hang it
+/// on; the caller decides whether that is worth a warning, and
+/// `host::set_listener` does warn — see `delivered_elsewhere` for the pairs
+/// that legitimately return `None`.
 ///
 /// `kind` decides which UIKit mechanism is used: gestures for ordinary views,
 /// target-action for text fields, a delegate for scrolling.
@@ -708,19 +724,9 @@ pub fn attach(
 
     // Pull to refresh. On iOS the system draws it: a `UIRefreshControl` is
     // attached to the scroll view and it supplies the spinner and the
-    // animation.
-    //
-    // On tvOS it does not: the class is not in the SDK, and even if it were
-    // there is no finger to pull with. It is said and nothing is attached,
-    // rather than leaving a `(refresh)` that never fires.
-    #[cfg(target_os = "tvos")]
-    if kind == NodeKind::ScrollView && event == "refresh" {
-        crate::family::report(
-            "(refresh)",
-            "UIRefreshControl is not in the SDK, and on a television there is nothing to pull",
-        );
-        return None;
-    }
+    // animation. On tvOS the class is not in the SDK and there is no finger to
+    // pull with, so the arm is cfg'd out and `family::unsupported_event`
+    // refuses the subscription before it gets here.
     #[cfg(not(target_os = "tvos"))]
     if kind == NodeKind::ScrollView && event == "refresh" {
         let target = ControlTarget::new(mtm, node, queue);
@@ -818,18 +824,8 @@ pub fn attach(
 
     // visionOS has no system gesture for going back: the window is closed
     // through its bar, and inside the app the way back is a button the
-    // template puts there. It is said, because a `(back)` that never arrives
-    // is exactly what this project must not let through.
-    #[cfg(target_os = "visionos")]
-    if kind == NodeKind::StackView && event == "back" {
-        crate::family::report(
-            "(back)",
-            "there is no back gesture: UIScreenEdgePanGestureRecognizer is not in the SDK and \
-             the window has no edges to drag from. The way back has to be a button in the \
-             template",
-        );
-        return None;
-    }
+    // template puts there. `family::unsupported_event` says so and this
+    // function is never reached with that pair.
 
     // Continuous and directional gestures. Each carries its own recogniser:
     // UIKit already settles between them who wins when they compete.
