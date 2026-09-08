@@ -329,7 +329,7 @@ SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
 ANDROID_JAR="$(ls -d "$SDK_ROOT"/platforms/*/android.jar 2>/dev/null | sort | tail -1)"
 VENDOR_JARS="$(find "$ROOT/vendor/android" -name '*.jar' 2>/dev/null | tr '\n' ':')"
 if [ -z "$ANDROID_JAR" ] || [ ! -d "$CLASSES" ] || ! command -v javac >/dev/null; then
-  echo "  skipped the weight dump: no android.jar, no javac or no compiled shell"
+  echo "  --   the weight dump: no android.jar, no javac or no compiled shell"
   exit 0
 fi
 

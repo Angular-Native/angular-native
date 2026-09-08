@@ -73,10 +73,22 @@ for style in Light Dark; do
   fi
 done
 
-# And the one platform that has no light mode says so rather than accepting a
-# setting it cannot honour.
-if grep -qiE 'no light mode|OLED' shells/android/res/values/styles.xml; then
-  ok "the watch's theme says why it is fixed dark instead of taking the setting"
+# And the one platform that has no light mode does not accept a setting it
+# cannot honour. What decides that is the parent of the watch's theme, not the
+# comment above it: `no light mode` and `OLED` are both in the comment, so a
+# parent switched to `DayNight` left the wording — and the check — untouched.
+STYLES=shells/android/res/values/styles.xml
+WEAR="$(grep -E '<style name="Theme\.AngularNative\.Wear"' "$STYLES" || true)"
+if grep -qE 'parent="Theme\.[A-Za-z0-9]+\.Dark\.' <<<"$WEAR"; then
+  ok "the watch's theme is a Dark parent, so the setting cannot turn it light"
+else
+  ko "Theme.AngularNative.Wear is no longer a Dark parent: ${WEAR:-the style is not there}"
+fi
+
+# And that the reason is written down where the parent is, because a fixed dark
+# theme with nothing next to it reads as an oversight.
+if grep -qiE 'no light mode|OLED' "$STYLES"; then
+  ok "and says why: the watch's screen is OLED and black costs no power"
 else
   ko "nothing says why the watch ignores the appearance"
 fi

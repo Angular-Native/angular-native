@@ -32,6 +32,33 @@ def crate(path: str) -> str:
 ios = crate('crates/an-ios/src')
 android = (root / 'shells/android/java/dev/angularnative/AnHost.java').read_text()
 macos = crate('crates/an-macos/src')
+watch = crate('crates/an-watch/src')
+
+# Four hosts and not two. `an-ios` covers tvOS and visionOS and `an-android`
+# covers Wear OS, so those four are every host there is; checking iOS and
+# Android alone let a prop reach the phones and stop there, which is the same
+# silence this file exists to break.
+
+# The primitives the watch does not mount at all. A prop that only ever travels
+# on one of them is not a hole in that host: there is nothing there to set it
+# on. Read from the same function `check-platform-gaps.sh` reads, so the two
+# cannot disagree about what the watch refuses.
+NATURAL = {'Picker': 'an-select', 'TextEditor': 'an-textarea'}
+
+
+def tag_of(kind: str) -> str:
+    if kind in NATURAL:
+        return NATURAL[kind]
+    return 'an-' + re.sub(r'(?<=[a-z0-9])(?=[A-Z])', '-', kind).lower()
+
+
+snapshot = (root / 'crates/an-watch/src/snapshot.rs').read_text()
+unsupported = re.search(r'pub fn unsupported\(kind: NodeKind\).*?\n\}', snapshot, re.S)
+WATCH_REFUSES = (
+    {tag_of(k) for k in re.findall(r'NodeKind::(\w+) =>', unsupported.group(0))}
+    if unsupported
+    else set()
+)
 
 # Props that are for no host: the core consumes them and there they end.
 CORE_ONLY = {
@@ -54,15 +81,59 @@ POINTER_ONLY = {
 # the site's "Props and the native wrapper" guide. The list can only shrink.
 PENDING: dict[str, str] = {}
 
+# The same, for the watch alone, on primitives the watch does mount.
+#
+# `an-watch` has no view hierarchy: it mirrors the tree into a model SwiftUI
+# redraws, and a prop only arrives if `snapshot.rs` copies it into that model
+# and the shell's SwiftUI reads it back. These thirteen are not copied. They are
+# not refusals —nothing says they cannot be done— and they are not silent any
+# more: what each of them means on a watch is on the guide page next to this
+# list, and every entry taken out of here is one closed.
+WATCH_PENDING = {
+    'autoCapitalize': 'a TextField modifier on watchOS as everywhere else',
+    'autoCorrect': 'a TextField modifier on watchOS as everywhere else',
+    'bounces': 'ScrollView bounce is settable on watchOS',
+    'icon': "the button's SF Symbol; watchOS has the same catalogue",
+    'iconPosition': 'goes with the icon above',
+    'lineHeight': 'measure.rs already computes one for the layout, and the model does not carry it',
+    'maximumTrackColor': 'the slider is drawn by SwiftUI here, and its track takes a tint',
+    'minimumTrackColor': 'the slider is drawn by SwiftUI here, and its track takes a tint',
+    'placeholderColor': 'the placeholder itself arrives; only its colour does not',
+    'refreshing': '.refreshable exists on watchOS and the model carries no flag for it',
+    'returnKeyType': 'submitLabel exists on watchOS',
+    'thumbColor': 'the switch and the slider both take a tint',
+    'variant': "the button's shape; the model carries a title and no style",
+}
+
 # The common props are the keys of each directive's `push({...})`, plus those
 # some of them send by hand —an image's size is written by its load listener, not
 # by an input—.
-common = set(re.findall(r"this\.set\('([^']+)'", directives))
-for body in re.findall(r"this\.push\(\{(.*?)\n    \}\)", directives, re.S):
-    common.update(re.findall(r"^      (\w+):", body, re.M))
+
+
+def props_of(text: str) -> set[str]:
+    found = set(re.findall(r"this\.set\('([^']+)'", text))
+    for chunk in re.findall(r"this\.push\(\{(.*?)\n    \}\)", text, re.S):
+        found.update(re.findall(r"^      (\w+):", chunk, re.M))
+    return found
+
+
+common = props_of(directives)
+
+# Which primitive carries each prop. What comes before the first `@Directive`
+# is the shared base every primitive extends, so a prop declared there has no
+# owner and belongs to all of them.
+blocks = re.split(r"@Directive\(\{ selector: '(an-[a-z0-9-]+)' \}\)", directives)
+owners: dict[str, set[str]] = {}
+for index in range(1, len(blocks), 2):
+    for prop in props_of(blocks[index + 1]):
+        owners.setdefault(prop, set()).add(blocks[index])
+
+HOSTS = (('iOS', ios), ('Android', android), ('macOS', macos), ('watchOS', watch))
+
 common = sorted(common)
 failures = []
 pending_seen = set()
+unmounted = set()
 for prop in common:
     if prop in CORE_ONLY:
         continue
@@ -70,15 +141,32 @@ for prop in common:
         if f'"{prop}"' not in macos:
             failures.append(f'  FAIL "{prop}" is not looked at by the macOS host, which is the pointer one')
         continue
-    missing = [n for n, h in (('iOS', ios), ('Android', android)) if f'"{prop}"' not in h]
+    missing = []
+    for name, host in HOSTS:
+        if f'"{prop}"' in host:
+            continue
+        if name == 'watchOS' and owners.get(prop) and owners[prop] <= WATCH_REFUSES:
+            # Every primitive that carries it is one the watch does not mount.
+            unmounted.add(prop)
+            continue
+        missing.append(name)
     if not missing:
         if prop in PENDING:
-            failures.append(f'  FAIL "{prop}" already reaches both hosts: take it out of PENDING')
+            failures.append(f'  FAIL "{prop}" already reaches every host: take it out of PENDING')
+        if prop in WATCH_PENDING:
+            failures.append(f'  FAIL "{prop}" already reaches the watch: take it out of WATCH_PENDING')
         continue
     if prop in PENDING:
         pending_seen.add(prop)
         continue
+    if missing == ['watchOS'] and prop in WATCH_PENDING:
+        pending_seen.add(prop)
+        continue
     failures.append(f'  FAIL "{prop}" is not looked at by {" or ".join(missing)}')
+
+# A name in the list that is no longer a prop is a line nobody is reading.
+for stale in sorted(set(WATCH_PENDING) - set(common)):
+    failures.append(f'  FAIL "{stale}" is in WATCH_PENDING and is not a prop any more')
 
 # Single-platform props: they travel with their prefix, and the prefix says who
 # has to look at them. Their appearing in the other host would be a common prop
@@ -120,12 +208,16 @@ if failures:
     sys.exit(1)
 
 print(f'  ok   the {len(common) - len(CORE_ONLY) - len(POINTER_ONLY) - len(pending_seen)} '
-      'common props reach both hosts')
+      'common props reach all four hosts: iOS, Android, macOS and watchOS')
+if unmounted:
+    print(f'  ok   and {len(unmounted)} more everywhere but the watch, which mounts no primitive '
+          'that carries them: ' + ', '.join(sorted(unmounted)))
 print('  ok   the pointer props are looked at by the desktop host: '
       + ', '.join(sorted(POINTER_ONLY)))
 print(f'  ok   the {len(declared["ios"])} [ios] props are looked at by iOS alone')
 print(f'  ok   the {len(declared["android"])} [android] props are looked at by Android alone')
 print('  ok   every platform object goes through platform(), which warns about what it does not recognise')
 if pending_seen:
-    print(f'  ok   {len(pending_seen)} known pending: {", ".join(sorted(pending_seen))}')
+    print(f'  ok   {len(pending_seen)} still known not to reach the watch, on primitives it does '
+          f'mount: {", ".join(sorted(pending_seen))}')
 PY

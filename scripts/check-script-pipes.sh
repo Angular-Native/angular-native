@@ -51,4 +51,46 @@ else
   fail=1
 fi
 
+# ── One spelling for a step that did not run ────────────────────────────────
+#
+# `check-all.sh` counts the skips at the end by grepping `^ *-- `, and prints
+# "nothing was skipped: every step ran" when it finds none. Nineteen lines
+# across eight scripts used to spell the same thing `skipped` or `warn`, so a
+# run in which all of them fired still ended by saying every step ran, and CI —
+# which promotes one literal skip line to a failure — never saw them either.
+#
+# So the column is fixed: a message in the `  <tag> ` position is `ok`, `FAIL`
+# or `--`, and nothing else. `--` is the one that means "this did not run".
+# Deeper indentation is a continuation line and is not a tag.
+UNKNOWN=""
+for script in scripts/check-*.sh; do
+  case "${script##*/}" in
+    # The one file left. It is owned elsewhere and still says `skipped`; naming
+    # it is what keeps the hole visible, and the branch below deletes the name
+    # from here the day it has none left.
+    check-external.sh) continue ;;
+  esac
+  hits="$(sed 's/^[[:space:]]*#.*$//' "$script" |
+    grep -nE '(echo|printf) "  [^ "]+' | grep -vE '(echo|printf) "  (ok|FAIL|--) ' || true)"
+  [ -n "$hits" ] && UNKNOWN="$UNKNOWN$(sed "s|^|$script:|" <<<"$hits")"$'\n'
+done
+UNKNOWN="$(sed '/^$/d' <<<"$UNKNOWN")"
+
+if [ -z "$UNKNOWN" ]; then
+  echo "  ok   every check prints ok, FAIL or --, so check-all.sh's tally sees every skip"
+else
+  echo "  FAIL these print a tag check-all.sh does not count; a skip is \`  --   \`"
+  sed 's/^/       /' <<<"$UNKNOWN"
+  fail=1
+fi
+
+LEFT="$(grep -cE '(echo|printf) "  (skipped|warn)' scripts/check-external.sh || true)"
+if [ "$LEFT" = 0 ]; then
+  echo "  FAIL check-external.sh no longer spells a skip any other way: take it out of the"
+  echo "       exception above, or the next one to appear there goes uncounted"
+  fail=1
+else
+  echo "  ok   $LEFT lines in check-external.sh still to convert, and no other script has any"
+fi
+
 exit "$fail"

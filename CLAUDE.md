@@ -116,8 +116,11 @@ it is the fastest way to find out which:
   `packages/runtime/runtime.js` -> `kind_from_byte` in
   `crates/an-bridge/src/protocol.rs`.
 - **Style names** (`check-styles.sh`): the JS list vs the core's.
-- **Props reaching both hosts** (`check-wrapper.sh`): a directive prop must be
-  read by every host crate, not just one.
+- **Props reaching every host** (`check-wrapper.sh`): a directive prop must be
+  read by all four host crates — `an-ios`, the Android shell, `an-macos` and
+  `an-watch` — not just one. `an-watch` is the one with gaps left: thirteen
+  props it does not copy into its model, named in `WATCH_PENDING` there and on
+  the guide page, and the list can only shrink.
 - **The site's address** (`check-docs-url.sh`): `DOCS_URL` at the root is the
   one place it is decided. Astro reads that file and derives the `CNAME` from
   it; the README's links, the `homepage` of every npm package and the URLs

@@ -28,7 +28,9 @@ que se coló.
 
 Que una prop llegue de verdad al otro extremo lo comprueba
 `scripts/check-wrapper.sh`, que compara la lista de props de las directivas con
-lo que leen de verdad el crate de iOS, el shell de Android y el crate de macOS.
+lo que leen de verdad los cuatro hosts: el crate de iOS, el shell de Android, el
+crate de macOS y el de watchOS. Esos cuatro son todos los que hay — `an-ios`
+sirve también a tvOS y visionOS, y `an-android` a Wear OS.
 
 ## Cómo viaja una prop
 
@@ -292,12 +294,13 @@ padding. Mira [Componentes](/es/reference/components/).
 ## La comprobación que mantiene esto honesto
 
 `scripts/check-wrapper.sh` compara las props que declaran las directivas con lo
-que leen los hosts, y suspende la compilación si no cuadran. Lee el crate de iOS
-**entero** y el de macOS entero, no un fichero de cada — las props de
-accesibilidad de Apple viven en su propio módulo, y una comprobación que solo
-mirara el fichero principal del host informaría de las seis como inalcanzables.
+que leen los hosts, y suspende la compilación si no cuadran. Los cuatro hosts, no
+los dos teléfonos: iOS, Android, macOS y watchOS. Y lee el crate **entero** cada
+vez, no un fichero — las props de accesibilidad de Apple viven en su propio
+módulo, y una comprobación que solo mirara el fichero principal del host
+informaría de las seis como inalcanzables.
 
-Mantiene tres listas, y las tres son el asunto:
+Mantiene cuatro listas, y las cuatro son el asunto:
 
 - **Solo del core.** `intrinsicWidth` e `intrinsicHeight`. El layout las consume
   para reservar el sitio de una imagen que todavía no ha cargado, y no tienen
@@ -309,18 +312,34 @@ Mantiene tres listas, y las tres son el asunto:
   al host de **escritorio**, con la misma dureza. Su salida hermana, `(hover)`,
   no está aquí porque las salidas no son props: viajan por otro camino, y allí
   cada host dice lo que no puede entregar. Mira [macOS](/es/platforms/macos/).
-- **Pendientes.** Props que deberían llegar y no llegan. **Ahora mismo está
-  vacía**, y la lista solo puede encoger: una prop que siga en ella y que ahora
-  sí llegue a los dos hosts también es un fallo, así que nadie puede dejar una
-  fuga arreglada marcada como rota.
+- **Pendientes.** Props que deberían llegar y no llegan a algún host. **Ahora
+  mismo está vacía**, y la lista solo puede encoger: una prop que siga en ella y
+  que ahora sí llegue a todos los hosts también es un fallo, así que nadie puede
+  dejar una fuga arreglada marcada como rota.
+- **Pendientes en el reloj.** Trece props que llegan a iOS, Android y macOS y se
+  paran en watchOS: `autoCapitalize`, `autoCorrect`, `bounces`, `icon`,
+  `iconPosition`, `lineHeight`, `maximumTrackColor`, `minimumTrackColor`,
+  `placeholderColor`, `refreshing`, `returnKeyType`, `thumbColor` y `variant`.
+  `an-watch` no tiene jerarquía de vistas: refleja el árbol en un modelo que
+  SwiftUI redibuja, así que una prop solo llega si `snapshot.rs` la copia a ese
+  modelo y el shell la lee de vuelta, y estas trece no se copian. Ninguna es una
+  negativa —watchOS puede con las trece— y la lista solo puede encoger con la
+  misma regla que la de arriba. Una prop que solo viaja en un primitivo que el
+  reloj no monta (`an-web-view`, `an-map-view`, `an-video-view`,
+  `an-navigation-bar`, `an-tab-bar`) no está en ella: el reloj no la está
+  perdiendo, es que allí no hay nada sobre lo que ponerla. Cuáles son esos
+  primitivos se lee de la lista de negativas del propio host del reloj, para que
+  las dos no puedan separarse.
 
 Hay además una comprobación estructural: el número de inputs `[ios]`/`[android]`
 declarados tiene que ser igual al número de veces que se llama al ayudante que
 los desmonta, para que nadie pueda colar un objeto de plataforma con una
 asignación normal y perder una clave desconocida en silencio.
 
-Que esa tercera lista esté vacía es la respuesta actual a «¿esta prop hace algo
-de verdad?»: **no hay fugas conocidas**. Llegó ahí encontrando ocho — una
+Que la tercera lista esté vacía es la respuesta actual a «¿esta prop hace algo
+de verdad?» en los tres hosts que montan vistas: **no hay fugas conocidas en
+iOS, Android ni macOS**, y quedan trece abiertas en el reloj. Llegó ahí
+encontrando ocho — una
 contraseña dibujada en texto plano en Android, un spinner que no paraba nunca,
 una barra de scroll que no se podía esconder, un rebote que no se podía apagar,
 dos props de fuente que no hacían nada, y `lineHeight` y `letterSpacing`, que

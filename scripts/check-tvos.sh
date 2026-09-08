@@ -131,16 +131,23 @@ fi
 #    on a television there are no fingers: `PrimaryActionTriggered` arrives. With
 #    the wrong event the button takes the focus, turns white, and pressing it
 #    does nothing. There is no error to look at, so it is checked here.
-if sed -n '/#\[cfg(target_os = "tvos")\]/,+3p' crates/an-ios/src/events.rs |
-  grep -q 'NodeKind::Button, "press"'; then
-  if sed -n '/#\[cfg(target_os = "tvos")\]/,+4p' crates/an-ios/src/events.rs |
-    grep -q 'PrimaryActionTriggered'; then
-    check ok 'on tvOS the button listens for PrimaryActionTriggered, not TouchUpInside'
-  else
-    check no 'on tvOS the button no longer listens for PrimaryActionTriggered'
-  fi
-else
+#    The window is the one arm and not the union of them. `events.rs` has eight
+#    `#[cfg(target_os = "tvos")]` sites; a `sed` range emits a window for each
+#    and a grep over the concatenation only asks that the two strings appear
+#    somewhere between them. Swapping the two arms leaves the television on
+#    `TouchUpInside` and both strings still in the pile. So the arm is found by
+#    the cfg line immediately above it, and read three lines on from there.
+TV_BUTTON="$(awk '
+  previous ~ /#\[cfg\(target_os = "tvos"\)\]/ && /\(NodeKind::Button, "press"\)/ { left = 3 }
+  left > 0 { print; left-- }
+  { previous = $0 }
+' crates/an-ios/src/events.rs)"
+if [ -z "$TV_BUTTON" ]; then
   check no 'the tvOS button no longer has a control event of its own'
+elif grep -q 'PrimaryActionTriggered' <<<"$TV_BUTTON"; then
+  check ok 'on tvOS the button listens for PrimaryActionTriggered, not TouchUpInside'
+else
+  check no 'on tvOS the button no longer listens for PrimaryActionTriggered'
 fi
 
 # 6. The cross-compilation, which is the expensive one and the one that may not

@@ -44,6 +44,12 @@ root = pathlib.Path(sys.argv[1])
 oks: list[str] = []
 failures: list[str] = []
 missing_sources: list[str] = []
+# A comparison that could not be set up. It is neither an `ok` nor a `FAIL`:
+# every source here goes through `read()`, which records the file it could not
+# open, and a section that finds the file but not the shape it needs has to say
+# so in the same place. A section that just falls through leaves no line at all,
+# and a missing `ok` among fifteen of them is not something anybody notices.
+skipped: list[str] = []
 
 
 def read(path: str) -> str:
@@ -310,7 +316,12 @@ for platform, refused in sorted(REFUSED.items()):
 # never reach any host. Both are recognised rather than listed: an entry counts
 # as a gap if a directive declares it as an `input()` and the core does not
 # read it.
-if 'const IGNORED' in macos_host:
+if 'const IGNORED' not in macos_host:
+    skipped.append(
+        'skipped: crates/an-macos/src/host.rs has no `const IGNORED`, so the props AppKit '
+        'takes and drops were not compared with either page'
+    )
+else:
     listing = macos_host[macos_host.index('const IGNORED'):]
     listing = listing[: listing.index('\n];')]
     ignored = re.findall(r'\(\s*"([\w-]+)"', listing)
@@ -430,6 +441,7 @@ for platform, events in sorted(REFUSED_EVENTS.items()):
         path = f'{folder}/{platform}.md'
         page = root / path
         if not page.is_file():
+            skipped.append(f'skipped: {path} is not there, so its refused events were not read')
             continue
         body = section(page.read_text(), heading) or ''
         for event in sorted(events):
@@ -460,9 +472,13 @@ for platform in sorted(REFUSED):
     for language, (folder, heading) in PAGES.items():
         page = root / f'{folder}/{platform}.md'
         if not page.is_file():
+            skipped.append(f'skipped: {folder}/{platform}.md is not there')
             continue
         body = section(page.read_text(), heading)
         if body is None:
+            skipped.append(
+                f'skipped: {folder}/{platform}.md has no "{heading}" section'
+            )
             continue
         # A long literal in a bullet is wrapped, so the newline inside a span
         # is not a difference between the two pages: it is where the line ended.
@@ -471,6 +487,9 @@ for platform in sorted(REFUSED):
         )
         spans[f'{language}-bullets'] = len(re.findall(r'^- ', body, re.M))
     if 'en' not in spans or 'es' not in spans:
+        # Both languages or neither: one page alone cannot be compared with the
+        # other, and the missing one is already named above.
+        skipped.append(f'skipped: the two {platform} pages were not compared entry for entry')
         continue
     if spans['en-bullets'] != spans['es-bullets']:
         failures.append(
@@ -497,6 +516,8 @@ if not failures:
 
 for line in oks:
     print(line)
+for line in skipped:
+    print('  --   ' + line)
 for line in failures:
     print(line)
 sys.exit(1 if failures else 0)

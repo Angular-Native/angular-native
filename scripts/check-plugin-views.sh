@@ -25,8 +25,14 @@ fail=0
 ok() { echo "  ok   $1"; }
 ko() { echo "  FAIL $1"; fail=1; }
 
+# Comments are stripped before anything is matched. A grep a comment can
+# satisfy proves the feature was described, not that it is there: the Android
+# host explains `an:view` in a javadoc a thousand lines above the `case` that
+# reads it, and the registry names `register` in the prose over the method.
+code() { sed -e '/^[[:space:]]*\/\*/d' -e '/^[[:space:]]*\*/d' -e 's://.*::' "$1"; }
+
 has() {
-  if grep -qE -e "$2" "$1" 2>/dev/null; then ok "$3"; else ko "$3"; fi
+  if grep -qE -e "$2" <<<"$(code "$1" 2>/dev/null || true)"; then ok "$3"; else ko "$3"; fi
 }
 
 echo "== views a plugin brings"
@@ -47,9 +53,9 @@ for host in ios macos; do
     "and the $host header declares the symbol both sides use"
 done
 
-has 'shells/android/java/dev/angularnative/AnPluginViews.java' 'register' \
+has 'shells/android/java/dev/angularnative/AnPluginViews.java' 'public static void register\(' \
   'the Android shell has a registry of its own'
-has 'shells/android/java/dev/angularnative/AnHost.java' 'an:view' \
+has 'shells/android/java/dev/angularnative/AnHost.java' 'case "an:view":' \
   'and the Android host reads the name off the node'
 
 # The shell has to install the registry *before* the runtime exists: the core
@@ -77,12 +83,12 @@ done
 # same missing view is one mistake. Once per *frame* would be worse than
 # useless — the prop arrives on every change.
 for host in ios macos; do
-  if grep -qE 'no plugin registers a view called' "crates/an-$host/src/host.rs"; then
+  if grep -qE 'no plugin registers a view called' <<<"$(code "crates/an-$host/src/host.rs" || true)"; then
     ok "an-$host says which name mounted nothing"
   else
     ko "an-$host says which name mounted nothing"
   fi
-  if grep -qE 'warned_views|warn_once\(format!\("plugin-view' "crates/an-$host/src/host.rs"; then
+  if grep -qE 'warned_views|warn_once\(format!\("plugin-view' <<<"$(code "crates/an-$host/src/host.rs" || true)"; then
     ok "and says it once per name, not once per node"
   else
     ko "and says it once per name, not once per node"
@@ -120,7 +126,7 @@ $(grep -oE 'Custom#[0-9]+ \[[0-9]+,[0-9]+ [0-9]+x[0-9]+\]' <<<"$TREE" | head -1)
     echo "$TREE" | tail -20
   fi
 else
-  echo "  skipped  examples/plugins-apple does not build, so the tree was not read"
+  echo "  --   examples/plugins-apple does not build, so the tree was not read"
 fi
 
 exit "$fail"

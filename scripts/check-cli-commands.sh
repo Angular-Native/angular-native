@@ -22,12 +22,17 @@ echo "== the CLI's commands"
 
 # Read from clap, which is the only thing that actually decides. `help` is
 # clap's own and is not one of ours.
+#
+# The `|| true` is what keeps the branch below reachable. Under `set -e` and
+# `pipefail` a binary that does not build takes the whole script with it at
+# this line: no output, status 1, and a compilation error read as an invariant
+# broken. The branch says which of the two it was.
 COMMANDS="$(cargo an --help 2>/dev/null \
   | sed -n '/^Commands:/,/^$/p' \
-  | grep -oE '^  [a-z]+' | tr -d ' ' | grep -v '^help$' | sort)"
+  | grep -oE '^  [a-z]+' | tr -d ' ' | grep -v '^help$' | sort || true)"
 COUNT="$(wc -w <<<"$COMMANDS" | tr -d ' ')"
 if [ "$COUNT" -lt 5 ]; then
-  ko "the command list could not be read from clap (got $COUNT)"
+  ko "the command list could not be read from clap (got $COUNT): does \`cargo an --help\` build?"
   exit 1
 fi
 ok "the binary has $COUNT commands: $(tr '\n' ' ' <<<"$COMMANDS" | sed 's/ $//')"
@@ -49,17 +54,24 @@ fi
 EN="${WORDS%%|*}"
 ES="${WORDS##*|}"
 
+# Every place the file counts them, not the first one that agrees. A file that
+# says the number twice is a file where one of the two can go stale on its own,
+# and a `grep -q` over the whole of it is satisfied by whichever is still right.
+NUMERALS='(ten|eleven|twelve|thirteen|fourteen|fifteen|diez|once|doce|trece|catorce|quince)'
 for file in docs-site/src/content/docs/reference/cli.md:"$EN" \
             docs-site/src/content/docs/es/reference/cli.md:"$ES" \
             README.md:"$EN"; do
   path="${file%%:*}"
   word="${file##*:}"
-  if grep -qiE "\\b$word commands?\\b|\\b$word comandos\\b" "$path"; then
-    ok "$path says $word"
+  CLAIMS="$(grep -inE "\\b$NUMERALS (commands?|comandos)\\b" "$path" || true)"
+  WRONG="$(grep -ivE "\\b$word (commands?|comandos)\\b" <<<"$CLAIMS" | sed '/^$/d' || true)"
+  if [ -z "$CLAIMS" ]; then
+    ko "$path never counts the commands, and there are $COUNT"
+  elif [ -n "$WRONG" ]; then
+    ko "$path counts the commands as something other than $word, and there are $COUNT"
+    sed 's/^/       /' <<<"$WRONG"
   else
-    ko "$path does not say $word, and there are $COUNT"
-    grep -inE '\b(ten|eleven|twelve|thirteen|fourteen|fifteen|diez|once|doce|trece|catorce|quince) (commands?|comandos)\b' \
-      "$path" | sed 's/^/       /' || true
+    ok "$path says $word, in all $(grep -c . <<<"$CLAIMS") of the places it counts them"
   fi
 done
 

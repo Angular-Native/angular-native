@@ -117,7 +117,7 @@ fi
 # are named and this stops.
 running="$(pgrep -f "AngularNativeMac.app/Contents/MacOS/AngularNativeMac" 2>/dev/null || true)"
 if [ -n "$running" ]; then
-  echo "  skipped everything that needs the app running: a copy of it is already up as"
+  echo "  --   everything that needs the app running: a copy of it is already up as"
   echo "           pid(s) $(echo "$running" | tr '\n' ' ')and two copies of one .app answer the"
   echo "           accessibility server with no window, so launching another would break"
   echo "           check-accessibility.sh. Clear it with"
@@ -188,7 +188,7 @@ PYEOF
     fail=1
   fi
 else
-  echo "  skipped the bundled image: it needs ffmpeg and python3 to read the pixels"
+  echo "  --   the bundled image: it needs ffmpeg and python3 to read the pixels"
 fi
 
 # 6. The noisy path, which is what holds up the house rule. The controls example
@@ -303,7 +303,7 @@ if command -v ffmpeg >/dev/null 2>&1; then
     fail=1
   fi
 else
-  echo "  skipped the corner radii: ffmpeg is not installed, so the pixels cannot be read"
+  echo "  --   the corner radii: ffmpeg is not installed, so the pixels cannot be read"
 fi
 
 # Letter spacing, measured and not only drawn.
@@ -341,7 +341,7 @@ PYEOF
     fail=1
   fi
 else
-  echo "  skipped the letter spacing: it needs ffmpeg and python3 to read the pixels"
+  echo "  --   the letter spacing: it needs ffmpeg and python3 to read the pixels"
 fi
 
 # A hover only happens if the window is actually under the pointer, and that
@@ -355,7 +355,7 @@ hovered=yes
 if grep -q "\[hover\] inside pointer" "$HOVER_LOG"; then
   echo "  ok   the pointer enters the view and the template hears about it"
 elif grep -q "frontmost=no" "$HOVER_LOG"; then
-  echo "  skipped the (hover): the app never reached the front, so the pointer"
+  echo "  --   the (hover): the app never reached the front, so the pointer"
   echo "           was never on top of it. Close the simulators and try again."
   hovered=no
 else
@@ -372,7 +372,7 @@ fi
 # a red suite for a reason the code had nothing to do with, which is exactly
 # what the skip above exists to avoid. A skip is still not a pass: it says so.
 if [ "$hovered" = "no" ]; then
-  echo "  skipped whether the window changes with the mouse on top: there was no"
+  echo "  --   whether the window changes with the mouse on top: there was no"
   echo "           hover to change it."
 elif [ -s "$SHOT_STILL" ] && [ -s "$SHOT_HOVER" ] \
   && ! cmp -s "$SHOT_STILL" "$SHOT_HOVER"; then

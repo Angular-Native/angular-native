@@ -60,7 +60,7 @@ echo
 step "$ROOT/scripts/check-signals.sh"
 
 echo
-echo "== props that reach both hosts"
+echo "== props that reach every host"
 step "$ROOT/scripts/check-wrapper.sh"
 
 echo
@@ -229,6 +229,10 @@ echo "== skipped"
 # invisible; a `--` gathered at the end next to a number is not. The reason and
 # the command that fixes it are printed where they happen, which is why this
 # repeats the line rather than inventing a shorter one.
+#
+# One spelling, and `check-script-pipes.sh` is what keeps it to one: a script
+# that says `skipped` or `warn` instead prints a line this grep does not see,
+# and the run ends by claiming every step ran.
 #
 # It is a report and not a gate: `--no-android`, a machine with no simulator
 # runtime and a keychain with no signing identity all skip legitimately, and a

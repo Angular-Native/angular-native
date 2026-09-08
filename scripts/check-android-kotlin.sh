@@ -27,11 +27,11 @@ echo "== Android Kotlin plugins"
 
 SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
 if [ ! -d "$SDK_ROOT/platforms" ] || [ ! -s vendor/android/build/classpath.txt ]; then
-  echo "  skipped: no Android SDK or no vendored dependencies"
+  echo "  --   no Android SDK or no vendored dependencies"
   exit 0
 fi
 if [ ! -f vendor/android/tools/kotlinc/kotlin-compiler.jar ]; then
-  echo "  skipped: no Kotlin compiler; python3 scripts/fetch-android-deps.py fetches it"
+  echo "  --   no Kotlin compiler; python3 scripts/fetch-android-deps.py fetches it"
   exit 0
 fi
 

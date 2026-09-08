@@ -26,8 +26,10 @@ does not compile. The third is for what the compiler cannot see — an object
 assembled at runtime, a spread, an `any` that slipped through.
 
 That a prop really reaches the other end is checked by `scripts/check-wrapper.sh`,
-which compares the directives' prop list against what the iOS crate, the Android
-shell and the macOS crate actually read.
+which compares the directives' prop list against what all four hosts actually
+read: the iOS crate, the Android shell, the macOS crate and the watchOS crate.
+Those four are every host there is — `an-ios` also serves tvOS and visionOS, and
+`an-android` also serves Wear OS.
 
 ## How a prop travels
 
@@ -289,12 +291,13 @@ padding. See [Components](/reference/components/).
 ## The check that keeps this honest
 
 `scripts/check-wrapper.sh` compares the props the directives declare against
-what the hosts read, and it fails the build on a mismatch. It reads the **whole**
-iOS crate and the whole macOS crate, not one file each — the Apple accessibility
-props live in their own module, and a check that only looked at the main host
-file would report all six as unreachable.
+what the hosts read, and it fails the build on a mismatch. All four hosts, not
+the two phones: iOS, Android, macOS and watchOS. And it reads the **whole** crate
+each time, not one file — the Apple accessibility props live in their own module,
+and a check that only looked at the main host file would report all six as
+unreachable.
 
-It maintains three lists, and all three are the point:
+It maintains four lists, and all four are the point:
 
 - **Core-only.** `intrinsicWidth` and `intrinsicHeight`. Layout consumes them to
   reserve the space for an image that has not loaded yet, and they have nothing
@@ -306,17 +309,32 @@ It maintains three lists, and all three are the point:
   **desktop** host instead, just as hard. Its matching output, `(hover)`, is not
   here because outputs are not props: they travel by a different path, and there
   each host says what it cannot deliver. See [macOS](/platforms/macos/).
-- **Pending.** Props that ought to arrive and do not. **It is currently empty**,
-  and the list can only shrink: a prop still on it that now reaches both hosts
-  is also a failure, so nobody can leave a fixed leak marked as broken.
+- **Pending.** Props that ought to arrive and do not reach some host. **It is
+  currently empty**, and the list can only shrink: a prop still on it that now
+  reaches every host is also a failure, so nobody can leave a fixed leak marked
+  as broken.
+- **Pending on the watch.** Thirteen props that reach iOS, Android and macOS and
+  stop at watchOS: `autoCapitalize`, `autoCorrect`, `bounces`, `icon`,
+  `iconPosition`, `lineHeight`, `maximumTrackColor`, `minimumTrackColor`,
+  `placeholderColor`, `refreshing`, `returnKeyType`, `thumbColor` and `variant`.
+  `an-watch` has no view hierarchy: it mirrors the tree into a model SwiftUI
+  redraws, so a prop arrives only if `snapshot.rs` copies it into that model and
+  the shell reads it back, and these thirteen are not copied. None of them is a
+  refusal — watchOS can do all thirteen — and the list can only shrink under the
+  same rule as the one above. A prop that only ever travels on a primitive the
+  watch does not mount (`an-web-view`, `an-map-view`, `an-video-view`,
+  `an-navigation-bar`, `an-tab-bar`) is not on it: the watch is not dropping it,
+  there is nothing there to set it on. Which primitives those are is read from
+  the watch host's own refusal list, so the two cannot drift apart.
 
 There is a structural check too: the number of `[ios]`/`[android]` inputs
 declared has to equal the number of times the take-it-apart helper is called, so
 nobody can smuggle a platform object out with a plain assignment and lose an
 unknown key in silence.
 
-That third list being empty is the current answer to "does this prop actually do
-anything": **there are no known leaks**. It got there by finding eight — a
+The third list being empty is the current answer to "does this prop actually do
+anything" on the three hosts that mount views: **no known leaks on iOS, Android
+or macOS**, and thirteen still open on the watch. It got there by finding eight — a
 password rendered in plain text on Android, a spinner that never stopped, a
 scrollbar that could not be hidden, a bounce that could not be turned off, two
 font props that did nothing, and `lineHeight` and `letterSpacing`, which were

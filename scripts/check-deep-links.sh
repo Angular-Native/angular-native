@@ -49,7 +49,7 @@ cargo an build examples/router >/dev/null
 OUTPUT="$(AN_OPEN_URL='playground://ship/3' \
   cargo run -q -p an-bridge --example headless -- build/bundle/router/main.js 3 2>&1)"
 if ! grep -qF 'opened with' <<<"$OUTPUT"; then
-  echo "  skipped the headless runner has no AN_OPEN_URL support"
+  echo "  --   the headless runner has no AN_OPEN_URL support"
   exit 0
 fi
 
@@ -87,7 +87,7 @@ for plist in shells/ios/Resources/Info.plist \
     [ -n "$scheme" ] && [ "$scheme" = "$id" ] && r=0 || r=1
     check $r "and its scheme is its bundle identifier ($scheme vs $id)"
   else
-    echo "  skipped plutil is not here, so the scheme cannot be read"
+    echo "  --   plutil is not here, so the scheme cannot be read"
   fi
 done
 
@@ -221,11 +221,11 @@ check $r 'the location subscribes before it takes the queue, so nothing falls be
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "  --   the macOS run is skipped: the .app only builds on a Mac"
 elif ! command -v plutil >/dev/null 2>&1; then
-  echo "  skipped the macOS run: the bundle identifier cannot be read"
+  echo "  --   the macOS run: the bundle identifier cannot be read"
 else
   BUILD_LOG="$(mktemp)"
   if ! cargo an macos examples/router --no-launch >"$BUILD_LOG" 2>&1; then
-    echo "  skipped the macOS run: the .app did not build"
+    echo "  --   the macOS run: the .app did not build"
     tail -20 "$BUILD_LOG"
   else
     APP="$ROOT/build/macos/AngularNativeMac.app"

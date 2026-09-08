@@ -80,7 +80,11 @@ produced_by() {
     ios | tvos | visionos) grep -qE "PLATFORM: &str = \"$1\"" "$IOS_DEVICE" ;;
     macos) grep -qE "platform: \"macos\"" "$MAC_DEVICE" ;;
     watchos) grep -qE "PLATFORM: &str = \"watchos\"" "$WATCH_DEVICE" ;;
-    android | wearos) grep -qw "$1" <<<"$ANDROID_INFO" ;;
+    # The key and not the word. `-w` counts `.` as a word boundary, so a bare
+    # `android` is satisfied by `android.os.Build.VERSION.RELEASE` two lines
+    # below and the platform key can be deleted without the arm noticing. Every
+    # other arm matches the assignment that produces the value; so does this one.
+    android | wearos) grep -qE '\\"platform\\":.*"'"$1"'"' <<<"$ANDROID_INFO" ;;
     *) return 1 ;;
   esac
 }
@@ -90,7 +94,7 @@ for platform in $PLATFORMS; do
   if produced_by "$platform"; then
     covered=$((covered + 1))
   elif grep -qw "$platform" <<<"$KNOWN_MISSING"; then
-    echo "  warn no host ever answers '$platform': see the Wear OS gap in"
+    echo "  --   no host ever answers '$platform': see the Wear OS gap in"
     echo "       docs-site/src/content/docs/platforms/wearos.md"
   else
     echo "  FAIL '$platform' is in NativePlatform and no host produces it"
