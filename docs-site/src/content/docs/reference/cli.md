@@ -367,6 +367,17 @@ On a cold restart the native views are torn down, the JS engine is new, the tree
 is empty and every signal is back at its initial value. Two things survive a hot
 reload on purpose: the hot-state signals, and the router's history.
 
+The restart is `an dev`'s own, not yours: the engine is thrown away and stood
+up again inside the running process, and the app is back on screen without
+anybody touching the terminal. What a restart costs is component state, not the
+dev loop.
+
+`packages/runtime/runtime.js` is the exception to all of the above, and it is
+not in either half. It is `include_str!`-ed into the host crate and evaluated
+when the engine starts, so it travels in the **native binary**: no bundle can
+carry it and no reload can reach it. Saving it rebuilds the app and puts it
+back on the device — which is the one thing here that costs a compile.
+
 Apple shells talk to the server over a WebSocket; the Android shell long-polls,
 because there is no platform WebSocket there.
 

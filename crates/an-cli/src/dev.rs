@@ -11,11 +11,21 @@
 //! still on the same screen with whatever you had typed.
 //!
 //! If what changed is in the top half there is no refresh worth attempting —only
-//! one copy of Angular fits in the interpreter— and it restarts whole. Same if
-//! the component tree no longer lines up. See
-//! `packages/platform-native/src/hot-refresh.ts`.
+//! one copy of Angular fits in the interpreter— and it restarts whole. That
+//! restart is not something anyone has to do by hand: the engine thread throws
+//! the interpreter away, stands a new one up and evaluates the bundle it has
+//! just been handed, so the developer sees the new framework code on the next
+//! frame and loses the component state, nothing else. Same if the component
+//! tree no longer lines up. See `packages/platform-native/src/hot-refresh.ts`.
+//!
+//! One part of `packages/` never travels in the bundle: the prelude,
+//! `packages/runtime/runtime.js`, is `include_str!`-ed into `an-bridge` and so
+//! lives inside the native binary. Rebuilding the bundle after saving it
+//! produces a byte-identical top half, the stamp matches, the reload is
+//! reported as hot and nothing on screen has changed — a save that says it
+//! worked and did not. See `native_only`.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -123,109 +133,7 @@ pub fn run(
 
     eprintln!("==> servidor de desarrollo en {url}");
     if !no_launch {
-        match &target {
-            Target::Ios { device } => {
-                let package = ios::assemble(
-                    &workspace,
-                    &app,
-                    ios::Family::Ios,
-                    &bundle_path,
-                    false,
-                    Some(&url),
-                    &plugins,
-                    // The dev server goes to a simulator, always: a device
-                    // build is signed, and a signature is not something to put
-                    // in a loop that rebuilds on every save.
-                    None,
-                )?;
-                ios::launch(&package, device)?;
-            }
-            Target::TvOs { device } => {
-                let package = ios::assemble(
-                    &workspace,
-                    &app,
-                    ios::Family::TvOs,
-                    &bundle_path,
-                    false,
-                    Some(&url),
-                    &plugins,
-                    // The dev server goes to a simulator, always: a device
-                    // build is signed, and a signature is not something to put
-                    // in a loop that rebuilds on every save.
-                    None,
-                )?;
-                ios::launch(&package, device)?;
-            }
-            Target::VisionOs { device } => {
-                let package = ios::assemble(
-                    &workspace,
-                    &app,
-                    ios::Family::VisionOs,
-                    &bundle_path,
-                    false,
-                    Some(&url),
-                    &plugins,
-                    // The dev server goes to a simulator, always: a device
-                    // build is signed, and a signature is not something to put
-                    // in a loop that rebuilds on every save.
-                    None,
-                )?;
-                ios::launch(&package, device)?;
-            }
-            Target::WatchOs { device } => {
-                let package =
-                    watchos::assemble(&workspace, &app, &bundle_path, false, Some(&url), &plugins)?;
-                watchos::launch(&package, device)?;
-            }
-            // No `simctl` and no device: `launch` kills whatever instance was
-            // already up —otherwise `open` only brings the old window to the
-            // front and the change looks as though it never landed— and opens
-            // the new one. See `macos.rs`.
-            Target::MacOs => {
-                let package = macos::assemble(
-                    &workspace,
-                    &app,
-                    &bundle_path,
-                    false,
-                    Some(&url),
-                    &plugins,
-                    None,
-                )?;
-                macos::launch(&package)?;
-            }
-            Target::Android | Target::Wear { .. } => {
-                let (form, device) = match &target {
-                    Target::Wear { device } => {
-                        (crate::android::Form::Watch, device.as_deref())
-                    }
-                    _ => (crate::android::Form::Phone, None),
-                };
-                let apk = crate::android::assemble(
-                    &workspace,
-                    &app,
-                    &bundle_path,
-                    false,
-                    Some(&url),
-                    &plugins,
-                    // The dev loop is always the debug key: a release-signed
-                    // APK is an artefact for a store, not something to rebuild
-                    // every time a file is saved.
-                    crate::android::Packaging {
-                        form,
-                        signing: None,
-                        aab: false,
-                        // The APK default, arm64-v8a alone. The dev loop has
-                        // no --abi of its own: every extra ABI is another
-                        // cross-compilation of the core between saving a file
-                        // and seeing it, and the device on the other end is
-                        // one machine whose architecture does not change.
-                        abis: crate::android::abis(&[], false),
-                        bundletool: None,
-                    },
-                )?;
-                crate::android::install_and_launch(&workspace, &apk, form, device, Some(port))?;
-            }
-        }
+        launch_app(&workspace, &app, &target, &bundle_path, &url, port, &plugins)?;
     }
     eprintln!(
         "==> vigilando {}{}",
@@ -233,7 +141,126 @@ pub fn run(
         if workspace.project.is_none() { " y packages/" } else { "" }
     );
 
-    watch(workspace, app, server, runtime, plugins)
+    watch(workspace, app, Launch { target, url, port, no_launch }, server, runtime, plugins)
+}
+
+/// Builds the app and puts it on the device. It runs at startup and again
+/// whenever a save has changed something the bundle cannot carry: the same call,
+/// because a rebuilt-and-relaunched app is exactly what the developer would
+/// otherwise do by hand.
+fn launch_app(
+    workspace: &Workspace,
+    app: &Path,
+    target: &Target,
+    bundle_path: &Path,
+    url: &str,
+    port: u16,
+    plugins: &[Plugin],
+) -> Result<()> {
+    match target {
+        Target::Ios { device } => {
+            let package = ios::assemble(
+                workspace,
+                app,
+                ios::Family::Ios,
+                bundle_path,
+                false,
+                Some(url),
+                plugins,
+                // The dev server goes to a simulator, always: a device
+                // build is signed, and a signature is not something to put
+                // in a loop that rebuilds on every save.
+                None,
+            )?;
+            ios::launch(&package, device)?;
+        }
+        Target::TvOs { device } => {
+            let package = ios::assemble(
+                workspace,
+                app,
+                ios::Family::TvOs,
+                bundle_path,
+                false,
+                Some(url),
+                plugins,
+                // The dev server goes to a simulator, always: a device
+                // build is signed, and a signature is not something to put
+                // in a loop that rebuilds on every save.
+                None,
+            )?;
+            ios::launch(&package, device)?;
+        }
+        Target::VisionOs { device } => {
+            let package = ios::assemble(
+                workspace,
+                app,
+                ios::Family::VisionOs,
+                bundle_path,
+                false,
+                Some(url),
+                plugins,
+                // The dev server goes to a simulator, always: a device
+                // build is signed, and a signature is not something to put
+                // in a loop that rebuilds on every save.
+                None,
+            )?;
+            ios::launch(&package, device)?;
+        }
+        Target::WatchOs { device } => {
+            let package =
+                watchos::assemble(workspace, app, bundle_path, false, Some(url), plugins)?;
+            watchos::launch(&package, device)?;
+        }
+        // No `simctl` and no device: `launch` kills whatever instance was
+        // already up —otherwise `open` only brings the old window to the
+        // front and the change looks as though it never landed— and opens
+        // the new one. See `macos.rs`.
+        Target::MacOs => {
+            let package = macos::assemble(
+                workspace,
+                app,
+                bundle_path,
+                false,
+                Some(url),
+                plugins,
+                None,
+            )?;
+            macos::launch(&package)?;
+        }
+        Target::Android | Target::Wear { .. } => {
+            let (form, device) = match target {
+                Target::Wear { device } => {
+                    (crate::android::Form::Watch, device.as_deref())
+                }
+                _ => (crate::android::Form::Phone, None),
+            };
+            let apk = crate::android::assemble(
+                workspace,
+                app,
+                bundle_path,
+                false,
+                Some(url),
+                plugins,
+                // The dev loop is always the debug key: a release-signed
+                // APK is an artefact for a store, not something to rebuild
+                // every time a file is saved.
+                crate::android::Packaging {
+                    form,
+                    signing: None,
+                    aab: false,
+                    // The APK default, arm64-v8a alone. The dev loop has
+                    // no --abi of its own: every extra ABI is another
+                    // cross-compilation of the core between saving a file
+                    // and seeing it, and the device on the other end is
+                    // one machine whose architecture does not change.
+                    abis: crate::android::abis(&[], false),
+                    bundletool: None,
+                },
+            )?;
+            crate::android::install_and_launch(workspace, &apk, form, device, Some(port))?;
+        }
+    }
+    Ok(())
 }
 
 async fn serve_bundle(State(server): State<Server>) -> impl IntoResponse {
@@ -270,9 +297,46 @@ async fn notify_client(mut socket: WebSocket, server: Server) {
     }
 }
 
+/// Everything the watcher needs to put the app back on the device. It is the
+/// same set `run` used to launch it the first time.
+struct Launch {
+    target: Target,
+    url: String,
+    port: u16,
+    no_launch: bool,
+}
+
+/// Whether a saved file is one the bundle cannot carry.
+///
+/// `packages/runtime/runtime.js` is the prelude, and `an-bridge` takes it in
+/// with `include_str!` (`crates/an-bridge/src/quickjs.rs`): it is compiled into
+/// the native binary and never appears in the JavaScript the server serves.
+/// Everything else under `packages/` is TypeScript that `ngc` and esbuild put in
+/// the bundle's top half, where a reload does reach it.
+fn native_only(root: &Path, path: &Path) -> bool {
+    path.strip_prefix(root).is_ok_and(|rel| rel.starts_with("packages/runtime"))
+}
+
+/// The extensions a save has to carry to be worth a rebuild. What the build
+/// itself writes is ignored, which would avoid a loop if `build/` ever fell
+/// inside what is watched.
+fn sources(paths: &[PathBuf]) -> Vec<PathBuf> {
+    paths
+        .iter()
+        .filter(|path| {
+            matches!(
+                path.extension().and_then(|e| e.to_str()),
+                Some("ts" | "js" | "html" | "json")
+            )
+        })
+        .cloned()
+        .collect()
+}
+
 fn watch(
     workspace: Workspace,
     app: PathBuf,
+    launch: Launch,
     server: Server,
     runtime: tokio::runtime::Runtime,
     plugins: Vec<Plugin>,
@@ -300,38 +364,104 @@ fn watch(
     loop {
         let Ok(event) = rx.recv() else { break };
         let Ok(event) = event else { continue };
-        // Only the sources matter: ignoring what the build itself writes would
-        // avoid a loop if `build/` ever fell inside what is watched.
-        let relevant = event.paths.iter().any(|path| {
-            matches!(
-                path.extension().and_then(|e| e.to_str()),
-                Some("ts" | "js" | "html" | "json")
-            )
-        });
-        if !relevant || last.elapsed() < DEBOUNCE {
+        let mut changed = sources(&event.paths);
+        if changed.is_empty() || last.elapsed() < DEBOUNCE {
             continue;
         }
-        // Drain the burst before compiling, or it compiles once per file.
-        while rx.recv_timeout(DEBOUNCE).is_ok() {}
+        // Drain the burst before compiling, or it compiles once per file. The
+        // paths are kept rather than thrown away: which files were saved is
+        // what decides whether a new bundle is enough.
+        while let Ok(more) = rx.recv_timeout(DEBOUNCE) {
+            if let Ok(more) = more {
+                changed.extend(sources(&more.paths));
+            }
+        }
         last = Instant::now();
 
+        let native = changed.iter().any(|path| native_only(&workspace.root, path));
+
         eprintln!("\n==> cambio detectado, recompilando");
-        match build::bundle(&workspace, &app, false, &plugins) {
-            Ok(path) => match std::fs::read_to_string(&path) {
-                Ok(source) => {
-                    runtime.block_on(async {
-                        *server.bundle.write().await = source;
-                    });
-                    let clients = server.reloads.send(()).unwrap_or(0);
-                    eprintln!("==> recargado en {clients} cliente(s)");
-                }
-                Err(error) => eprintln!("==> no se pudo leer el bundle: {error}"),
-            },
+        let path = match build::bundle(&workspace, &app, false, &plugins) {
+            Ok(path) => path,
             // A compilation error must not take the server down: it is reported
             // and the watching goes on, which is what anyone expects after
             // making a mistake.
-            Err(error) => eprintln!("==> la compilación falló: {error}"),
+            Err(error) => {
+                eprintln!("==> la compilación falló: {error}");
+                continue;
+            }
+        };
+        match std::fs::read_to_string(&path) {
+            Ok(source) => runtime.block_on(async {
+                *server.bundle.write().await = source;
+            }),
+            Err(error) => {
+                eprintln!("==> no se pudo leer el bundle: {error}");
+                continue;
+            }
         }
+
+        if native {
+            // Telling the app to download the bundle again would change
+            // nothing and would report a reload that did not happen. The
+            // prelude only travels inside the binary, so the app is built
+            // again and put back on the device: the same thing the developer
+            // would do by hand, without having to notice that it was needed.
+            eprintln!(
+                "==> packages/runtime/ va dentro del binario, no del bundle: \
+                 reconstruyendo la app"
+            );
+            if launch.no_launch {
+                eprintln!(
+                    "==> con --no-launch no hay app que reemplazar; \
+                     el nuevo runtime entra en la siguiente compilación"
+                );
+            } else if let Err(error) = launch_app(
+                &workspace,
+                &app,
+                &launch.target,
+                &path,
+                &launch.url,
+                launch.port,
+                &plugins,
+            ) {
+                eprintln!("==> no se pudo reconstruir la app: {error}");
+            }
+            continue;
+        }
+
+        let clients = server.reloads.send(()).unwrap_or(0);
+        eprintln!("==> recargado en {clients} cliente(s)");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_prelude_is_not_in_the_bundle() {
+        let root = Path::new("/sdk");
+        assert!(native_only(root, Path::new("/sdk/packages/runtime/runtime.js")));
+        // The rest of `packages/` is TypeScript, and it does travel.
+        assert!(!native_only(root, Path::new("/sdk/packages/platform-native/src/platform.ts")));
+        assert!(!native_only(root, Path::new("/sdk/packages/primitives/src/primitives.ts")));
+        assert!(!native_only(root, Path::new("/sdk/examples/hello-angular/src/app.component.ts")));
+        // A project of the user's that happens to have that shape is not the
+        // SDK's prelude: the path is anchored to the root, not searched for.
+        assert!(!native_only(root, Path::new("/elsewhere/packages/runtime/runtime.js")));
+    }
+
+    #[test]
+    fn only_sources_set_off_a_rebuild() {
+        let paths = vec![
+            PathBuf::from("/sdk/packages/runtime/runtime.js"),
+            PathBuf::from("/sdk/build/bundle/hello-angular/main.js.map"),
+            PathBuf::from("/sdk/examples/hello-angular/src/app.component.ts"),
+        ];
+        let kept = sources(&paths);
+        assert_eq!(kept.len(), 2);
+        assert!(kept.iter().any(|path| native_only(Path::new("/sdk"), path)));
+    }
 }

@@ -124,11 +124,21 @@ machine that is compiling it and the server it talks to is on that same machine.
 Saving a component swaps its definition in the running app. You stay on the
 same screen, with whatever you had typed and the timers still running.
 
-<Aside type="caution" title="What a save cannot change">
-Editing the framework itself — anything under `packages/` — or a dependency
-forces a full restart. Only one copy of Angular fits in the interpreter, so the
-running one cannot be replaced. The app says so and restarts rather than
-showing you stale code.
+<Aside type="caution" title="What a save costs when it is not a component">
+Editing the framework itself — `packages/platform-native`,
+`packages/primitives` or a dependency — cannot be stitched in: only one copy of
+Angular fits in the interpreter. The app restarts itself where it stands, comes
+back with the new code and loses the component state. Nothing to kill and
+nothing to relaunch; you see the change on the next frame.
+
+`packages/runtime/runtime.js` is the one file no reload can carry. The prelude
+is compiled into the native binary rather than served in the bundle, so `an dev`
+builds the app again and puts it back on the simulator instead of offering a
+reload that would change nothing. It takes as long as a normal build, and it is
+the only thing that gets a new prelude onto the device.
+
+Rust and the Swift and Java shells are not watched at all: those are `an ios`,
+`an macos` and the rest.
 </Aside>
 
 ## Your first template

@@ -372,6 +372,18 @@ el árbol está vacío y todas las señales vuelven a su valor inicial. Dos cosa
 sobreviven a una recarga en caliente a propósito: las señales de estado caliente,
 y el historial del router.
 
+El reinicio lo hace `an dev`, no tú: el motor se tira y se levanta otro dentro
+del mismo proceso, y la app vuelve a la pantalla sin que nadie toque la
+terminal. Lo que cuesta un reinicio es el estado de los componentes, no el
+ciclo de desarrollo.
+
+`packages/runtime/runtime.js` es la excepción a todo lo anterior, y no está en
+ninguna de las dos mitades. Entra por `include_str!` en el crate del host y se
+evalúa al arrancar el motor, así que viaja en el **binario nativo**: ningún
+bundle puede llevarlo y ninguna recarga puede alcanzarlo. Guardarlo reconstruye
+la app y la vuelve a poner en el dispositivo — que es lo único de aquí que
+cuesta una compilación.
+
 Los shells de Apple hablan con el servidor por WebSocket; el de Android hace
 long-polling, porque allí no hay WebSocket de plataforma.
 

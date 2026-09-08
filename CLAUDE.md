@@ -165,8 +165,18 @@ it is the fastest way to find out which:
   measured by its content, absent on watchOS. `an watchos` still refuses to
   build an app depending on a plugin it cannot cover rather than shipping
   silent no-ops.
-- **Hot refresh does not reach the framework.** Editing `packages/` or a
-  dependency forces a restart; only app components keep their state.
+- **Hot refresh keeps state only for app components, and one file it cannot
+  reach at all.** A component's definition is swapped in place and its instance
+  survives. `packages/platform-native`, `packages/primitives` and the npm
+  dependencies are the bundle's top half: only one copy of Angular fits in the
+  interpreter, so the engine thread throws it away and evaluates the new bundle
+  from cold *by itself* — nobody restarts anything by hand and the change is on
+  screen on the next frame; what is lost is the component state.
+  `packages/runtime/runtime.js` is the exception: it is `include_str!`-ed into
+  `an-bridge`, so it lives in the native binary and no bundle can carry it.
+  `an dev` recognises a save there (`dev::native_only`) and rebuilds and
+  relaunches the app instead of reporting a reload that changed nothing. Rust
+  and the Swift/Java shells are not watched at all.
 
 ## Conventions
 

@@ -315,10 +315,44 @@ fn main() {
             if frame + 2 == frames {
                 let updated =
                     std::fs::read_to_string(other).expect("the bundle could not be read");
-                match js.eval_hot(other, &updated) {
-                    Ok(true) => println!("-- hot reload: yes"),
-                    Ok(false) => println!("-- hot reload: no, a restart is needed"),
-                    Err(error) => println!("-- hot reload: failed ({error})"),
+                let stitched = match js.eval_hot(other, &updated) {
+                    Ok(true) => {
+                        println!("-- hot reload: yes");
+                        true
+                    }
+                    Ok(false) => {
+                        println!("-- hot reload: no, a restart is needed");
+                        false
+                    }
+                    Err(error) => {
+                        println!("-- hot reload: failed ({error})");
+                        false
+                    }
+                };
+                // The same restart `worker.rs` performs when the stitching does
+                // not take, and for the same reason: the developer saved a file
+                // and has to see the new code, not the old screen plus a
+                // message. Whatever the app asked to keep is taken out of the
+                // engine before it is thrown away and put back into the new one
+                // before anything is evaluated.
+                if !stitched {
+                    let state = js.take_hot_state();
+                    renderer.reset();
+                    js = QuickJsRuntime::with_options(
+                        std::rc::Rc::new(an_bridge::runtime::StderrLog),
+                        stack,
+                    )
+                    .expect("the JS engine never restarted");
+                    js.register_module(Box::new(FakeDevice));
+                    for plugin in canned_plugins() {
+                        js.register_module(Box::new(plugin));
+                    }
+                    js.restore_hot_state(&state).expect("the hot state came back");
+                    if let Err(error) = js.eval(other, &updated) {
+                        eprintln!("{error}");
+                        std::process::exit(1);
+                    }
+                    println!("-- restarted: the new bundle is running from cold");
                 }
             }
         }

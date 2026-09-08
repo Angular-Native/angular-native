@@ -14,12 +14,43 @@ SOURCE="examples/hello-angular/src/app.component.ts"
 BACKUP="$(mktemp)"
 BEFORE="$(mktemp)"
 AFTER="$(mktemp)"
+FRAMEWORK="$(mktemp)"
 cp "$SOURCE" "$BACKUP"
 # Whatever happens, the example is left as it was.
-trap 'cp "$BACKUP" "$SOURCE"; rm -f "$BACKUP" "$BEFORE" "$AFTER"' EXIT
+trap 'cp "$BACKUP" "$SOURCE"; rm -f "$BACKUP" "$BEFORE" "$AFTER" "$FRAMEWORK"' EXIT
 
 cargo an build examples/hello-angular >/dev/null
 cp build/bundle/hello-angular/main.js "$BEFORE"
+
+# A third bundle, with the framework changed instead of the app, and built
+# before the app is touched so the only difference is the framework's.
+#
+# The change goes into what `ngc` left under `build/js/`, not into
+# `packages/platform-native/`: the sources are shared with whoever else is
+# working in the tree, and what esbuild reads is this copy anyway. From there on
+# it is the real bundler, so the top half really is different and its stamp is
+# really computed from it — no faking the signature, which is the one thing that
+# cannot happen on a device.
+#
+# The root node's height is the framework doing something a template cannot: it
+# is written by `createRootNode` at bootstrap, so seeing it change is seeing the
+# new framework code run from cold.
+COMPILED="build/js/hello-angular/packages/platform-native/src/platform.js"
+PLATFORM="$(mktemp)"
+cp "$COMPILED" "$PLATFORM"
+trap 'cp "$BACKUP" "$SOURCE"; cp "$PLATFORM" "$COMPILED"; rm -f "$BACKUP" "$BEFORE" "$AFTER" "$FRAMEWORK" "$PLATFORM"' EXIT
+sed -i '' "s/dom.setStyle(root.id, 'height', '100%');/dom.setStyle(root.id, 'height', '50%');/" "$COMPILED"
+if ! grep -qF "'50%'" "$COMPILED"; then
+  echo "  FAIL createRootNode no longer writes the root's height the way this check patches it"
+  exit 1
+fi
+node scripts/bundle.mjs \
+  build/js/hello-angular/examples/hello-angular/src/main.js \
+  "$FRAMEWORK" \
+  "--alias=@angular-native/platform=$ROOT/build/js/hello-angular/packages/platform-native/src/public-api.js" \
+  "--alias=@angular-native/primitives=$ROOT/build/js/hello-angular/packages/primitives/src/public-api.js" \
+  >/dev/null
+cp "$PLATFORM" "$COMPILED"
 
 sed -i '' 's/This is an Angular template with signals, running on QuickJS./TEMPLATE CHANGED WHILE HOT./' "$SOURCE"
 cargo an build examples/hello-angular >/dev/null
@@ -71,18 +102,64 @@ else
 fi
 
 # The top half of the bundle —Angular and the framework— cannot be reloaded
-# hot: there is a single copy inside the interpreter. When it changes, the
-# honest thing is to ask for a restart, and that is what is checked here by
-# faking the signature.
-sed 's/globalThis.__anVendor !== "/globalThis.__anVendor !== "x/' "$AFTER" >"$AFTER.other"
-OTHER="$(run "$AFTER.other")"
-if grep -qF -- 'hot reload: no' <<<"$OTHER"; then
-  echo "  ok   if the framework changes a restart is asked for instead of lying"
+# hot: there is a single copy inside the interpreter. What happens instead is a
+# restart nobody has to ask for: the engine is thrown away, a new one is stood
+# up and the bundle just saved is evaluated from cold. The state is gone, and
+# that is the price; what must not happen is the developer being left looking at
+# the old screen.
+echo
+echo "== the framework changed"
+OTHER="$(run "$FRAMEWORK")"
+
+checkf() {
+  if grep -qE -- "$1" <<<"$OTHER"; then
+    echo "  ok   $2"
+  else
+    echo "  FAIL $2"
+    fail=1
+    OTHER_BAD=1
+  fi
+}
+
+checkf 'hot reload: no, a restart is needed' 'the stitching is refused instead of lying'
+checkf 'restarted: the new bundle is running from cold' 'the restart happens on its own'
+# `createRootNode` runs only at bootstrap, so a root half the viewport's height
+# is the new framework code having run — not a prop that happened to arrive.
+checkf 'View#[0-9]+ \[0,0 393x426\]' "the framework's new code is on screen"
+# And the app half came up with it: a restart that mounted nothing would satisfy
+# the line above just as well.
+checkf '"angular-native"' 'the app came back up on top of it'
+if grep -qE -- '"taps: [1-9]' <<<"$OTHER"; then
+  echo "  FAIL the component state cannot survive a restart, and it is claiming to"
+  fail=1
+  OTHER_BAD=1
 else
-  echo "  FAIL changing the framework should force a restart"
+  echo "  ok   the state is gone, which is what a restart costs"
+fi
+
+# The one part of `packages/` that no reload can carry. `runtime.js` is the
+# prelude and `an-bridge` takes it in with `include_str!`, so it travels inside
+# the native binary; the bundle the dev server serves has never held a line of
+# it. Saving it used to rebuild the bundle and report a reload that changed
+# nothing.
+echo
+echo "== the prelude is not in the bundle"
+if grep -qF 'runFrameCallbacks' packages/runtime/runtime.js &&
+  ! grep -qF 'runFrameCallbacks' "$BEFORE"; then
+  echo "  ok   what the prelude defines is nowhere in the bundle"
+else
+  echo "  FAIL the prelude's marker moved; this check is no longer looking at anything"
   fail=1
 fi
-rm -f "$AFTER.other"
+# So the dev server does not offer a reload for it: it builds the app again and
+# puts it back on the device, which is the only thing that carries a new
+# prelude.
+if grep -qE 'test result: ok\. [1-9]' <<<"$(cargo test -q -p an-cli dev:: 2>&1 || true)"; then
+  echo "  ok   the dev server sends a prelude change to a native rebuild"
+else
+  echo "  FAIL the dev server no longer tells a prelude change apart from a component's"
+  fail=1
+fi
 
 # And the same exercise with a template that uses a component —not a
 # directive—, because they are two different things and only one of them showed.
@@ -98,7 +175,9 @@ BACKUP_W="$(mktemp)"
 BEFORE_W="$(mktemp)"
 AFTER_W="$(mktemp)"
 cp "$SOURCE_W" "$BACKUP_W"
-trap 'cp "$BACKUP" "$SOURCE"; cp "$BACKUP_W" "$SOURCE_W"; rm -f "$BACKUP" "$BEFORE" "$AFTER" "$BACKUP_W" "$BEFORE_W" "$AFTER_W"' EXIT
+# `$COMPILED` is already back and `build/js/` is regenerated on every build, so
+# from here the trap only has the sources and the temporary files to look after.
+trap 'cp "$BACKUP" "$SOURCE"; cp "$BACKUP_W" "$SOURCE_W"; rm -f "$BACKUP" "$BEFORE" "$AFTER" "$FRAMEWORK" "$PLATFORM" "$BACKUP_W" "$BEFORE_W" "$AFTER_W"' EXIT
 
 cargo an build examples/hello-wear >/dev/null
 cp build/bundle/hello-wear/main.js "$BEFORE_W"
@@ -140,6 +219,8 @@ if [ "$fail" -ne 0 ]; then
   echo
   if [ -n "${WATCH_BAD:-}" ]; then
     echo "$WATCH"
+  elif [ -n "${OTHER_BAD:-}" ]; then
+    echo "$OTHER"
   else
     echo "$OUTPUT"
   fi

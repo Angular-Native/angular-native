@@ -127,11 +127,22 @@ Al guardar un componente, su definición se cambia en la app que está corriendo
 Te quedas en la misma pantalla, con lo que hubieras escrito y los temporizadores
 en marcha.
 
-<Aside type="caution" title="Lo que un guardado no puede cambiar">
-Tocar el propio framework —cualquier cosa bajo `packages/`— o una dependencia
-obliga a reiniciar entero. En el intérprete solo cabe una copia de Angular, así
-que la que está corriendo no se puede sustituir. La app lo dice y reinicia en
-vez de enseñarte código viejo.
+<Aside type="caution" title="Lo que cuesta un guardado que no es de un componente">
+Tocar el propio framework —`packages/platform-native`, `packages/primitives` o
+una dependencia— no se puede coser en caliente: en el intérprete solo cabe una
+copia de Angular. La app se reinicia ahí mismo, vuelve con el código nuevo y
+pierde el estado de los componentes. No hay nada que matar ni nada que volver a
+lanzar: el cambio se ve en el fotograma siguiente.
+
+`packages/runtime/runtime.js` es el único fichero que ninguna recarga puede
+llevar. El preludio se compila dentro del binario nativo en vez de servirse en
+el bundle, así que `an dev` vuelve a construir la app y la deja otra vez en el
+simulador en lugar de ofrecer una recarga que no cambiaría nada. Tarda lo que
+una compilación normal, y es lo único que mete un preludio nuevo en el
+dispositivo.
+
+Rust y los shells de Swift y Java no se vigilan: para eso están `an ios`,
+`an macos` y los demás.
 </Aside>
 
 ## Tu primera plantilla
