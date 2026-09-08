@@ -184,10 +184,9 @@ mod tests {
     /// The JSON, not the struct.
     ///
     /// Every other test here reads `Snapshot` fields, and the shell never sees
-    /// those: it sees the object serde writes and `JSONDecoder` reads back with
-    /// `.convertFromSnakeCase`. A wrong `skip_serializing_if` takes a key out
-    /// with nothing to show for it — the struct still has the field, the tests
-    /// still pass, and the prop goes quiet on the watch alone.
+    /// those: it sees the object serde writes. A wrong `skip_serializing_if`
+    /// takes a key out with nothing to show for it — the struct still has the
+    /// field, the tests still pass, and the prop goes quiet on the watch alone.
     ///
     /// `clip` is the one worth pinning: it is skipped when false, so the two
     /// halves of the contract are that it is there when the node clips and
@@ -226,11 +225,110 @@ mod tests {
         );
         assert_eq!(root["children"][1]["clip"], serde_json::json!(true));
 
-        // And the key is the one Swift asks for. `.convertFromSnakeCase` turns
-        // `accessibility_label` into `accessibilityLabel`, so the snake_case
-        // spelling here is what the shell's camelCase field is decoded from.
-        assert!(root.get("border_radius").is_none(), "no radius was set");
+        assert!(root.get("borderRadius").is_none(), "no radius was set");
         assert!(json.get("revision").is_some(), "the shell redraws on this");
+    }
+
+    /// Every key on the wire is spelled the way Swift declares it.
+    ///
+    /// The shell decodes with a plain `JSONDecoder`: no key strategy rewrites
+    /// anything on the way in, so a key that reached it as `border_radius`
+    /// would find no `border_radius` property, decode to nil and take the prop
+    /// out of the screen without a word. `rename_all = "camelCase"` is what
+    /// stops that, and this is what notices if it ever comes off.
+    #[test]
+    fn no_key_of_the_snapshot_travels_in_snake_case() {
+        let mut tree = ShadowTree::new();
+        tree.create_node(1, NodeKind::View).unwrap();
+        tree.set_style(1, "width", "176").unwrap();
+        tree.set_style(1, "height", "223").unwrap();
+        tree.set_style(1, "overflow", "scroll").unwrap();
+        tree.set_prop(1, "borderRadius", PropValue::Number(8.0)).unwrap();
+        tree.set_prop(1, "borderWidth", PropValue::Number(2.0)).unwrap();
+        tree.set_prop(1, "borderColor", PropValue::Str("#ffffff".into())).unwrap();
+        tree.set_prop(1, "testID", PropValue::Str("root".into())).unwrap();
+        tree.set_prop(1, "accessibilityLabel", PropValue::Str("the screen".into())).unwrap();
+        tree.set_prop(1, "accessibilityHint", PropValue::Str("scrolls".into())).unwrap();
+        tree.set_prop(1, "accessibilityRole", PropValue::Str("button".into())).unwrap();
+        tree.set_root(1).unwrap();
+
+        tree.create_node(2, NodeKind::Text).unwrap();
+        tree.set_prop(2, "fontSize", PropValue::Number(16.0)).unwrap();
+        tree.set_prop(2, "fontFamily", PropValue::Str("Menlo".into())).unwrap();
+        tree.set_prop(2, "fontWeight", PropValue::Str("bold".into())).unwrap();
+        tree.set_prop(2, "letterSpacing", PropValue::Number(1.0)).unwrap();
+        tree.set_prop(2, "textAlign", PropValue::Str("center".into())).unwrap();
+        tree.set_prop(2, "textDecoration", PropValue::Str("underline".into())).unwrap();
+        tree.set_prop(2, "numberOfLines", PropValue::Number(2.0)).unwrap();
+        tree.insert_child(1, 2, 0).unwrap();
+
+        tree.create_node(3, NodeKind::TextInput).unwrap();
+        tree.set_prop(3, "value", PropValue::Str("hi".into())).unwrap();
+        tree.set_prop(3, "placeholder", PropValue::Str("name".into())).unwrap();
+        tree.set_prop(3, "secureTextEntry", PropValue::Bool(true)).unwrap();
+        tree.set_prop(3, "keyboardType", PropValue::Str("numeric".into())).unwrap();
+        tree.insert_child(1, 3, 1).unwrap();
+
+        tree.create_node(4, NodeKind::Picker).unwrap();
+        tree.set_prop(4, "items", PropValue::Str("[\"a\",\"b\"]".into())).unwrap();
+        tree.set_prop(4, "selectedIndex", PropValue::Number(1.0)).unwrap();
+        tree.insert_child(1, 4, 2).unwrap();
+
+        tree.create_node(5, NodeKind::Icon).unwrap();
+        tree.set_prop(5, "name", PropValue::Str("back".into())).unwrap();
+        tree.set_prop(5, "iconSize", PropValue::Number(20.0)).unwrap();
+        tree.set_prop(5, "iconWeight", PropValue::Number(600.0)).unwrap();
+        tree.insert_child(1, 5, 3).unwrap();
+
+        tree.create_node(6, NodeKind::Image).unwrap();
+        tree.set_prop(6, "source", PropValue::Str("logo.png".into())).unwrap();
+        tree.set_prop(6, "resizeMode", PropValue::Str("cover".into())).unwrap();
+        tree.insert_child(1, 6, 4).unwrap();
+
+        let mut mount = MountSide::new(WatchHost::new(new_event_queue()));
+        let measurer = WatchMeasurer::new(Default::default());
+        mount.apply(&tree.commit((176.0, 223.0), &measurer).unwrap());
+
+        let json = serde_json::to_value(crate::snapshot::snapshot(mount.host())).unwrap();
+        let mut seen = 0;
+        keys(&json, &mut |key| {
+            assert!(
+                !key.contains('_'),
+                "`{key}` reaches the shell in snake_case, and nothing rewrites it there"
+            );
+            seen += 1;
+        });
+        // That the walk really looked at the tree and not at three keys of the
+        // root: without this the assertion above passes on an empty snapshot.
+        assert!(seen > 40, "only {seen} keys were checked");
+        // And the multi-word ones are there, spelled as Swift declares them.
+        let root = &json["root"];
+        assert_eq!(root["borderWidth"], serde_json::json!(2.0));
+        assert_eq!(root["testId"], serde_json::json!("root"));
+        assert_eq!(root["accessibilityTraits"], serde_json::json!(["isButton"]));
+        assert_eq!(root["children"][0]["maxLines"], serde_json::json!(2));
+        assert_eq!(root["children"][1]["secure"], serde_json::json!(true));
+        assert_eq!(root["children"][2]["selectedIndex"], serde_json::json!(1));
+        assert_eq!(root["children"][3]["symbolSize"], serde_json::json!(20.0));
+        assert_eq!(root["children"][4]["resizeMode"], serde_json::json!("cover"));
+    }
+
+    /// Every key of an object in the tree, however deep.
+    fn keys(value: &serde_json::Value, out: &mut impl FnMut(&str)) {
+        match value {
+            serde_json::Value::Object(map) => {
+                for (key, child) in map {
+                    out(key);
+                    keys(child, out);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    keys(item, out);
+                }
+            }
+            _ => {}
+        }
     }
 
     /// A node that goes away has to go from the snapshot too, and the revision

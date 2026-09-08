@@ -6,7 +6,12 @@
 //! binary protocol: a watch screen is ten or fifteen nodes, `Codable` decodes
 //! it without anyone writing a parser, and the place where this would stop
 //! paying off —a long list— does not exist on watchOS yet. When it does, what
-//! has to change is this file and Swift's `Decodable`, not the host.
+//! has to change is this file and Swift's `Decodable`, not the host. The line
+//! is measurable and it is decoding, not encoding: `examples/snapshot-cost.rs`
+//! puts a real screen at some thirty nodes, tens of microseconds of `serde_json`
+//! and roughly ten times that in `JSONDecoder`, which grows by about eleven
+//! microseconds a node. Two hundred nodes is where a watch would start dropping
+//! the frame.
 //!
 //! Colours come out already resolved into 0..1 channels. Swift never parses
 //! `#0b1020` again: if it did there would be two parsers to keep in agreement.
@@ -28,6 +33,12 @@ use serde::Serialize;
 use crate::host::WatchHost;
 
 #[derive(Serialize)]
+// camelCase on the wire, so Foundation does not have to transform every key on
+// the way in: `JSONDecoder.convertFromSnakeCase` rewrites each one of the sixty
+// keys of every node, and it measured a fifth of the whole decode on a screen
+// of thirty nodes. The field names here stay snake_case, which is what
+// `check-watchos.sh` reads to compare them against Swift's.
+#[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub revision: u64,
     /// `None` while the app has not mounted anything yet.
@@ -43,6 +54,7 @@ pub struct Snapshot {
 /// the node's kind is left out, so that one screen's JSON fits in a single
 /// glance when it has to be debugged.
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Node {
     pub id: NodeId,
     pub kind: &'static str,

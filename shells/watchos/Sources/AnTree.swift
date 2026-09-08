@@ -18,15 +18,11 @@ final class AnTree {
     /// first frame always gets in.
     private var mirrored: UInt64 = .max
 
-    /// Rust sends `border_radius`; Swift wants it as `borderRadius`. The
-    /// conversion is done by the decoder with a rule, not with a forty-line
-    /// `CodingKeys` table that would have to be touched in two places every time
-    /// the snapshot grows.
-    private static let decoder: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        return decoder
-    }()
+    /// No key strategy: Rust already writes `borderRadius`, so there is nothing
+    /// to rewrite. `.convertFromSnakeCase` transforms every key of every node
+    /// before it can be looked up, and on a screen of thirty nodes that was a
+    /// fifth of the whole decode.
+    private static let decoder = JSONDecoder()
 
     /// Dumps the snapshot if Rust says it changed. It returns whether there was
     /// a change, which is what the shell looks at to know whether recording the
