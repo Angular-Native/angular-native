@@ -110,6 +110,8 @@ step "$ROOT/scripts/check-platform-gaps.sh"
 # That a check cannot report a failure that belongs to the shell rather than to
 # what it was checking.
 step "$ROOT/scripts/check-script-pipes.sh"
+# That the repository can still be cloned on every platform it targets.
+step "$ROOT/scripts/check-filenames.sh"
 step "$ROOT/scripts/check-publish.sh"
 step "$ROOT/scripts/check-plugin-sources.sh"
 step "$ROOT/scripts/check-router.sh"
