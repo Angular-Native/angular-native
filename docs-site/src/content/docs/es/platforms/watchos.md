@@ -133,7 +133,7 @@ Dos cosas que una plantilla tiene que saber:
   `[style.position]="'absolute'"` con el tamaño de la pantalla, que es también
   el frame en el que se maqueta su contenido.
 
-## Los ocho que no
+## Los nueve que no
 
 Con el motivo, que casi siempre es del SDK y no una opinión. Cuando el árbol
 pide uno de estos, el nodo no se crea, se deja el hueco que midió el layout, y
@@ -150,6 +150,7 @@ dibuja `Color.clear` al tamaño maquetado a propósito.
 | `an-web-view` | WebKit no está en el SDK de watchOS. |
 | `an-map-view` | El `Map` de SwiftUI sí existe en watchOS, pero no acepta ni centro ni zoom de la app: mostraría un lugar que la plantilla no eligió. |
 | `an-video-view` | AVKit en watchOS no trae ni `AVPlayerViewController` ni `VideoPlayer`. Sus cabeceras declaran tipos y ninguna vista de reproducción. |
+| `an-custom` | La vista que trae un plugin es una vista nativa que escribió otro, y este host no tiene jerarquía donde meterla: refleja el árbol en un modelo que SwiftUI redibuja. El protocolo de plugins del reloj no tiene `attach` por el mismo motivo. |
 
 `check-watchos.sh` comprueba que la lista de soportados y la de no soportados
 cubren juntas todo el vocabulario, y que ningún primitivo aparece en las dos ni
@@ -383,12 +384,18 @@ repositorio no puede depender de que haya un servidor levantado.
 
 ## Lo que falta
 
-- **Plugins.** `an-watch` no tiene registro, así que `an watchos` se niega a
-  compilar una app que dependa de uno en lugar de entregar una app en la que
-  todas las llamadas se rechazarían en tiempo de ejecución. `device` no es uno:
-  está compilado dentro del host y funciona aquí (mira arriba). Un nombre de
-  módulo alcanzado en tiempo de ejecución se rechaza con el nombre *y* el motivo
-  de que no haya nada debajo, que no es el mensaje que recibiría una errata.
+- **Una vista que trae un plugin.** Los *métodos* de un plugin funcionan aquí:
+  `an-watch` tiene el mismo registro que los demás hosts, y `an watchos` solo
+  rechaza una compilación cuando un plugin dice que no puede cubrir un reloj —
+  mira
+  [Plugins en el Mac y en el reloj](/es/extending/plugins-on-the-mac-and-the-watch/).
+  Lo que no tiene dónde ir es `<an-custom>`. Este host refleja el árbol en un
+  modelo que SwiftUI redibuja, así que no hay jerarquía de vistas donde montar
+  la vista de un plugin, y el protocolo `AnPlugin` del reloj no tiene `attach`
+  por el mismo motivo: un sustituto que no entregara nada solo escondería eso
+  hasta tiempo de ejecución. Un nombre de módulo alcanzado en tiempo de
+  ejecución que no está se rechaza con el nombre *y* el motivo de que no haya
+  nada debajo, que no es el mensaje que recibiría una errata.
 - **Animación y transformaciones.** `[animate]`, `translateX`, `scale`,
   `rotate`. En SwiftUI esto es `withAnimation` y `.offset`/`.scaleEffect`, pero
   el modelo se reconstruye entero en cada foto y una animación necesita saber de

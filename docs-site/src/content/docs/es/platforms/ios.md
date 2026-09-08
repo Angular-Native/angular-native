@@ -336,9 +336,12 @@ el siguiente. Las orientaciones soportadas son vertical y las dos horizontales.
   [El área segura y el teclado](/es/guide/safe-area-and-keyboard/). Lo que no
   hay forma de pedir es la barra de encima: un botón Hecho, una flecha al
   siguiente campo, cualquier cosa para la que sirve `inputAccessoryView`.
-- **Seis sitios que avisan una vez, todos en accesibilidad**: un rol
-  desconocido, una clave de estado desconocida, un rol para el que UIKit no
-  tiene rasgo, `checked: 'mixed'` —UIKit solo conoce marcado y sin marcar, así
-  que el valor se deja vacío en lugar de redondearlo— y `expanded` y `busy`, que
-  no tienen rasgo ninguno de los dos. Qué se aplica y qué se rechaza está en
-  [Accesibilidad en Apple](/es/accessibility/apple/).
+- **Seis cosas que pide el contrato de accesibilidad y UIKit no sabe decir**:
+  un rol desconocido, una clave de estado desconocida, un rol para el que UIKit
+  no tiene rasgo, `checked: 'mixed'` —UIKit solo conoce marcado y sin marcar,
+  así que el valor se deja vacío en lugar de redondearlo— y `expanded` y `busy`,
+  que no tienen rasgo ninguno de los dos. Cada una avisa una vez, y son todo lo
+  que este host rechaza: aquí no hay ninguna prop de un primitivo que se acepte
+  y se descarte, como sí pasa con unas cuantas
+  [en el Mac](/es/platforms/macos/#lo-que-falta). Qué se aplica y qué se rechaza
+  está en [Accesibilidad en Apple](/es/accessibility/apple/).

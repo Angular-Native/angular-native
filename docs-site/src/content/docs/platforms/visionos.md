@@ -128,6 +128,11 @@ not capture the highlight in place.
 - **Icon.** The `Info.plist` carries no `CFBundleIcons`: the visionOS icon is
   layered and lives in an asset catalogue compiled with `actool`. The app
   installs and launches; in the grid it appears with no icon.
+- **Plugins are compiled with their iOS sources**, which is all they declare:
+  the `angularNative` manifest has an `ios` section and no `visionos` one, and
+  it is the same shell and the same `AnPlugin` protocol. If one of them uses an
+  API the headset does not have, the link step stops with swiftc's error;
+  `an visionos` warns before compiling so it does not arrive as a surprise.
 - **Nothing volumetric.** This is a flat window in a 3D space, which is what
   visionOS calls a *window*. Neither a `volume` nor an immersive space: both are
   SwiftUI and RealityKit, and there is no `UIView` to mount in them, so they

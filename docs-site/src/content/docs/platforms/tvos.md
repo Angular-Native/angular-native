@@ -238,10 +238,15 @@ finds out:
   an asset catalogue compiled with `actool`. There is none here yet, so the key
   stays out rather than pointing at a name that does not exist. The app installs
   and launches; in the grid it appears with no icon.
-- **`an-switch` and `an-slider` have no substitute.** Today they leave a gap and
-  a warning. What belongs on a TV is a focusable row you press and a row that
-  answers left/right, but that is a new primitive and a vocabulary decision, not
-  a `cfg`.
+- **None of the five primitives the SDK lacks has a substitute.**
+  `an-switch`, `an-slider`, `an-stepper`, `an-date-picker` and `an-web-view`
+  each leave the gap the layout measured and a warning naming the kind — the
+  full list, with the SDK's reason for each, is
+  [above](#what-does-not-exist-on-tvos). What belongs on a TV in place of the
+  first three is a focusable row you press and a row that answers left/right,
+  and a date is asked for on a screen of its own; but those are new primitives
+  and a vocabulary decision, not a `cfg`. `an-web-view` can have no substitute
+  at all: WebKit is not in the SDK.
 - **Plugins are compiled with their iOS sources**, which is all they declare. If
   one uses API tvOS does not have, linking stops with swiftc's error; `an tvos`
   warns before starting so it does not arrive as a surprise. No plugin declares

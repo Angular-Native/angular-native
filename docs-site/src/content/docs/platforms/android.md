@@ -226,6 +226,15 @@ height at all, only what is added to the font's own. No line height travels as
   trick — watching the window's visible frame shrink — only reports anything if
   the window is allowed to resize, and this shell asks it not to precisely so
   that the layout the core computed is the one that gets drawn.
+- **Font weight is two steps below API 28.** `Typeface.create(family, weight,
+  italic)` takes CSS's number from API 28 on; the shell's `minSdkVersion` is 24
+  and on 24 through 27 nothing in the platform takes it, so 100 to 500 draw as
+  regular and 600 to 900 as bold. The measurement collapses in the same place,
+  so the box still fits what is drawn. See [Text measurement](#text-measurement).
+- **No system bar icon colour below API 30.** `WindowInsetsController` is not
+  there before that, so the status and navigation bar icons keep the theme's and
+  a light bar over a dark app can be hard to read. It is said once rather than
+  skipped in silence. See [What the app looks like](#what-the-app-looks-like).
 - **Back is the deprecated callback.** There is no predictive back.
 - **No `armeabi-v7a` unless you ask for it.** `--abi armeabi-v7a` builds it;
   nothing defaults to it. See [Which ABIs](#which-abis).

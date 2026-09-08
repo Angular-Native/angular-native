@@ -132,7 +132,7 @@ Two things a template has to know:
   `[style.position]="'absolute'"` with the size of the screen, which is also the
   frame its contents get laid out in.
 
-## The eight it does not
+## The nine it does not
 
 With the reason, which is almost always the SDK's and not an opinion. When the
 tree asks for one of these the node is not created, the gap the layout measured
@@ -149,6 +149,7 @@ The shell draws `Color.clear` at the laid-out size on purpose.
 | `an-web-view` | WebKit is not in the watchOS SDK. |
 | `an-map-view` | SwiftUI's `Map` does exist on watchOS, but it takes neither a centre nor a zoom from the app: it would show a place the template did not choose. |
 | `an-video-view` | AVKit on watchOS ships neither `AVPlayerViewController` nor `VideoPlayer`. Its headers declare types and no playback view at all. |
+| `an-custom` | The view a plugin brings is a native view somebody else built, and this host has no hierarchy to put one in: it mirrors the tree into a model SwiftUI redraws. The watch's plugin protocol has no `attach` for the same reason. |
 
 `check-watchos.sh` checks that the supported list and the unsupported list
 together cover the whole vocabulary, and that no primitive appears in both or in
@@ -375,12 +376,17 @@ up.
 
 ## What is missing
 
-- **Plugins.** `an-watch` has no registry, so `an watchos` refuses to build an
-  app that depends on one rather than shipping an app in which every call would
-  be rejected at runtime. `device` is not one: it is compiled into the host and
-  it works here (see below). A module name reached at run time is rejected with
-  the name *and* the reason there is nothing under it, which is not the message
-  a typo would get.
+- **A view a plugin brings.** A plugin's *methods* work here: `an-watch` has
+  the same registry every other host has, and `an watchos` now refuses a build
+  only when a plugin says it cannot cover a watch — see
+  [Plugins on the Mac and the watch](/extending/plugins-on-the-mac-and-the-watch/).
+  What has nowhere to go is `<an-custom>`. This host mirrors the tree into a
+  model SwiftUI redraws, so there is no view hierarchy to mount a plugin's view
+  into, and the watch's `AnPlugin` protocol has no `attach` for the same reason:
+  a stand-in that handed over nothing would only hide that until run time. A
+  module name reached at run time that is not there is rejected with the name
+  *and* the reason there is nothing under it, which is not the message a typo
+  would get.
 - **Animation and transforms.** `[animate]`, `translateX`, `scale`, `rotate`.
   In SwiftUI these are `withAnimation` and `.offset`/`.scaleEffect`, but the
   model is rebuilt whole on every snapshot and an animation needs to know where

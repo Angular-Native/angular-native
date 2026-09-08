@@ -231,25 +231,23 @@ entera nadie:
   pasa absolutamente nada. El script levanta la ventana por su título y
   comprueba que se quedó con el foco; `AN_TV_WINDOW` cambia con qué la busca.
 
-## Qué falta
+## Lo que falta
 
-- **`(focus)` y `(blur)` no se pueden pedir desde una plantilla.**
-  `AnFocusableView` los emite hacia el core y `events::attach` sabe
-  registrarlos, pero en `packages/primitives` esas dos salidas solo existen en
-  la directiva de `an-text-input`, no en la base que usan `an-view` y compañía.
-  Hasta que estén ahí, una plantilla no puede reaccionar al foco, que es la
-  forma natural de resaltar una vista propia en una tele. Es una línea en
-  `NativeView`, y es lo primero que hay que hacer aquí.
 - **Icono.** El `Info.plist` de tvOS no lleva `CFBundleIcons` a propósito: el
   icono de una app de tvOS es un icono en capas más la imagen de la balda
   superior, y las dos viven en un catálogo de assets compilado con `actool`.
   Aquí no hay ninguno todavía, así que la clave se queda fuera en vez de apuntar
   a un nombre que no existe. La app se instala y se lanza; en la parrilla sale
   sin icono.
-- **`an-switch` y `an-slider` no tienen sustituto.** Hoy dejan un hueco y un
-  aviso. Lo que corresponde en una tele es una fila enfocable que se pulsa y una
-  fila que responde a izquierda/derecha, pero eso es una primitiva nueva y una
-  decisión de vocabulario, no un `cfg`.
+- **Ninguna de las cinco primitivas que le faltan al SDK tiene sustituto.**
+  `an-switch`, `an-slider`, `an-stepper`, `an-date-picker` y `an-web-view` dejan
+  cada una el hueco que midió el layout y un aviso nombrando el tipo — la lista
+  completa, con el motivo del SDK para cada una, está
+  [más arriba](#qué-no-existe-en-tvos). Lo que corresponde en una tele en lugar
+  de las tres primeras es una fila enfocable que se pulsa y una fila que
+  responde a izquierda/derecha, y una fecha se pide en una pantalla propia; pero
+  eso son primitivas nuevas y una decisión de vocabulario, no un `cfg`.
+  `an-web-view` no puede tener sustituto ninguno: WebKit no está en el SDK.
 - **Los plugins se compilan con sus fuentes de iOS**, que es lo único que
   declaran. Si alguna usa API que tvOS no tiene, el enlazado se para con el
   error de swiftc; `an tvos` lo avisa antes de empezar para que no llegue de

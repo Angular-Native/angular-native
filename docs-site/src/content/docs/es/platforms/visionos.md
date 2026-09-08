@@ -139,16 +139,16 @@ pulsación por el camino de siempre: el renderer sin pantalla.
 las vistas pulsables, pero sin poder mover la mirada desde fuera no he podido
 ver el realce puesto en una captura.
 
-## Qué falta
+## Lo que falta
 
-- **`deviceInfo.platform` sigue diciendo `"ios"`** en las tres familias. Una
-  app que quiera adaptarse al visor —o a la tele— no tiene hoy forma de saber
-  dónde está. El arreglo no está en `an-ios`: el tipo
-  `NativeDeviceInfo.platform` de `packages/primitives` declara los valores que
-  puede tomar, y hay que abrirlo ahí primero.
 - **Icono.** El `Info.plist` no lleva `CFBundleIcons`: el icono de visionOS es
   en capas y vive en un catálogo de assets compilado con `actool`. La app se
   instala y se lanza; en la parrilla sale sin icono.
+- **Los plugins se compilan con sus fuentes de iOS**, que es lo único que
+  declaran: el manifiesto `angularNative` tiene sección `ios` y no `visionos`, y
+  es el mismo shell y el mismo protocolo `AnPlugin`. Si alguno usa API que el
+  visor no tiene, el enlazado se para con el error de swiftc; `an visionos` lo
+  avisa antes de compilar para que no llegue de sorpresa.
 - **Nada volumétrico.** Esto es una ventana plana en un espacio 3D, que es lo
   que visionOS llama una *window*. Ni `volume` ni espacio inmersivo: las dos
   cosas son SwiftUI y RealityKit, y no hay `UIView` que montar en ellas, así

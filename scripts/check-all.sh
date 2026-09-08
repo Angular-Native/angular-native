@@ -67,6 +67,7 @@ echo
 echo
 # That the number of commands the pages claim is the number clap has.
 "$ROOT/scripts/check-cli-commands.sh"
+"$ROOT/scripts/check-platform-gaps.sh"
 "$ROOT/scripts/check-publish.sh"
 "$ROOT/scripts/check-plugin-sources.sh"
 "$ROOT/scripts/check-router.sh"

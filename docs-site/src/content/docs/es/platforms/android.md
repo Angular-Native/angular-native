@@ -240,6 +240,18 @@ que el ancho infinito.
   el marco visible de la ventana— solo informa de algo si se deja redimensionar
   la ventana, y este shell pide que no, precisamente para que el layout que
   calculó el core sea el que se dibuja.
+- **El peso de fuente son dos pasos por debajo de la API 28.**
+  `Typeface.create(family, weight, italic)` acepta el número de CSS desde la API
+  28; el `minSdkVersion` del shell es 24 y de la 24 a la 27 no hay nada en la
+  plataforma que lo acepte, así que de 100 a 500 se dibuja regular y de 600 a
+  900 negrita. La medición colapsa en el mismo sitio, así que la caja sigue
+  cuadrando con lo dibujado. Mira [Medición del texto](#medición-del-texto).
+- **Sin color de iconos de las barras del sistema por debajo de la API 30.**
+  Antes de eso no existe `WindowInsetsController`, así que los iconos de la
+  barra de estado y la de navegación se quedan con los del tema y una barra
+  clara sobre una app oscura puede costar de leer. Se dice una vez en lugar de
+  saltárselo en silencio. Mira
+  [Qué aspecto tiene la app](#qué-aspecto-tiene-la-app).
 - **Atrás es el callback obsoleto.** No hay atrás predictivo.
 - **`armeabi-v7a` solo si la pides.** `--abi armeabi-v7a` la compila; no está
   en ningún valor por defecto. Ver [Qué ABIs](#qué-abis).

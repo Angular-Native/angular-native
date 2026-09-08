@@ -329,8 +329,11 @@ orientations are portrait and both landscapes.
   [The safe area and the keyboard](/guide/safe-area-and-keyboard/). What there
   is no way to ask for is the bar above it: a Done button, a next-field arrow,
   anything `inputAccessoryView` is for.
-- **Six warn-once sites, all in accessibility**: an unknown role, an unknown
-  state key, a role UIKit has no trait for, `checked: 'mixed'` — UIKit only
-  knows checked and unchecked, so the value is left empty rather than rounded —
-  and `expanded` and `busy`, neither of which has a trait. What is set and what
-  is refused is in [Accessibility on Apple](/accessibility/apple/).
+- **Six things the accessibility contract asks for and UIKit cannot say**: an
+  unknown role, an unknown state key, a role UIKit has no trait for,
+  `checked: 'mixed'` — UIKit only knows checked and unchecked, so the value is
+  left empty rather than rounded — and `expanded` and `busy`, neither of which
+  has a trait. Each warns once, and they are the whole of what this host turns
+  down: no prop of a primitive is accepted and dropped here the way a handful
+  are [on the Mac](/platforms/macos/#what-is-missing). What is set and what is
+  refused is in [Accessibility on Apple](/accessibility/apple/).
