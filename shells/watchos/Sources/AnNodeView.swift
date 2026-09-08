@@ -87,7 +87,7 @@ struct AnNodeView: View {
         children
             .frame(width: node.width, height: node.height, alignment: .topLeading)
             .background(background)
-            .clipShape(node.anCornerShape)
+            .anClip(node)
             .opacity(node.opacity ?? 1)
             .anGestures(node, dispatch: dispatch)
             .anCrown(node, controls: controls, dispatch: dispatch, focus: crownFocus)
@@ -126,10 +126,11 @@ struct AnNodeView: View {
         }
         .frame(width: node.width, height: node.height, alignment: .topLeading)
         .background(background)
-        // `.clipShape` and not `.clipped()`: with four zero radii it is the very
-        // same rectangle, and it is the only way a screen sliding in stops at
-        // the stack's rounded corner instead of squaring it off.
-        .clipShape(node.anCornerShape)
+        // A stack that does not clip lets the screen coming in paint outside
+        // it while it slides, which is what UIKit's host does too: there the
+        // animation moves the child's frame and only `clipsToBounds` stops it.
+        // A stack meant to contain its transition asks for `overflow: hidden`.
+        .anClip(node)
         .animation(.easeOut(duration: 0.25), value: node.children?.last?.id)
     }
 
@@ -164,7 +165,7 @@ struct AnNodeView: View {
         }
         .frame(width: node.width, height: node.height)
         .background(background)
-        .clipShape(node.anCornerShape)
+        .anClip(node)
     }
 
     // ------------------------------------------------------------------- text
@@ -210,7 +211,7 @@ struct AnNodeView: View {
         .buttonStyle(.plain)
         .disabled(node.disabled == true)
         .background(background)
-        .clipShape(node.anCornerShape)
+        .anClip(node)
         .opacity(node.opacity ?? 1)
         .anGestures(node, dispatch: dispatch, ownsTheTap: true)
     }
@@ -226,7 +227,7 @@ struct AnNodeView: View {
     private var imageView: some View {
         AnImageView(node: node, dispatch: dispatch)
             .frame(width: node.width, height: node.height)
-            .clipShape(node.anCornerShape)
+            .anClip(node)
             .opacity(node.opacity ?? 1)
             .anGestures(node, dispatch: dispatch)
     }

@@ -181,6 +181,58 @@ mod tests {
         assert_eq!(gap.accessibility_traits, vec!["isSelected"]);
     }
 
+    /// The JSON, not the struct.
+    ///
+    /// Every other test here reads `Snapshot` fields, and the shell never sees
+    /// those: it sees the object serde writes and `JSONDecoder` reads back with
+    /// `.convertFromSnakeCase`. A wrong `skip_serializing_if` takes a key out
+    /// with nothing to show for it — the struct still has the field, the tests
+    /// still pass, and the prop goes quiet on the watch alone.
+    ///
+    /// `clip` is the one worth pinning: it is skipped when false, so the two
+    /// halves of the contract are that it is there when the node clips and
+    /// gone when it does not.
+    #[test]
+    fn clip_reaches_the_json_only_when_the_node_clips() {
+        let mut tree = ShadowTree::new();
+        tree.create_node(1, NodeKind::View).unwrap();
+        tree.set_style(1, "width", "176").unwrap();
+        tree.set_style(1, "height", "223").unwrap();
+        tree.set_root(1).unwrap();
+
+        // Nothing asked this one to clip, and nothing should make it.
+        tree.create_node(2, NodeKind::View).unwrap();
+        tree.set_style(2, "height", "40").unwrap();
+        tree.insert_child(1, 2, 0).unwrap();
+
+        // This one did.
+        tree.create_node(3, NodeKind::View).unwrap();
+        tree.set_style(3, "height", "40").unwrap();
+        tree.set_style(3, "overflow", "hidden").unwrap();
+        tree.insert_child(1, 3, 1).unwrap();
+
+        let mut mount = MountSide::new(WatchHost::new(new_event_queue()));
+        let measurer = WatchMeasurer::new(Default::default());
+        mount.apply(&tree.commit((176.0, 223.0), &measurer).unwrap());
+
+        let json = serde_json::to_value(crate::snapshot::snapshot(mount.host())).unwrap();
+        let root = &json["root"];
+        // The root is the body: it clips whatever the template says.
+        assert_eq!(root["clip"], serde_json::json!(true));
+        assert!(
+            root["children"][0].get("clip").is_none(),
+            "a node with no overflow must not carry the key: {}",
+            root["children"][0]
+        );
+        assert_eq!(root["children"][1]["clip"], serde_json::json!(true));
+
+        // And the key is the one Swift asks for. `.convertFromSnakeCase` turns
+        // `accessibility_label` into `accessibilityLabel`, so the snake_case
+        // spelling here is what the shell's camelCase field is decoded from.
+        assert!(root.get("border_radius").is_none(), "no radius was set");
+        assert!(json.get("revision").is_some(), "the shell redraws on this");
+    }
+
     /// A node that goes away has to go from the snapshot too, and the revision
     /// has to rise: if it did not, SwiftUI would keep showing what is no longer
     /// there.

@@ -33,6 +33,40 @@ extension AnNode {
             topTrailingRadius: corners[1]
         )
     }
+
+    /// Whether the node cuts its children off at its own edge.
+    ///
+    /// The same rule UIKit's host applies in `set_clip`: `clip || rounded`. The
+    /// first half is the template's resolved `overflow`; the second is not a
+    /// choice, because a rounded background cannot be drawn without cutting the
+    /// corners off, so a radius clips whether or not anybody asked for it.
+    ///
+    /// Without the first half this shell clipped every node unconditionally,
+    /// which made `overflow: visible` —the default— do nothing here and work on
+    /// the other three hosts.
+    var anClips: Bool {
+        if clip == true { return true }
+        let all = borderRadius ?? 0
+        let corners = borderRadii?.count == 4 ? borderRadii! : [all, all, all, all]
+        return corners.contains { $0 > 0 }
+    }
+}
+
+/// The clip, applied only to the nodes that ask for one. See `AnNode.anClips`.
+private struct AnClip: ViewModifier {
+    let node: AnNode
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if node.anClips {
+            // `.clipShape` and not `.clipped()`: with four zero radii it is the
+            // very same rectangle, and it is the only thing that cuts a child
+            // at a rounded corner instead of squaring it off.
+            content.clipShape(node.anCornerShape)
+        } else {
+            content
+        }
+    }
 }
 
 /// The line around a node.
@@ -72,6 +106,11 @@ private struct AnBorder: ViewModifier {
 }
 
 extension View {
+    /// Cuts the children off at the node's edge, when the node clips.
+    func anClip(_ node: AnNode) -> some View {
+        modifier(AnClip(node: node))
+    }
+
     /// Black when the template gave a width and no `[borderColor]`, because
     /// that is `CALayer`'s default and the phone draws it black too. On the
     /// watch's black background that line is invisible, which looks like a bug

@@ -47,7 +47,38 @@ else
   fail=1
 fi
 
-# 2. The three lists of primitives.
+# 2. The wire between the two languages.
+#
+#    The snapshot is a JSON object serialised from `snapshot::Node` and decoded
+#    into Swift's `AnNode` with `.convertFromSnakeCase`, so the two field lists
+#    are one list written twice. Nothing makes them agree: a field Rust stops
+#    sending decodes to nil and the prop goes quiet, and a field Swift never
+#    declares is dropped by `JSONDecoder` without a word. `clip` was sent on
+#    every frame and read by nobody, which left the shell clipping
+#    unconditionally while `overflow: visible` worked on the other three hosts.
+snake_to_camel() {
+  awk -F_ '{ s = $1; for (i = 2; i <= NF; i++) s = s toupper(substr($i, 1, 1)) substr($i, 2); print s }'
+}
+for pair in "Node:AnNode" "Snapshot:AnSnapshot"; do
+  RS="${pair%%:*}"; SW="${pair##*:}"
+  RUST="$(awk "/^pub struct $RS \\{/,/^\\}/" crates/an-watch/src/snapshot.rs \
+    | sed -n 's/^    pub \([a-z_0-9]*\):.*/\1/p' | snake_to_camel | sort -u)"
+  SWIFT="$(awk "/^struct $SW/,/^\\}/" shells/watchos/Sources/AnTree.swift \
+    | sed -n 's/^    let \([a-zA-Z0-9]*\):.*/\1/p' | sort -u)"
+  if [ -z "$RUST" ] || [ -z "$SWIFT" ]; then
+    echo "  FAIL could not read the fields of $RS or $SW; the check is looking at the wrong shape"
+    fail=1
+    continue
+  fi
+  UNREAD="$(comm -23 <(echo "$RUST") <(echo "$SWIFT") | tr '\n' ' ')"
+  UNSENT="$(comm -13 <(echo "$RUST") <(echo "$SWIFT") | tr '\n' ' ')"
+  [ -z "$UNREAD" ] && r=0 || r=1
+  check $r "every field $RS serialises is one $SW decodes${UNREAD:+ (nobody reads: $UNREAD)}"
+  [ -z "$UNSENT" ] && r=0 || r=1
+  check $r "every field $SW decodes is one $RS sends${UNSENT:+ (never sent: $UNSENT)}"
+done
+
+# 3. The three lists of primitives.
 #
 #    The vocabulary is in `an-core`, what the watch does not paint is in
 #    `an-watch/src/snapshot.rs`, and what it does paint is in Swift. Nothing
@@ -76,7 +107,7 @@ UNDECIDED="$(comm -23 <(echo "$ALL") <(cat <(echo "$UNPAINTED") <(echo "$PAINTED
 check $r "every core primitive is either painted by the watch or says why not"
 if [ -n "$UNDECIDED" ]; then echo "       undecided: $(echo "$UNDECIDED" | tr '\n' ' ')"; fi
 
-# 3. The gestures. What the shell hooks up and what the host says never arrives
+# 4. The gestures. What the shell hooks up and what the host says never arrives
 #    cannot overlap: a gesture that is hooked up and on top of that warns that it
 #    does not work is worse than either of the two on its own.
 HOOKED="$(grep -oE 'listens\(to: "[a-zA-Z]+"\)' shells/watchos/Sources/*.swift \
@@ -94,7 +125,7 @@ check $r "the crown is hooked up from the shell"
 grep -q 'digitalCrownRotation' shells/watchos/Sources/AnCrown.swift && r=0 || r=1
 check $r "and with SwiftUI's crown API, not with an imitated gesture"
 
-# 4. The icon table, which is now in one place.
+# 5. The icon table, which is now in one place.
 #
 #    It used to be in three — the core's, plus a private copy in `an-ios` and
 #    another in `an-macos` — and this check existed to catch them drifting
@@ -114,7 +145,7 @@ for host in ios macos; do
   check $r "an-$host asks the core to translate a name"
 done
 
-# 5. The shell cannot lay anything out on its own. All the layout belongs to
+# 6. The shell cannot lay anything out on its own. All the layout belongs to
 #    taffy, and a `VStack` or a `padding` slipped in would be a second engine
 #    deciding the same thing; whichever ran later would win and nobody would know
 #    why. Only the sources that paint the tree are looked at.
@@ -127,7 +158,7 @@ LAY_OUT="$(grep -vE '^\s*(//|\*)' shells/watchos/Sources/AnNodeView.swift shells
 check $r "the shell lays nothing out: no VStack, no HStack, no padding"
 if [ -n "$LAY_OUT" ]; then echo "$LAY_OUT" | sed 's/^/       /'; fi
 
-# 6. The examples, mounted with the viewport of a 46 mm Series 11. Without this, a
+# 7. The examples, mounted with the viewport of a 46 mm Series 11. Without this, a
 #    change in the primitives could leave the watch app unpainted and nobody
 #    would find out until opening the simulator.
 cargo an build examples/hello-watch >/dev/null
@@ -169,7 +200,7 @@ in_controls 'StackView#[0-9]+ .*transition=' 'the stack comes down with the dire
 # obvious why.
 in_controls 'Alert#[0-9]+ \[0,0 0x0\]' 'the dialog takes up no room in the layout'
 
-# 7. The cross-compilation, which is the expensive one and the one that may not
+# 8. The cross-compilation, which is the expensive one and the one that may not
 #    be available.
 if ! rustup toolchain list 2>/dev/null | grep -q '^nightly'; then
   echo "  --   cross-compilation skipped: the nightly toolchain is missing"
@@ -184,6 +215,41 @@ else
     echo "  ok   an-watch for aarch64-apple-watchos-sim"
   else
     echo "  FAIL an-watch does not cross-compile for aarch64-apple-watchos-sim"
+    fail=1
+  fi
+fi
+
+# 9. That the shell compiles.
+#
+#    Everything above reads the Swift with grep, which cannot tell a source
+#    that builds from one that does not: a shell with a syntax error passes
+#    every check here and fails on `an watchos`, where the error arrives with a
+#    simulator, nightly and a build of `std` in front of it. A type check needs
+#    none of that — no linking, no Rust, three seconds — so the whole shell is
+#    put through the real watchOS SDK, with the same bridging header and the
+#    same deployment target `an watchos` uses. The target is read out of the
+#    CLI rather than written again here.
+DEPLOYMENT="$(sed -n 's/^const DEPLOYMENT: &str = "\(.*\)";$/\1/p' crates/an-cli/src/watchos.rs)"
+SDK_PATH="$(xcrun --sdk watchsimulator --show-sdk-path 2>/dev/null || true)"
+if [ -z "$DEPLOYMENT" ]; then
+  echo "  FAIL cannot read DEPLOYMENT out of crates/an-cli/src/watchos.rs"
+  fail=1
+elif [ -z "$SDK_PATH" ]; then
+  echo "  --   the type check is skipped: there is no watchsimulator SDK on this machine"
+else
+  SWIFT_LOG="$(mktemp)"
+  # `shells/shared` comes along because the watch's sources use it —
+  # `AnBuiltinModules`, `DevClient` — and a type check of half a module is a
+  # wall of undefined names rather than an answer.
+  if xcrun --sdk watchsimulator swiftc -typecheck \
+      -target "arm64-apple-watchos${DEPLOYMENT}-simulator" \
+      -import-objc-header shells/watchos/Sources/Bridging-Header.h \
+      -I crates/an-watch/include \
+      shells/watchos/Sources/*.swift shells/shared/*.swift >"$SWIFT_LOG" 2>&1; then
+    echo "  ok   the shell type-checks against watchOS $DEPLOYMENT"
+  else
+    echo "  FAIL the watch shell does not type-check"
+    grep -E "error:" "$SWIFT_LOG" | head -10
     fail=1
   fi
 fi

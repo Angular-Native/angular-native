@@ -95,6 +95,10 @@ struct AnNode: Decodable, Identifiable, Equatable {
     let borderWidth: Double?
     let borderColor: [Double]?
     let opacity: Double?
+    /// Whether this node keeps its children inside its own frame — the
+    /// resolved `overflow`. Absent means false: the core leaves the key out
+    /// rather than send it on every node. See `anClips`.
+    let clip: Bool?
     let disabled: Bool?
     let testId: String?
 
