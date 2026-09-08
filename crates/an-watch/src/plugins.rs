@@ -225,6 +225,31 @@ mod tests {
 
     use super::*;
 
+    /// One test at a time, and each one starting from an empty bridge.
+    ///
+    /// Everything this module exposes is a C entry point, so its state is
+    /// process-global by construction: one `bridge()`, one `names()`, one
+    /// `dispatch()`. `cargo test` runs the three below on three threads, and
+    /// they were stepping on each other — the queued call
+    /// `with_no_dispatcher…` makes is on the same bridge
+    /// `a_call_goes_out…` counts, so either could see the other's and one of
+    /// them failed perhaps one run in two, under load and nowhere else.
+    ///
+    /// Giving each test its own bridge would mean parameterising the FFI
+    /// surface on something the shell does not have, and the point of these
+    /// tests is that they go through the surface Swift really calls.
+    ///
+    /// The lock is taken through `lock().unwrap_or_else(…)` rather than
+    /// `unwrap()`: a panicking test poisons the mutex, and a poisoned mutex
+    /// would turn one failure into three.
+    fn serially() -> std::sync::MutexGuard<'static, ()> {
+        static ORDER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let guard = ORDER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        // Whatever the previous test left queued is not this one's.
+        let _ = bridge().take_calls();
+        guard
+    }
+
     /// The whole way round without a watch: register a name, build the module
     /// the engine would get, call it, pick the call up on the shell's side and
     /// answer it.
@@ -233,6 +258,7 @@ mod tests {
     /// if this ever stopped matching iOS, this test is where it would show.
     #[test]
     fn a_call_goes_out_to_the_shell_and_the_answer_comes_back() {
+        let _order = serially();
         use an_bridge::modules::ModuleRegistry;
 
         let name = CString::new("keychain").expect("no zero byte");
@@ -261,6 +287,7 @@ mod tests {
     /// symptom nobody can debug.
     #[test]
     fn with_no_dispatcher_the_calls_are_turned_down_instead_of_hanging() {
+        let _order = serially();
         use an_bridge::modules::ModuleRegistry;
 
         let name = CString::new("nowhere").expect("no zero byte");
@@ -285,6 +312,7 @@ mod tests {
     /// Without that, a typo and a missing dependency read the same.
     #[test]
     fn the_absent_note_names_what_is_in_the_app() {
+        let _order = serially();
         let name = CString::new("clipboard-on-the-watch").expect("no zero byte");
         unsafe { an_watch_plugin_register(name.as_ptr()) };
         let note = absent_note();
