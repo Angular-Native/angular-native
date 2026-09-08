@@ -39,6 +39,23 @@ la variable de despliegue (`XROS_DEPLOYMENT_TARGET`) y en el nombre del runtime
 de `simctl`, visionOS sigue siendo **xrOS**. Buscar «visionOS» en la lista de
 `simctl` no encuentra nada.
 
+### El toolchain, que es la parte que puede no estar
+
+`aarch64-apple-visionos-sim` es de **nivel 3**: rustup lo lista pero no trae
+`std` precompilada, así que se construye en el momento con `-Z build-std`, y eso
+solo existe en nightly. `rust-toolchain.toml` fija stable —un fichero de
+toolchain fija un canal, y poner los otros siete crates en nightly para llegar a
+esta compilación cruzada sale caro—, así que nightly se pide por nombre y se
+instala a mano. Un solo comando, y es el que ejecuta CI:
+
+```bash
+rustup toolchain install nightly --component rust-src
+```
+
+Sin él, `scripts/check-visionos.sh` imprime `--   cross-compilation skipped` y
+todo lo demás sigue corriendo; `check-all.sh` cuenta todos los `--` al final
+para que el salto no se pierda entre las líneas.
+
 ## La ventana no es una pantalla
 
 Esta es la diferencia que toca al modelo de marcos absolutos, y conviene

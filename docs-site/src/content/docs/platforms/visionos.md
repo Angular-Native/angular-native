@@ -25,6 +25,23 @@ and it inherits everything that module already knew: the `Info.plist` an
 external project can contribute, the check that the plist agrees with the
 project, and `build_dir()`.
 
+### The toolchain, which is the part that may not be there
+
+`aarch64-apple-visionos-sim` is a **tier 3** target: rustup lists it but ships no
+prebuilt `std`, so it is built on the spot with `-Z build-std`, and that is
+nightly-only. `rust-toolchain.toml` pins stable — a toolchain file pins one
+channel, and putting the other seven crates on nightly to reach this one
+cross-compilation is a bad trade — so nightly is asked for by name and installed
+by hand. One command, and it is the one CI runs:
+
+```bash
+rustup toolchain install nightly --component rust-src
+```
+
+Without it `scripts/check-visionos.sh` prints `--   cross-compilation skipped`
+and everything else in it still runs; `check-all.sh` counts every `--` at the
+end so the skip is not lost in the scroll.
+
 ## A window is not a screen
 
 This is the part to look at head-on before concluding that "it looks the same

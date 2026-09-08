@@ -127,7 +127,15 @@ manifest.
 The TV, the headset and both Apple watches need nightly:
 `aarch64-apple-tvos-sim`, `aarch64-apple-visionos-sim` and
 `aarch64-apple-watchos-sim` are tier 3 targets and their `std` is built on the
-spot.
+spot. One command puts it on a machine, and it is the one CI runs:
+
+```bash
+rustup toolchain install nightly --component rust-src
+```
+
+Without it those three cross-compilations print `--   cross-compilation skipped`
+and the rest of their checks still run; `check-all.sh` counts every `--` at the
+end so the skip is not lost in the scroll.
 
 ## Eight platforms, one bundle
 

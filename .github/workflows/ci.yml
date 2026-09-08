@@ -59,8 +59,21 @@ jobs:
 
       - run: npm ci
 
+      # The suite reports a skip and carries on, which is what a laptop short of a
+      # toolchain needs and exactly the wrong thing here: this runner installs
+      # nightly with `rust-src` above, so tvOS, visionOS and watchOS reporting
+      # `cross-compilation skipped` means that install quietly stopped working
+      # and three targets are being built nowhere. On this machine only, that
+      # `--` is a failure. The suite is left alone — it prints its own tally of
+      # everything that skipped, and the other skips here are legitimate.
       - name: Run the device-free suite, less the Android half
-        run: ./scripts/check-all.sh --no-android
+        run: |
+          set -o pipefail
+          ./scripts/check-all.sh --no-android 2>&1 | tee "$RUNNER_TEMP/check-all.log"
+          if grep -q 'cross-compilation skipped' "$RUNNER_TEMP/check-all.log"; then
+            echo "::error::a tier-3 Apple cross-compilation was skipped on a runner that installs nightly with rust-src"
+            exit 1
+          fi
 
   android:
     name: the Android half

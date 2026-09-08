@@ -30,6 +30,38 @@ A script that cannot do its job prints **`skipped`**, not a pass. That
 distinction is the point: a suite that goes green because the emulator was not
 running is worse than one that goes red.
 
+## What did not run
+
+A `--` line in the middle of two thousand is easy to miss, so the run ends with
+a `== skipped` section that counts them and repeats each one:
+
+```
+== skipped
+       cross-compilation skipped: the nightly toolchain is missing
+       the signed macOS build is skipped: this keychain has no codesigning identity
+  --   2 steps did not run; the reason is printed where each one happened.
+```
+
+`ok   nothing was skipped: every step ran` is the other outcome. It is a report
+and not a gate — `--no-android`, a machine with no simulator runtime and a
+keychain with no signing identity all skip for good reasons, and a suite that
+failed on any of them would stop being runnable on a laptop.
+
+The one skip that has no good reason is the tier-3 Apple cross-compilation.
+`aarch64-apple-tvos-sim`, `aarch64-apple-visionos-sim` and
+`aarch64-apple-watchos-sim` ship no prebuilt `std`, so `-Z build-std` compiles it
+from `rust-src`, which is nightly-only; `rust-toolchain.toml` pins stable,
+because a toolchain file pins one channel and the other seven crates have no
+business on nightly. One command covers all three, and it is the one CI runs:
+
+```bash
+rustup toolchain install nightly --component rust-src
+```
+
+Which is why the CI job greps its own output for `cross-compilation skipped` and
+fails on it. The runner installs that toolchain; a skip there is not a machine
+short of a toolchain, it is three targets nobody is building.
+
 ## The two halves
 
 ```bash
@@ -51,6 +83,13 @@ half on `macos-15`, the Android half on `ubuntu-24.04`. Both runner images carry
 the Android SDK and the NDK, so the Mac could do the lot — it does not because a
 macOS minute bills at ten times a Linux one, and nothing in the Android half
 needs a Mac.
+
+The Mac job installs one thing before anything else: `rustup toolchain install
+nightly --component rust-src`. The iOS and Android targets come from
+`rust-toolchain.toml`; nightly cannot, and that step is the only reason the three
+tier-3 Apple cross-compilations run anywhere. The job then greps the suite's own
+output for `cross-compilation skipped` and fails on it, so the day that install
+stops working the run goes red instead of quietly dropping three targets.
 
 Three things the Linux job has to get right, none of them a guess about the
 runner:

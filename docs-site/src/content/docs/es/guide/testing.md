@@ -30,6 +30,39 @@ Un script que no puede hacer su trabajo imprime **`skipped`**, no un aprobado.
 Esa distinción es el objetivo: una suite que se pone verde porque el emulador no
 estaba arrancado es peor que una que se pone roja.
 
+## Lo que no llegó a correr
+
+Una línea `--` en medio de dos mil se pasa por alto, así que la ejecución
+termina con una sección `== skipped` que las cuenta y las repite:
+
+```
+== skipped
+       cross-compilation skipped: the nightly toolchain is missing
+       the signed macOS build is skipped: this keychain has no codesigning identity
+  --   2 steps did not run; the reason is printed where each one happened.
+```
+
+La otra salida es `ok   nothing was skipped: every step ran`. Es un informe y no
+una puerta: `--no-android`, una máquina sin runtime de simulador y un llavero sin
+identidad de firma se saltan por buenos motivos, y una suite que fallara con
+cualquiera de ellos dejaría de poder correrse en un portátil.
+
+El salto que no tiene buen motivo es el de las compilaciones cruzadas de nivel 3
+de Apple. `aarch64-apple-tvos-sim`, `aarch64-apple-visionos-sim` y
+`aarch64-apple-watchos-sim` no traen `std` precompilada, así que `-Z build-std`
+la construye a partir de `rust-src`, que solo existe en nightly;
+`rust-toolchain.toml` fija stable, porque un fichero de toolchain fija un canal y
+los otros siete crates no pintan nada en nightly. Un solo comando cubre los tres,
+y es el que ejecuta CI:
+
+```bash
+rustup toolchain install nightly --component rust-src
+```
+
+Por eso el job de CI busca `cross-compilation skipped` en su propia salida y
+falla si lo encuentra. El runner instala ese toolchain; un salto ahí no es una
+máquina a la que le falta algo, son tres targets que no compila nadie.
+
 ## Las dos mitades
 
 ```bash
@@ -51,6 +84,14 @@ Apple en `macos-15`, la de Android en `ubuntu-24.04`. Las dos imágenes llevan e
 SDK de Android y el NDK, así que el Mac podría hacerlo todo — no lo hace porque
 un minuto de macOS se factura a diez veces uno de Linux, y nada de la mitad de
 Android necesita un Mac.
+
+El trabajo del Mac instala una cosa antes que nada: `rustup toolchain install
+nightly --component rust-src`. Los targets de iOS y de Android salen de
+`rust-toolchain.toml`; nightly no puede, y ese paso es la única razón por la que
+las tres compilaciones cruzadas de nivel 3 de Apple corren en algún sitio.
+Después el trabajo busca `cross-compilation skipped` en la salida de la propia
+suite y falla si lo encuentra, para que el día que ese paso deje de funcionar la
+ejecución se ponga roja en vez de dejar caer tres targets sin decirlo.
 
 Tres cosas que el trabajo de Linux tiene que acertar, y ninguna es una suposición
 sobre el runner:

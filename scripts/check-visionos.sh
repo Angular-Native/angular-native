@@ -101,17 +101,25 @@ fi
 # 4. The cross-compilation.
 if ! grep -q '^nightly' <<<"$(rustup toolchain list 2>/dev/null || true)"; then
   echo "  --   cross-compilation skipped: the nightly toolchain is missing"
-  echo "       rustup toolchain install nightly"
-  echo "       rustup component add rust-src --toolchain nightly"
+  # One command, with the component in it: two lines invite installing the first
+  # and reading the second as optional, and nightly without `rust-src` skips here
+  # all the same. It is the line CI runs.
+  echo "       rustup toolchain install nightly --component rust-src"
 elif ! grep -q 'rust-src (installed)' <<<"$(rustup component list --toolchain nightly 2>/dev/null || true)"; then
   echo "  --   cross-compilation skipped: rust-src is missing from nightly"
   echo "       rustup component add rust-src --toolchain nightly"
 else
+  # The output is kept rather than thrown away. `-Z build-std` compiles `std`
+  # first, so a failure here is as often the toolchain as the crate, and
+  # `2>/dev/null` cannot tell the two apart — it prints FAIL and nothing to act
+  # on.
+  XLOG="$(mktemp)"
   if XROS_DEPLOYMENT_TARGET=1.0 cargo +nightly build --quiet -Z build-std=std,panic_abort \
-    -p an-ios --target aarch64-apple-visionos-sim 2>/dev/null; then
+    -p an-ios --target aarch64-apple-visionos-sim >"$XLOG" 2>&1; then
     check ok 'an-ios for aarch64-apple-visionos-sim'
   else
     check no 'an-ios does not cross-compile for aarch64-apple-visionos-sim'
+    tail -30 "$XLOG" | sed 's/^/       /'
   fi
 fi
 

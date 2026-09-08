@@ -65,9 +65,13 @@ trae `std` precompilada. Hay que construirla en el momento, y eso pide nightly,
 igual que ya pasaba con watchOS:
 
 ```bash
-rustup toolchain install nightly
-rustup component add rust-src --toolchain nightly
+rustup toolchain install nightly --component rust-src
 ```
+
+Un solo comando, y es el que ejecuta CI. Sin él, `scripts/check-tvos.sh` imprime
+`--   cross-compilation skipped` y el resto del script sigue pasando: la suite
+cuenta todos los `--` al final para que un salto en medio de dos mil líneas no
+se pierda.
 
 `rquickjs-sys` tampoco envía bindings pregenerados para tvOS; se generan con
 bindgen, y tvOS solo tuvo que estar en la lista de `an-bridge/Cargo.toml`.

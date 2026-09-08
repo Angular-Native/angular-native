@@ -7,9 +7,17 @@ channel = "stable"
 # builds, still signs and still uploads — Play simply stops offering the app to
 # Chromebooks and emulators.
 #
-# The tier-3 Apple targets are deliberately absent: tvOS, visionOS and watchOS
-# have no prebuilt `std`, so rustup cannot install them and their scripts ask
-# for nightly with `rust-src` instead.
+# The tier-3 Apple targets are deliberately absent, and this file cannot carry
+# them: tvOS, visionOS and watchOS have no prebuilt `std`, so rustup has nothing
+# to install and `-Z build-std` compiles it from `rust-src` on the spot — which
+# is nightly-only, and a toolchain file pins one channel. Pinning nightly here to
+# reach three cross-compilations would put the other seven crates, the tests and
+# both iOS targets on it too, so stable stays the default and the three scripts
+# ask for nightly by name (`cargo +nightly`) and skip when it is not there.
+#
+# One command puts it on a machine, and it is the one CI runs:
+#
+#   rustup toolchain install nightly --component rust-src
 targets = [
   "aarch64-apple-ios-sim",
   "aarch64-apple-ios",
