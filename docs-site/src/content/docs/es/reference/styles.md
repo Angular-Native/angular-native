@@ -151,6 +151,41 @@ El **grosor** del borde es layout, así que vive aquí. El color y el radio no l
 son: son props de la primitiva, junto con `backgroundColor`. Ver
 [Componentes](/es/reference/components/).
 
+#### Hay un borde, y es una prop
+
+Dos cosas se escriben casi igual y hacen trabajos opuestos, así que conviene
+decir sin rodeos cuál es cuál:
+
+- `[borderWidth]`, la **prop**, es la línea. Un número para los cuatro lados,
+  que cada host dibuja dentro del marco, encima del contenido. No mueve nada.
+- `borderWidth` y los cuatro grosores por lado, los **estilos** de la tabla de
+  arriba, son layout. Meten hacia dentro a los hijos y se quedan en el core: a
+  ningún host se le dice nada de ellos, así que de ahí no sale ninguna línea.
+
+El estilo uniforme sí sirve para algo, y es lo que le da CSS: escrito junto a la
+prop, `[style.borderWidth]="'2'"` reserva los dos puntos que la línea de la prop
+pinta encima, para que la línea no quede sobre un hijo.
+
+Los cuatro por lado no tienen ese uso, porque no hay línea por lado para la que
+reservar sitio. `[style.borderTopWidth]="'2'"` baja a los hijos dos puntos y no
+dibuja nada, en todas las plataformas. Eso pasaba en silencio; ahora el core lo
+dice una vez por nombre:
+
+```text
+angular-native: [style.borderTopWidth] insets this node's children and draws
+nothing. The border that is drawn is the [borderWidth] prop — one number, all
+four sides, on every platform — and there is no per-side one to reserve room
+for. If the inset is what was wanted, it is padding.
+```
+
+No se dibujan y no se van a dibujar. `CALayer` en UIKit y AppKit tiene un borde,
+`GradientDrawable` en Android tiene un trazo, y SwiftUI en el reloj no tiene
+vista ninguna: los cuatro hosts tendrían que inventarse el mismo dibujo desde
+cero, radios de esquina incluidos, y un borde por lado con las esquinas mal
+sería peor que ninguno. Los nombres siguen reconociéndose para que una plantilla
+escrita con ellos conserve su layout y se entere de lo que no le han dado, en
+vez de que le digan que el estilo no existe.
+
 ## Valores
 
 | Escrito | Se lee como |

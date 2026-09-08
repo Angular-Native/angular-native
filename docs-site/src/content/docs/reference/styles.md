@@ -149,6 +149,41 @@ Border **width** is layout, so it lives here. Border colour and radius are not
 — they are props on the primitive, along with `backgroundColor`. See
 [Components](/reference/components/).
 
+#### There is one border, and it is a prop
+
+Two things are spelled almost alike and do opposite jobs, so it is worth being
+blunt about which is which:
+
+- `[borderWidth]`, the **prop**, is the line. One number for all four sides,
+  drawn by every host inside the frame, over the content. It moves nothing.
+- `borderWidth` and the four per-side widths, the **styles** in the table above,
+  are layout. They inset the children and they stop in the core: no host is ever
+  told about them, so no line comes of them.
+
+The uniform style has a use, and it is the one CSS gives it: written next to the
+prop, `[style.borderWidth]="'2'"` reserves the two points the prop's line is
+painted over, so the line does not sit on top of a child.
+
+The four per-side ones have no such use, because there is no per-side line to
+reserve room for. `[style.borderTopWidth]="'2'"` pushes the children down by two
+points and draws nothing, on every platform. That used to happen in silence; the
+core now says it once per name:
+
+```text
+angular-native: [style.borderTopWidth] insets this node's children and draws
+nothing. The border that is drawn is the [borderWidth] prop — one number, all
+four sides, on every platform — and there is no per-side one to reserve room
+for. If the inset is what was wanted, it is padding.
+```
+
+They are not drawn and they are not going to be. `CALayer` on UIKit and AppKit
+has one border, `GradientDrawable` on Android has one stroke, and SwiftUI on the
+watch has no view at all — four hosts would each have to invent the same drawing
+from scratch, corner radii and all, and a per-side border that got the corners
+wrong would be worse than none. The names stay recognised so that a template
+written with them keeps its layout and gets told what it did not get, rather
+than being told the style does not exist.
+
 ## Values
 
 | Written | Read as |

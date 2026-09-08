@@ -82,6 +82,9 @@ fi
 step "$ROOT/scripts/check-angular.sh"
 step "$ROOT/scripts/check-list.sh"
 step "$ROOT/scripts/check-clip.sh"
+# The two borders with nearly the same name: the prop that is drawn and the four
+# styles that only inset.
+step "$ROOT/scripts/check-border.sh"
 # The two things a scroll view was getting wrong on its own account: a size it
 # ignored and an axis it did not have.
 step "$ROOT/scripts/check-scroll.sh"

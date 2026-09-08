@@ -452,7 +452,9 @@ up.
   siblings are *layout* styles — taffy resolves them, they inset the children
   and they never reach a host as something to paint. SwiftUI has no shape for
   them either, so drawing them on the watch alone would mean butting four
-  rectangles together and having the watch show an edge the phone does not.
+  rectangles together and having the watch show an edge the phone does not. The
+  core says so once per name when a template writes one, so it is refused out
+  loud rather than dropped; see [Styles](/reference/styles/).
 - **The whole snapshot instead of the mutations.** Every changed frame
   serialises the whole tree. For ten or fifteen nodes it does not show. When a
   long list turns up, the ops will have to be sent on their own, and what

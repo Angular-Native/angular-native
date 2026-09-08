@@ -82,7 +82,8 @@ pub struct Node {
     /// One width for the whole outline. There is no per-side border here and
     /// there is none on any other host either: `borderTopWidth` and its three
     /// siblings are layout styles, they never leave taffy, and what they do is
-    /// inset the children.
+    /// inset the children. The core says so once per name when a template
+    /// writes one; `scripts/check-border.sh` holds all four hosts to it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub border_width: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]

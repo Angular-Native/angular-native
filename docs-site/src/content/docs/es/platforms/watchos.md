@@ -464,7 +464,9 @@ repositorio no puede depender de que haya un servidor levantado.
   a los hijos y no llegan a ningún host como algo que pintar. SwiftUI tampoco
   tiene una forma para ellos, así que dibujarlos solo en el reloj sería juntar
   cuatro rectángulos y hacer que el reloj enseñe un borde que el teléfono no
-  enseña.
+  enseña. El core lo dice una vez por nombre cuando una plantilla escribe uno,
+  así que se rechaza en voz alta en vez de tragárselo; ver
+  [Estilos](/es/reference/styles/).
 - **La foto entera en lugar de las mutaciones.** Cada fotograma cambiado
   serializa el árbol entero. Con diez o quince nodos no se nota. Cuando aparezca
   una lista larga habrá que mandar las ops por su cuenta, y lo que cambia es

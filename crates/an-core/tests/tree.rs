@@ -309,3 +309,67 @@ fn a_template_that_set_the_basis_keeps_it() {
     assert_eq!(frame_of(&frame.ops, 2).unwrap().height, 90.0);
     assert_eq!(frame_of(&frame.ops, 3).unwrap().height, 200.0);
 }
+
+/// The per-side border widths are layout and only layout.
+///
+/// The line a host draws is the `[borderWidth]` prop, which is one number for
+/// all four sides and moves no child. These four are styles: they push the
+/// children in and no `SetProp` ever leaves the core with their name on it. The
+/// core says so once per name on stderr; what is pinned here is the behaviour
+/// the sentence describes, because a future host that started reading
+/// `borderTopWidth` would make that sentence a lie.
+#[test]
+fn a_per_side_border_width_insets_the_children_and_reaches_no_host() {
+    let mut tree = ShadowTree::new();
+    tree.create_node(1, NodeKind::View).unwrap();
+    tree.create_node(2, NodeKind::View).unwrap();
+    tree.set_style(1, "width", "200").unwrap();
+    tree.set_style(1, "height", "60").unwrap();
+    tree.set_style(1, "borderTopWidth", "2").unwrap();
+    tree.set_style(1, "borderRightWidth", "4").unwrap();
+    tree.set_style(1, "borderBottomWidth", "8").unwrap();
+    tree.set_style(1, "borderLeftWidth", "16").unwrap();
+    tree.set_style(2, "flexGrow", "1").unwrap();
+    tree.insert_child(1, 2, 0).unwrap();
+    tree.set_root(1).unwrap();
+
+    let frame = tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
+
+    let child = frame_of(&frame.ops, 2).unwrap();
+    assert_eq!((child.x, child.y), (16.0, 2.0), "the four widths inset the children");
+    assert_eq!((child.width, child.height), (180.0, 50.0));
+
+    let leaked: Vec<&str> = frame
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            MountOp::SetProp { key, .. } if key.starts_with("border") => Some(&**key),
+            _ => None,
+        })
+        .collect();
+    assert!(leaked.is_empty(), "a border style reached a host as a prop: {leaked:?}");
+}
+
+/// And the prop is the other half: it travels and it moves nothing.
+#[test]
+fn the_border_width_prop_is_drawn_and_insets_nothing() {
+    let mut tree = ShadowTree::new();
+    tree.create_node(1, NodeKind::View).unwrap();
+    tree.create_node(2, NodeKind::View).unwrap();
+    tree.set_style(1, "width", "200").unwrap();
+    tree.set_style(1, "height", "60").unwrap();
+    tree.set_prop(1, "borderWidth", PropValue::Number(4.0)).unwrap();
+    tree.set_style(2, "flexGrow", "1").unwrap();
+    tree.insert_child(1, 2, 0).unwrap();
+    tree.set_root(1).unwrap();
+
+    let frame = tree.commit(VIEWPORT, &NaiveMeasurer).unwrap();
+
+    let child = frame_of(&frame.ops, 2).unwrap();
+    assert_eq!((child.x, child.y, child.width, child.height), (0.0, 0.0, 200.0, 60.0));
+    assert!(frame.ops.iter().any(|op| matches!(
+        op,
+        MountOp::SetProp { id: 1, key, value: PropValue::Number(w) }
+            if key == "borderWidth" && *w == 4.0
+    )));
+}

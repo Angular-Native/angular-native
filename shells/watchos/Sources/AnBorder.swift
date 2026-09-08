@@ -75,11 +75,14 @@ private struct AnClip: ViewModifier {
 /// reason accessibility does: an outline belongs to every node, not to a kind.
 /// A node with no `[borderWidth]` gets an empty overlay, which SwiftUI drops.
 ///
-/// There is no per-side border here, and it is not an omission. `borderWidth`
-/// is one number in the contract; `borderTopWidth` and its three siblings are
-/// layout styles — they are resolved by taffy, they inset the children and they
-/// never reach any host as something to draw. Four rectangles butted together
-/// would be this shell inventing a drawing the other three hosts do not make.
+/// There is no per-side border here, and it is not an omission: it is the
+/// contract. `borderWidth` is one number; `borderTopWidth` and its three
+/// siblings are layout styles — they are resolved by taffy, they inset the
+/// children and they never reach any host as something to draw. Four rectangles
+/// butted together would be this shell inventing a drawing the other three
+/// hosts do not make. The core warns once per name so that a template asking
+/// for one is not left wondering, and `scripts/check-border.sh` fails if any of
+/// the four hosts grows one on its own.
 private struct AnBorder: ViewModifier {
     let node: AnNode
 

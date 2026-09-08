@@ -409,6 +409,13 @@ impl ShadowTree {
             return self.set_prop(id, &camel, PropValue::Str(value.to_owned()));
         };
         let parsed = StyleValue::parse(value);
+        // The other half of the branch above, and the one that used to be
+        // silent: this name *is* layout, so it stops here and no host is ever
+        // told about it. For four of them that is not what the author meant.
+        // Unsetting one is not asking for anything, so it says nothing.
+        if parsed != StyleValue::Unset {
+            warn_border_side(key);
+        }
         let node = self.node_mut(id)?;
         // Written down before the "nothing changed" way out: a template that
         // asks for the direction it already has is still a template that asked,
@@ -791,4 +798,49 @@ impl ShadowTree {
             .and_then(Option::as_mut)
             .ok_or(Error::UnknownNode(id))
     }
+}
+
+/// The four per-side border widths, said once each.
+///
+/// A style the core recognises is layout and stops here: no host is ever told
+/// about it. For these four that is not what the template meant, and until this
+/// existed the only sign of it was the children moving.
+///
+/// It takes the resolved key and not the name written in the template, so that
+/// both spellings —`borderTopWidth` and `border-top-width`, which Angular
+/// hands over hyphenated— land on the same entry and say the same thing once.
+///
+/// Thread-local rather than global because the engine thread is the only one
+/// that mutates the tree, and a lock for a set that ends up holding four
+/// entries would be paying for contention that cannot happen.
+fn warn_border_side(key: StyleKey) {
+    use std::cell::RefCell;
+    use std::collections::HashSet;
+
+    thread_local! {
+        static SAID: RefCell<HashSet<&'static str>> = RefCell::new(HashSet::new());
+    }
+
+    // The uniform `borderWidth` style is deliberately not here: written next to
+    // the `[borderWidth]` prop it reserves the room the prop's line is painted
+    // over, which is the one honest use of taffy's border rect. There is no
+    // per-side line, so there is nothing for these four to reserve room for.
+    let side = match key {
+        StyleKey::BorderTopWidth => "borderTopWidth",
+        StyleKey::BorderRightWidth => "borderRightWidth",
+        StyleKey::BorderBottomWidth => "borderBottomWidth",
+        StyleKey::BorderLeftWidth => "borderLeftWidth",
+        _ => return,
+    };
+    SAID.with(|said| {
+        if !said.borrow_mut().insert(side) {
+            return;
+        }
+        eprintln!(
+            "angular-native: [style.{side}] insets this node's children and draws nothing. \
+             The border that is drawn is the [borderWidth] prop — one number, all four sides, \
+             on every platform — and there is no per-side one to reserve room for. If the \
+             inset is what was wanted, it is padding."
+        );
+    });
 }
