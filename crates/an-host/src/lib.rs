@@ -303,6 +303,10 @@ impl<H: HostRenderer, M: TextMeasurer> std::ops::DerefMut for Renderer<H, M> {
 pub struct RecordingHost {
     pub log: Vec<String>,
     pub frames: Vec<(NodeId, Rect)>,
+    /// Counted apart from `log` because the dumps the check scripts grep are
+    /// built out of `log`, and a host that starts announcing its own frame
+    /// boundaries there would change every one of them.
+    pub flushes: usize,
 }
 
 impl HostRenderer for RecordingHost {
@@ -339,5 +343,8 @@ impl HostRenderer for RecordingHost {
     }
     fn set_root(&mut self, id: NodeId) {
         self.log.push(format!("root {id}"));
+    }
+    fn flush(&mut self) {
+        self.flushes += 1;
     }
 }

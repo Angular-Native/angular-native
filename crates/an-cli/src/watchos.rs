@@ -28,6 +28,7 @@ use anyhow::{bail, Context, Result};
 use crate::build::run;
 use crate::ios::swift_sources;
 use crate::plugins::{self, Platform, Plugin};
+use crate::resources;
 use crate::workspace::Workspace;
 
 /// Every plugin has to bring its watchOS half, and the ones that do not are
@@ -54,6 +55,7 @@ pub struct Package {
 
 pub fn assemble(
     workspace: &Workspace,
+    app: &Path,
     bundle: &Path,
     release: bool,
     dev_server: Option<&str>,
@@ -183,6 +185,31 @@ pub fn assemble(
             let _ = std::fs::remove_file(app_dir.join("dev-server.txt"));
         }
     }
+    // The app's own files, at the root of the `.app` beside `main.js`.
+    //
+    // The phone's reason for that place does not carry over: there it is where
+    // `UIImage(named:)` searches, and on watchOS that call resolves a name
+    // against an asset catalogue, which a bundle built without Xcode does not
+    // have. What decides it here is the shape of the bundle. A watch `.app` is
+    // flat —`WKApplication` and no `Contents/`, so `Bundle.main.resourcePath`
+    // is the `.app` itself— and that is already the directory the shell finds
+    // `main.js` in and the one it builds an image's path from; a
+    // `Resources/` subdirectory of our own would be a directory nothing in
+    // Foundation looks into.
+    //
+    // Nothing here is signed —`an watchos` installs on the simulator, which
+    // asks for no signature— so unlike iOS there is no signature this copy has
+    // to come before.
+    //
+    // The four reserved names are the four this function has just written. The
+    // executable is among them because the bundle is flat: on the Mac it lives
+    // two directories away from the resources and cannot be collided with.
+    resources::copy(
+        workspace,
+        app,
+        &app_dir,
+        &["main.js", "Info.plist", "dev-server.txt", APP_NAME],
+    )?;
 
     Ok(Package { dir: app_dir })
 }

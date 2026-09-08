@@ -154,6 +154,17 @@ enum Command {
         /// Builds an `.aab` for Google Play instead of an `.apk`.
         #[arg(long)]
         aab: bool,
+        /// The ABIs the artefact carries; repeat it, or separate them with
+        /// commas. `arm64-v8a`, `x86_64`, `armeabi-v7a`.
+        ///
+        /// Without it an APK carries arm64-v8a — every phone, and the emulator
+        /// on an Apple-silicon Mac — because each extra ABI is another
+        /// cross-compilation of the core and the dev loop pays it on every
+        /// save. A bundle carries arm64-v8a and x86_64: Play splits it by ABI
+        /// so nobody downloads the other one, and a bundle without x86_64 is
+        /// one the store does not offer to a Chromebook or an emulator.
+        #[arg(long, value_enum, value_delimiter = ',')]
+        abi: Vec<android::Abi>,
     },
     /// Compiles, builds the APK and launches it in the Android emulator.
     Android {
@@ -174,6 +185,17 @@ enum Command {
         /// `--sign`: Play takes nothing signed with a debug key.
         #[arg(long)]
         aab: bool,
+        /// The ABIs the artefact carries; repeat it, or separate them with
+        /// commas. `arm64-v8a`, `x86_64`, `armeabi-v7a`.
+        ///
+        /// Without it an APK carries arm64-v8a — every phone, and the emulator
+        /// on an Apple-silicon Mac — because each extra ABI is another
+        /// cross-compilation of the core and the dev loop pays it on every
+        /// save. A bundle carries arm64-v8a and x86_64: Play splits it by ABI
+        /// so nobody downloads the other one, and a bundle without x86_64 is
+        /// one the store does not offer to a Chromebook or an emulator.
+        #[arg(long, value_enum, value_delimiter = ',')]
+        abi: Vec<android::Abi>,
         /// The adb serial to install on, as `adb devices` prints it.
         ///
         /// Without it the single phone-shaped device is taken, and with an
@@ -511,7 +533,7 @@ fn main() -> anyhow::Result<()> {
             let found = plugins::discover(&workspace, &app)?;
             watchos::require_plugins(&found)?;
             let bundle = build::bundle(&workspace, &app, release, &found)?;
-            let package = watchos::assemble(&workspace, &bundle, release, None, &found)?;
+            let package = watchos::assemble(&workspace, &app, &bundle, release, None, &found)?;
             watchos::launch(&package, &device)
         }
         Command::Env { platform } => {
@@ -545,7 +567,7 @@ fn main() -> anyhow::Result<()> {
             }
             Ok(())
         }
-        Command::Android { app, release, no_launch, sign, aab, device } => {
+        Command::Android { app, release, no_launch, sign, aab, abi, device } => {
             let app = workspace.app(app.as_deref())?;
             let found = plugins::discover(&workspace, &app)?;
             let (keystore, bundletool) = android_signing(&workspace, sign, aab)?;
@@ -561,6 +583,7 @@ fn main() -> anyhow::Result<()> {
                     form: android::Form::Phone,
                     signing: keystore.as_ref(),
                     aab,
+                    abis: android::abis(&abi, aab),
                     bundletool,
                 },
             )?;
@@ -579,7 +602,7 @@ fn main() -> anyhow::Result<()> {
                 None,
             )
         }
-        Command::Wearos { app, release, no_launch, device, sign, aab } => {
+        Command::Wearos { app, release, no_launch, device, sign, aab, abi } => {
             // Same as on the Apple watch: the default example cannot be the
             // phone's. At 227 points wide, and round, it cannot be read.
             let app = workspace.app(Some(app.as_deref().unwrap_or("examples/hello-wear")))?;
@@ -597,6 +620,7 @@ fn main() -> anyhow::Result<()> {
                     form: android::Form::Watch,
                     signing: keystore.as_ref(),
                     aab,
+                    abis: android::abis(&abi, aab),
                     bundletool,
                 },
             )?;

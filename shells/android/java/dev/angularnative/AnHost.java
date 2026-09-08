@@ -982,7 +982,16 @@ public final class AnHost {
         view.setClipToOutline(true);
     }
 
-    /** Called once per frame, once every op has been applied. */
+    /**
+     * Called once per frame, once every op has been applied.
+     *
+     * <p>The only caller is the Rust mount side, through JNI. The activity's
+     * frame callback must not call it as well: the three jobs below all consume
+     * what marked them —the dirty lists are cleared, `entering` and `leaving`
+     * are cleared— so a second call in the same frame reconciles nothing and
+     * only walks the view tree again asking for a layout that was already
+     * requested.
+     */
     public void flush() {
         container.requestLayout();
         runStackAnimations();

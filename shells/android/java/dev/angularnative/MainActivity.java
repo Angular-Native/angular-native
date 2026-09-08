@@ -179,11 +179,15 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
                 new Choreographer.FrameCallback() {
                     @Override
                     public void doFrame(long frameTimeNanos) {
+                        // No `host.flush()` here. The mount side already calls
+                        // it once per frame it applies, and it is the only one
+                        // that can: it also mounts outside this callback —a
+                        // viewport change drains the worker first— and it still
+                        // closes the frame when the reply carried an error and
+                        // `applied` comes back as -1.
                         int applied = runtime.frame(frameTimeNanos / 1_000_000.0);
                         if (applied < 0) {
                             Log.e(TAG, "the frame failed");
-                        } else if (applied > 0) {
-                            host.flush();
                         }
                         Choreographer.getInstance().postFrameCallback(this);
                     }

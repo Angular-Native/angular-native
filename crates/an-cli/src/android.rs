@@ -23,8 +23,84 @@ use crate::workspace::{Appearance, Workspace};
 /// classes where they were.
 const PACKAGE: &str = "dev.angularnative";
 const ACTIVITY: &str = "dev.angularnative.MainActivity";
-const ABI: &str = "arm64-v8a";
-const RUST_TARGET: &str = "aarch64-linux-android";
+
+/// An ABI: a directory name inside the artefact, and a Rust target outside it.
+///
+/// The two names are unrelated strings — Android says `arm64-v8a` where Rust
+/// says `aarch64-linux-android`, and `x86_64` where Rust says
+/// `x86_64-linux-android` — so the pairing is written out here instead of
+/// being derived anywhere.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, clap::ValueEnum)]
+pub enum Abi {
+    /// Every Android phone sold in years, and the emulator on an Apple-silicon
+    /// Mac.
+    #[value(name = "arm64-v8a")]
+    Arm64,
+    /// The emulator on an Intel Mac and on a Linux CI runner, and the
+    /// Chromebooks that run Android apps.
+    #[value(name = "x86_64")]
+    X86_64,
+    /// 32-bit ARM. Nothing defaults to it: under 1% of the devices in use are
+    /// 32-bit-only, and Play asks for a 64-bit build, not a 32-bit one.
+    #[value(name = "armeabi-v7a")]
+    ArmV7,
+}
+
+impl Abi {
+    /// The directory the `.so` goes in, which is the name Android knows the
+    /// ABI by and the one `--abi` takes.
+    pub fn dir(self) -> &'static str {
+        match self {
+            Abi::Arm64 => "arm64-v8a",
+            Abi::X86_64 => "x86_64",
+            Abi::ArmV7 => "armeabi-v7a",
+        }
+    }
+
+    /// The Rust target that produces it.
+    pub fn rust_target(self) -> &'static str {
+        match self {
+            Abi::Arm64 => "aarch64-linux-android",
+            Abi::X86_64 => "x86_64-linux-android",
+            Abi::ArmV7 => "armv7-linux-androideabi",
+        }
+    }
+}
+
+/// Which ABIs a build carries when `--abi` said nothing.
+///
+/// An APK is one file that has to hold every ABI it might ever be installed
+/// on, and each one is another cross-compilation of the core with QuickJS
+/// inside it. The dev loop pays that on every save, and the device it is
+/// aimed at — a phone, or the emulator on an Apple-silicon Mac — is arm64. So
+/// an APK carries arm64 alone and anything else is asked for.
+///
+/// A bundle is the opposite trade. Play splits it by ABI and installs one, so
+/// a second target costs the user nothing at download time, while leaving it
+/// out costs the listing every x86_64 device there is: Chromebooks, and the
+/// emulator on every Intel machine — which is what a reviewer or a tester
+/// reaching for the app from a desktop is running. Play does not warn about
+/// this; the app is simply not offered there.
+///
+/// `armeabi-v7a` is in neither list and stays opt-in. 32-bit-only devices are
+/// under 1% of the ones in use, and what Play requires is that a 64-bit build
+/// exists, not that a 32-bit one does — so it is a cost every build would pay
+/// for an audience almost nobody has, and `--abi armeabi-v7a` is there for
+/// whoever does.
+pub fn abis(asked_for: &[Abi], aab: bool) -> Vec<Abi> {
+    if !asked_for.is_empty() {
+        let mut chosen = asked_for.to_vec();
+        // `--abi x86_64 --abi x86_64` would otherwise name the same file twice
+        // in the zip list, and `zip` writes it twice.
+        chosen.sort();
+        chosen.dedup();
+        return chosen;
+    }
+    match aab {
+        true => vec![Abi::Arm64, Abi::X86_64],
+        false => vec![Abi::Arm64],
+    }
+}
 
 /// Phone or watch. Both are Android and both share a host; what changes is the
 /// manifest and which device it gets installed on.
@@ -74,6 +150,11 @@ pub struct Packaging<'a> {
     /// An `.aab` instead of an `.apk`. Google Play has taken nothing else since
     /// August 2021.
     pub aab: bool,
+    /// The ABIs the artefact carries, already resolved — see [`abis`], which is
+    /// what turns `--abi` and the `aab` above into this list. Never empty: a
+    /// build with no ABI produces an app that installs and dies looking for
+    /// `liban_android.so`.
+    pub abis: Vec<Abi>,
     /// Where `bundletool` is, when `aab` is on. It is looked up before anything
     /// is compiled —see [`bundletool`]— because it is not part of the Android
     /// SDK and its absence is the one thing here that a two-minute build cannot
@@ -153,12 +234,18 @@ impl Sdk {
         let bin = toolchain.join("bin");
         let sysroot = toolchain.join("sysroot");
         let mut env = Vec::new();
-        // Two ABIs, and the compiler's name is not the target triple in either
-        // of them: the NDK spells the 32-bit one `armv7a-linux-androideabi`
-        // where Rust says `armv7-linux-androideabi`, and both carry the API
-        // level in the middle of the file name.
+        // One entry per ABI `an` can build, whether or not this build wants
+        // them all: `an env android` prints the same list for a cargo that is
+        // not this one, and a missing name there is a link error nobody can
+        // place.
+        //
+        // The compiler's name is the target triple for two of the three: the
+        // NDK spells the 32-bit ARM one `armv7a-linux-androideabi` where Rust
+        // says `armv7-linux-androideabi`. All three carry the API level in the
+        // middle of the file name.
         for (triple, compiler) in [
             ("aarch64-linux-android", format!("aarch64-linux-android{ANDROID_API}-clang")),
+            ("x86_64-linux-android", format!("x86_64-linux-android{ANDROID_API}-clang")),
             ("armv7-linux-androideabi", format!("armv7a-linux-androideabi{ANDROID_API}-clang")),
         ] {
             let cc = bin.join(&compiler).to_string_lossy().into_owned();
@@ -230,6 +317,47 @@ fn find_ndk_toolchain(sdk: &Path) -> Option<PathBuf> {
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
         .find(|path| path.join("bin").is_dir())
+}
+
+/// That `std` exists for every target this build is about to ask cargo for.
+///
+/// Cargo says it well enough when it happens, but it says it about one target
+/// at the moment it reaches it, and a build carries more than one: the second
+/// one fails after the whole core has been built for the first. Asked here,
+/// all of them are named at once and before anything is compiled.
+///
+/// No rustup is not an answer either way — a distribution's rustc has whatever
+/// targets it has and cannot be asked this question — so it is passed over
+/// rather than guessed at.
+fn check_targets(abis: &[Abi]) -> Result<()> {
+    let Ok(listed) = Command::new("rustup")
+        .args(["target", "list", "--installed"])
+        .output()
+    else {
+        return Ok(());
+    };
+    if !listed.status.success() {
+        return Ok(());
+    }
+    let installed = String::from_utf8_lossy(&listed.stdout);
+    let missing: Vec<&str> = abis
+        .iter()
+        .map(|abi| abi.rust_target())
+        .filter(|target| !installed.lines().any(|line| line.trim() == *target))
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "there is no Rust standard library for {}, and the core is cross-compiled against \
+         it.\n\n\
+         \x20   rustup target add {}\n\n\
+         An APK carries arm64-v8a alone unless --abi says otherwise; a bundle carries \
+         arm64-v8a and x86_64, because Play splits it by ABI and one built without x86_64 \
+         is not offered to Chromebooks or to emulators.",
+        missing.join(", "),
+        missing.join(" ")
+    )
 }
 
 fn newest_dir(parent: &Path) -> Option<PathBuf> {
@@ -313,13 +441,10 @@ pub fn assemble(
     let staging = out.join("apk");
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(staging.join("assets"))?;
-    std::fs::create_dir_all(staging.join(format!("lib/{ABI}")))?;
-
-    eprintln!("==> core Rust ({profile}, {ABI})");
-    let mut cargo_args = vec!["build", "--target", RUST_TARGET, "-p", "an-android"];
-    if release {
-        cargo_args.push("--release");
+    for abi in &packaging.abis {
+        std::fs::create_dir_all(staging.join(format!("lib/{}", abi.dir())))?;
     }
+
     if sdk.ndk_toolchain.is_none() {
         bail!(
             "the Rust core cannot be cross-compiled without the NDK, and there is none under \
@@ -329,26 +454,42 @@ pub fn assemble(
             sdk.root.display()
         );
     }
-    let status = Command::new("cargo")
-        .args(&cargo_args)
-        // Where the NDK is, which version and what this host is called: three
-        // things that used to be written out in a committed `.cargo/config.toml`
-        // and are worked out here instead. See `Sdk::cargo_env`.
-        .envs(sdk.cargo_env())
-        .current_dir(root)
-        .status()
-        .context("cargo could not be run")?;
-    if !status.success() {
-        bail!("the core build for Android failed");
+    // Every target at once, before the first of them is built. A build that
+    // checked as it went would compile the whole core for arm64 and then stop
+    // on the second ABI, minutes in, over something `rustup` fixes in one line.
+    check_targets(&packaging.abis)?;
+    // One cargo build per ABI, and the `.so` copied straight afterwards: the
+    // target directory holds one `liban_android.so` per target triple, so
+    // nothing here overwrites anything, but pairing the copy with its build
+    // keeps the two from drifting apart when a third ABI is added.
+    for abi in &packaging.abis {
+        eprintln!("==> core Rust ({profile}, {})", abi.dir());
+        let mut cargo_args = vec!["build", "--target", abi.rust_target(), "-p", "an-android"];
+        if release {
+            cargo_args.push("--release");
+        }
+        let status = Command::new("cargo")
+            .args(&cargo_args)
+            // Where the NDK is, which version and what this host is called:
+            // three things that used to be written out in a committed
+            // `.cargo/config.toml` and are worked out here instead. See
+            // `Sdk::cargo_env`.
+            .envs(sdk.cargo_env())
+            .current_dir(root)
+            .status()
+            .context("cargo could not be run")?;
+        if !status.success() {
+            bail!("the core build for Android ({}) failed", abi.dir());
+        }
+        std::fs::copy(
+            workspace
+                .target_dir()
+                .join(abi.rust_target())
+                .join(profile)
+                .join("liban_android.so"),
+            staging.join(format!("lib/{}/liban_android.so", abi.dir())),
+        )?;
     }
-    std::fs::copy(
-        workspace
-            .target_dir()
-            .join(RUST_TARGET)
-            .join(profile)
-            .join("liban_android.so"),
-        staging.join(format!("lib/{ABI}/liban_android.so")),
-    )?;
     std::fs::copy(bundle, staging.join("assets/main.js"))?;
     // The Material icons. They go in the app and not in the platform because the
     // set Android ships —`android.R.drawable`— has been frozen since 2011 for
@@ -592,8 +733,17 @@ pub fn assemble(
 
     eprintln!("==> packing the APK");
     let mut entries = dexes;
+    // One line per ABI. `zip` is handed a file list, so an ABI staged and not
+    // named here is a `lib/` directory that exists on disk and is absent from
+    // the APK — which is an app that installs on that architecture and dies
+    // at startup with an UnsatisfiedLinkError.
+    entries.extend(
+        packaging
+            .abis
+            .iter()
+            .map(|abi| format!("lib/{}/liban_android.so", abi.dir())),
+    );
     entries.extend([
-        format!("lib/{ABI}/liban_android.so"),
         "assets/main.js".to_owned(),
         "assets/material-symbols.ttf".to_owned(),
         "assets/material-symbols.codepoints".to_owned(),
@@ -1492,6 +1642,61 @@ fn declares_version(manifest: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The two defaults are a deliberate pair and not an oversight: the APK
+    /// one is what a dev loop rebuilds on every save, the bundle one is what a
+    /// store splits and hands out one slice of.
+    #[test]
+    fn an_apk_defaults_to_arm64_and_a_bundle_to_arm64_plus_x86_64() {
+        assert_eq!(abis(&[], false), vec![Abi::Arm64]);
+        assert_eq!(abis(&[], true), vec![Abi::Arm64, Abi::X86_64]);
+        // Nothing defaults to 32-bit ARM; it is reachable and never assumed.
+        assert!(!abis(&[], true).contains(&Abi::ArmV7));
+        assert_eq!(abis(&[Abi::ArmV7], false), vec![Abi::ArmV7]);
+        // What was asked for wins outright, including asking a bundle for less
+        // than the default.
+        assert_eq!(abis(&[Abi::X86_64], true), vec![Abi::X86_64]);
+        // A repeat is one ABI: named twice in the zip list, `zip` stores the
+        // same `.so` twice and the APK carries it twice.
+        assert_eq!(abis(&[Abi::X86_64, Abi::Arm64, Abi::X86_64], false), vec![Abi::Arm64, Abi::X86_64]);
+    }
+
+    /// The directory inside the APK and the target outside it are unrelated
+    /// strings, and the pairing is only written down once.
+    #[test]
+    fn every_abi_has_a_rust_target_and_a_directory() {
+        for (abi, dir, target) in [
+            (Abi::Arm64, "arm64-v8a", "aarch64-linux-android"),
+            (Abi::X86_64, "x86_64", "x86_64-linux-android"),
+            (Abi::ArmV7, "armeabi-v7a", "armv7-linux-androideabi"),
+        ] {
+            assert_eq!(abi.dir(), dir);
+            assert_eq!(abi.rust_target(), target);
+        }
+    }
+
+    /// `Sdk::cargo_env` has to emit a compiler for every ABI `--abi` accepts.
+    /// A target with no `CC_<triple>` in the environment reaches cargo, `cc`
+    /// looks for a compiler named after the triple, and QuickJS does not
+    /// build — the exact failure the discovered environment exists to stop.
+    #[test]
+    fn the_ndk_environment_covers_every_abi() {
+        let Some(sdk) = Sdk::discover().ok().filter(|sdk| sdk.ndk_toolchain.is_some()) else {
+            // No SDK or no NDK on this machine: there is nothing to check, and
+            // failing here would fail on every machine without Android
+            // installed.
+            return;
+        };
+        let env = sdk.cargo_env();
+        for abi in [Abi::Arm64, Abi::X86_64, Abi::ArmV7] {
+            let wanted = format!("CC_{}", abi.rust_target());
+            assert!(
+                env.iter().any(|(name, _)| *name == wanted),
+                "{} is offered by --abi and cargo_env sets no {wanted}",
+                abi.dir()
+            );
+        }
+    }
 
     #[test]
     fn a_manifest_with_no_version_code_is_caught_before_bundletool_sees_it() {

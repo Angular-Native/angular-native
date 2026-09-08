@@ -174,7 +174,7 @@ pub fn run(
             }
             Target::WatchOs { device } => {
                 let package =
-                    watchos::assemble(&workspace, &bundle_path, false, Some(&url), &plugins)?;
+                    watchos::assemble(&workspace, &app, &bundle_path, false, Some(&url), &plugins)?;
                 watchos::launch(&package, device)?;
             }
             // No `simctl` and no device: `launch` kills whatever instance was
@@ -210,7 +210,18 @@ pub fn run(
                     // The dev loop is always the debug key: a release-signed
                     // APK is an artefact for a store, not something to rebuild
                     // every time a file is saved.
-                    crate::android::Packaging { form, signing: None, aab: false, bundletool: None },
+                    crate::android::Packaging {
+                        form,
+                        signing: None,
+                        aab: false,
+                        // The APK default, arm64-v8a alone. The dev loop has
+                        // no --abi of its own: every extra ABI is another
+                        // cross-compilation of the core between saving a file
+                        // and seeing it, and the device on the other end is
+                        // one machine whose architecture does not change.
+                        abis: crate::android::abis(&[], false),
+                        bundletool: None,
+                    },
                 )?;
                 crate::android::install_and_launch(&workspace, &apk, form, device, Some(port))?;
             }

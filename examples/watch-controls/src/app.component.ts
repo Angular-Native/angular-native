@@ -35,7 +35,22 @@ import { NATIVE_PRIMITIVES, type NativeCrownEvent } from '@angular-native/primit
               [style.gap]="'10'"
               [style.width]="'100%'">
 
-              <an-text [fontSize]="17" [fontWeight]="'bold'" [color]="'#f4f7ff'">controls</an-text>
+              <!--
+                The one file in this example that is not code.
+                resources/logo.png sits beside src/, and an copies it into the
+                .app under that same name: no scheme, no URL, no network. Until
+                the watch build learned to carry an app's resources this example
+                had no image at all, because an example in this repository
+                cannot be made to depend on a server being up.
+              -->
+              <an-view [style.flexDirection]="'row'" [style.alignItems]="'center'" [style.gap]="'8'" [style.width]="'100%'">
+                <an-image
+                  [source]="'logo.png'"
+                  [resizeMode]="'contain'"
+                  [style.width]="'22'"
+                  [style.height]="'22'"></an-image>
+                <an-text [fontSize]="17" [fontWeight]="'bold'" [color]="'#f4f7ff'">controls</an-text>
+              </an-view>
 
               <!--
                 The label and the control are two nodes, not one: what shares out

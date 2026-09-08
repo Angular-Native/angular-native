@@ -151,7 +151,10 @@ ANDROID_ENV="$(cargo an env android 2>"$ANDROID_ENV_ERR")" || {
   sed 's/^/       /' "$ANDROID_ENV_ERR"
   exit 1
 }
-for target in aarch64-apple-ios-sim aarch64-linux-android; do
+# x86_64 is here because `--aab` defaults to it: a bundle that stopped
+# carrying it would still build, still sign and still upload, and the app would
+# simply not be offered to a Chromebook or an emulator.
+for target in aarch64-apple-ios-sim aarch64-linux-android x86_64-linux-android; do
   case "$target" in
     *ios*) crate=an-ios ;;
     *) crate=an-android ;;

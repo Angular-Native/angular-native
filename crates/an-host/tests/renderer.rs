@@ -34,3 +34,27 @@ fn host_events_are_drained_exactly_once() {
     assert_eq!(renderer.drain_events().len(), 1);
     assert!(renderer.drain_events().is_empty());
 }
+
+/// The mount side closes the frame itself, so nothing above it has to.
+///
+/// Android's activity used to call `flush` again after `nativeFrame` returned,
+/// which is where the double flush came from. The contract is here: one
+/// non-empty frame, one `flush`; an empty frame, none.
+#[test]
+fn each_frame_flushes_the_host_exactly_once() {
+    let mut renderer = Renderer::new(RecordingHost::default(), NaiveMeasurer, (320.0, 568.0), new_event_queue());
+
+    renderer.create_node(1, NodeKind::View).unwrap();
+    renderer.set_style(1, "width", "100%").unwrap();
+    renderer.set_root(1).unwrap();
+
+    assert!(renderer.render_frame().unwrap() > 0);
+    assert_eq!(renderer.host().flushes, 1);
+
+    assert_eq!(renderer.render_frame().unwrap(), 0, "nothing changed");
+    assert_eq!(renderer.host().flushes, 1, "an empty frame mounts nothing, so it closes nothing");
+
+    renderer.set_style(1, "height", "44").unwrap();
+    assert!(renderer.render_frame().unwrap() > 0);
+    assert_eq!(renderer.host().flushes, 2);
+}

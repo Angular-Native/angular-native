@@ -178,6 +178,7 @@ lo que esa compilación *es*, no lo que pasa después:
 | `an ios` | `--archive` | `<Nombre>.xcarchive` y `<Nombre>.ipa`. Implica `--release`. Incompatible con `--physical`. |
 | `an android`, `an wearos` | `--sign` | Firmado con el keystore de release en vez de con el de depuración. |
 | `an android`, `an wearos` | `--aab` | Un Android App Bundle. Implica `--sign`; no instala nunca. |
+| `an android`, `an wearos` | `--abi` | Las ABIs que lleva dentro: `arm64-v8a`, `x86_64`, `armeabi-v7a`, repetidas o separadas por comas. Sustituye al valor por defecto en vez de sumarse a él. |
 | `an macos` | `--sign` | Firma con Developer ID y hardened runtime, en vez de ad hoc. |
 | `an macos` | `--notarize` | Eso, enviado a Apple, esperado y grapado. Implica `--sign`. |
 | `an macos` | `--dmg` | Un `.dmg`, firmado y notarizado por derecho propio cuando esas banderas están puestas. |
@@ -189,6 +190,15 @@ página que dice qué hay que conseguir de Apple y de Google.
 
 `--release` y `--sign` están separadas a propósito: la primera va del compilador,
 la segunda de la clave. Una compilación para Google Play quiere las dos.
+
+`--abi` tiene un valor por defecto distinto para cada artefacto. Un APK lleva
+`arm64-v8a` a secas, porque cada ABI de más es otra compilación cruzada del core
+y el bucle de desarrollo la paga en cada guardado. Un bundle lleva `arm64-v8a` y
+`x86_64`, porque Play parte un bundle por ABI — nadie se descarga el trozo que
+no puede ejecutar, y un bundle sin `x86_64` es uno que la tienda no ofrece a un
+Chromebook ni a un emulador. `armeabi-v7a` no está en ninguno de los dos: hay
+que pedirla. [Android · Qué ABIs](/es/platforms/android/#qué-abis) explica por
+qué.
 
 Cuatro asimetrías de la tabla de arriba son reales y no erratas:
 

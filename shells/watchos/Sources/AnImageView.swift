@@ -60,6 +60,14 @@ actor AnImageStore {
     static let shared = AnImageStore()
 
     private var cache: [String: UIImage] = [:]
+    /// The names that came up empty, so each one is said once.
+    ///
+    /// A miss puts nothing in `cache` —there is no image to put there— so
+    /// without this the file is looked for again every time the view's `task`
+    /// restarts and the log fills with the same line. It is not `AnWarnings`
+    /// because that one is `@MainActor` and this runs on the store's own actor:
+    /// reaching it would mean hopping to the main thread to write a log line.
+    private var missing: Set<String> = []
 
     func load(_ source: String?) async -> UIImage? {
         guard let source, !source.isEmpty else { return nil }
@@ -71,15 +79,41 @@ actor AnImageStore {
             image = await download(source)
         } else {
             // With no scheme it is a resource in the app bundle, as on iOS.
-            image = UIImage(named: source)
-            if image == nil {
-                NSLog("angular-native: there is no image called \(source) in the bundle")
+            image = bundled(source)
+            if image == nil, missing.insert(source).inserted {
+                // The same sentence `an-ios`'s `images.rs` says, because it is
+                // the same mistake and the fix is in the same place. A missing
+                // file otherwise draws `Color.clear`, which on screen is an
+                // image still loading, a colour that matches the background and
+                // a frame of zero height all at once.
+                NSLog("""
+                    angular-native: \(source) is not in the app. A [source] with no scheme is a \
+                    file that travelled with the app; put it in the project's resources/ \
+                    directory, which `an` copies into the .app under the name it has there.
+                    """)
             }
         }
         if let image {
             cache[source] = image
         }
         return image
+    }
+
+    /// The image a schemeless `source` names, from inside the `.app`.
+    ///
+    /// Two lookups, and the second is the one that does the work here.
+    /// `UIImage(named:)` resolves an asset catalogue's names, and a bundle
+    /// `an` assembles has no catalogue: what it has is the files copied out of
+    /// the app's `resources/`, flat in the `.app` next to `main.js`. Those are
+    /// read by path — which also covers the names with a slash in them, since
+    /// `resources/icons/logo.png` is asked for as `icons/logo.png` and that is
+    /// not a name `imageNamed:` knows how to resolve on any platform.
+    private func bundled(_ source: String) -> UIImage? {
+        if let image = UIImage(named: source) {
+            return image
+        }
+        guard let resources = Bundle.main.resourcePath else { return nil }
+        return UIImage(contentsOfFile: "\(resources)/\(source)")
     }
 
     private func download(_ source: String) async -> UIImage? {

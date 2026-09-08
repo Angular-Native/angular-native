@@ -227,11 +227,8 @@ que el ancho infinito.
   la ventana, y este shell pide que no, precisamente para que el layout que
   calculó el core sea el que se dibuja.
 - **Atrás es el callback obsoleto.** No hay atrás predictivo.
-- **Solo se compila `arm64-v8a`.** Ni imagen x86-64 de emulador ni ABI de 32
-  bits.
-- **`flush` corre dos veces por fotograma productivo** —una desde el lado de
-  montaje del core y otra desde la activity— así que al contenedor se le pide
-  maquetar dos veces y los diálogos se reconcilian dos veces.
+- **`armeabi-v7a` solo si la pides.** `--abi armeabi-v7a` la compila; no está
+  en ningún valor por defecto. Ver [Qué ABIs](#qué-abis).
 
 Avisos, y ninguno silencioso: la corona en un teléfono (una vez); un paso de
 slider que no divide el rango, lo que hace que Material reviente al dibujar, así
@@ -285,6 +282,40 @@ Android Studio, con la contraseña escrita en el código; no lo acepta ninguna
 tienda. `--sign` usa un keystore que generas y guardas tú, `--aab` compila un
 Android App Bundle — que es lo único que acepta Google Play desde agosto de
 2021.
+
+### Qué ABIs
+
+```bash
+an android                                  # arm64-v8a
+an android --abi x86_64                     # un emulador en una máquina Intel
+an android --abi arm64-v8a,x86_64           # las dos, en un mismo APK
+an android --aab --release                  # arm64-v8a y x86_64
+```
+
+Un APK lleva `arm64-v8a` y nada más. Es un solo fichero que tiene que contener
+todas las arquitecturas en las que pueda llegar a instalarse, y cada una es otra
+compilación cruzada del core con QuickJS dentro — un coste que el bucle de
+desarrollo paga entre guardar un fichero y verlo, para un dispositivo cuya
+arquitectura no cambia.
+
+Un bundle lleva `arm64-v8a` **y** `x86_64`. Play parte un bundle por ABI e
+instala un trozo, así que el segundo destino no le cuesta un byte a nadie en la
+descarga; dejarlo fuera le cuesta a la ficha todos los dispositivos x86-64 que
+existen — los Chromebooks, y el emulador de cualquier máquina Intel, que es lo
+que está ejecutando quien revisa o prueba la app desde un escritorio. Play no
+avisa de esto. Sencillamente la app no se ofrece ahí.
+
+`armeabi-v7a` no está en ninguno de los dos valores por defecto. Los
+dispositivos que solo son de 32 bits son menos del 1% de los que están en uso, y
+lo que Play exige es que *exista* una compilación de 64 bits, no que exista una
+de 32 — así que sería un coste en todas las compilaciones para un público que
+casi nadie tiene. `--abi armeabi-v7a` está ahí para quien sí.
+
+`--abi` sustituye al valor por defecto en vez de sumarse a él, así que
+`an android --aab --abi arm64-v8a` es la forma de obtener un bundle con una sola
+ABI. Cada ABI necesita su destino de Rust instalado; `an` dice cuáles faltan
+antes de compilar nada, en un solo mensaje, en vez de pararse a mitad de la
+segunda.
 
 Para esto tampoco hay Gradle. `aapt2 link --proto-format` produce el manifiesto
 y los recursos en protobuf que quiere un bundle, el módulo se ensambla a mano,

@@ -346,6 +346,41 @@ sería sitio para equivocarse. Si no se entrega nada, la llamada se rechaza
 diciéndolo, en lugar de responder un objeto con agujeros que se leería como
 datos reales.
 
+## Recursos dentro del bundle
+
+Un `<an-image [source]="'logo.png'">` —una ruta sin esquema— es un fichero que
+ha viajado con la app, y sale de `resources/`, en el proyecto: el mismo
+directorio que en el [teléfono](/es/platforms/ios/#recursos-dentro-del-bundle).
+`an watchos` copia el árbol a la raíz del `.app`, junto a `main.js`, conservando
+los subdirectorios y saltándose los ficheros ocultos.
+
+Ahí es donde los pone iOS también, y no por el mismo motivo. En el teléfono la
+raíz es donde busca `UIImage(named:)`; en watchOS esa llamada resuelve nombres
+contra un catálogo de assets, y un bundle montado con `swiftc` a pelo, sin
+`.xcodeproj`, no tiene ninguno. Lo que lo decide aquí es la forma del bundle: un
+`.app` de reloj es plano —`WKApplication`, sin `Contents/`—, así que
+`Bundle.main.resourcePath` es el propio `.app`, que ya es el directorio del que
+el shell lee `main.js` y con el que construye la ruta de una imagen. Un
+subdirectorio `Resources/` nuestro sería un directorio en el que no mira nada de
+Foundation.
+
+Hay cuatro nombres reservados, como en iOS y por el motivo de iOS —el bundle es
+plano, así que hasta el ejecutable comparte directorio con los recursos—:
+`main.js`, `Info.plist`, `dev-server.txt` y `AngularNativeWatch`. Un recurso que
+fuera a caer sobre uno de ellos para la compilación, diciendo qué fichero. No
+hay firma por delante de la que la copia tenga que ir: el simulador del reloj se
+queda el bundle sin firmar.
+
+Un `[source]` que nombra un fichero que no está se **avisa una vez**, con el
+nombre y con el sitio del que tendría que haber salido —la misma frase que dice
+`an-ios`, porque es la misma equivocación—. No puede ser una comprobación de
+compilación: solo el dispositivo sabe qué cadenas ha producido de verdad una
+plantilla. Y lo que no puede ser es una vista vacía, que en un reloj no se
+distingue de una imagen que aún está cargando. `examples/watch-controls` ya
+lleva una, al lado del título de su primera pantalla; hasta que la compilación
+no supo llevarla, ese ejemplo no tenía ninguna imagen, porque un ejemplo de este
+repositorio no puede depender de que haya un servidor levantado.
+
 ## Lo que falta
 
 - **Plugins.** `an-watch` no tiene registro, así que `an watchos` se niega a
@@ -354,14 +389,6 @@ datos reales.
   está compilado dentro del host y funciona aquí (mira arriba). Un nombre de
   módulo alcanzado en tiempo de ejecución se rechaza con el nombre *y* el motivo
   de que no haya nada debajo, que no es el mensaje que recibiría una errata.
-- **No se pueden meter recursos en el `.app`.** `an watchos` copia el
-  `Info.plist` y `main.js` y nada más, así que una `an-image` con un `[source]`
-  sin esquema no encuentra el fichero y lo dice en el log. Una URL `http` sí
-  funciona —comprobado en el simulador contra un PNG servido desde el Mac— y por
-  eso `examples/watch-controls` no lleva ninguna imagen: un ejemplo de este
-  repositorio no puede depender de una URL. El sitio donde arreglarlo es
-  `watchos.rs::assemble`, y es el único host al que le queda el hueco: iOS,
-  macOS y Android ya copian el directorio `resources/` de la app al bundle.
 - **Animación y transformaciones.** `[animate]`, `translateX`, `scale`,
   `rotate`. En SwiftUI esto es `withAnimation` y `.offset`/`.scaleEffect`, pero
   el modelo se reconstruye entero en cada foto y una animación necesita saber de

@@ -340,6 +340,39 @@ word — this host cannot be running anywhere but a watch — for the same reaso
 it wrong. With nothing handed over, the call is rejected saying so, rather than
 answering an object with holes in it that would read as real data.
 
+## Resources in the bundle
+
+An `<an-image [source]="'logo.png'">` — a path with no scheme — is a file that
+travelled with the app, and it comes out of `resources/` in the project, the
+same directory as on the [phone](/platforms/ios/#resources-in-the-bundle).
+`an watchos` copies the tree into the root of the `.app`, beside `main.js`,
+keeping subdirectories and skipping dotfiles.
+
+That is where iOS puts them too, and not for the same reason. On the phone the
+root is where `UIImage(named:)` searches; on watchOS that call resolves names
+against an asset catalogue, and a bundle assembled by bare `swiftc` with no
+`.xcodeproj` has none. What decides it here is the shape of the bundle: a watch
+`.app` is flat — `WKApplication`, no `Contents/` — so `Bundle.main.resourcePath`
+is the `.app` itself, which is already the directory the shell reads `main.js`
+out of and the one it builds an image's path from. A `Resources/` subdirectory
+of our own would be a directory nothing in Foundation looks into.
+
+Four names are reserved, as on iOS and for the iOS reason — the bundle is flat,
+so even the executable shares a directory with the resources: `main.js`,
+`Info.plist`, `dev-server.txt` and `AngularNativeWatch`. A resource that would
+land on one of them stops the build, naming the file. There is no signature for
+the copy to come before: the watch simulator takes the bundle unsigned.
+
+A `[source]` naming a file that is not there is **warned once**, with the name
+and where the file should have come from — the same sentence `an-ios` says,
+because it is the same mistake. It cannot be a build check: only the device
+knows which strings a template really produced. And it must not be an empty
+view, which on a watch is indistinguishable from an image still loading.
+`examples/watch-controls` carries one now, next to the heading of its first
+screen; until the build could take it there, that example had no image at all,
+since an example in this repository cannot be made to depend on a server being
+up.
+
 ## What is missing
 
 - **Plugins.** `an-watch` has no registry, so `an watchos` refuses to build an
@@ -348,14 +381,6 @@ answering an object with holes in it that would read as real data.
   it works here (see below). A module name reached at run time is rejected with
   the name *and* the reason there is nothing under it, which is not the message
   a typo would get.
-- **No resources can be put into the `.app`.** `an watchos` copies the
-  `Info.plist` and `main.js` and nothing else, so an `an-image` with a
-  schemeless `[source]` does not find the file and says so in the log. An
-  `http` URL does work — checked in the simulator against a PNG served from the
-  Mac — which is why `examples/watch-controls` carries no image: an example in
-  this repository cannot be made to depend on a URL. The place to fix it is
-  `watchos.rs::assemble`, and it is the only host left with the hole: iOS,
-  macOS and Android copy an app's `resources/` directory into the bundle now.
 - **Animation and transforms.** `[animate]`, `translateX`, `scale`, `rotate`.
   In SwiftUI these are `withAnimation` and `.offset`/`.scaleEffect`, but the
   model is rebuilt whole on every snapshot and an animation needs to know where

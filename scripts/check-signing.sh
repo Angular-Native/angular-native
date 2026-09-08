@@ -369,6 +369,13 @@ else
       contains "$INSIDE" '^base/dex/classes\.dex$' 'the dex is under base/dex'
       contains "$INSIDE" '^base/lib/arm64-v8a/liban_android\.so$' \
         'and the Rust core is under base/lib, with its ABI'
+      # A bundle defaults to both, and this is the assertion that keeps it
+      # that way. Play splits by ABI, so the second one costs no user any
+      # download; what a bundle without it costs is the listing — an app built
+      # arm64-only is not offered to a Chromebook or to an emulator, and Play
+      # says nothing about it.
+      contains "$INSIDE" '^base/lib/x86_64/liban_android\.so$' \
+        'and x86_64 is in there too, which is what Chromebooks and emulators install'
       contains "$INSIDE" '^META-INF/[A-Z]+\.(RSA|DSA|EC)$' \
         'and it is signed as the jar it is, by jarsigner and not apksigner'
       contains "$(unzip -p "$AAB" META-INF/*.RSA 2>/dev/null | openssl pkcs7 -inform DER -print_certs 2>/dev/null)" \

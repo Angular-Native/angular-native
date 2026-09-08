@@ -34,23 +34,29 @@
 //!
 //! ## Where they land
 //!
-//! Beside `main.js`, wherever `main.js` goes — the flat `.app` root on iOS,
-//! `Contents/Resources` on macOS, `assets/` in the APK. Not a choice so much as
-//! a report: that is where each host already looks. `UIImage(named:)` and
-//! `NSImage(named:)` search the bundle, `getAssets().open` reads `assets/`, and
-//! all three were looking there long before anything put a file in front of
-//! them.
+//! Beside `main.js`, wherever `main.js` goes — the flat `.app` root on iOS and
+//! on the watch, `Contents/Resources` on macOS, `assets/` in the APK. Not a
+//! choice so much as a report: that is where each host already looks.
+//! `UIImage(named:)` and `NSImage(named:)` search the bundle,
+//! `getAssets().open` reads `assets/`, and all three were looking there long
+//! before anything put a file in front of them.
+//!
+//! The watch is the one that arrives at the same place by another road, and
+//! `watchos.rs` says so where it copies: watchOS resolves an `imageNamed:`
+//! against an asset catalogue, which a bundle nobody built with Xcode has none
+//! of, so the shell reads the file by path out of `resourcePath` — and a watch
+//! bundle being flat, that is the `.app` root again.
 //!
 //! ## What is not there
 //!
 //! A name with nothing behind it is the host's to report, not the build's: only
 //! the device knows which strings a template actually produced, and half of them
 //! are computed. So the hosts warn once with the name — `images.rs` on iOS and
-//! macOS, `AnHost.loadImage` on Android — and this module has one job it *can*
-//! do at build time, which is to refuse a resource whose name collides with a
-//! file the build itself writes into the bundle. Copying `resources/main.js`
-//! over the app's own bundle produces an app that launches into nothing, and
-//! the reason is not visible anywhere on the device.
+//! macOS, `AnImageStore` on the watch, `AnHost.loadImage` on Android — and this
+//! module has one job it *can* do at build time, which is to refuse a resource
+//! whose name collides with a file the build itself writes into the bundle.
+//! Copying `resources/main.js` over the app's own bundle produces an app that
+//! launches into nothing, and the reason is not visible anywhere on the device.
 
 use std::path::{Path, PathBuf};
 
