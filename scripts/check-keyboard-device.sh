@@ -70,14 +70,19 @@ if grep -q watch <<<"$("$ADB" -s "$SERIAL" shell getprop ro.build.characteristic
   exit 0
 fi
 
-# The IME inset and its animation callback are API 30. Below that the host
-# reports nothing and says so; there is no point measuring for it.
+# Both API levels are measured, because there are two mechanisms and the point
+# of the check is the field's position, which is the same question either way.
+#
+#   API 30 and up — `WindowInsets.Type.ime()` reports the keyboard, the window
+#       keeps its size and the bottom inset grows.
+#   API 24 to 29 — there is no IME inset. The manifest asks for `adjustResize`,
+#       so the window shrinks instead and the whole layout is redone for the
+#       smaller viewport; the inset stays where it was and it is right to.
+#
+# So what the field's movement is measured against is the sum of the two: how
+# much more the host says is covered, plus how much smaller the app's own frame
+# got. On any one device one of those is zero.
 API="$("$ADB" -s "$SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')"
-if [ "$API" -lt 30 ]; then
-  echo "  --   skipped: API $API. WindowInsets.Type.ime() and"
-  echo "       WindowInsetsAnimation.Callback both arrived in 30, and AnHost says so."
-  exit 0
-fi
 
 LOG="$(mktemp)"
 DUMP="$(mktemp)"
@@ -141,7 +146,7 @@ DENSITY="$("$ADB" -s "$SERIAL" shell wm density | sed -n 's/.*density: *//p' | t
 # One reading: the reported bottom inset and the last field's bottom edge, in
 # pixels. The inset is on screen because a check has to be able to tell "the
 # keyboard was never reported" from "it was reported and the layout ignored it".
-read_state() { # -> "<inset dp> <field bottom px>"
+read_state() { # -> "<inset dp> <field bottom px> <app frame bottom px>"
   "$ADB" -s "$SERIAL" shell uiautomator dump /sdcard/an-keyboard.xml >/dev/null 2>&1 || return 1
   "$ADB" -s "$SERIAL" shell cat /sdcard/an-keyboard.xml >"$DUMP" 2>/dev/null || return 1
   python3 - "$DUMP" <<'PY'
@@ -149,9 +154,16 @@ import re, sys
 xml = open(sys.argv[1], encoding='utf-8', errors='replace').read()
 inset = re.search(r'bottom inset (\d+)', xml)
 field = re.search(r'content-desc="password"[^>]*?bounds="\[\d+,\d+\]\[\d+,(\d+)\]"', xml)
-if not inset or not field:
+# The bottom of the app's own window. Below API 30 `adjustResize` shrinks it
+# when the keyboard comes up, and that shrink is the inset that never was.
+frame = [
+    int(m) for m in re.findall(
+        r'package="dev\.angularnative"[^>]*?bounds="\[\d+,\d+\]\[\d+,(\d+)\]"', xml
+    )
+]
+if not inset or not field or not frame:
     sys.exit(1)
-print(inset.group(1), field.group(1))
+print(inset.group(1), field.group(1), max(frame))
 PY
 }
 
@@ -169,10 +181,10 @@ if [ -z "$STATE" ]; then
   "$ADB" -s "$SERIAL" logcat -d -s angular-native:* AndroidRuntime:E | tail -30
   exit 1
 fi
-REST_INSET="${STATE% *}"
-REST_BOTTOM="${STATE#* }"
-echo "  ok   the form is up, with its last field at $REST_BOTTOM px and the bottom"
-echo "       inset reported as $REST_INSET (the navigation bar)"
+read REST_INSET REST_BOTTOM REST_FRAME <<<"$STATE"
+echo "  ok   the form is up, with its last field at $REST_BOTTOM px, the app's frame"
+echo "       ending at $REST_FRAME px and the bottom inset reported as $REST_INSET"
+echo "       (the navigation bar)"
 
 # Focus the last field: a tap in the middle of it, which is what a finger does.
 TAP_Y=$((REST_BOTTOM - 40))
@@ -186,17 +198,23 @@ if [ -z "$UP" ]; then
   echo "  FAIL the tree could not be read with the keyboard up"
   exit 1
 fi
-UP_INSET="${UP% *}"
-UP_BOTTOM="${UP#* }"
+read UP_INSET UP_BOTTOM UP_FRAME <<<"$UP"
 
-[ "$UP_INSET" -gt "$REST_INSET" ] && r=0 || r=1
-check $r "focusing the field reports a bottom inset of $UP_INSET, up from $REST_INSET"
+# What the keyboard did, whichever way it did it.
+GREW="$(python3 -c "print(round(($UP_INSET - $REST_INSET) * $DENSITY / 160))")"
+SHRANK=$((REST_FRAME - UP_FRAME))
+EXPECTED=$((GREW + SHRANK))
+[ "$EXPECTED" -gt 0 ] && r=0 || r=1
+if [ "$API" -lt 30 ]; then
+  check $r "focusing the field shrinks the window by $SHRANK px (API $API has no IME inset)"
+else
+  check $r "focusing the field reports a bottom inset of $UP_INSET, up from $REST_INSET"
+fi
 
 # And the one that matters: the field is above the keyboard, not under it. The
-# host says the keyboard covers UP_INSET points of the screen; the field's bottom
-# edge has to have come up by that much, give or take a pixel of rounding.
+# keyboard covers EXPECTED pixels of what the app had; the field's bottom edge
+# has to have come up by that much, give or take a pixel of rounding.
 MOVED=$((REST_BOTTOM - UP_BOTTOM))
-EXPECTED="$(python3 -c "print(round(($UP_INSET - $REST_INSET) * $DENSITY / 160))")"
 SLACK=$(( EXPECTED / 20 + 4 ))
 [ "$MOVED" -ge $((EXPECTED - SLACK)) ] && [ "$MOVED" -le $((EXPECTED + SLACK)) ] && r=0 || r=1
 check $r "and the field came up $MOVED px, which is the ${EXPECTED} px the keyboard covers"
@@ -214,12 +232,13 @@ if [ -z "$DOWN" ]; then
   echo "  FAIL the tree could not be read with the keyboard away"
   exit 1
 fi
-DOWN_INSET="${DOWN% *}"
-DOWN_BOTTOM="${DOWN#* }"
-[ "$DOWN_INSET" = "$REST_INSET" ] && [ "$DOWN_BOTTOM" = "$REST_BOTTOM" ] && r=0 || r=1
-check $r "dismissing it puts the inset and the field back where they were"
+read DOWN_INSET DOWN_BOTTOM DOWN_FRAME <<<"$DOWN"
+[ "$DOWN_INSET" = "$REST_INSET" ] && [ "$DOWN_BOTTOM" = "$REST_BOTTOM" ] \
+  && [ "$DOWN_FRAME" = "$REST_FRAME" ] && r=0 || r=1
+check $r "dismissing it puts the inset, the window and the field back where they were"
 if [ "$r" -ne 0 ]; then
-  echo "       inset $DOWN_INSET (was $REST_INSET), field bottom $DOWN_BOTTOM (was $REST_BOTTOM)"
+  echo "       inset $DOWN_INSET (was $REST_INSET), field bottom $DOWN_BOTTOM (was $REST_BOTTOM),"
+  echo "       app frame $DOWN_FRAME (was $REST_FRAME)"
 fi
 
 exit "$fail"

@@ -122,12 +122,39 @@ existe y solo se consulta en un reloj — mira [Wear OS](/es/platforms/wearos/).
 
 ## El botón atrás
 
-`onBackPressed` pregunta al host, que envía `back` al **último** nodo que se
-suscribió —lo alto de la pila— y devuelve true. Si no hay nadie escuchando, cae
-al sistema y la app se cierra.
+Android tiene dos y el shell responde a los dos, porque el `minSdkVersion` es 24
+y el segundo llegó en la 33.
 
-El host solo informa; deshacer la navegación es cosa del router. Ese es el mismo
-contrato que el gesto de borde de iOS.
+De la API 24 a la 32 es `onBackPressed`, deprecado desde la 33 y aun así el
+único atrás que tienen esos niveles. Desde la 33 es un `OnBackInvokedCallback`
+en el `OnBackInvokedDispatcher` de la activity, al que el manifiesto se apunta
+con `android:enableOnBackInvokedCallback`. Apuntarse no es un adorno: la API 36
+quitó la forma de no hacerlo, así que una app que nunca se apuntó no recibe
+ninguno de los dos callbacks y el atrás deja de funcionar entero. Medido en un
+teléfono con Android 16: atrás en una pantalla apilada salía de la app en lugar
+de desapilarla.
+
+Por cualquiera de los dos caminos se le pregunta al host, que envía `back` al
+**último** nodo que se suscribió —lo alto de la pila—. El host solo informa;
+deshacer la navegación es cosa del router. Ese es el mismo contrato que el gesto
+de borde de iOS.
+
+**El atrás predictivo** es la mitad de API 34 del callback,
+`OnBackAnimationCallback`. El gesto dice por dónde va y el host coloca las dos
+pantallas donde las dejaría el pop en esa fracción: la de arriba saliendo hacia
+la derecha y la de debajo volviendo desde el tercio de ancho en el que descansa.
+Soltar continúa ese único movimiento en lugar de empezar un segundo; soltar
+antes de tiempo las devuelve a su sitio.
+
+El callback se registra **solo mientras hay alguien escuchando**. Uno que se
+queda puesto le dice al sistema que la app va a atender todos los atrás, y
+entonces el sistema no dibuja ninguna previsualización propia: una app sin pila
+en pantalla perdería la animación de vuelta al inicio que tienen todas las
+demás.
+
+De que el host informe en lugar de decidir se sigue una cosa: una pila sigue
+escuchando también en su propia raíz, así que atrás en la primera pantalla llega
+al router, no encuentra a dónde volver y no hace nada. No sale de la app.
 
 ## Insets
 
@@ -139,6 +166,17 @@ contra los cuatro últimos valores, y solo despacha cuando hay un cambio real.
 Rust los parsea a mano, sin parser de JSON, precisamente para que el evento que
 llega a la plantilla sea idéntico al que envía iOS. La misma API se usa una
 segunda vez para sumar la altura de la franja de gestos a la tab bar medida.
+
+**El teclado va en el inset de abajo** y no en un evento propio, y cómo llega
+ahí depende del nivel. Desde la API 30 es `WindowInsets.Type.ime()`, leído una
+vez por fotograma de la propia animación del teclado. Por debajo de la 30 no
+existe ni ese tipo ni el callback de animación, así que el manifiesto pide
+`adjustResize` y el host mide en su lugar: en cada pasada de layout compara el
+borde inferior del contenedor con el marco visible de la ventana e informa del
+solape. Cuando la ventana sí se redimensionó, el solape es cero —el contenedor
+ya termina donde empieza el teclado y el listener del viewport ya rehizo el
+layout para el tamaño menor—, así que informar además de la altura del teclado
+movería cada formulario dos veces.
 
 ## Material 3 sin Gradle
 
@@ -231,15 +269,14 @@ que el ancho infinito.
 
 ## Lo que falta
 
-- **Sin inset de teclado por debajo de la API 30.** Desde la API 30 el IME
-  llega como cualquier otro inset, y llega *en movimiento*:
+- **El teclado no viaja con su animación por debajo de la API 30.** Desde la API
+  30 el IME llega como cualquier otro inset, y llega *en movimiento*:
   `WindowInsetsAnimation.Callback` lo da una vez por fotograma, así que el
-  formulario viaja con el teclado. Antes de eso no existe
-  `WindowInsets.Type.ime()` ni el callback, así que no llega nada y un campo
-  abajo se queda debajo del teclado. El truco de siempre —vigilar cómo encoge
-  el marco visible de la ventana— solo informa de algo si se deja redimensionar
-  la ventana, y este shell pide que no, precisamente para que el layout que
-  calculó el core sea el que se dibuja.
+  formulario viaja con el teclado. Por debajo de la 30 no hay tal callback ni
+  existe `WindowInsets.Type.ime()`, así que lo que se redimensiona es la ventana
+  —`adjustResize`— y el layout se rehace una vez en cada extremo en lugar de por
+  fotograma. El campo sí se aparta; solo que llega de un salto. Mira
+  [Insets](#insets).
 - **El peso de fuente son dos pasos por debajo de la API 28.**
   `Typeface.create(family, weight, italic)` acepta el número de CSS desde la API
   28; el `minSdkVersion` del shell es 24 y de la 24 a la 27 no hay nada en la
@@ -262,7 +299,10 @@ que el ancho infinito.
   motivo — y también una salida puesta en un primitivo que no la informa,
   `(scroll)` en un `<an-view>`, que se contesta nombrando el widget que el nodo
   montó de verdad.
-- **Atrás es el callback obsoleto.** No hay atrás predictivo.
+- **Atrás en la raíz de una pila no sale de la app.** La pila se suscribe a
+  `back` mientras esté en pantalla, así que el host atiende cada pulsación y el
+  router no encuentra luego nada que desapilar. Mira
+  [El botón atrás](#el-botón-atrás).
 - **`armeabi-v7a` solo si la pides.** `--abi armeabi-v7a` la compila; no está
   en ningún valor por defecto. Ver [Qué ABIs](#qué-abis).
 

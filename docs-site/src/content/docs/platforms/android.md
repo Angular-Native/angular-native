@@ -115,12 +115,37 @@ and is only consulted on a watch — see [Wear OS](/platforms/wearos/).
 
 ## The back button
 
-`onBackPressed` asks the host, which sends `back` to the **last** node that
-subscribed — the top of the stack — and returns true. If nothing is listening it
-falls through to the system and the app exits.
+Android has two of them and the shell answers both, because `minSdkVersion` is
+24 and the second one arrived in 33.
 
-The host only reports; undoing the navigation is the router's job. That is the
-same contract as the iOS edge gesture.
+On API 24 to 32 it is `onBackPressed`, deprecated since 33 and still the only
+back those levels have. From 33 it is an `OnBackInvokedCallback` on the
+activity's `OnBackInvokedDispatcher`, which the manifest opts into with
+`android:enableOnBackInvokedCallback`. The opt-in is not decoration: API 36
+removed the opt-out, so an app that never opted in gets neither callback and
+back stops working altogether. Measured on an Android 16 phone, back on a
+pushed screen left the app instead of popping it.
+
+Either path asks the host, which sends `back` to the **last** node that
+subscribed — the top of the stack. The host only reports; undoing the
+navigation is the router's job. That is the same contract as the iOS edge
+gesture.
+
+**Predictive back** is the API 34 half of the callback,
+`OnBackAnimationCallback`. The gesture says where it has got to and the host
+puts the two screens where a pop would have them at that fraction: the top
+sliding out to the right, the one underneath coming back from the third of a
+width it rests at. Letting go continues that one movement instead of starting a
+second; letting go early puts both back.
+
+The callback is registered **only while something is listening**. One that
+stays on the dispatcher tells the system the app will handle every back, and
+the system then draws no preview of its own — an app with no stack on screen
+would lose the back-to-home animation every other app has.
+
+One thing follows from the host reporting rather than deciding: a stack goes on
+listening at its own root, so back on the first screen reaches the router,
+finds nothing to go back to and does nothing. It does not leave the app.
 
 ## Insets
 
@@ -132,6 +157,17 @@ only on a real change dispatches them.
 Rust parses them by hand, without a JSON parser, precisely so the event that
 reaches the template is identical to the one iOS sends. The same API is used a
 second time to add the gesture strip's height to the measured tab bar.
+
+**The keyboard goes into the bottom inset** rather than into an event of its
+own, and how it gets there depends on the level. From API 30 it is
+`WindowInsets.Type.ime()`, read once per frame of the keyboard's own animation.
+Below 30 neither that type nor the animation callback exists, so the manifest
+asks for `adjustResize` and the host measures instead: on every layout pass it
+compares the container's bottom edge against the window's visible frame and
+reports the overlap. When the window really did resize the overlap is zero —
+the container already ends where the keyboard starts, and the viewport listener
+has redone the layout for the smaller size — so reporting the keyboard's height
+on top of that would move every form twice.
 
 ## Material 3 without Gradle
 
@@ -218,14 +254,14 @@ height at all, only what is added to the font's own. No line height travels as
 
 ## What is missing
 
-- **No keyboard inset below API 30.** From API 30 the IME arrives like any
-  other inset and it arrives *moving*: `WindowInsetsAnimation.Callback` gives
-  it once per frame, so the form travels with the keyboard. Before that,
-  `WindowInsets.Type.ime()` does not exist and neither does the callback, so
-  nothing arrives and a field at the bottom stays under the keyboard. The old
-  trick — watching the window's visible frame shrink — only reports anything if
-  the window is allowed to resize, and this shell asks it not to precisely so
-  that the layout the core computed is the one that gets drawn.
+- **The keyboard does not travel with its animation below API 30.** From API 30
+  the IME arrives like any other inset and it arrives *moving*:
+  `WindowInsetsAnimation.Callback` gives it once per frame, so the form travels
+  with the keyboard. Below 30 there is no such callback and no
+  `WindowInsets.Type.ime()` either, so the window is resized instead —
+  `adjustResize` — and the layout is redone once at each end rather than per
+  frame. The field does get out of the way; it just arrives in one step. See
+  [Insets](#insets).
 - **Font weight is two steps below API 28.** `Typeface.create(family, weight,
   italic)` takes CSS's number from API 28 on; the shell's `minSdkVersion` is 24
   and on 24 through 27 nothing in the platform takes it, so 100 to 500 draw as
@@ -245,7 +281,10 @@ height at all, only what is added to the font's own. No line height travels as
   with its reason — and so is an output put on a primitive that does not report
   it, `(scroll)` on an `<an-view>`, which is answered naming the widget the node
   actually mounted.
-- **Back is the deprecated callback.** There is no predictive back.
+- **Back at the root of a stack does not leave the app.** The stack subscribes
+  to `back` for as long as it is on screen, so the host answers every press and
+  the router then finds nothing to pop. See
+  [The back button](#the-back-button).
 - **No `armeabi-v7a` unless you ask for it.** `--abi armeabi-v7a` builds it;
   nothing defaults to it. See [Which ABIs](#which-abis).
 

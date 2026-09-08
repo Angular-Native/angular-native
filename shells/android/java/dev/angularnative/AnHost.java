@@ -126,6 +126,30 @@ public final class AnHost {
     private final java.util.Set<Integer> animatingOut = new java.util.HashSet<>();
     /** Stack nodes subscribed to `back`, for the hardware button. */
     private final java.util.List<Integer> backListeners = new java.util.ArrayList<>();
+
+    /**
+     * Told when back becomes, and stops being, the app's to answer.
+     *
+     * The activity registers and unregisters its `OnBackInvokedCallback` with
+     * this. While that callback is registered the system hands back to the app
+     * and draws no preview of its own, so an app with nothing listening has to
+     * be off the dispatcher or it loses the back-to-home animation the
+     * platform gives everybody else.
+     */
+    public interface BackHandling {
+        void backHandledChanged(boolean handled);
+    }
+
+    private BackHandling backHandling;
+    private boolean backHandled;
+    /** The two screens a back gesture is dragging, and the width they slide by. */
+    private View backPreviewTop;
+    private View backPreviewBelow;
+    private int backPreviewWidth;
+    /** The screen a completed gesture moved, until the pop that should follow. */
+    private View backAwaiting;
+    /** Reused by the pre-30 keyboard, which measures on every layout pass. */
+    private final android.graphics.Rect visibleFrame = new android.graphics.Rect();
     /** Nodes subscribed to the safe area, with the insets they were already told. */
     private final SparseArray<float[]> safeArea = new SparseArray<>();
 
@@ -287,18 +311,17 @@ public final class AnHost {
      *       finger, resized because the language changed, and the whole thing
      *       again after a rotation or a split-screen drag.
      *
-     *   API 24 to 29 — **nothing arrives, and a field at the bottom stays
-     *       under the keyboard.** It is said here rather than papered over.
-     *       What existed before R was the trick of watching the window's
-     *       visible frame shrink, and it only reports anything when the window
-     *       is allowed to resize; this shell asks it not to, precisely so that
-     *       the layout the core computed is the one that gets drawn. Wiring
-     *       that trick back in would mean two layout models on one screen,
-     *       which is a worse thing to own than a documented gap on API levels
-     *       that Play has not accepted an upload for since 2024.
+     *   API 24 to 29 — neither type nor callback exists, so the keyboard is
+     *       measured instead of asked for: `installLegacyKeyboard` compares
+     *       the container's bottom edge against the window's visible frame on
+     *       every layout pass. It arrives in one step at each end rather than
+     *       per frame, because there is nothing on these levels to follow the
+     *       animation with.
      *
      * `setDecorFitsSystemWindows(false)` is what stops the window from being
-     * resized under the keyboard. Without it the platform shrinks the window
+     * resized under the keyboard, and it is called from API 30 up and nowhere
+     * else — below that the resize is the answer and not the problem.
+     * Without it the platform shrinks the window
      * and the inset would be counted twice: once by the smaller container and
      * again by the padding. It is also what the app already wanted — the whole
      * screen is drawn by the app and `an-safe-area` is what reserves the bars —
@@ -318,6 +341,7 @@ public final class AnHost {
                     return insets;
                 });
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
+            installLegacyKeyboard();
             return;
         }
         if (context instanceof android.app.Activity) {
@@ -365,12 +389,75 @@ public final class AnHost {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             keyboardInset = insets.getInsets(android.view.WindowInsets.Type.ime()).bottom / density;
         }
-        // `reportSafeArea` replaces the value of a key that is already there
-        // and sends nothing when nothing moved, so the indices hold and a
-        // dispatch that changed nothing costs a comparison.
+        reportSafeAreaToAll();
+    }
+
+    /**
+     * `reportSafeArea` replaces the value of a key that is already there and
+     * sends nothing when nothing moved, so the indices hold and a dispatch
+     * that changed nothing costs a comparison.
+     */
+    private void reportSafeAreaToAll() {
         for (int i = 0; i < safeArea.size(); i++) {
             reportSafeArea(safeArea.keyAt(i));
         }
+    }
+
+    /**
+     * The keyboard on API 24 to 29, measured rather than asked for.
+     *
+     * `WindowInsets.Type.ime()` is API 30 and nothing older reports the
+     * keyboard at all, so what is compared is the container's bottom edge
+     * against the window's visible frame — the part of the window the IME is
+     * not sitting on. Both are in screen coordinates, so the difference is
+     * exactly how much of the container is covered.
+     *
+     * It is the overlap and not the keyboard's height, and that is what makes
+     * it safe whichever way the platform chose to answer the keyboard. The
+     * manifest asks for `adjustResize`, which on these levels shrinks the
+     * window: the container then ends where the keyboard starts, the layout
+     * has already been redone for the smaller viewport by the listener in
+     * `MainActivity`, and the overlap is zero. Reporting the keyboard's height
+     * on top of that would move every form twice. Where the platform pans
+     * instead, or does neither, the same subtraction gives what is really
+     * covered.
+     *
+     * A layout listener and not `onApplyWindowInsets`: before API 30 the
+     * keyboard is in no `WindowInsets` the view is ever handed, and a layout
+     * pass is the only thing the platform does that the app can hear.
+     */
+    private void installLegacyKeyboard() {
+        container
+                .getViewTreeObserver()
+                .addOnGlobalLayoutListener(
+                        () -> {
+                            container.getWindowVisibleDisplayFrame(visibleFrame);
+                            int[] at = new int[2];
+                            container.getLocationOnScreen(at);
+                            float covered =
+                                    coveredBelow(
+                                            at[1] + container.getHeight(),
+                                            visibleFrame.bottom,
+                                            density);
+                            if (covered == keyboardInset) {
+                                return;
+                            }
+                            keyboardInset = covered;
+                            reportSafeAreaToAll();
+                        });
+    }
+
+    /**
+     * How much of the container sits below the window's visible frame, in
+     * points. Never negative: a container ending above the frame is covered by
+     * nothing.
+     *
+     * A method of its own because it is the whole of the pre-30 keyboard and
+     * the only part of it a check can run without a device.
+     */
+    static float coveredBelow(int containerBottom, int visibleBottom, float density) {
+        int covered = containerBottom - visibleBottom;
+        return covered <= 0 ? 0f : covered / density;
     }
 
     public void attachRuntime(AnRuntime runtime) {
@@ -754,6 +841,16 @@ public final class AnHost {
         if (view != null && !animatingOut.contains(id) && view.getParent() instanceof ViewGroup) {
             ((ViewGroup) view.getParent()).removeView(view);
         }
+        if (view != null) {
+            // A screen that is going away cannot be previewed or restored.
+            if (view == backPreviewTop || view == backPreviewBelow) {
+                backPreviewTop = null;
+                backPreviewBelow = null;
+            }
+            if (view == backAwaiting) {
+                backAwaiting = null;
+            }
+        }
         views.remove(id);
         unsupported.remove(id);
         accessibility.remove(id);
@@ -774,6 +871,7 @@ public final class AnHost {
         watchers.remove(id);
         transitions.remove(id);
         backListeners.remove(Integer.valueOf(id));
+        backHandlingChanged();
         corners.remove(id);
         fontState.remove(id);
         inputState.remove(id);
@@ -1416,6 +1514,129 @@ public final class AnHost {
         }
         runtime.dispatchEvent(backListeners.get(backListeners.size() - 1), "back", 0f, 0f);
         return true;
+    }
+
+    /**
+     * Follows whether anything is listening for back.
+     *
+     * The listener is told the state it is in now as well as every change: a
+     * stack can have subscribed before the activity got round to asking.
+     */
+    public void setBackHandling(BackHandling listener) {
+        backHandling = listener;
+        backHandled = !backListeners.isEmpty();
+        if (listener != null) {
+            listener.backHandledChanged(backHandled);
+        }
+    }
+
+    private void backHandlingChanged() {
+        boolean handled = !backListeners.isEmpty();
+        if (handled == backHandled) {
+            return;
+        }
+        backHandled = handled;
+        if (backHandling != null) {
+            backHandling.backHandledChanged(handled);
+        }
+    }
+
+    /**
+     * The start of a predictive back gesture: the two screens it would move.
+     *
+     * Only a stack with something under its top screen has a preview to show.
+     * Anything else —a stack at its root, a template that listens for back to
+     * close something of its own— is left alone, and the gesture is felt only
+     * when it is let go, which is all that happened before there were
+     * previews at all.
+     */
+    public void backGestureStarted() {
+        backPreviewTop = null;
+        backPreviewBelow = null;
+        if (backListeners.isEmpty()) {
+            return;
+        }
+        View stack = views.get(backListeners.get(backListeners.size() - 1));
+        if (!(stack instanceof ViewGroup)) {
+            return;
+        }
+        ViewGroup group = (ViewGroup) stack;
+        if (group.getChildCount() < 2 || group.getWidth() <= 0) {
+            return;
+        }
+        backPreviewWidth = group.getWidth();
+        backPreviewTop = group.getChildAt(group.getChildCount() - 1);
+        backPreviewBelow = group.getChildAt(group.getChildCount() - 2);
+        // A push that has not finished animating owns these same two views.
+        backPreviewTop.animate().cancel();
+        backPreviewBelow.animate().cancel();
+    }
+
+    /**
+     * The gesture moving, from 0 to 1.
+     *
+     * The screens are put exactly where a pop would have them at that
+     * fraction —the top sliding out to the right, the one underneath coming
+     * back from the third of a width it rests at— so that letting go
+     * continues one movement instead of starting a second.
+     */
+    public void backGestureProgress(float fraction) {
+        if (backPreviewTop == null) {
+            return;
+        }
+        backPreviewTop.setTranslationX(fraction * backPreviewWidth);
+        if (backPreviewBelow != null) {
+            backPreviewBelow.setTranslationX(-backPreviewWidth / 3f * (1 - fraction));
+        }
+    }
+
+    /** The gesture let go of before it was finished. */
+    public void backGestureCancelled() {
+        restoreBackPreview(backPreviewTop, backPreviewBelow, backPreviewWidth);
+        backPreviewTop = null;
+        backPreviewBelow = null;
+    }
+
+    /**
+     * The gesture completed: the same event the button sends.
+     *
+     * Whether the screen pops is the router's answer and it arrives a frame or
+     * two later over the engine thread, so nothing here can wait for it. What
+     * can be done is to undo the preview if it never comes: a template that
+     * listens for back and decides to ignore this one must not be left with a
+     * screen parked off-centre for the rest of its life. A pop destroys the
+     * node, and that is what clears the wait.
+     */
+    public void backGestureInvoked() {
+        View top = backPreviewTop;
+        View below = backPreviewBelow;
+        int width = backPreviewWidth;
+        backPreviewTop = null;
+        backPreviewBelow = null;
+        dispatchBack();
+        if (top == null) {
+            return;
+        }
+        backAwaiting = top;
+        container.postDelayed(
+                () -> {
+                    if (backAwaiting != top) {
+                        return;
+                    }
+                    backAwaiting = null;
+                    restoreBackPreview(top, below, width);
+                },
+                TRANSITION_MS);
+    }
+
+    private void restoreBackPreview(View top, View below, int width) {
+        if (top == null) {
+            return;
+        }
+        top.animate().translationX(0).setDuration(TRANSITION_MS).start();
+        if (below != null) {
+            below.animate().translationX(-width / 3f).setDuration(TRANSITION_MS).start();
+        }
     }
 
     // ------------------------------------------------------------------ props
@@ -2848,6 +3069,7 @@ public final class AnHost {
                 backListeners.add(id);
                 stackIds.add(id);
             }
+            backHandlingChanged();
             return;
         }
         if ("crown".equals(event) || "crownIdle".equals(event)) {

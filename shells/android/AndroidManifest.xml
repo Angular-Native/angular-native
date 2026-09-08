@@ -76,11 +76,19 @@
       watch needs attributes of its own and the two themes are declared
       together.
     -->
+    <!--
+      Back through the API 33 dispatcher, which is what makes predictive back
+      possible: without this line the system goes on calling the deprecated
+      `onBackPressed` on 33..35, and on 36 it does neither — the opt-out was
+      removed, so an app that never opted in simply loses back. `MainActivity`
+      keeps the old override for 24..32.
+    -->
     <application
         android:label="AngularNative"
         android:theme="@style/Theme.AngularNative"
         android:hardwareAccelerated="true"
         android:extractNativeLibs="true"
+        android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="true">
 
         <!--
@@ -121,10 +129,26 @@
           engine, a second tree, and whatever the person had done gone — instead
           of handing the URL to the one already on screen.
         -->
+        <!--
+          adjustResize is for API 24 to 29 and for nothing above them.
+
+          `WindowInsets.Type.ime()` is API 30, so on those levels the shell has
+          to measure the keyboard rather than be told about it, and it can only
+          measure something the platform actually did. Left unspecified the
+          platform chooses per window between panning and resizing, and which
+          one it chose is not something the app can read back. Asked for
+          explicitly, the window shrinks and `AnHost.installLegacyKeyboard`
+          sees the container end where the keyboard starts.
+
+          It is inert from 30 up, where the flag is deprecated and ignored for
+          a window that called `setDecorFitsSystemWindows(false)` — which
+          `AnHost` does, on exactly those levels.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

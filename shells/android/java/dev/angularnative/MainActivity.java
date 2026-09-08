@@ -158,6 +158,7 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
             return;
         }
         host.attachRuntime(runtime);
+        installBackDispatch();
 
         // The viewport follows the container, and not the screen.
         //
@@ -287,6 +288,106 @@ public final class MainActivity extends androidx.appcompat.app.AppCompatActivity
         }
     }
 
+    /**
+     * The API 33+ callback, held as `Object` so that a device without the
+     * `android.window` back classes never has to resolve the type to load this
+     * class.
+     */
+    private Object backCallback;
+    /** Whether that callback is on the dispatcher right now. */
+    private boolean backRegistered;
+
+    /**
+     * Back, both of the ways Android has of asking for it.
+     *
+     * API 33 introduced `OnBackInvokedCallback` and, for an app that opts in
+     * with `android:enableOnBackInvokedCallback`, stopped calling
+     * `onBackPressed` at all; from API 36 the opt-out is gone and every app
+     * targeting it is on the new dispatcher whether it asked or not. An app
+     * that only overrides the deprecated method therefore has no back on a
+     * current phone: it was measured on an Android 16 device, where back on a
+     * pushed screen left the app instead of popping it.
+     *
+     * `minSdkVersion` is 24, so this is a second path and not a replacement.
+     * On 24..32 the override below is the only back there is, and it stays.
+     *
+     * The callback is registered only while the app has something listening,
+     * which is what `AnHost.BackHandling` reports. A callback that is always
+     * on the dispatcher tells the system the app will handle every back, and
+     * the system then draws no preview of its own — an app at the root of its
+     * stack would lose the back-to-home animation that every other app has.
+     */
+    private void installBackDispatch() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+            return;
+        }
+        backCallback = newBackCallback();
+        host.setBackHandling(this::setBackRegistered);
+    }
+
+    /**
+     * The callback itself: animated from API 34, plain on 33.
+     *
+     * `OnBackAnimationCallback` is what predictive back is made of — the
+     * gesture reports where it has got to, and the app draws the screen it is
+     * about to go back to. Without it the system knows the app is handling
+     * back and shows nothing at all until the finger is lifted, which is
+     * worse than the old button was.
+     */
+    private Object newBackCallback() {
+        if (android.os.Build.VERSION.SDK_INT
+                >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            return new android.window.OnBackAnimationCallback() {
+                @Override
+                public void onBackStarted(android.window.BackEvent event) {
+                    host.backGestureStarted();
+                }
+
+                @Override
+                public void onBackProgressed(android.window.BackEvent event) {
+                    host.backGestureProgress(event.getProgress());
+                }
+
+                @Override
+                public void onBackCancelled() {
+                    host.backGestureCancelled();
+                }
+
+                @Override
+                public void onBackInvoked() {
+                    host.backGestureInvoked();
+                }
+            };
+        }
+        return (android.window.OnBackInvokedCallback) () -> host.backGestureInvoked();
+    }
+
+    /** Puts the callback on the dispatcher, or takes it off. */
+    private void setBackRegistered(boolean handled) {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU
+                || backCallback == null
+                || handled == backRegistered) {
+            return;
+        }
+        backRegistered = handled;
+        android.window.OnBackInvokedCallback callback =
+                (android.window.OnBackInvokedCallback) backCallback;
+        if (handled) {
+            getOnBackInvokedDispatcher()
+                    .registerOnBackInvokedCallback(
+                            android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback);
+        } else {
+            getOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(callback);
+        }
+    }
+
+    /**
+     * Back on API 24 to 32, and on anything that has not honoured the opt-in.
+     *
+     * Deprecated since 33 and kept deliberately: it is the only back a third
+     * of the supported range has. The two paths cannot both fire — the system
+     * picks one per press — so there is no double dispatch to guard against.
+     */
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {

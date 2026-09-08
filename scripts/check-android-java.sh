@@ -131,6 +131,191 @@ if failures:
     sys.exit(1)
 PY
 
+# Back, which Android has two of, and the keyboard, which it has two of as well.
+#
+# Both are API-gated paths, and an API-gated path is the kind of thing that rots
+# without a sound: the old branch stops being exercised on any machine anybody
+# develops on, and the new one is only wrong on the devices nobody here has.
+# What is asserted is therefore the gate itself — that the old path is still
+# there while `minSdkVersion` still needs it, and that the new one is behind the
+# version code it actually arrived in.
+python3 - "$ROOT" <<'PY'
+import pathlib, re, sys
+
+root = pathlib.Path(sys.argv[1])
+activity = (root / 'shells/android/java/dev/angularnative/MainActivity.java').read_text()
+host = (root / 'shells/android/java/dev/angularnative/AnHost.java').read_text()
+manifest = (root / 'shells/android/AndroidManifest.xml').read_text()
+# Wear reuses the phone's `MainActivity`, so its Java side comes along for free
+# and only the manifest key is its own. It is read here because a key present in
+# one manifest and missing from the other is the shape this whole block exists
+# to catch: `targetSdkVersion` is 36 in both, and 36 has no opt-out.
+wear_manifest = (root / 'shells/android/AndroidManifest.wear.xml').read_text()
+failures = []
+
+
+def methods(source):
+    """Every member whose signature fits on one line, by name."""
+    found = {}
+    pattern = re.compile(r'\n    (?:public|private|protected|static)[^\n=;]*?(\w+)\([^\n]*\{\n')
+    for match in pattern.finditer(source):
+        end = source.index('\n    }\n', match.start())
+        found[match.group(1)] = source[match.start():end]
+    return found
+
+
+activity_methods = methods(activity)
+
+# --- back ---------------------------------------------------------------
+min_sdk = int(re.search(r'minSdkVersion="(\d+)"', manifest).group(1))
+if min_sdk < 33:
+    if 'dispatchBack' not in activity_methods.get('onBackPressed', ''):
+        failures.append(
+            f'  FAIL minSdkVersion is {min_sdk} and onBackPressed no longer reaches'
+            ' host.dispatchBack(); it is the only back a device below 33 has'
+        )
+else:
+    failures.append(
+        f'  FAIL minSdkVersion is {min_sdk}: the deprecated onBackPressed path can go,'
+        ' and so can this branch of the check'
+    )
+
+for which, text in (('phone', manifest), ('Wear', wear_manifest)):
+    if 'android:enableOnBackInvokedCallback="true"' not in text:
+        failures.append(
+            f'  FAIL the {which} manifest does not opt in to the API 33 back dispatcher, so on'
+            ' 33..35 the deprecated callback is used and on 36 there is no back at all'
+        )
+
+# Nothing out of `android.window` may be *reached* without the version having
+# been checked first: those classes do not exist on a device below 33 and
+# loading one throws where nobody is looking. Reached, and not merely named —
+# the hole this is shaped around is a gate on the method that names the class
+# with none on the method that calls it, which is the same crash one frame up.
+# TIRAMISU and not UPSIDE_DOWN_CAKE: 34 is the floor for the animated callback
+# and 33 is the floor for the package, so a method gated only on 34 still has a
+# path that runs on 24.
+def tiramisu(body):
+    return 'Build.VERSION.SDK_INT' in body and 'VERSION_CODES.TIRAMISU' in body
+
+
+def calls(body, callee):
+    return re.search(r'(?<![\w.])' + callee + r'\s*\(', body) or ('::' + callee) in body
+
+
+seen = 0
+ungated = set()
+for name, body in activity_methods.items():
+    if 'android.window.' not in body:
+        continue
+    seen += body.count('android.window.')
+    if not tiramisu(body):
+        ungated.add(name)
+if seen != activity.count('android.window.'):
+    failures.append(
+        '  FAIL android.window is named somewhere this check cannot see the gate of —'
+        ' a signature over two lines, or outside a method'
+    )
+
+# Whoever calls one of those has to be the one holding the gate, and so on out
+# to the caller that does.
+growing = True
+while growing:
+    growing = False
+    for name, body in activity_methods.items():
+        if name in ungated or tiramisu(body):
+            continue
+        for callee in sorted(ungated):
+            if callee != name and calls(body, callee):
+                failures.append(
+                    f'  FAIL {name} reaches {callee}, which names an android.window class,'
+                    ' with no Build.VERSION_CODES.TIRAMISU gate of its own'
+                )
+                ungated.add(name)
+                growing = True
+                break
+
+animation = activity_methods.get('newBackCallback', '')
+if 'OnBackAnimationCallback' not in animation:
+    failures.append(
+        '  FAIL nothing builds an OnBackAnimationCallback, so back is registered without'
+        ' a preview and the system draws nothing until the finger is lifted'
+    )
+elif 'VERSION_CODES.UPSIDE_DOWN_CAKE' not in animation:
+    failures.append(
+        '  FAIL OnBackAnimationCallback is not behind UPSIDE_DOWN_CAKE; the animated half'
+        ' of the callback is API 34 and the plain one is 33'
+    )
+
+if 'setBackHandling' not in host or 'setBackHandling' not in activity:
+    failures.append(
+        '  FAIL the activity no longer follows AnHost.setBackHandling; a callback that'
+        ' stays registered tells the system the app handles every back, and the'
+        ' back-to-home preview is then never drawn'
+    )
+
+# The registration follows the listener list, so every change to the list has to
+# say so. A missed one leaves back either dead or trapped, on the device.
+lines = host.split('\n')
+for index, line in enumerate(lines):
+    if 'backListeners.add(' not in line and 'backListeners.remove(' not in line:
+        continue
+    if not any('backHandlingChanged()' in near for near in lines[index:index + 8]):
+        failures.append(
+            f'  FAIL AnHost.java:{index + 1} changes backListeners without calling'
+            ' backHandlingChanged(), so the dispatcher is left out of step'
+        )
+
+if not failures:
+    print('  ok   back is the API 33 dispatcher with an API 34 preview, and still the')
+    print('       deprecated callback below 33')
+
+# --- the keyboard -------------------------------------------------------
+host_methods = methods(host)
+
+applied = host_methods.get('applyWindowInsets', '')
+if 'WindowInsets.Type.ime()' not in applied:
+    failures.append('  FAIL nothing reads the IME inset any more')
+elif 'VERSION_CODES.R' not in applied:
+    failures.append(
+        '  FAIL WindowInsets.Type.ime() is read with no VERSION_CODES.R gate; it is API 30'
+    )
+
+install = host_methods.get('installWindowInsets', '')
+below_r = install.split('VERSION_CODES.R')[1].split('}')[0] if 'VERSION_CODES.R' in install else ''
+if 'installLegacyKeyboard()' not in below_r:
+    failures.append(
+        '  FAIL installWindowInsets does not install the pre-30 keyboard in its below-R'
+        ' branch, so a field at the bottom of a form on API 24..29 goes back to sitting'
+        ' under the keyboard with nothing saying so'
+    )
+
+legacy = host_methods.get('installLegacyKeyboard', '')
+if 'getWindowVisibleDisplayFrame' not in legacy:
+    failures.append(
+        "  FAIL the pre-30 keyboard does not measure the window's visible frame; there is"
+        ' nothing else on those levels that knows where the keyboard is'
+    )
+for api30 in ('WindowInsets.Type', 'WindowInsetsAnimation'):
+    if api30 in legacy:
+        failures.append(
+            f'  FAIL the pre-30 keyboard path names {api30}, which is API 30: it would'
+            ' throw on the very devices it exists for'
+        )
+
+if 'android:windowSoftInputMode="adjustResize"' not in manifest:
+    failures.append(
+        '  FAIL the manifest does not ask for adjustResize; below API 30 the platform then'
+        ' chooses panning or resizing per window and the host cannot tell which'
+    )
+
+for line in failures:
+    print(line)
+if failures:
+    sys.exit(1)
+print('  ok   the keyboard is the IME inset from API 30 and the visible frame below it')
+PY
+
 # That the nine weights are nine and not two.
 #
 # There is no emulator in a checker, and `Typeface` cannot be reached from a
@@ -226,10 +411,35 @@ public class WeightDump {
                 bad = true;
             }
         }
+        // And the pre-30 keyboard, which is one subtraction and a clamp. There
+        // is no API 29 image on this machine to run it on, so the arithmetic is
+        // run without one: what it has to get right is that a window which
+        // already shrank leaves nothing covered, because reporting the
+        // keyboard's height on top of a smaller viewport moves every form
+        // twice.
+        Method coveredBelow =
+                host.getDeclaredMethod("coveredBelow", int.class, int.class, float.class);
+        coveredBelow.setAccessible(true);
+        for (float[] c : new float[][] {
+            // container bottom px, visible frame bottom px, density, points covered
+            {2340, 2340, 3, 0}, // adjustResize: the container ends where the keyboard starts
+            {2340, 1440, 3, 300}, // no resize: 900 px of keyboard over the container
+            {1200, 2340, 3, 0}, // a container above the frame is covered by nothing
+        }) {
+            float got = (Float) coveredBelow.invoke(null, (int) c[0], (int) c[1], c[2]);
+            if (got != c[3]) {
+                System.out.println("  FAIL coveredBelow(" + (int) c[0] + ", " + (int) c[1] + ", "
+                        + c[2] + ") = " + got + ", not " + c[3]);
+                bad = true;
+            }
+        }
+
         if (bad) {
             System.exit(1);
         }
         System.out.println("  ok   fontWeight 100..900 is nine faces from API 28 and two below it");
+        System.out.println("  ok   and the pre-30 keyboard reports the overlap, zero when the"
+                + " window already resized");
     }
 }
 JAVA

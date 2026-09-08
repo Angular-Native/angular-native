@@ -85,6 +85,7 @@
         android:theme="@style/Theme.AngularNative.Wear"
         android:hardwareAccelerated="true"
         android:extractNativeLibs="true"
+        android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="true">
 
         <!--
