@@ -3,9 +3,11 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   inject,
   Injectable,
   signal,
+  viewChild,
   type Provider
 } from '@angular/core'
 import {
@@ -35,6 +37,20 @@ export class NavigationDirection {
   private readonly current = signal<'push' | 'pop' | 'none'>('none')
 
   readonly direction = computed(() => this.current())
+
+  /**
+   * Whether there is a screen underneath this one.
+   *
+   * The answer belongs to the location, which is what holds the stack; what
+   * this adds is that it is a signal. At the bottom there is nowhere for
+   * `back()` to go, and the press belongs to whatever the platform does with a
+   * back nobody claimed.
+   */
+  readonly canGoBack = computed(() => {
+    // Read for the dependency and not for the value: the index is what changes.
+    this.last()
+    return this.location.canGoBack
+  })
 
   constructor() {
     inject(Router).events.subscribe((event) => {
@@ -133,17 +149,37 @@ function keyOf(route: ActivatedRouteSnapshot): string {
     '[style.minHeight]': "'0'"
   },
   template: `
-    <an-stack-view [style.flexGrow]="'1'" [transition]="direction()" (back)="onBack()">
+    <an-stack-view [style.flexGrow]="'1'" [transition]="direction()">
       <router-outlet />
     </an-stack-view>
   `
 })
 export class NativeStack {
   private readonly location = inject(Location)
-  protected readonly direction = inject(NavigationDirection).direction
+  private readonly navigation = inject(NavigationDirection)
+  protected readonly direction = this.navigation.direction
+  private readonly stack = viewChild(StackView)
 
-  protected onBack(): void {
-    this.location.back()
+  constructor() {
+    // `(back)` is not in the template because it must not always be bound.
+    //
+    // Subscribing is how the app claims the press: the listener travels to the
+    // host, and every host that has a system back consults it before doing
+    // anything of its own. Android takes its `OnBackInvokedCallback` off the
+    // dispatcher while nothing is listening, and only then does the system draw
+    // the back-to-home preview; tvOS lets the menu button reach the platform,
+    // which is what returns to the Apple TV home screen. Bound at the root of
+    // the stack, the press is answered with a `back()` that has nowhere to go,
+    // and the person gets neither the app's answer nor the system's.
+    //
+    // The condition is `canGoBack` and not something weaker on purpose: it is
+    // exactly the condition under which `location.back()` does anything at all.
+    effect((onCleanup) => {
+      const stack = this.stack()
+      if (!stack || !this.navigation.canGoBack()) return
+      const subscription = stack.back.subscribe(() => this.location.back())
+      onCleanup(() => subscription.unsubscribe())
+    })
   }
 }
 

@@ -112,9 +112,12 @@ From the router's point of view nothing special happened: a popstate came in,
 exactly as it would in a browser. That is why guards keep working across a
 system back gesture rather than being bypassed by it.
 
-`canGoBack` on `NativePlatformLocation` is what the gesture consults before
-deciding it has somewhere to go. At the bottom of the stack there is no screen
-behind, and the gesture does nothing.
+`canGoBack` on `NativePlatformLocation` is what decides whether the gesture is
+the app's at all. `<an-native-stack>` subscribes to `(back)` only while it is
+true, so at the bottom of the stack nothing is listening and the press falls
+through to the platform: Android takes its callback off the dispatcher, draws
+the back-to-home preview and leaves the app; tvOS lets the menu button reach the
+system. Nothing is bound, so nothing is swallowed.
 
 ## The history survives a hot reload
 

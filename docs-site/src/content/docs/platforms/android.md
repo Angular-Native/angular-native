@@ -143,9 +143,11 @@ stays on the dispatcher tells the system the app will handle every back, and
 the system then draws no preview of its own — an app with no stack on screen
 would lose the back-to-home animation every other app has.
 
-One thing follows from the host reporting rather than deciding: a stack goes on
-listening at its own root, so back on the first screen reaches the router,
-finds nothing to go back to and does nothing. It does not leave the app.
+Which makes the subscription the answer to who owns the press, and
+`<an-native-stack>` only holds it while there is a screen underneath. At the
+root of the stack nothing is listening, the callback comes off the dispatcher,
+and back is the system's again: the preview of the home screen is drawn and the
+press leaves the app, the way it does in every other app.
 
 ## Insets
 
@@ -281,10 +283,6 @@ height at all, only what is added to the font's own. No line height travels as
   with its reason — and so is an output put on a primitive that does not report
   it, `(scroll)` on an `<an-view>`, which is answered naming the widget the node
   actually mounted.
-- **Back at the root of a stack does not leave the app.** The stack subscribes
-  to `back` for as long as it is on screen, so the host answers every press and
-  the router then finds nothing to pop. See
-  [The back button](#the-back-button).
 - **No `armeabi-v7a` unless you ask for it.** `--abi armeabi-v7a` builds it;
   nothing defaults to it. See [Which ABIs](#which-abis).
 

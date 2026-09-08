@@ -466,6 +466,19 @@ fn main() {
         None => println!("(no root: the app never mounted anything)"),
     }
     println!("\nnative views mounted: {}", host.kinds.len());
+    // Who owns the next back press. It is printed because it is otherwise
+    // invisible: a subscription is not a view, not a prop and not a frame, and
+    // on a phone the difference between the app answering back and the system
+    // answering it is the difference between popping a screen and leaving the
+    // app.
+    println!(
+        "back listeners: {}",
+        if host.backable.is_empty() {
+            "none".to_owned()
+        } else {
+            host.backable.iter().map(|id| format!("#{id}")).collect::<Vec<_>>().join(" ")
+        }
+    );
     if scrolled {
         println!(
             "scrolling cost {} views created and {} destroyed",

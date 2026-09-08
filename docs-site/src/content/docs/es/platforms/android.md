@@ -152,9 +152,11 @@ entonces el sistema no dibuja ninguna previsualización propia: una app sin pila
 en pantalla perdería la animación de vuelta al inicio que tienen todas las
 demás.
 
-De que el host informe en lugar de decidir se sigue una cosa: una pila sigue
-escuchando también en su propia raíz, así que atrás en la primera pantalla llega
-al router, no encuentra a dónde volver y no hace nada. No sale de la app.
+Con lo cual la suscripción es la respuesta a de quién es la pulsación, y
+`<an-native-stack>` solo la tiene mientras haya una pantalla debajo. En la raíz
+de la pila no escucha nadie, el callback sale del dispatcher y el atrás vuelve a
+ser del sistema: se dibuja la previsualización de la pantalla de inicio y la
+pulsación sale de la app, como en cualquier otra.
 
 ## Insets
 
@@ -299,10 +301,6 @@ que el ancho infinito.
   motivo — y también una salida puesta en un primitivo que no la informa,
   `(scroll)` en un `<an-view>`, que se contesta nombrando el widget que el nodo
   montó de verdad.
-- **Atrás en la raíz de una pila no sale de la app.** La pila se suscribe a
-  `back` mientras esté en pantalla, así que el host atiende cada pulsación y el
-  router no encuentra luego nada que desapilar. Mira
-  [El botón atrás](#el-botón-atrás).
 - **`armeabi-v7a` solo si la pides.** `--abi armeabi-v7a` la compila; no está
   en ningún valor por defecto. Ver [Qué ABIs](#qué-abis).
 

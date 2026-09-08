@@ -116,9 +116,12 @@ Desde el punto de vista del router no ha pasado nada especial: ha llegado un
 popstate, exactamente como en un navegador. Por eso los guards siguen funcionando
 con un gesto de volver del sistema en vez de ser esquivados por él.
 
-`canGoBack` en `NativePlatformLocation` es lo que consulta el gesto antes de
-decidir que tiene adónde ir. En el fondo de la pila no hay pantalla detrás, y el
-gesto no hace nada.
+`canGoBack` en `NativePlatformLocation` es lo que decide si el gesto es de la
+app siquiera. `<an-native-stack>` se suscribe a `(back)` solo mientras sea
+cierto, así que en el fondo de la pila no escucha nadie y la pulsación cae al
+sistema: Android saca su callback del dispatcher, dibuja la previsualización de
+vuelta al inicio y sale de la app; en tvOS el botón de menú llega a la
+plataforma. Nada está atado, así que nada se traga.
 
 ## El historial sobrevive a una recarga en caliente
 
