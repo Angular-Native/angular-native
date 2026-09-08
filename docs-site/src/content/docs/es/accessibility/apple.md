@@ -161,6 +161,15 @@ verdad: un `an-button` monta un `NSButton` y un `NSButton` es un `AXButton`, que
 es el mismo hecho que el inventario de la plataforma ya declara como nombre de
 clase.
 
+El nombre de la clase casi siempre basta para conocer ese rol, y una vez no
+bastó. `an-activity-indicator` y `an-progress-bar` montan la **misma** clase, un
+`NSProgressIndicator`, y AppKit los distingue por el estilo: la barra publica
+`AXProgressIndicator` y el spinner publica `AXBusyIndicator`. Volver a escribir
+el rol de la barra para los dos significaba que un spinner al que solo se le
+daba un nombre dejaba de ser un spinner y empezaba a anunciar un progreso que no
+tiene — una traducción por fuera y una aproximación por dentro, y lo único que
+podía notar la diferencia era el recorrido desde fuera.
+
 Cuando **sí** se da un rol, sustituye en lugar de sumar. Una plantilla que
 escribe `accessibilityRole="link"` en un `an-button` está diciendo que esto se
 lee como un enlace, no como «enlace, botón».

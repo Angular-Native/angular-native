@@ -1421,10 +1421,13 @@ impl HostRenderer for AppKitHost {
                             match key {
                                 "minimumValue" => slider.setMinValue(v),
                                 "maximumValue" => slider.setMaxValue(v),
-                                // A macOS slider has no free-form step: it is
-                                // asked for as a number of tick marks, and
-                                // ticks make the notches show. It is left
-                                // continuous.
+                                // `stepValue` is the stepper's alone:
+                                // `an-slider` declares no step, so nothing
+                                // sends one here. If one ever arrives it is
+                                // not applied — a macOS slider snaps only to
+                                // tick marks, and tick marks are *drawn*, so
+                                // the control would come out notched by a
+                                // prop about values.
                                 _ => return,
                             }
                         }
@@ -1607,17 +1610,19 @@ impl HostRenderer for AppKitHost {
                 }
             }
             "scrollEnabled" => {
+                // AppKit has no scroll switch, and hiding the scrollers is not
+                // one: a scroll view scrolls because the wheel event reaches it
+                // up the responder chain. The document view is ours and comes
+                // first in that chain, so stopping the event there is what
+                // stops the scroll — see `flipped.rs`. Whether a scroller is
+                // drawn stays `showsScrollIndicator`'s business.
+                let on = !matches!(value, PropValue::Bool(false));
                 if let Some(HostView::Scroll(scroll)) = self.views.get(&id) {
-                    // AppKit has no scroll switch: taking the scrollers away
-                    // and leaving the document view the size of the frame is
-                    // the same thing seen from outside.
-                    let on = !matches!(value, PropValue::Bool(false));
-                    unsafe { scroll.setScrollerStyle(if on {
-                        NSScrollerStyle::Overlay
-                    } else {
-                        NSScrollerStyle::Legacy
-                    }) };
-                    unsafe { scroll.setHasVerticalScroller(on) };
+                    if let Some(document) = unsafe { scroll.documentView() }
+                        .and_then(|document| document.downcast::<FlippedView>().ok())
+                    {
+                        document.set_scroll_locked(!on);
+                    }
                 }
             }
 
@@ -1758,15 +1763,32 @@ impl HostRenderer for AppKitHost {
             }
 
             // --- the system's dialogs
-            "title" | "message" | "buttons" | "sheet" if self.alerts.contains_key(&id) => {
+            //
+            // `sheet` asks for an action sheet: several things to do with what
+            // was just tapped, rather than a question to answer. macOS has no
+            // such control —the nearest is a context menu, which is a different
+            // gesture in a different place— so nothing is applied, and it is
+            // said once when a template really asks for one. Mapping it onto
+            // the dialog's severity instead would change something the prop
+            // does not mean, which reads from outside like a prop that works.
+            "sheet" if self.alerts.contains_key(&id) => {
+                if matches!(value, PropValue::Bool(true)) {
+                    self.warn_once("alert-sheet".to_owned(), || {
+                        eprintln!(
+                            "angular-native: `sheet` on <Alert> does not apply on macOS: there \
+                             is no action sheet on the desktop —the nearest control is a context \
+                             menu, which is something else— so the dialog is the same NSAlert \
+                             either way"
+                        );
+                    });
+                }
+            }
+            "title" | "message" | "buttons" if self.alerts.contains_key(&id) => {
                 let Some(state) = self.alerts.get_mut(&id) else { return };
                 match key {
                     "title" => state.title = text.clone().unwrap_or_default(),
                     "message" => state.message = text.clone().unwrap_or_default(),
-                    "buttons" => {
-                        state.buttons = parse_string_list(text.as_deref().unwrap_or("[]"))
-                    }
-                    _ => state.sheet = matches!(value, PropValue::Bool(true)),
+                    _ => state.buttons = parse_string_list(text.as_deref().unwrap_or("[]")),
                 }
                 if !self.dirty_alerts.contains(&id) {
                     self.dirty_alerts.push(id);

@@ -362,6 +362,26 @@ for _ in $(seq 1 60); do
   fi
 done
 
+# A second copy started *after* the sweep above poisons the reading the same way
+# a leftover one does, and the symptom is identical: a tree with no window,
+# which reads as a host that publishes nothing. `check-macos.sh` and anything
+# taking a screenshot run this same binary, so on a machine doing two things at
+# once it is not hypothetical.
+# `pgrep -c` is a Linux flag; BSD pgrep has no counter, so the lines are counted
+# here. Without the `|| true` a pgrep that matches nothing exits 1 and takes the
+# script with it under `set -e`.
+COPIES="$(pgrep -f "AngularNativeMac.app/Contents/MacOS/AngularNativeMac" 2>/dev/null | wc -l | tr -d ' ' || true)"
+COPIES="${COPIES:-0}"
+if [ "$(window_rows)" -le 8 ] && [ "$COPIES" -gt 1 ]; then
+  kill -9 "$APP_PID" 2>/dev/null || true
+  trap - EXIT
+  echo "  --   the accessibility tree is not read: $COPIES copies of the app are running,"
+  echo "       and two confuse the accessibility server into answering with no window at"
+  echo "       all. Something else is driving this .app — a screenshot, check-macos.sh."
+  echo "       Everything above this line was checked; nothing below it can be."
+  exit "$fail"
+fi
+
 if [ "$(window_rows)" -gt 8 ]; then
   echo "  ok   the app publishes an accessibility tree to a process outside it"
 else
@@ -412,6 +432,17 @@ expect 'AXButton title="OK"' \
   'a system button nobody labelled keeps the name AppKit gave it'
 expect 'AXButton label="Save the changes you made" title="Save"' \
   'and one the template did label reads with ours and is still a button'
+
+# And the pair that proves the role written back is the one the control really
+# has, not the one its class suggests. `an-activity-indicator` and
+# `an-progress-bar` are both an `NSProgressIndicator`; AppKit separates them by
+# style, and naming them is exactly what makes the host supply the role. A
+# spinner coming back as `AXProgressIndicator` is a reader being told about
+# progress that does not exist, and nothing but this line can see it.
+expect 'AXBusyIndicator label="Still working"' \
+  'a named spinner is still a spinner, not the progress bar it shares a class with'
+expect 'AXProgressIndicator label="Half done"' \
+  'and the bar of the same class keeps the role that is genuinely its own'
 
 # And what must **not** be there. An accessibility check that only looks for
 # what it expects cannot catch the opposite failure: something read out that

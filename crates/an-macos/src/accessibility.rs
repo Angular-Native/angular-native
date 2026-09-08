@@ -52,8 +52,9 @@ use an_core::accessibility::{parse_state, Checked, Role, State};
 use an_core::{NodeId, NodeKind, PropValue};
 use objc2::rc::Retained;
 use objc2_app_kit::{
-    NSAccessibility, NSAccessibilityButtonRole, NSAccessibilityCheckBoxRole,
-    NSAccessibilityHeadingRole, NSAccessibilityImageRole, NSAccessibilityLinkRole,
+    NSAccessibility, NSAccessibilityBusyIndicatorRole, NSAccessibilityButtonRole,
+    NSAccessibilityCheckBoxRole, NSAccessibilityHeadingRole, NSAccessibilityImageRole,
+    NSAccessibilityLinkRole,
     NSAccessibilityPopUpButtonRole, NSAccessibilityProgressIndicatorRole,
     NSAccessibilityRadioButtonRole, NSAccessibilityRole, NSAccessibilityScrollAreaRole,
     NSAccessibilitySearchFieldSubrole, NSAccessibilitySliderRole, NSAccessibilityStaticTextRole,
@@ -317,9 +318,16 @@ fn implied_role(kind: NodeKind) -> Option<AppKitRole> {
             }
             NodeKind::Picker => (NSAccessibilityPopUpButtonRole, None),
             NodeKind::ScrollView => (NSAccessibilityScrollAreaRole, None),
-            NodeKind::ProgressBar | NodeKind::ActivityIndicator => {
-                (NSAccessibilityProgressIndicatorRole, None)
-            }
+            // The two mount the same class and AppKit still gives them
+            // different roles, because what it looks at is the style: a bar
+            // publishes `AXProgressIndicator` and a spinner publishes
+            // `AXBusyIndicator`. Writing the bar's back for both is how a
+            // spinner given nothing but a name stopped being a spinner and
+            // started announcing progress it does not have. The walk from
+            // outside says it plainly: `AXBusyIndicator` while nothing was
+            // overridden, `AXProgressIndicator` the moment a label was.
+            NodeKind::ProgressBar => (NSAccessibilityProgressIndicatorRole, None),
+            NodeKind::ActivityIndicator => (NSAccessibilityBusyIndicatorRole, None),
             // Everything else is a box, a presentation the system owns, or a
             // control whose AppKit role is not one of the ones this project can
             // state as a fact. Nothing is written, and AppKit keeps whatever it

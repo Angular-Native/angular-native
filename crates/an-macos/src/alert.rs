@@ -12,7 +12,7 @@ use an_core::{NodeId, PropValue};
 use an_host::{push_event, EventQueue, HostEvent};
 use block2::RcBlock;
 use objc2::MainThreadMarker;
-use objc2_app_kit::{NSAlert, NSAlertStyle, NSModalResponse, NSView};
+use objc2_app_kit::{NSAlert, NSModalResponse, NSView};
 use objc2_foundation::NSString;
 
 /// The first response a sheet returns: the first button is 1000, the second
@@ -20,12 +20,12 @@ use objc2_foundation::NSString;
 const FIRST_BUTTON: NSModalResponse = 1000;
 
 /// The state of a dialog declared in the template.
+///
+/// There is no `sheet` here. On iOS that prop means an action sheet and macOS
+/// has no such control, so it is refused in `host.rs` and the style stays the
+/// `NSAlert`'s own.
 #[derive(Default)]
 pub struct AlertState {
-    /// On iOS `sheet` means an action sheet. macOS has no such control —the
-    /// nearest thing is a context menu, which is something else— so here it
-    /// only changes the dialog's style: informational instead of a warning.
-    pub sheet: bool,
     pub title: String,
     pub message: String,
     pub buttons: Vec<String>,
@@ -57,11 +57,6 @@ impl AlertState {
         unsafe {
             alert.setMessageText(&NSString::from_str(&self.title));
             alert.setInformativeText(&NSString::from_str(&self.message));
-            alert.setAlertStyle(if self.sheet {
-                NSAlertStyle::Informational
-            } else {
-                NSAlertStyle::Warning
-            });
         }
         let buttons =
             if self.buttons.is_empty() { vec!["OK".to_owned()] } else { self.buttons.clone() };

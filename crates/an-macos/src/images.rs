@@ -92,14 +92,29 @@ fn apply(view: &NSImageView, image: &NSImage, node: NodeId, queue: &EventQueue) 
 
 /// Translates `resizeMode` into AppKit's scaling.
 ///
-/// AppKit has four modes and not UIKit's ten, so `cover` and `center` fall
-/// onto the nearest one — said here rather than pretending the mapping is
-/// exact: `cover` crops on iOS and fits inside here, because `NSImageView`
-/// cannot crop without spilling out.
+/// Three of the four are translations: `stretch` is `ScaleAxesIndependently`,
+/// `center` is `ScaleNone` with the alignment `NSImageView` already defaults
+/// to, and `contain` is `ScaleProportionallyUpOrDown`.
+///
+/// **`cover` is not one.** It fills the box and crops what does not fit, and
+/// `NSImageView` has no scaling that crops: the image is drawn inside the cell,
+/// never past it. What goes in is `contain`, which is a different picture — the
+/// whole image with empty space where the crop would have been — so it is said
+/// once instead of passing for the mode that was asked for. Cropping properly
+/// means drawing into the layer with `contentsGravity` and giving up
+/// `NSImageView`'s own handling of the image.
 pub fn image_scaling(mode: &str) -> NSImageScaling {
     match mode {
         "stretch" => NSImageScaling::ScaleAxesIndependently,
         "center" => NSImageScaling::ScaleNone,
+        "cover" => {
+            warn_once(
+                "resizeMode:cover",
+                "`resizeMode=\"cover\"` does not apply on macOS: NSImageView cannot crop, so \
+                 the image is fitted inside the box —`contain`— instead of filling it",
+            );
+            NSImageScaling::ScaleProportionallyUpOrDown
+        }
         _ => NSImageScaling::ScaleProportionallyUpOrDown,
     }
 }

@@ -46,6 +46,15 @@
 //! but neither does it lose it: by not handling it, the event goes up to the
 //! next responder in the chain, which is its parent view. See
 //! `support::catches_swipe`.
+//!
+//! ## And so does `[scrollEnabled]="false"`
+//!
+//! For the same reason, from the other side. AppKit has no switch that stops an
+//! `NSScrollView` scrolling: it scrolls because the wheel event walks the
+//! responder chain up to it. This view is the document view of every scroll view
+//! this host mounts, and it stands below the scroll view in that chain, so an
+//! event it declines to pass on never arrives. Hiding the scrollers does not:
+//! a hidden scroller is still a scroll view that scrolls.
 
 use std::cell::{Cell, RefCell};
 
@@ -64,6 +73,10 @@ pub struct FlippedIvars {
     /// The directions subscribed to. Zero means "nobody is listening", and
     /// then the event is passed on down the responder chain as it arrived.
     swipe_mask: Cell<u8>,
+    /// Whether `[scrollEnabled]="false"` asked for the wheel to stop here. Only
+    /// a scroll view's document view is ever locked; on every other view of
+    /// this class it stays false and the wheel goes on as it always did.
+    scroll_locked: Cell<bool>,
 }
 
 define_class!(
@@ -125,14 +138,41 @@ define_class!(
                 },
             );
         }
+
+        /// The wheel, when the template has switched scrolling off.
+        ///
+        /// AppKit has no scroll switch, and hiding an `NSScrollView`'s
+        /// scrollers is not one: a scroll view scrolls because the wheel event
+        /// reaches it up the responder chain, and whether a scroller is drawn
+        /// has no bearing on that. What does stop it is this view — the
+        /// document view is ours and sits *below* the scroll view in that
+        /// chain, so an event it does not pass on never gets there. The swipe
+        /// is in this file for the same reason: only a class of our own can
+        /// stand in the way of an event on the responder chain.
+        #[unsafe(method(scrollWheel:))]
+        fn scroll_wheel(&self, event: &NSEvent) {
+            if self.ivars().scroll_locked.get() {
+                return;
+            }
+            unsafe { msg_send![super(self), scrollWheel: event] }
+        }
     }
 );
 
 impl FlippedView {
     pub fn new(mtm: objc2::MainThreadMarker) -> Retained<Self> {
-        let this = Self::alloc(mtm)
-            .set_ivars(FlippedIvars { swipe: RefCell::new(None), swipe_mask: Cell::new(0) });
+        let this = Self::alloc(mtm).set_ivars(FlippedIvars {
+            swipe: RefCell::new(None),
+            swipe_mask: Cell::new(0),
+            scroll_locked: Cell::new(false),
+        });
         unsafe { msg_send![super(this), init] }
+    }
+
+    /// Stops or lets through the wheel events that would scroll the
+    /// `NSScrollView` this view is the document of. See `scrollWheel:`.
+    pub fn set_scroll_locked(&self, locked: bool) {
+        self.ivars().scroll_locked.set(locked);
     }
 
     /// Clips whichever children spill out. In UIKit it is `clipsToBounds`;

@@ -157,6 +157,15 @@ value but the role the primitive genuinely has: an `an-button` mounts an
 `NSButton` and an `NSButton` is an `AXButton`, which is the same fact the
 platform inventory already states as a class name.
 
+The class name is nearly always enough to know that role, and once it was not.
+`an-activity-indicator` and `an-progress-bar` mount the **same** class, an
+`NSProgressIndicator`, and AppKit tells them apart by style: the bar publishes
+`AXProgressIndicator` and the spinner publishes `AXBusyIndicator`. Writing the
+bar's role back for both meant a spinner given nothing but a name stopped being
+a spinner and started announcing progress it does not have — a translation on
+its face and an approximation underneath, and the only thing that could tell
+the difference was the walk from outside.
+
 When a role **is** given it replaces rather than adds. A template writing
 `accessibilityRole="link"` on an `an-button` is saying this reads as a link, not
 as "link, button".

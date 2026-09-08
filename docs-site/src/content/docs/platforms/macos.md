@@ -257,6 +257,15 @@ absence is a subscription that never fires with no error anywhere.
 The offset is the clip view's `bounds.origin`, and it counts downwards for the
 same reason everything else here does: the document view is flipped.
 
+**And `[scrollEnabled]="false"` really stops it.** AppKit has no switch for
+that either, and the obvious stand-in — hiding the scrollers — stops nothing: a
+scroll view scrolls because the wheel event walks the responder chain up to it,
+and whether a scroller is drawn has no bearing on that. What does stop it is the
+document view, which is one of this host's own and comes first in that chain, so
+an event it declines to pass on never arrives. It is the same reason the swipe
+lives in `flipped.rs`. Whether a scroller shows stays `[showsScrollIndicator]`'s
+business.
+
 `scripts/check-macos.sh` moves the clip view by 90 points on a running window
 and asserts the template says 90. A synthetic scroll-wheel event would not do:
 a wheel event is a *request*, and how far the system carries it, over how many
@@ -453,10 +462,13 @@ need a paid Developer ID certificate and have never been run. See
 - **`color` on `an-switch`, `an-activity-indicator` and `an-progress-bar`** is
   the system accent colour and is not settable per view.
 - **`resizeMode: 'cover'` fits inside instead of cropping**, because
-  `NSImageView` cannot crop.
-- **`sheet` on `an-alert`** only changes the alert style: macOS has no action
-  sheet. The alert is presented with `beginSheetModalForWindow:` and never
-  `runModal`, which would freeze the event loop that drives the frame.
+  `NSImageView` cannot crop. It is the one mode that is not a translation, so
+  asking for it says so once rather than passing for `contain`.
+- **`sheet` on `an-alert` is refused**: macOS has no action sheet, and the
+  nearest control is a context menu, which is something else. It used to change
+  the dialog's *severity* instead, which is not what the prop means. The alert
+  itself is presented with `beginSheetModalForWindow:` and never `runModal`,
+  which would freeze the event loop that drives the frame.
 - **`(dismiss)` on `an-modal`, `(refresh)` on `an-scroll-view` and `(back)` on
   either the stack view or the navigation bar** all warn at subscribe time, each
   with its reason.

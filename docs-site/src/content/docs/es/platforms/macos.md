@@ -269,6 +269,15 @@ El desplazamiento es el `bounds.origin` de la clip view, y cuenta hacia abajo
 por el mismo motivo que todo lo demás aquí: la vista de documento está
 invertida.
 
+**Y `[scrollEnabled]="false"` lo para de verdad.** AppKit tampoco tiene un
+interruptor para eso, y el sustituto evidente —esconder las barras— no para
+nada: una scroll view hace scroll porque el evento de rueda sube por la cadena
+de responders hasta ella, y que se dibuje una barra o no da igual. Lo que sí lo
+para es la vista de documento, que es una de este host y va antes en esa cadena,
+así que un evento que no pasa adelante nunca llega. Es el mismo motivo por el
+que el swipe vive en `flipped.rs`. Que la barra se vea o no sigue siendo cosa de
+`[showsScrollIndicator]`.
+
 `scripts/check-macos.sh` mueve la clip view 90 puntos en una ventana en marcha
 y exige que la plantilla diga 90. Un evento sintético de rueda no serviría: un
 evento de rueda es una *petición*, y hasta dónde lo lleva el sistema, en cuántos
@@ -471,11 +480,13 @@ Mira [Firma y distribución](/es/guide/signing-and-distribution/).
 - **`color` en `an-switch`, `an-activity-indicator` y `an-progress-bar`** es el
   color de acento del sistema y no se puede fijar por vista.
 - **`resizeMode: 'cover'` encaja dentro en lugar de recortar**, porque
-  `NSImageView` no puede recortar.
-- **`sheet` en `an-alert`** solo cambia el estilo de la alerta: macOS no tiene
-  hoja de acciones. La alerta se presenta con `beginSheetModalForWindow:` y
-  nunca con `runModal`, que congelaría el bucle de eventos que mueve el
-  fotograma.
+  `NSImageView` no puede recortar. Es el único modo que no es una traducción,
+  así que pedirlo lo dice una vez en lugar de pasar por `contain`.
+- **`sheet` en `an-alert` se rechaza**: macOS no tiene hoja de acciones, y el
+  control más cercano es un menú contextual, que es otra cosa. Antes cambiaba la
+  *gravedad* del diálogo, que no es lo que significa la prop. La alerta en sí se
+  presenta con `beginSheetModalForWindow:` y nunca con `runModal`, que
+  congelaría el bucle de eventos que mueve el fotograma.
 - **`(dismiss)` en `an-modal`, `(refresh)` en `an-scroll-view` y `(back)` tanto
   en la stack view como en la barra de navegación** avisan todos al suscribirse,
   cada uno con su motivo.

@@ -190,6 +190,18 @@ import type { NativeAccessibilityState } from '@angular-native/primitives'
       <an-button [title]="'Save'" [accessibilityLabel]="'Save the changes you made'" />
 
       <!--
+        The two controls that mount the same class and are not the same thing.
+        On macOS both are an NSProgressIndicator, and AppKit tells them apart
+        by style: the bar is an AXProgressIndicator and the spinner is an
+        AXBusyIndicator. Naming them is what makes the host write the role
+        back, so this pair is the row that catches a spinner announcing a
+        progress it does not have.
+      -->
+      <an-activity-indicator [animating]="true" [accessibilityLabel]="'Still working'" />
+
+      <an-progress-bar [progress]="0.5" [accessibilityLabel]="'Half done'" />
+
+      <!--
         A role taken away from a control that had one. 'none' is not the same
         as saying nothing: saying nothing leaves the control announcing itself,
         and 'none' strips it — android.view.View on one side, AXUnknown on the

@@ -76,7 +76,15 @@ DUMP_FULL="$(mktemp)"
 DUMP_COMPRESSED="$(mktemp)"
 trap 'rm -f "$LOG" "$DUMP_FULL" "$DUMP_COMPRESSED"' EXIT
 
-if ! cargo an android examples/a11y --no-launch >"$LOG" 2>&1; then
+# `AN_ABI` names the architecture the APK has to carry. The default repeats
+# `an android`'s own — arm64-v8a, which is the phone plugged in and the emulator
+# on an Apple-silicon Mac — and it is written out rather than left off because
+# `--abi` takes a value and there is no way to pass "whatever you were going to
+# pick". It exists because the emulator on an x86_64 Linux CI runner is the one
+# device that is not arm64, and an arm64-only APK does not install on it: `adb`
+# refuses with INSTALL_FAILED_NO_MATCHING_ABIS, which says nothing about
+# accessibility.
+if ! cargo an android examples/a11y --no-launch --abi "${AN_ABI:-arm64-v8a}" >"$LOG" 2>&1; then
   echo "  FAIL the APK did not build"
   tail -30 "$LOG"
   exit 1
