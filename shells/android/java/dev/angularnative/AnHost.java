@@ -106,7 +106,12 @@ public final class AnHost {
     private static final class FontState {
         String family;
         boolean italic;
-        boolean bold;
+        /**
+         * CSS's 100..900 and not bold-or-not: `Typeface.create(family, weight,
+         * italic)` takes the number, so 300 and 500 are weights of their own
+         * rather than roundings of regular and bold.
+         */
+        int weight = 400;
         /** Letter spacing in points; Android wants it in ems. */
         Float letterSpacing;
         /** Line height in points. */
@@ -1960,7 +1965,7 @@ public final class AnHost {
                 break;
             case "fontWeight":
                 if (view instanceof TextView) {
-                    fontStateOf(id).bold = "bold".equals(value) || weightOf(value) >= 600;
+                    fontStateOf(id).weight = weightOf(value);
                     applyTypeface(id, (TextView) view);
                 }
                 break;
@@ -2433,7 +2438,7 @@ public final class AnHost {
     }
 
     /**
-     * Family, italic and bold go together or they do not go at all.
+     * Family, italic and weight go together or they do not go at all.
      *
      * `setTypeface(null, style)` keeps the family and `Typeface.create` asks for
      * the style, so applying one of the three props alone wipes out the other
@@ -2441,11 +2446,51 @@ public final class AnHost {
      */
     private void applyTypeface(int id, TextView text) {
         FontState state = fontStateOf(id);
-        int style = state.bold
-                ? (state.italic ? Typeface.BOLD_ITALIC : Typeface.BOLD)
-                : (state.italic ? Typeface.ITALIC : Typeface.NORMAL);
+        Typeface face = typefaceFor(state.family, state.weight, state.italic);
+        // From API 28 the face already carries the exact weight, and a style
+        // beside it would put it back through `Typeface.create(tf, BOLD)` and
+        // collapse the nine steps onto two again. `NORMAL` is zero, which is
+        // the branch of `setTypeface` that clears the synthetic bold and skew
+        // instead of adding them.
+        //
+        // Below 28 the face only distinguishes bold from not, so the style is
+        // still worth passing: it is what gets a family with no bold cut the
+        // platform's fake one.
         text.setTypeface(
-                state.family == null ? null : Typeface.create(state.family, style), style);
+                face,
+                android.os.Build.VERSION.SDK_INT >= 28
+                        ? Typeface.NORMAL
+                        : styleOf(state.weight, state.italic));
+    }
+
+    /**
+     * The typeface for a family, a CSS weight and italic.
+     *
+     * `Typeface.create(family, weight, italic)` takes the number since API 28
+     * and the manifest's minSdk is 24, so on 24..27 there is nothing that
+     * takes it: the nine steps collapse onto bold and not-bold at 600, and a
+     * heading at 500 draws as regular there while it draws as medium from 28
+     * on. Drawing and measuring both come through here so that they collapse
+     * the same way — a measurement that rounded 500 up while the drawing
+     * rounded it down would reserve a box for a weight nobody paints.
+     */
+    private static Typeface typefaceFor(String family, int weight, boolean italic) {
+        boolean named = family != null && !family.isEmpty();
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            // The documented range is 1..1000 and the prop is whatever the
+            // template wrote, so it is clamped rather than handed over raw.
+            int exact = Math.max(1, Math.min(1000, weight));
+            return Typeface.create(
+                    named ? Typeface.create(family, Typeface.NORMAL) : null, exact, italic);
+        }
+        int style = styleOf(weight, italic);
+        return named ? Typeface.create(family, style) : Typeface.defaultFromStyle(style);
+    }
+
+    /** Bold-or-not, which is all a typeface can carry below API 28. */
+    private static int styleOf(int weight, boolean italic) {
+        return (weight >= 600 ? Typeface.BOLD : Typeface.NORMAL)
+                | (italic ? Typeface.ITALIC : Typeface.NORMAL);
     }
 
     /**
@@ -3852,12 +3897,23 @@ public final class AnHost {
             float letterSpacingDp,
             float lineHeightDp) {
         measurePaint.setTextSize(sizeDp * density);
-        int style = (weight >= 600 ? Typeface.BOLD : Typeface.NORMAL)
-                | (italic ? Typeface.ITALIC : Typeface.NORMAL);
-        measurePaint.setTypeface(
-                family == null || family.isEmpty()
-                        ? Typeface.defaultFromStyle(style)
-                        : Typeface.create(family, style));
+        // The face {@link #applyTypeface} draws with, from the same helper:
+        // nine weights from API 28 and two below it, and a measurement that
+        // chose the other side of that would size the text for a cut the view
+        // never draws.
+        Typeface face = typefaceFor(family, weight, italic);
+        measurePaint.setTypeface(face);
+        // What the face does not have, `TextView.setTypeface(tf, style)`
+        // synthesises — below 28 that is the only bold a family without a bold
+        // cut ever gets, and a faked bold is wider than the regular it is
+        // drawn from. Both flags are set on every call, including to false,
+        // because `measurePaint` is shared by every measurement there is.
+        int synthetic =
+                android.os.Build.VERSION.SDK_INT >= 28
+                        ? 0
+                        : styleOf(weight, italic) & ~face.getStyle();
+        measurePaint.setFakeBoldText((synthetic & Typeface.BOLD) != 0);
+        measurePaint.setTextSkewX((synthetic & Typeface.ITALIC) != 0 ? -0.25f : 0f);
 
         // The core carries letter spacing in points and `Paint` wants it in
         // ems, which is what the size is worth: that is the whole reason for
@@ -3915,7 +3971,18 @@ public final class AnHost {
 
     // ---------------------------------------------------------------- helpers
 
+    /**
+     * CSS's `font-weight`, parsed the way `font_from_props` in `an-core` parses
+     * it for the measurer — the two have to land on the same number or the
+     * drawing and the layout disagree about which weight this is. Which is why
+     * `500.0` is not accepted here either: the core does not accept it, and one
+     * side reading it as 500 while the other read 400 is worse than both
+     * refusing.
+     */
     private static int weightOf(String value) {
+        if ("bold".equals(value)) {
+            return 700;
+        }
         try {
             return Integer.parseInt(value);
         } catch (NumberFormatException error) {

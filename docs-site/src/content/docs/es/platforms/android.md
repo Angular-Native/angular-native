@@ -188,9 +188,23 @@ ancha y como alto el del layout. Los dos vuelven empaquetados en un solo `long`
 como centésimas de punto: dos llamadas JNI por medición costarían el doble para
 nada.
 
-**Aquí el peso de la fuente es binario**: 600 o más es negrita, cualquier otra
-cosa es normal. Eso es mucho más grueso que el mapa de nueve pasos que usan los
-hosts de Apple, y conviene saberlo cuando un diseño se apoya en 500 o en 300.
+**El peso de la fuente son nueve pasos desde la API 28 y dos por debajo.**
+`Typeface.create(family, weight, italic)` acepta el número de CSS desde la API
+28, así que a partir de ahí 300 y 500 son pesos propios, igual que en los hosts
+de Apple. El `minSdkVersion` del shell es 24, y en 24 a 27 la plataforma no
+tiene nada que acepte un número: la tipografía lleva negrita o no-negrita y
+nada más, con lo que la escala se colapsa en 600 —de 100 a 500 se dibujan como
+normal y de 600 a 900 como negrita—. Un diseño que se apoya en 500 para un
+titular obtiene medium en cualquier móvil actual y normal en uno con Android 7.
+
+Las dos mitades se colapsan en el mismo sitio porque las dos pasan por el mismo
+`typefaceFor`: el peso que mide el `StaticLayout` es el que dibuja el
+`TextView`, y en la rama antigua la medición replica la negrita sintética que
+`TextView.setTypeface(tf, style)` le pone a una familia sin corte negrita, que
+es más ancha que la normal de la que se falsea. `check-android-java.sh`
+demuestra la cuenta sin dispositivo: entra por reflexión en el bytecode de
+`AnHost` que acaba de producir el APK, con `Build.VERSION.SDK_INT` y `Typeface`
+sustituidos por dobles, y comprueba que hay nueve caras en 34 y dos en 24.
 
 La caché vive en Rust y no en Java, con una clave que lleva todo aquello de lo
 que depende la respuesta —el texto, la tipografía, el espaciado, la altura de

@@ -15,6 +15,8 @@ use jni::JavaVM;
 struct Key {
     text: String,
     size_bits: u32,
+    /// The whole CSS number, not a bold flag: the host draws nine weights, and
+    /// 500 and 400 measure differently.
     weight: u16,
     italic: bool,
     family: Option<String>,

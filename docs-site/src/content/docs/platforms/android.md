@@ -178,9 +178,23 @@ the height as the layout's. Both come back packed into a single `long` as
 hundredths of a point: two JNI calls per measurement would cost double for
 nothing.
 
-**Font weight is binary here**: 600 or more is bold, anything else is regular.
-That is much coarser than the nine-step map the Apple hosts use, and it is worth
-knowing when a design leans on 500 or 300.
+**Font weight is nine steps from API 28 and two below it.**
+`Typeface.create(family, weight, italic)` takes CSS's number since API 28, so
+from there 300 and 500 are weights of their own, the way they are on the Apple
+hosts. The shell's `minSdkVersion` is 24, and on 24 through 27 the platform has
+nothing that takes a number: the typeface carries bold or not-bold and nothing
+else, so the scale collapses at 600 — 100 to 500 draw as regular, 600 to 900 as
+bold. A design leaning on 500 for a heading gets medium on anything current and
+regular on an Android 7 phone.
+
+Both halves collapse in the same place because both go through the same
+`typefaceFor`: the weight the `StaticLayout` measures is the weight the
+`TextView` draws, and on the old branch the measurement mirrors the synthetic
+bold `TextView.setTypeface(tf, style)` applies to a family with no bold cut,
+which is wider than the regular it is faked from. `check-android-java.sh`
+proves the count without a device — it reflects into the `AnHost` bytecode the
+APK just got, with `Build.VERSION.SDK_INT` and `Typeface` stubbed, and asserts
+nine faces at 34 and two at 24.
 
 The cache lives in Rust rather than Java, keyed on everything the answer
 depends on — the text, the font, the spacing, the line height, the width limit
