@@ -44,7 +44,19 @@ echo "== props that reach both hosts"
 
 echo
 echo "== Rust core"
-cargo test --quiet 2>&1 | tail -1
+# The output is kept rather than piped into `tail -1`. `pipefail` means a
+# failing run still fails the suite, but the one line that survives is
+# `error: test failed`, which names neither the crate nor the assertion; the
+# reason scrolls past into the pipe. `check-watchos.sh` learned the same thing
+# the same way.
+CARGO_LOG="$(mktemp)"
+if cargo test --quiet >"$CARGO_LOG" 2>&1; then
+  tail -1 "$CARGO_LOG"
+else
+  echo "  FAIL the Rust tests do not pass"
+  tail -40 "$CARGO_LOG"
+  exit 1
+fi
 
 "$ROOT/scripts/check-angular.sh"
 "$ROOT/scripts/check-list.sh"
